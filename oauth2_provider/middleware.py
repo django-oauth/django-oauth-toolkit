@@ -52,8 +52,9 @@ class OAuth2ExtraTokenMiddleware:
 
     def __call__(self, request):
         authheader = request.META.get("HTTP_AUTHORIZATION", "")
-        if authheader.startswith("Bearer") and len(authheader.split(maxsplit=1)) == 2:
-            tokenstring = authheader.split(maxsplit=1)[1]
+        splits = authheader.split(maxsplit=1)
+        if authheader.startswith("Bearer") and len(splits) == 2:
+            tokenstring = splits[1]
             AccessToken = get_access_token_model()
             try:
                 token_checksum = hashlib.sha256(tokenstring.encode("utf-8")).hexdigest()
