@@ -151,6 +151,16 @@ class OAuthLibCore:
         except oauth2.OAuth2Error as error:
             raise OAuthToolkitError(error=error, redirect_uri=credentials["redirect_uri"])
 
+    def create_device_authorization_response(self, request: HttpRequest):
+        uri, http_method, body, headers = self._extract_params(request)
+        try:
+            headers, body, status = self.server.create_device_authorization_response(
+                uri, http_method, body, headers
+            )
+            return headers, body, status
+        except OAuth2Error as exc:
+            return exc.headers, exc.json, exc.status_code
+
     def create_token_response(self, request):
         """
         A wrapper method that calls create_token_response on `server_class` instance.

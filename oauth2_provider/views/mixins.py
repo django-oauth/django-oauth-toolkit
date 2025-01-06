@@ -2,7 +2,7 @@ import logging
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
-from django.http import HttpResponseForbidden, HttpResponseNotFound
+from django.http import HttpRequest, HttpResponseForbidden, HttpResponseNotFound
 
 from ..exceptions import FatalClientError
 from ..scopes import get_scopes_backend
@@ -113,6 +113,20 @@ class OAuthLibMixin:
 
         core = self.get_oauthlib_core()
         return core.create_authorization_response(request, scopes, credentials, allow)
+
+    def create_device_authorization_response(self, request: HttpRequest):
+        """
+        A wrapper method that calls create_device_authorization_response on `server_class`
+        instance.
+        :param request: The current django.http.HttpRequest object
+        """
+        oauth2_settings.EXTRA_SERVER_KWARGS = {
+            "verification_uri": oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI,
+            "interval": oauth2_settings.DEVICE_FLOW_INTERVAL,
+            "user_code_generator": oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR,
+        }
+        core = self.get_oauthlib_core()
+        return core.create_device_authorization_response(request)
 
     def create_token_response(self, request):
         """
