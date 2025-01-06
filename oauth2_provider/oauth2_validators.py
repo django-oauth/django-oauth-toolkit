@@ -56,6 +56,7 @@ GRANT_TYPE_MAPPING = {
         AbstractApplication.GRANT_CLIENT_CREDENTIALS,
         AbstractApplication.GRANT_OPENID_HYBRID,
     ),
+    "urn:ietf:params:oauth:grant-type:device_code": (AbstractApplication.GRANT_DEVICE_CODE,)
 }
 
 Application = get_application_model()
