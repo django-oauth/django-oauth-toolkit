@@ -17,3 +17,4 @@ from .generic import (
 from .introspect import IntrospectTokenView
 from .oidc import ConnectDiscoveryInfoView, JwksInfoView, RPInitiatedLogoutView, UserInfoView
 from .token import AuthorizedTokenDeleteView, AuthorizedTokensListView
+from .device import DeviceAuthorizationView
