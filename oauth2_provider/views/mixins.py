@@ -120,11 +120,6 @@ class OAuthLibMixin:
         instance.
         :param request: The current django.http.HttpRequest object
         """
-        oauth2_settings.EXTRA_SERVER_KWARGS = {
-            "verification_uri": oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI,
-            "interval": oauth2_settings.DEVICE_FLOW_INTERVAL,
-            "user_code_generator": oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR,
-        }
         core = self.get_oauthlib_core()
         return core.create_device_authorization_response(request)
 
