@@ -3,7 +3,10 @@ import logging
 import time
 import uuid
 from contextlib import suppress
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
+from typing import Optional
 from urllib.parse import parse_qsl, urlparse
 
 from django.apps import apps
@@ -86,12 +89,14 @@ class AbstractApplication(models.Model):
     )
 
     GRANT_AUTHORIZATION_CODE = "authorization-code"
+    GRANT_DEVICE_CODE = "urn:ietf:params:oauth:grant-type:device_code"
     GRANT_IMPLICIT = "implicit"
     GRANT_PASSWORD = "password"
     GRANT_CLIENT_CREDENTIALS = "client-credentials"
     GRANT_OPENID_HYBRID = "openid-hybrid"
     GRANT_TYPES = (
         (GRANT_AUTHORIZATION_CODE, _("Authorization code")),
+        (GRANT_DEVICE_CODE, _("Device Code")),
         (GRANT_IMPLICIT, _("Implicit")),
         (GRANT_PASSWORD, _("Resource owner password-based")),
         (GRANT_CLIENT_CREDENTIALS, _("Client credentials")),
@@ -650,9 +655,107 @@ class IDToken(AbstractIDToken):
         swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
 
 
+class AbstractDevice(models.Model):
+    class Meta:
+        abstract = True
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device_code"],
+                name="%(app_label)s_%(class)s_unique_device_code",
+            ),
+        ]
+
+    AUTHORIZED = "authorized"
+    AUTHORIZATION_PENDING = "authorization-pending"
+    EXPIRED = "expired"
+    DENIED = "denied"
+
+    DEVICE_FLOW_STATUS = (
+        (AUTHORIZED, _("Authorized")),
+        (AUTHORIZATION_PENDING, _("Authorization pending")),
+        (EXPIRED, _("Expired")),
+        (DENIED, _("Denied")),
+    )
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="%(app_label)s_%(class)s",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    device_code = models.CharField(max_length=100, unique=True)
+    user_code = models.CharField(max_length=100)
+    scope = models.CharField(max_length=64, null=True)
+    interval = models.IntegerField(default=5)
+    expires = models.DateTimeField()
+    status = models.CharField(
+        max_length=64, blank=True, choices=DEVICE_FLOW_STATUS, default=AUTHORIZATION_PENDING
+    )
+    client_id = models.CharField(max_length=100, db_index=True)
+    last_checked = models.DateTimeField(auto_now=True)
+
+    def is_expired(self):
+        """
+        Check device flow session expiration.
+        """
+        now = datetime.now(tz=dt_timezone.utc)
+        return now >= self.expires
+
+
+class DeviceManager(models.Manager):
+    def get_by_natural_key(self, client_id, device_code, user_code):
+        return self.get(client_id=client_id, device_code=device_code, user_code=user_code)
+
+
+class Device(AbstractDevice):
+    objects = DeviceManager()
+
+    class Meta(AbstractDevice.Meta):
+        swappable = "OAUTH2_PROVIDER_DEVICE_MODEL"
+
+    def natural_key(self):
+        return (self.client_id, self.device_code, self.user_code)
+
+
+@dataclass
+class DeviceRequest:
+    # https://datatracker.ietf.org/doc/html/rfc8628#section-3.1
+    # scope is optional
+    client_id: str
+    scope: Optional[str] = None
+
+
+@dataclass
+class DeviceCodeResponse:
+    verification_uri: str
+    expires_in: int
+    user_code: int
+    device_code: str
+    interval: int
+
+
+def create_device(device_request: DeviceRequest, device_response: DeviceCodeResponse) -> Device:
+    now = datetime.now(tz=dt_timezone.utc)
+
+    return Device.objects.create(
+        client_id=device_request.client_id,
+        device_code=device_response.device_code,
+        user_code=device_response.user_code,
+        scope=device_request.scope,
+        expires=now + timedelta(seconds=device_response.expires_in),
+    )
+
+
 def get_application_model():
     """Return the Application model that is active in this project."""
     return apps.get_model(oauth2_settings.APPLICATION_MODEL)
+
+
+def get_device_model():
+    """Return the Device model that is active in this project."""
+    return apps.get_model(oauth2_settings.DEVICE_MODEL)
 
 
 def get_grant_model():
