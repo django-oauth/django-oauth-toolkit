@@ -132,7 +132,7 @@ class AbstractApplication(models.Model):
         default="",
     )
     client_type = models.CharField(max_length=32, choices=CLIENT_TYPES)
-    authorization_grant_type = models.CharField(max_length=32, choices=GRANT_TYPES)
+    authorization_grant_type = models.CharField(max_length=44, choices=GRANT_TYPES)
     client_secret = ClientSecretField(
         max_length=255,
         blank=True,
