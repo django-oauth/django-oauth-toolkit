@@ -1,6 +1,7 @@
 import json
 from urllib.parse import urlparse, urlunparse
 
+from django.http import HttpRequest
 from oauthlib import oauth2
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.common import quote, urlencode, urlencoded
@@ -75,6 +76,8 @@ class OAuthLibCore:
             del headers["wsgi.errors"]
         if "HTTP_AUTHORIZATION" in headers:
             headers["Authorization"] = headers["HTTP_AUTHORIZATION"]
+        if "CONTENT_TYPE" in headers:
+            headers["Content-Type"] = headers["CONTENT_TYPE"]
         # Add Access-Control-Allow-Origin header to the token endpoint response for authentication code grant,
         # if the origin is allowed by RequestValidator.is_origin_allowed.
         # https://github.com/oauthlib/oauthlib/pull/791
