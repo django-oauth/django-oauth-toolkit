@@ -9,4 +9,4 @@ Tutorials
    tutorial_03
    tutorial_04
    tutorial_05
-
+   tutorial_06
