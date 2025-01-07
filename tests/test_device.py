@@ -136,3 +136,25 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "device_code": "abc",
             "interval": 10,
         }
+
+    def test_incorrect_client_id_sent(self):
+        """
+        Ensure the correct error is returned when an invalid client is sent
+        """
+        request_data: dict[str, str] = {
+            "client_id": "client_id_that_does_not_exist",
+        }
+        request_as_x_www_form_urlencoded: str = urlencode(request_data)
+
+        response: django.http.response.JsonResponse = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=request_as_x_www_form_urlencoded,
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        assert response.status_code == 400
+
+        assert response.json() == {
+            "error": "invalid_request",
+            "error_description": "Invalid client_id parameter value.",
+        }
