@@ -100,3 +100,39 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "device_code": "abc",
             "interval": 5,
         }
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "abc",
+    )
+    def test_device_polling_interval_can_be_changed(self):
+        """
+        Tests the device polling rate(interval) can be changed to something other than the default
+        of 5 seconds.
+        """
+
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "xyz"
+
+        self.oauth2_settings.DEVICE_FLOW_INTERVAL = 10
+
+        request_data: dict[str, str] = {
+            "client_id": self.application.client_id,
+        }
+        request_as_x_www_form_urlencoded: str = urlencode(request_data)
+
+        response: django.http.response.JsonResponse = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=request_as_x_www_form_urlencoded,
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        assert response.status_code == 200
+
+        assert response.json() == {
+            "verification_uri": "example.com/device",
+            "expires_in": 1800,
+            "user_code": "xyz",
+            "device_code": "abc",
+            "interval": 10,
+        }
