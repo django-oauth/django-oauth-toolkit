@@ -13,7 +13,6 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
-from django_ratelimit.decorators import ratelimit
 from oauthlib.oauth2.rfc8628.errors import (
     AccessDenied,
     AuthorizationPendingError,
@@ -318,7 +317,6 @@ class TokenView(OAuthLibMixin, View):
             response[k] = v
         return response
 
-    @method_decorator(ratelimit(key="ip", rate=f"1/{oauth2_settings.DEVICE_FLOW_INTERVAL}"))
     def device_flow_token_response(
         self, request: http.HttpRequest, device_code: str, *args, **kwargs
     ) -> http.HttpResponse:
