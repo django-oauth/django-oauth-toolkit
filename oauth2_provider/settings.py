@@ -24,6 +24,8 @@ from django.urls import reverse
 from django.utils.module_loading import import_string
 from oauthlib.common import Request
 
+from oauth2_provider.utils import user_code_generator
+
 
 USER_SETTINGS = getattr(settings, "OAUTH2_PROVIDER", None)
 
@@ -41,7 +43,7 @@ DEFAULTS = {
     "CLIENT_SECRET_HASHER": "default",
     "ACCESS_TOKEN_GENERATOR": None,
     "OAUTH_DEVICE_VERIFICATION_URI": None,
-    "OAUTH_DEVICE_USER_CODE_GENERATOR": None,
+    "OAUTH_DEVICE_USER_CODE_GENERATOR": user_code_generator,
     "REFRESH_TOKEN_GENERATOR": None,
     "EXTRA_SERVER_KWARGS": {},
     "OAUTH2_SERVER_CLASS": "oauthlib.oauth2.Server",
