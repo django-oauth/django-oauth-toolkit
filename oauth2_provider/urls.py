@@ -13,6 +13,7 @@ base_urlpatterns = [
     path("introspect/", views.IntrospectTokenView.as_view(), name="introspect"),
     path("device-authorization/", views.DeviceAuthorizationView.as_view(), name="device-authorization"),
     path("device/", views.device_user_code_view, name="device"),
+    path("device-confirm/<str:device_code>", views.device_confirm_view, name="device-confirm"),
 ]
 
 

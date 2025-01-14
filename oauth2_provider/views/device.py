@@ -76,3 +76,24 @@ def device_user_code_view(request):
     return http.HttpResponsePermanentRedirect(
         reverse("oauth2_provider:device-confirm", kwargs={"device_code": device.device_code}), status=308
     )
+
+
+@login_required
+def device_confirm_view(request: http.HttpRequest, device_code: str):
+    device: Device = get_device_model().objects.get(device_code=device_code)
+
+    if device.status in (device.AUTHORIZED, device.DENIED):
+        return http.HttpResponse("Invalid")
+
+    action = request.POST.get("action")
+
+    if action == "accept":
+        device.status = device.AUTHORIZED
+        device.save(update_fields=["status"])
+        return http.HttpResponse("approved")
+    elif action == "deny":
+        device.status = device.DENIED
+        device.save(update_fields=["status"])
+        return http.HttpResponse("deny")
+
+    return render(request, "oauth2_provider/device/accept_deny.html")
