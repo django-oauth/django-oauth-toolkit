@@ -15,6 +15,8 @@ from pathlib import Path
 
 import environ
 
+from oauth2_provider.utils import user_code_generator
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -199,6 +201,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 OAUTH2_PROVIDER = {
     "OAUTH2_VALIDATOR_CLASS": "idp.oauth.CustomOAuth2Validator",
+    "OAUTH_DEVICE_VERIFICATION_URI": "http://127.0.0.1:8000/o/device",
+    "OAUTH_DEVICE_USER_CODE_GENERATOR": user_code_generator,
     "OIDC_ENABLED": env("OAUTH2_PROVIDER_OIDC_ENABLED"),
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": env("OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED"),
     # this key is just for out test app, you should never store a key like this in a production environment.
