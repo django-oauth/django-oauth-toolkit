@@ -8,7 +8,13 @@ from django.test import RequestFactory
 from django.urls import reverse
 
 import oauth2_provider.models
-from oauth2_provider.models import get_access_token_model, get_application_model, get_device_model
+from oauth2_provider.models import (
+    get_access_token_model,
+    get_application_model,
+    get_device_model,
+    get_refresh_token_model,
+)
+from oauth2_provider.utils import set_oauthlib_user_to_device_request_user
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -16,6 +22,7 @@ from .common_testing import OAuth2ProviderTestCase as TestCase
 
 Application = get_application_model()
 AccessToken = get_access_token_model()
+RefreshToken = get_refresh_token_model()
 UserModel = get_user_model()
 DeviceModel: oauth2_provider.models.Device = get_device_model()
 
@@ -122,6 +129,8 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         # -----------------------
         self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
         self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "xyz"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "xyz"
+        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [set_oauthlib_user_to_device_request_user]
 
         request_data: dict[str, str] = {
             "client_id": self.application.client_id,
@@ -193,6 +202,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "client_id": self.application.client_id,
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
         }
+
         token_response = self.client.post(
             "/o/token/",
             data=urlencode(token_payload),
@@ -206,6 +216,17 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         assert "access_token" in token_data
         assert token_data["token_type"].lower() == "bearer"
         assert "scope" in token_data
+
+        # ensure the access token and refresh token have the same user as the device that just authenticated
+        access_token: oauth2_provider.models.AccessToken = AccessToken.objects.get(
+            token=token_data["access_token"]
+        )
+        assert access_token.user == device.user
+
+        refresh_token: oauth2_provider.models.RefreshToken = RefreshToken.objects.get(
+            token=token_data["refresh_token"]
+        )
+        assert refresh_token.user == device.user
 
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",

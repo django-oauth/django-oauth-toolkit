@@ -6,7 +6,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
-from typing import Optional
+from typing import Callable, Optional, Union
 from urllib.parse import parse_qsl, urlparse
 
 from django.apps import apps
@@ -734,6 +734,7 @@ class DeviceCodeResponse:
     user_code: int
     device_code: str
     interval: int
+    verification_uri_complete: Optional[Union[str, Callable]] = None
 
 
 def create_device(device_request: DeviceRequest, device_response: DeviceCodeResponse) -> Device:

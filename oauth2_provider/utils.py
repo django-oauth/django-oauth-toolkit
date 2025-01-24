@@ -3,6 +3,7 @@ import random
 
 from django.conf import settings
 from jwcrypto import jwk
+from oauthlib.common import Request
 
 
 @functools.lru_cache()
@@ -75,3 +76,25 @@ def user_code_generator(user_code_length: int = 8) -> str:
         user_code[i] = random.choice(character_space)
 
     return "".join(user_code)
+
+
+def set_oauthlib_user_to_device_request_user(request: Request) -> None:
+    """
+    The user isn't known when the device flow is initiated by a device.
+    All we know is the client_id.
+
+    However, when the user logins in order to submit the user code
+    from the device we now know which user is trying to authenticate
+    their device. We update the device user field at this point
+    and save it in the db.
+
+    This function is added to the pre_token stage during the device code grant's
+    create_token_response where we have the oauthlib Request object which is what's used
+    to populate the user field in the device model
+    """
+    # Since this function is used in the settings module, it will lead to circular imports
+    # since django isn't fully initialised yet when settings run
+    from oauth2_provider.models import Device, get_device_model
+
+    device: Device = get_device_model().objects.get(device_code=request._params["device_code"])
+    request.user = device.user

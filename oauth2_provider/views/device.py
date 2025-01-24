@@ -59,6 +59,9 @@ def device_user_code_view(request):
     user_code: str = form.cleaned_data["user_code"]
     device: Device = get_device_model().objects.get(user_code=user_code)
 
+    device.user = request.user
+    device.save(update_fields=["user"])
+
     if device is None:
         form.add_error("user_code", "Incorrect user code")
         return render(request, "oauth2_provider/device/user_code.html", {"form": form})

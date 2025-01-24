@@ -24,7 +24,7 @@ from django.urls import reverse
 from django.utils.module_loading import import_string
 from oauthlib.common import Request
 
-from oauth2_provider.utils import user_code_generator
+from oauth2_provider.utils import set_oauthlib_user_to_device_request_user, user_code_generator
 
 
 USER_SETTINGS = getattr(settings, "OAUTH2_PROVIDER", None)
@@ -43,7 +43,9 @@ DEFAULTS = {
     "CLIENT_SECRET_HASHER": "default",
     "ACCESS_TOKEN_GENERATOR": None,
     "OAUTH_DEVICE_VERIFICATION_URI": None,
+    "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE": None,
     "OAUTH_DEVICE_USER_CODE_GENERATOR": user_code_generator,
+    "OAUTH_PRE_TOKEN_VALIDATION": [set_oauthlib_user_to_device_request_user],
     "REFRESH_TOKEN_GENERATOR": None,
     "EXTRA_SERVER_KWARGS": {},
     "OAUTH2_SERVER_CLASS": "oauthlib.oauth2.Server",
@@ -276,8 +278,10 @@ class OAuth2ProviderSettings:
                 ("token_generator", "ACCESS_TOKEN_GENERATOR"),
                 ("refresh_token_generator", "REFRESH_TOKEN_GENERATOR"),
                 ("verification_uri", "OAUTH_DEVICE_VERIFICATION_URI"),
+                ("verification_uri_complete", "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE"),
                 ("interval", "DEVICE_FLOW_INTERVAL"),
                 ("user_code_generator", "OAUTH_DEVICE_USER_CODE_GENERATOR"),
+                ("pre_token", "OAUTH_PRE_TOKEN_VALIDATION"),
             ]
         }
         kwargs.update(self.EXTRA_SERVER_KWARGS)
