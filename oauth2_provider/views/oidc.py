@@ -6,8 +6,9 @@ from django.contrib.auth.models import AnonymousUser
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
-from django.views.generic import FormView, View
+from django.views.generic import FormView, TemplateView, View
 from jwcrypto import jwt
 from jwcrypto.common import JWException
 from jwcrypto.jws import InvalidJWSObject
@@ -57,6 +58,10 @@ class ConnectDiscoveryInfoView(OIDCOnlyMixin, View):
             userinfo_endpoint = oauth2_settings.OIDC_USERINFO_ENDPOINT or request.build_absolute_uri(
                 reverse("oauth2_provider:user-info")
             )
+            session_iframe_endpoint = (
+                oauth2_settings.OIDC_SESSION_IFRAME_ENDPOINT
+                or request.build_absolute_uri(reverse("oauth2_provider:session-iframe"))
+            )
             jwks_uri = request.build_absolute_uri(reverse("oauth2_provider:jwks-info"))
             if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
                 end_session_endpoint = request.build_absolute_uri(
@@ -69,6 +74,9 @@ class ConnectDiscoveryInfoView(OIDCOnlyMixin, View):
             token_endpoint = "{}{}".format(host, reverse("oauth2_provider:token"))
             userinfo_endpoint = oauth2_settings.OIDC_USERINFO_ENDPOINT or "{}{}".format(
                 host, reverse("oauth2_provider:user-info")
+            )
+            session_iframe_endpoint = oauth2_settings.OIDC_SESSION_IFRAME_ENDPOINT or "{}{}".format(
+                host, reverse("oauth2_provider:session-iframe")
             )
             jwks_uri = "{}{}".format(host, reverse("oauth2_provider:jwks-info"))
             if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
@@ -103,6 +111,10 @@ class ConnectDiscoveryInfoView(OIDCOnlyMixin, View):
         }
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
             data["end_session_endpoint"] = end_session_endpoint
+
+        if oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED:
+            data["check_session_iframe"] = session_iframe_endpoint
+
         response = JsonResponse(data)
         response["Access-Control-Allow-Origin"] = "*"
         return response
@@ -134,6 +146,23 @@ class JwksInfoView(OIDCOnlyMixin, View):
             + f"stale-if-error={oauth2_settings.OIDC_JWKS_MAX_AGE_SECONDS}"
         )
         return response
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+@method_decorator(login_not_required, name="dispatch")
+@method_decorator(xframe_options_exempt, name="dispatch")
+class SessionIFrameView(OIDCOnlyMixin, OAuthLibMixin, TemplateView):
+    """
+    Render OP Session IFrame:
+    https://openid.net/specs/openid-connect-session-1_0.html#rfc.section.3.2
+    """
+
+    template_name = "oauth2_provider/check_session_iframe.html"
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        context.update({"cookie_name": oauth2_settings.OIDC_SESSION_MANAGEMENT_COOKIE_NAME})
+        return context
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -221,10 +250,7 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
     form_class = ConfirmLogoutForm
     # Only delete tokens for Application whose client type and authorization
     # grant type are in the respective lists.
-    token_deletion_client_types = [
-        Application.CLIENT_PUBLIC,
-        Application.CLIENT_CONFIDENTIAL,
-    ]
+    token_deletion_client_types = [Application.CLIENT_PUBLIC, Application.CLIENT_CONFIDENTIAL]
     token_deletion_grant_types = [
         Application.GRANT_AUTHORIZATION_CODE,
         Application.GRANT_IMPLICIT,
@@ -465,8 +491,7 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
                 return OAuth2ResponseRedirect(post_logout_redirect_uri, application.get_allowed_schemes())
         else:
             return OAuth2ResponseRedirect(
-                self.request.build_absolute_uri("/"),
-                oauth2_settings.ALLOWED_REDIRECT_URI_SCHEMES,
+                self.request.build_absolute_uri("/"), oauth2_settings.ALLOWED_REDIRECT_URI_SCHEMES
             )
 
     def error_response(self, error):

@@ -26,3 +26,16 @@ def validate_token_configuration(app_configs, **kwargs):
         return [checks.Error("The token models are expected to be stored in the same database.")]
 
     return []
+
+
+@checks.register()
+def validate_session_management_configuration(app_configs, **kwargs):
+    oidc_session_enabled = oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED
+    has_default_key = oauth2_settings.OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY is not None
+    if oidc_session_enabled and not has_default_key:
+        return [
+            checks.Error(
+                "OIDC Session management is enabled, OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY is required."
+            )
+        ]
+    return []

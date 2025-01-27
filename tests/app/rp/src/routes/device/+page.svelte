@@ -1,10 +1,11 @@
 <script>
 	import { browser } from '$app/environment';
 	import { onDestroy } from 'svelte';
+	import { env } from '$env/dynamic/public';
 
 	// Configuration
-	const IDP_URL = 'http://127.0.0.1:8000';
-	const CLIENT_ID = 'Qg8AaxKLs1c2W3PR70Sv5QxuSEREicKUlf83iGX3';
+	const IDP_URL = env.PUBLIC_IDP_URL;
+	const CLIENT_ID = env.PUBLIC_DEVICE_CLIENT_ID;
 	const POLLING_INTERVAL = 5000; // 5 seconds
 
 	// State variables
@@ -313,8 +314,8 @@
 			and verification URI.
 		</li>
 		<li>
-			<strong>User authorizes:</strong> The user visits the verification URI on another device
-			(like a phone or computer), enters the user code, and approves the authorization.
+			<strong>User authorizes:</strong> The user visits the verification URI on another device (like
+			a phone or computer), enters the user code, and approves the authorization.
 		</li>
 		<li>
 			<strong>Device polls for token:</strong> Meanwhile, the device polls the token endpoint using
