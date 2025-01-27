@@ -9,8 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 * Support for Django 5.2
 * Support for Python 3.14 (Django >= 5.2.8)
-* #1539 Add device authorization grant support
-
+* Support for OIDC Session Management (https://openid.net/specs/openid-connect-session-1_0.html)
 
 <!--
 ### Changed

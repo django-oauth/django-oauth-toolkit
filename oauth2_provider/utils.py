@@ -1,4 +1,5 @@
 import functools
+import hashlib
 import random
 
 from django.conf import settings
@@ -100,3 +101,14 @@ def set_oauthlib_user_to_device_request_user(request: Request) -> None:
 
     device: DeviceGrant = get_device_grant_model().objects.get(device_code=request._params["device_code"])
     request.user = device.user
+
+
+def session_management_state_key(request):
+    """
+    Determine value to use as session state.
+    """
+
+    from oauth2_provider.settings import oauth2_settings
+
+    key = request.session.session_key or str(oauth2_settings.OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY)
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
