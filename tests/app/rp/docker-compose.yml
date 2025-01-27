@@ -1,0 +1,35 @@
+services:
+  cloudflared:
+    image: cloudflare/cloudflared
+    user: root:root
+    command: tunnel run ${APP_CLOUDFLARE_TUNNEL_ID}
+    networks:
+      - default
+      - internal
+
+    environment:
+      TUNNEL_TOKEN: ${APP_CLOUDFLARE_TUNNEL_TOKEN}
+
+  frontend:
+    user: '${UID:-1000}:${GID:-1000}'
+    build:
+      context: ./
+      target: dev
+    restart: unless-stopped
+    networks:
+      - internal
+    command: pnpm run dev --host
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:5173']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    volumes:
+      - './:/app'
+
+    env_file:
+      - .env
+
+networks:
+  internal:
