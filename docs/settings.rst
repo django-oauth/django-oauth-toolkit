@@ -724,6 +724,37 @@ Default: ``"oauthlib.openid.Server"``
 The import string for the OIDC ``server_class`` used when ``OIDC_ENABLED`` is
 ``True`` and ``OAUTH2_SERVER_CLASS`` is not explicitly configured.
 
+OIDC_SESSION_MANAGEMENT_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Whether `OpenID Connect Session Management 1.0
+<https://openid.net/specs/openid-connect-session-1_0.html>`_ is enabled. When it is,
+successful OIDC authorization responses carry a ``session_state`` parameter, the
+discovery document advertises ``check_session_iframe``, and the OP iframe is served
+so a :term:`Client` (Relying Party) can detect that the End-User's login session
+changed. ``OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY`` must be set as well, and
+``oauth2_provider.authorization_server.oidc.middleware.OIDCSessionManagementMiddleware``
+added to ``MIDDLEWARE``. See :doc:`oidc`.
+
+OIDC_SESSION_MANAGEMENT_COOKIE_NAME
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oidc_ua_agent_state"``
+
+Name of the cookie ``OIDCSessionManagementMiddleware`` writes the OP User Agent state
+to, and that the OP iframe reads to decide whether the End-User's login session is
+still the one that authorized the Relying Party.
+
+OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The stand-in session key used to derive the session state for unauthenticated users.
+It fixes that state to one value across every server process, so a Relying Party is
+not told the session changed merely because another process answered. It has no
+default and is required when ``OIDC_SESSION_MANAGEMENT_ENABLED`` is ``True``: a
+system check fails if it is unset.
+
 OIDC_RSA_PRIVATE_KEY
 ~~~~~~~~~~~~~~~~~~~~
 Default: ``""``
@@ -783,6 +814,18 @@ you prefer to control them with CORS middleware such as `django-cors-headers
 <https://github.com/adamchainz/django-cors-headers>`_. Note that when that middleware is
 installed it answers every CORS preflight before any view runs, so the userinfo path has to be
 allowed there too even when this setting is left on.
+
+OIDC_SESSION_IFRAME_ENDPOINT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``""``
+
+The url of the session frame endpoint. Used to advertise the location of the
+endpoint in the OIDC discovery metadata. Changing this does not change the URL
+that ``django-oauth-toolkit`` adds for the session-iframe endpoint, so if you change
+this you must also provide the service at that endpoint.
+
+If unset, the default location is used, eg if ``django-oauth-toolkit`` is
+mounted at ``/o/``, it will be ``<server-address>/o/session-iframe/``.
 
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~
