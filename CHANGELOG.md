@@ -49,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Replay is detected by recognizing a token a previous rotation superseded, so without
   rotation the protection never fires — a pairing `docs/settings.rst` already documented but
   nothing enforced.
+* #1543 Support for [OIDC Session Management 1.0](https://openid.net/specs/openid-connect-session-1_0.html).
+  Enabling `OIDC_SESSION_MANAGEMENT_ENABLED` (which requires `OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY`)
+  adds a `session_state` parameter to successful OIDC authorization responses, advertises
+  `check_session_iframe` in the discovery document and serves the OP iframe at `session-iframe/`
+  (`SessionIFrameView`). The new
+  `oauth2_provider.authorization_server.oidc.middleware.OIDCSessionManagementMiddleware` keeps the OP
+  user agent state cookie in sync with the user's login session. See `docs/oidc.rst`.
 * Support for OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126). A new `par/` endpoint
   (`PushedAuthorizationRequestView`) lets clients push authorization request parameters over an
   authenticated back channel in exchange for a single-use `request_uri`, stored on the swappable

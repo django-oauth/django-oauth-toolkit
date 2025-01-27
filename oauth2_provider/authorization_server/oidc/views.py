@@ -5,8 +5,9 @@ from django.contrib.auth import logout
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
-from django.views.generic import FormView, View
+from django.views.generic import FormView, TemplateView, View
 from jwcrypto import jwt
 from jwcrypto.common import JWException
 from jwcrypto.jws import InvalidJWSObject
@@ -113,6 +114,12 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             data["end_session_endpoint"] = self._get_endpoint_url(
                 request, "rp-initiated-logout", required=True
             )
+
+        if oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED:
+            data["check_session_iframe"] = oauth2_settings.OIDC_SESSION_IFRAME_ENDPOINT or (
+                self._get_endpoint_url(request, "session-iframe", required=True)
+            )
+
         response = JsonResponse(data)
         response["Access-Control-Allow-Origin"] = "*"
         return response
@@ -144,6 +151,23 @@ class JwksInfoView(OIDCOnlyMixin, View):
             + f"stale-if-error={oauth2_settings.OIDC_JWKS_MAX_AGE_SECONDS}"
         )
         return response
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+@method_decorator(login_not_required, name="dispatch")
+@method_decorator(xframe_options_exempt, name="dispatch")
+class SessionIFrameView(OIDCOnlyMixin, AuthorizationServerViewMixin, TemplateView):
+    """
+    Render OP Session IFrame:
+    https://openid.net/specs/openid-connect-session-1_0.html#rfc.section.3.2
+    """
+
+    template_name = "oauth2_provider/check_session_iframe.html"
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        context.update({"cookie_name": oauth2_settings.OIDC_SESSION_MANAGEMENT_COOKIE_NAME})
+        return context
 
 
 @method_decorator(csrf_exempt, name="dispatch")

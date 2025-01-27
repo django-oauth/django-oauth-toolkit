@@ -1,4 +1,4 @@
-"""OpenID Connect Provider URL patterns (discovery, JWKS, userinfo, logout).
+"""OpenID Connect Provider URL patterns (discovery, JWKS, userinfo, session iframe, logout).
 
 Aggregated into the root ``oauth2_provider.urls`` under the ``oauth2_provider``
 URL namespace.
@@ -10,6 +10,7 @@ from oauth2_provider.authorization_server.oidc.views import (
     ConnectDiscoveryInfoView,
     JwksInfoView,
     RPInitiatedLogoutView,
+    SessionIFrameView,
     UserInfoView,
 )
 
@@ -26,5 +27,6 @@ oidc_urlpatterns = [
     ),
     path(".well-known/jwks.json", JwksInfoView.as_view(), name="jwks-info"),
     path("userinfo/", UserInfoView.as_view(), name="user-info"),
+    path("session-iframe/", SessionIFrameView.as_view(), name="session-iframe"),
     path("logout/", RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
 ]
