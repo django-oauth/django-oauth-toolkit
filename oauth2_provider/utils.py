@@ -1,4 +1,5 @@
 import functools
+import hashlib
 import random
 
 from django.conf import settings
@@ -100,3 +101,26 @@ def set_oauthlib_user_to_device_request_user(request: Request) -> None:
 
     device: DeviceGrant = get_device_grant_model().objects.get(device_code=request._params["device_code"])
     request.user = device.user
+
+
+def session_management_state_key(request):
+    """
+    Determine value to use as session state.
+    """
+
+    from oauth2_provider.settings import oauth2_settings
+
+    # Prefer the actual session cookie value when available, since some
+    # session engines (e.g. signed-cookie sessions) do not provide a
+    # usable session_key.
+    cookie_name = getattr(settings, "SESSION_COOKIE_NAME", None)
+    session_cookie_value = None
+    if cookie_name:
+        session_cookie_value = request.COOKIES.get(cookie_name)
+    if session_cookie_value is not None:
+        raw_key = session_cookie_value
+    elif getattr(request, "session", None) is not None and getattr(request.session, "session_key", None):
+        raw_key = request.session.session_key
+    else:
+        raw_key = str(oauth2_settings.OIDC_SESSION_MANAGEMENT_DEFAULT_KEY)
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()

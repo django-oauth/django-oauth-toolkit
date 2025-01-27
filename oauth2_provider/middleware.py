@@ -5,6 +5,8 @@ from django.contrib.auth import authenticate
 from django.utils.cache import patch_vary_headers
 
 from oauth2_provider.models import get_access_token_model
+from oauth2_provider.settings import oauth2_settings
+from oauth2_provider.utils import session_management_state_key
 
 
 log = logging.getLogger(__name__)
@@ -63,4 +65,22 @@ class OAuth2ExtraTokenMiddleware:
             except AccessToken.DoesNotExist as e:
                 log.exception(e)
         response = self.get_response(request)
+        return response
+
+
+class OIDCSessionManagementMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if not oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED:
+            return response
+
+        cookie_name = oauth2_settings.OIDC_SESSION_MANAGEMENT_COOKIE_NAME
+        if request.user.is_authenticated:
+            session_state_key = session_management_state_key(request)
+            response.set_cookie(cookie_name, session_state_key, samesite="None", secure=True)
+        else:
+            response.delete_cookie(cookie_name, samesite="None")
         return response
