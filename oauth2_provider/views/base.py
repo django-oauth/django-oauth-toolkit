@@ -323,10 +323,18 @@ class TokenView(OAuthLibMixin, View):
         device = Device.objects.get(device_code=device_code)
 
         if device.status == device.AUTHORIZATION_PENDING:
-            raise AuthorizationPendingError
+            pending_error = AuthorizationPendingError()
+            return http.HttpResponse(
+                content=pending_error.json, status=pending_error.status_code, content_type="application/json"
+            )
 
         if device.status == device.DENIED:
-            raise AccessDenied
+            access_denied_error = AccessDenied()
+            return http.HttpResponse(
+                content=access_denied_error.json,
+                status=access_denied_error.status_code,
+                content_type="application/json",
+            )
 
         url, headers, body, status = self.create_token_response(request)
 
