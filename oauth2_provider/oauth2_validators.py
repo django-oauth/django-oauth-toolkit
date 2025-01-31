@@ -52,6 +52,7 @@ GRANT_TYPE_MAPPING = {
     "client_credentials": (AbstractApplication.GRANT_CLIENT_CREDENTIALS,),
     "refresh_token": (
         AbstractApplication.GRANT_AUTHORIZATION_CODE,
+        AbstractApplication.GRANT_DEVICE_CODE,
         AbstractApplication.GRANT_PASSWORD,
         AbstractApplication.GRANT_CLIENT_CREDENTIALS,
         AbstractApplication.GRANT_OPENID_HYBRID,
