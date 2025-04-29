@@ -7,4 +7,4 @@ class DOTConfig(AppConfig):
 
     def ready(self):
         # Import checks to ensure they run.
-        from . import checks  # noqa: F401
+        from . import checks, handlers  # noqa: F401

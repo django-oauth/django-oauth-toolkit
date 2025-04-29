@@ -26,3 +26,18 @@ def validate_token_configuration(app_configs, **kwargs):
         return [checks.Error("The token models are expected to be stored in the same database.")]
 
     return []
+
+
+@checks.register()
+def validate_backchannel_logout(app_configs, **kwargs):
+    errors = []
+
+    if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+        if not oauth2_settings.OIDC_ENABLED:
+            errors.append(checks.Error("OIDC_ENABLED must be True to enable OIDC backchannel logout."))
+        if not callable(oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_HANDLER):
+            errors.append(checks.Error("OIDC_BACKCHANNEL_LOGOUT_HANDLER must be a callable."))
+        if not oauth2_settings.OIDC_ISS_ENDPOINT:
+            errors.append(checks.Error("OIDC_ISS_ENDPOINT must be set to enable OIDC backchannel logout."))
+
+    return errors
