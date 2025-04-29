@@ -101,6 +101,8 @@ DEFAULTS = {
         "client_secret_post",
         "client_secret_basic",
     ],
+    "OIDC_BACKCHANNEL_LOGOUT_ENABLED": False,
+    "OIDC_BACKCHANNEL_LOGOUT_HANDLER": "oauth2_provider.handlers.send_backchannel_logout_request",
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
     "OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT": True,
     "OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS": False,
@@ -154,6 +156,7 @@ IMPORT_STRINGS = (
     "GRANT_ADMIN_CLASS",
     "ID_TOKEN_ADMIN_CLASS",
     "REFRESH_TOKEN_ADMIN_CLASS",
+    "OIDC_BACKCHANNEL_LOGOUT_HANDLER",
 )
 
 
