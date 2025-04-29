@@ -170,6 +170,7 @@ class AbstractApplication(models.Model):
     * :attr:`userinfo_signed_response_alg` The JWS ``alg`` the UserInfo response is
                                            signed with (OpenID Connect Core 1.0
                                            section 5.3.2). Blank returns plain JSON.
+    * :attr:`backchannel_logout_uri` Backchannel Logout URI (OIDC-only)
     """
 
     class RegistrationSource(models.TextChoices):
@@ -432,6 +433,12 @@ class AbstractApplication(models.Model):
             "access token issued to it, or, if it is confidential, by authenticating as itself."
         ),
         verbose_name=_("can introspect tokens"),
+    )
+    backchannel_logout_uri = models.URLField(
+        blank=True,
+        null=True,
+        help_text=_("Backchannel Logout URI where logout tokens will be sent"),
+        verbose_name=_("backchannel logout uri"),
     )
 
     class Meta:
