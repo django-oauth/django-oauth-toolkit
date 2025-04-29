@@ -35,6 +35,10 @@ class OIDCError(Exception):
         super().__init__(message)
 
 
+class BackchannelLogoutRequestError(OIDCError):
+    error = "backchannel_logout_request_failed"
+
+
 class InvalidRequestFatalError(OIDCError):
     """
     For fatal errors. These are requests with invalid parameter values, missing parameters or otherwise
