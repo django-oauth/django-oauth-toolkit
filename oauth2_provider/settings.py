@@ -258,6 +258,11 @@ DEFAULTS = {
     # RP-Initiated Registration (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
     "OIDC_RP_INITIATED_REGISTRATION_URL": None,
+    # Back-Channel Logout (OP notifying relying parties out of band)
+    "OIDC_BACKCHANNEL_LOGOUT_ENABLED": False,
+    "OIDC_BACKCHANNEL_LOGOUT_HANDLER": (
+        "oauth2_provider.authorization_server.oidc.handlers.send_backchannel_logout_request"
+    ),
     # RP-Initiated Logout (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
     "OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT": True,
@@ -343,6 +348,7 @@ IMPORT_STRINGS = (
     "ALLOWED_ORIGIN_VALIDATOR",
     "CIMD_METADATA_FETCHER",
     "CIMD_REGISTRATION_PERMISSION_CLASSES",
+    "OIDC_BACKCHANNEL_LOGOUT_HANDLER",
 )
 
 

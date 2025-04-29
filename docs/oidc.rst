@@ -179,6 +179,29 @@ verified is still rejected, and a ``client_id`` given alongside it is still requ
 the ID Token was issued for.
 
 
+Backchannel Logout Support
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+`Backchannel Logout`_ is an extension to the core standard which
+allows the OP to send direct requests to terminate sessions at the RP.
+
+.. code-block:: python
+
+   OAUTH2_PROVIDER = {
+       # OIDC has to be enabled to use Backchannel logout
+       "OIDC_ENABLED": True,
+       "OIDC_ISS_ENDPOINT": "https://idp.example.com", # Required for issuing logout tokens
+       # Enable and configure Backchannel Logout Support
+       "OIDC_BACKCHANNEL_LOGOUT_ENABLED": True,
+       # ... any other settings you want
+   }
+
+.. _Backchannel Logout: https://openid.net/specs/openid-connect-backchannel-1_0.html
+
+To make use of this, the application being created needs to provide a
+valid ``backchannel_logout_uri``.
+
+
 Setting up OIDC enabled clients
 ===============================
 

@@ -163,6 +163,7 @@ class AbstractApplication(models.Model):
     * :attr:`require_pushed_authorization_requests` Whether this client may only
                               start an authorization request via PAR (:rfc:`9126`).
                               ``None`` defers to the server-wide setting.
+    * :attr:`backchannel_logout_uri` Backchannel Logout URI (OIDC-only)
     """
 
     class RegistrationSource(models.TextChoices):
@@ -339,6 +340,12 @@ class AbstractApplication(models.Model):
             "Leave unset to defer to the REQUIRE_PUSHED_AUTHORIZATION_REQUESTS setting."
         ),
         verbose_name=_("require pushed authorization requests"),
+    )
+    backchannel_logout_uri = models.URLField(
+        blank=True,
+        null=True,
+        help_text=_("Backchannel Logout URI where logout tokens will be sent"),
+        verbose_name=_("backchannel logout uri"),
     )
 
     class Meta:

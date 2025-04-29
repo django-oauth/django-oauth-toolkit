@@ -109,6 +109,11 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
             data["prompt_values_supported"].append("create")
 
+        if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+            data["backchannel_logout_supported"] = True
+            # We need to issue SID claims on tokens to support this.
+            data["backchannel_logout_session_supported"] = False
+
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
             data["end_session_endpoint"] = self._get_endpoint_url(
                 request, "rp-initiated-logout", required=True

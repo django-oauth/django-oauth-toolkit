@@ -871,6 +871,20 @@ This setting is required when ``OIDC_RP_INITIATED_REGISTRATION_ENABLED`` is
 ``True``: if it is unset or cannot be resolved, ``ImproperlyConfigured`` is
 raised when a ``prompt=create`` request is received.
 
+OIDC_BACKCHANNEL_LOGOUT_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When is set to ``False`` (default) the `OpenID Connect Backchannel Logout <https://openid.net/specs/openid-connect-backchannel-1_0.html>`_
+extension is not enabled. OpenID Connect Backchannel Logout enables the :term:`Authorization Server` (OpenID Provider) to submit a JWT token to an endpoint controlled by the :term:`Client` (Relying Party)
+indicating that a session from the :term:`Resource Owner` (End User) has ended.
+
+OIDC_BACKCHANNEL_LOGOUT_HANDLER
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``oauth2_provider.authorization_server.oidc.handlers.send_backchannel_logout_request``
+
+Upon logout, the :term:`Authorization Server` (OpenID Provider)  will look for all ID Tokens associated with the user on applications that support Backchannel Logout. For every id token that is found, the function defined here will be called. The default function can be used as-is, but if you need to override or customize it somehow (e.g, if you do not want to execute these requests on the same HTTP request-response from the user logout view), you can change this setting to any function that takes ``id_token`` as a keyword argument.
+
 OIDC_RP_INITIATED_LOGOUT_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``
