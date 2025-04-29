@@ -28,6 +28,21 @@ class ApplicationFormMixin:
     # Default field set, used when the configured form declares no Meta.fields / Meta.exclude.
     fields = APPLICATION_FIELDS
 
+    def get_fields(self) -> list[str]:
+        """The field set applied when the configured form declares none of its own.
+
+        A field backing an optional feature is only offered while that feature is
+        enabled, so a deployment that does not use it is not asked to fill in a field
+        that would be ignored. A form declaring its own ``Meta.fields`` opts out of this,
+        the same way it opts out of ``fields``.
+        """
+        fields = list(self.fields)
+
+        if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+            fields.append("backchannel_logout_uri")
+
+        return fields
+
     def get_form_class(self):
         """Build the ModelForm used by the registration and update views.
 
@@ -45,7 +60,7 @@ class ApplicationFormMixin:
         model = get_application_model()
         if modelform_defines_fields(form_class):
             return modelform_factory(model, form=form_class)
-        return modelform_factory(model, form=form_class, fields=self.fields)
+        return modelform_factory(model, form=form_class, fields=self.get_fields())
 
     def form_valid(self, form):
         # The application is always owned by the request user; a configured form exposing
