@@ -1,4 +1,4 @@
-Device authorization grant flow
+Part 6 - Device authorization grant flow
 ====================================================
 
 Scenario
@@ -24,7 +24,7 @@ Fill the form as shown in the screenshot below, and before saving, take note of 
 Make sure the client type is set to "Public." There are cases where a confidential client makes sense,
 but generally, it is assumed the device is unable to safely store the client secret.
 
-.. image:: _images/application-register-device-code.png
+.. image:: ../_images/application-register-device-code.png
    :alt: Device Authorization application registration
 
 Ensure the setting ``OAUTH_DEVICE_VERIFICATION_URI`` is set to a URI you want to return in the
@@ -47,7 +47,7 @@ To initiate device authorization, send this request:
 
     curl --location 'http://127.0.0.1:8000/o/device-authorization/' \
         --header 'Content-Type: application/x-www-form-urlencoded' \
-        --data-urlencode 'client_id={your application\'s client id}'
+        --data-urlencode 'client_id={your application client id}'
 
 The OAuth2 provider will return the following response:
 
@@ -63,7 +63,7 @@ The OAuth2 provider will return the following response:
 
 Go to `http://127.0.0.1:8000/o/device` in your browser.
 
-.. image:: _images/device-enter-code-displayed.png
+.. image:: ../_images/device-enter-code-displayed.png
 
 Enter the code, and it will redirect you to the device-confirm endpoint.
 
@@ -71,12 +71,10 @@ Device-confirm endpoint
 -----------------------
 Device polling occurs concurrently while the user approves or denies the request.
 
-.. image:: _images/device-approve-deny.png
+.. image:: ../_images/device-approve-deny.png
 
 Device polling
 --------------
-Note: You should already have the `/token` endpoint implemented in your authorization server before this.
-
 Send the following request (in the real world, the device makes this request):
 
 .. code-block:: sh
