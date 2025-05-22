@@ -30,18 +30,22 @@ but generally, it is assumed the device is unable to safely store the client sec
 Ensure the setting ``OAUTH_DEVICE_VERIFICATION_URI`` is set to a URI you want to return in the
 `verification_uri` key in the response. This is what the device will display to the user.
 
-1: Navigate to the tests/app/idp directory:
+1. Navigate to the tests/app/idp directory:
 
 .. code-block:: sh
 
     cd tests/app/idp
 
 then start the server
+
 .. code-block:: sh
 
     python manage.py runserver
 
-To initiate device authorization, send this request:
+.. _RFC: https://www.rfc-editor.org/rfc/rfc8628
+
+2. To initiate device authorization, send this request (in the real world, the device
+makes this request). In `RFC`_ Figure 1, this is step (A).
 
 .. code-block:: sh
 
@@ -49,7 +53,7 @@ To initiate device authorization, send this request:
         --header 'Content-Type: application/x-www-form-urlencoded' \
         --data-urlencode 'client_id={your application client id}'
 
-The OAuth2 provider will return the following response:
+The OAuth2 provider will return the following response. In `RFC`_ Figure 1, this is step (B).
 
 .. code-block:: json
 
@@ -61,31 +65,41 @@ The OAuth2 provider will return the following response:
         "interval": 5
     }
 
-Go to `http://127.0.0.1:8000/o/device` in your browser.
+In the real world, the device will somehow make the value of the `user_code` available to the user (either on-screen display,
+or Bluetooth, NFC, etc.). In `RFC`_ Figure 1, this is step (C).
+
+3. Go to `http://127.0.0.1:8000/o/device` in your browser.
 
 .. image:: ../_images/device-enter-code-displayed.png
 
-Enter the code, and it will redirect you to the device-confirm endpoint.
+Enter the code, and it will redirect you to the device-confirm endpoint. In `RFC`_ Figure 1, this is step (D).
 
 Device-confirm endpoint
 -----------------------
-Device polling occurs concurrently while the user approves or denies the request.
+4. Device polling occurs concurrently while the user approves or denies the request.
 
 .. image:: ../_images/device-approve-deny.png
 
 Device polling
 --------------
-Send the following request (in the real world, the device makes this request):
+Send the following request (in the real world, the device makes this request). In `RFC`_ Figure 1, this is step (E).
 
 .. code-block:: sh
 
     curl --location 'http://localhost:8000/o/token/' \
         --header 'Content-Type: application/x-www-form-urlencoded' \
         --data-urlencode 'device_code={the device code from the device-authorization response}' \
-        --data-urlencode 'client_id={your application\'s client id}' \
+        --data-urlencode 'client_id={your application client id}' \
         --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code'
 
-The response will be similar to this:
+In `RFC`_ Figure 1, there are two options for step (F). Until the user enters the code in the browser and approves,
+the response will be 400:
+
+.. code-block:: json
+
+    {"error": "authorization_pending"}
+
+After the user approves, the response will be 200:
 
 .. code-block:: json
 
