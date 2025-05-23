@@ -2,16 +2,13 @@ import json
 
 from django import forms, http
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import View
 from oauthlib.oauth2 import DeviceApplicationServer
-from oauthlib.oauth2.rfc8628.errors import (
-    AccessDenied,
-    ExpiredTokenError,
-)
 
 from oauth2_provider.compat import login_not_required
 from oauth2_provider.models import Device, DeviceCodeResponse, DeviceRequest, create_device, get_device_model
@@ -41,52 +38,71 @@ class DeviceForm(forms.Form):
     user_code = forms.CharField(required=True)
 
 
-# it's common to see in real world products
-# device flow's only asking the user to sign in after they input the
-# user code but since the user has to be signed in regardless to approve the
-# device login we're making the decision here to require being logged in
-# up front
 @login_required
 def device_user_code_view(request):
+    """
+    The view where the user is instructed (by the device) to come to in order to
+    enter the user code. More details in this section of the RFC:
+    https://datatracker.ietf.org/doc/html/rfc8628#section-3.3
+
+    Note: it's common to see in other implementations of this RFC that only ask the
+    user to sign in after they input the user code but since the user has to be signed
+    in regardless, to approve the device login we're making the decision here, for
+    simplicity, to require being logged in up front.
+    """
     form = DeviceForm(request.POST)
 
     if request.method != "POST":
         return render(request, "oauth2_provider/device/user_code.html", {"form": form})
 
     if not form.is_valid():
-        return render(request, "oauth2_provider/device/user_code.html", {"form": form})
+        form.add_error(None, "Form invalid")
+        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=400)
 
     user_code: str = form.cleaned_data["user_code"]
-    device: Device = get_device_model().objects.get(user_code=user_code)
+    try:
+        device: Device = get_device_model().objects.get(user_code=user_code)
+    except Device.DoesNotExist:
+        form.add_error("user_code", "Incorrect user code")
+        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=404)
 
     device.user = request.user
     device.save(update_fields=["user"])
 
-    if device is None:
-        form.add_error("user_code", "Incorrect user code")
-        return render(request, "oauth2_provider/device/user_code.html", {"form": form})
-
     if device.is_expired():
-        device.status = device.EXPIRED
-        device.save(update_fields=["status"])
-        raise ExpiredTokenError
+        form.add_error("user_code", "Expired user code")
+        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=400)
 
     # User of device has already made their decision for this device
-    if device.status in (device.DENIED, device.AUTHORIZED):
-        raise AccessDenied
+    if device.status != device.AUTHORIZATION_PENDING:
+        form.add_error("user_code", "User code has already been used")
+        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=400)
 
     # 308 to indicate we want to keep the redirect being a POST request
     return http.HttpResponsePermanentRedirect(
-        reverse("oauth2_provider:device-confirm", kwargs={"device_code": device.device_code}), status=308
+        reverse(
+            "oauth2_provider:device-confirm",
+            kwargs={"client_id": device.client_id, "user_code": user_code},
+        ),
+        status=308,
     )
 
 
 @login_required
-def device_confirm_view(request: http.HttpRequest, device_code: str):
-    device: Device = get_device_model().objects.get(device_code=device_code)
+def device_confirm_view(request: http.HttpRequest, client_id: str, user_code: str):
+    try:
+        device: Device = get_device_model().objects.get(
+            # there is a db index on client_id
+            Q(client_id=client_id) & Q(user_code=user_code)
+        )
+    except Device.DoesNotExist:
+        return http.HttpResponseNotFound("<h1>Device not found</h1>")
 
-    if device.status in (device.AUTHORIZED, device.DENIED):
-        return http.HttpResponse("Invalid")
+    if device.status != device.AUTHORIZATION_PENDING:
+        # AUTHORIZATION_PENDING is the only accepted state, anything else implies
+        # that the user already approved/denied OR the deadline has passed (aka
+        # expired)
+        return http.HttpResponseBadRequest("Invalid")
 
     action = request.POST.get("action")
 

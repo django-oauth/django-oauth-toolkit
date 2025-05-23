@@ -43,6 +43,7 @@ then start the server
     python manage.py runserver
 
 .. _RFC: https://www.rfc-editor.org/rfc/rfc8628
+.. _RFC section 3.5: https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
 
 2. To initiate device authorization, send this request (in the real world, the device
 makes this request). In `RFC`_ Figure 1, this is step (A).
@@ -92,14 +93,27 @@ Send the following request (in the real world, the device makes this request). I
         --data-urlencode 'client_id={your application client id}' \
         --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code'
 
-In `RFC`_ Figure 1, there are two options for step (F). Until the user enters the code in the browser and approves,
-the response will be 400:
+In `RFC`_ Figure 1, there are multiple options for step (F), as per `RFC section 3.5`_. Until the user enters the code
+in the browser and approves, the response will be 400:
 
 .. code-block:: json
 
     {"error": "authorization_pending"}
 
-After the user approves, the response will be 200:
+Or if the user has denied the device, the response is 400:
+
+.. code-block:: json
+
+    {"error": "access_denied"}
+
+Or if the token has expired, the response is 400:
+
+.. code-block:: json
+
+    {"error": "expired_token"}
+
+
+However, after the user approves, the response will be 200:
 
 .. code-block:: json
 

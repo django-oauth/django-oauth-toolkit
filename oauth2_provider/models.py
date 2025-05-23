@@ -698,10 +698,19 @@ class AbstractDevice(models.Model):
 
     def is_expired(self):
         """
-        Check device flow session expiration.
+        Check device flow session expiration and set the status to "expired" if current time
+        is past the "expires" deadline.
         """
+        if self.status == self.EXPIRED:
+            return True
+
         now = datetime.now(tz=dt_timezone.utc)
-        return now >= self.expires
+        if now >= self.expires:
+            self.status = self.EXPIRED
+            self.save(update_fields=["status"])
+            return True
+
+        return False
 
 
 class DeviceManager(models.Manager):

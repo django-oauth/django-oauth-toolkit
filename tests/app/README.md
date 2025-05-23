@@ -29,9 +29,9 @@ password: password
 
   You can update data in the IDP and then dump the data to a new seed file as follows.
 
-  ```
+```
 python -Xutf8 ./manage.py dumpdata -e sessions  -e admin.logentry -e auth.permission -e contenttypes.contenttype -e oauth2_provider.accesstoken  -e oauth2_provider.refreshtoken -e oauth2_provider.idtoken --natural-foreign --natural-primary --indent 2 > fixtures/seed.json
-  ```
+```
 
 ## /test/app/rp
 

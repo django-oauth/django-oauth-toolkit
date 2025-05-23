@@ -13,10 +13,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
-from oauthlib.oauth2.rfc8628.errors import (
-    AccessDenied,
-    AuthorizationPendingError,
-)
+from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
 from oauth2_provider.models import Device
 
@@ -320,34 +317,56 @@ class TokenView(OAuthLibMixin, View):
     def device_flow_token_response(
         self, request: http.HttpRequest, device_code: str, *args, **kwargs
     ) -> http.HttpResponse:
-        device = Device.objects.get(device_code=device_code)
-
-        if device.status == device.AUTHORIZATION_PENDING:
-            pending_error = AuthorizationPendingError()
-            return http.HttpResponse(
-                content=pending_error.json, status=pending_error.status_code, content_type="application/json"
+        try:
+            device = Device.objects.get(device_code=device_code)
+        except Device.DoesNotExist:
+            # The RFC does not mention what to return when the device is not found,
+            # but to keep it consistent with the other errors, we return the error
+            # in json format with an "error" key and the value formatted in the same
+            # way.
+            return http.HttpResponseNotFound(
+                content='{"error": "device_not_found"}',
+                content_type="application/json",
             )
 
-        if device.status == device.DENIED:
-            access_denied_error = AccessDenied()
+        # Here we are returning the errors according to
+        # https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
+        # TODO: "slow_down" error (essentially rate-limiting).
+        if device.status == device.AUTHORIZATION_PENDING:
+            error = rfc8628_errors.AuthorizationPendingError()
+        elif device.status == device.DENIED:
+            error = rfc8628_errors.AccessDenied()
+        elif device.status == device.EXPIRED:
+            error = rfc8628_errors.ExpiredTokenError()
+        elif device.status != device.AUTHORIZED:
+            # It's technically impossible to get here because we've exhausted
+            # all the possible values for status. However, it does act as a
+            # reminder for developers when they add, in the future, new values
+            # (such as slow_down) that they must handle here.
+            return http.HttpResponseServerError(
+                content='{"error": "internal_error"}',
+                content_type="application/json",
+            )
+        else:
+            # AUTHORIZED is the only accepted state, anything else is
+            # rejected.
+            error = None
+
+        if error:
             return http.HttpResponse(
-                content=access_denied_error.json,
-                status=access_denied_error.status_code,
+                content=error.json,
+                status=error.status_code,
                 content_type="application/json",
             )
 
         url, headers, body, status = self.create_token_response(request)
-
         if status != 200:
             return http.JsonResponse(data=json.loads(body), status=status)
 
         response = http.JsonResponse(data=json.loads(body), status=status)
-
         for k, v in headers.items():
             response[k] = v
 
-        device.status = device.EXPIRED
-        device.save(update_fields=["status"])
         return response
 
     def post(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
