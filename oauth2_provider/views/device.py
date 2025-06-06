@@ -11,7 +11,13 @@ from django.views.generic import View
 from oauthlib.oauth2 import DeviceApplicationServer
 
 from oauth2_provider.compat import login_not_required
-from oauth2_provider.models import Device, DeviceCodeResponse, DeviceRequest, create_device, get_device_model
+from oauth2_provider.models import (
+    DeviceCodeResponse,
+    DeviceGrant,
+    DeviceRequest,
+    create_device_grant,
+    get_device_grant_model,
+)
 from oauth2_provider.views.mixins import OAuthLibMixin
 
 
@@ -29,7 +35,7 @@ class DeviceAuthorizationView(OAuthLibMixin, View):
             return http.JsonResponse(data=json.loads(response), status=status, headers=headers)
 
         device_response = DeviceCodeResponse(**response)
-        create_device(device_request, device_response)
+        create_device_grant(device_request, device_response)
 
         return http.JsonResponse(data=response, status=status, headers=headers)
 
@@ -61,8 +67,8 @@ def device_user_code_view(request):
 
     user_code: str = form.cleaned_data["user_code"]
     try:
-        device: Device = get_device_model().objects.get(user_code=user_code)
-    except Device.DoesNotExist:
+        device: DeviceGrant = get_device_grant_model().objects.get(user_code=user_code)
+    except DeviceGrant.DoesNotExist:
         form.add_error("user_code", "Incorrect user code")
         return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=404)
 
@@ -91,11 +97,11 @@ def device_user_code_view(request):
 @login_required
 def device_confirm_view(request: http.HttpRequest, client_id: str, user_code: str):
     try:
-        device: Device = get_device_model().objects.get(
+        device: DeviceGrant = get_device_grant_model().objects.get(
             # there is a db index on client_id
             Q(client_id=client_id) & Q(user_code=user_code)
         )
-    except Device.DoesNotExist:
+    except DeviceGrant.DoesNotExist:
         return http.HttpResponseNotFound("<h1>Device not found</h1>")
 
     if device.status != device.AUTHORIZATION_PENDING:

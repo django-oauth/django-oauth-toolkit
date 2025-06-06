@@ -13,7 +13,7 @@ import oauth2_provider.models
 from oauth2_provider.models import (
     get_access_token_model,
     get_application_model,
-    get_device_model,
+    get_device_grant_model,
     get_refresh_token_model,
 )
 from oauth2_provider.utils import set_oauthlib_user_to_device_request_user
@@ -26,7 +26,7 @@ Application = get_application_model()
 AccessToken = get_access_token_model()
 RefreshToken = get_refresh_token_model()
 UserModel = get_user_model()
-DeviceModel: oauth2_provider.models.Device = get_device_model()
+DeviceModel: oauth2_provider.models.DeviceGrant = get_device_grant_model()
 
 
 @pytest.mark.usefixtures("oauth2_settings")

@@ -655,7 +655,7 @@ class IDToken(AbstractIDToken):
         swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
 
 
-class AbstractDevice(models.Model):
+class AbstractDeviceGrant(models.Model):
     class Meta:
         abstract = True
         constraints = [
@@ -718,11 +718,11 @@ class DeviceManager(models.Manager):
         return self.get(client_id=client_id, device_code=device_code, user_code=user_code)
 
 
-class Device(AbstractDevice):
+class DeviceGrant(AbstractDeviceGrant):
     objects = DeviceManager()
 
-    class Meta(AbstractDevice.Meta):
-        swappable = "OAUTH2_PROVIDER_DEVICE_MODEL"
+    class Meta(AbstractDeviceGrant.Meta):
+        swappable = "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL"
 
     def natural_key(self):
         return (self.client_id, self.device_code, self.user_code)
@@ -746,10 +746,10 @@ class DeviceCodeResponse:
     verification_uri_complete: Optional[Union[str, Callable]] = None
 
 
-def create_device(device_request: DeviceRequest, device_response: DeviceCodeResponse) -> Device:
+def create_device_grant(device_request: DeviceRequest, device_response: DeviceCodeResponse) -> DeviceGrant:
     now = datetime.now(tz=dt_timezone.utc)
 
-    return Device.objects.create(
+    return DeviceGrant.objects.create(
         client_id=device_request.client_id,
         device_code=device_response.device_code,
         user_code=device_response.user_code,
@@ -763,9 +763,9 @@ def get_application_model():
     return apps.get_model(oauth2_settings.APPLICATION_MODEL)
 
 
-def get_device_model():
-    """Return the Device model that is active in this project."""
-    return apps.get_model(oauth2_settings.DEVICE_MODEL)
+def get_device_grant_model():
+    """Return the DeviceGrant model that is active in this project."""
+    return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
 
 
 def get_grant_model():

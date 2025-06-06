@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
             field=models.CharField(choices=[('authorization-code', 'Authorization code'), ('urn:ietf:params:oauth:grant-type:device_code', 'Device Code'), ('implicit', 'Implicit'), ('password', 'Resource owner password-based'), ('client-credentials', 'Client credentials'), ('openid-hybrid', 'OpenID connect hybrid')], max_length=44),
         ),
         migrations.CreateModel(
-            name='Device',
+            name='DeviceGrant',
             fields=[
                 ('id', models.BigAutoField(primary_key=True, serialize=False)),
                 ('device_code', models.CharField(max_length=100, unique=True)),
@@ -34,8 +34,8 @@ class Migration(migrations.Migration):
             ],
             options={
                 'abstract': False,
-                'swappable': 'OAUTH2_PROVIDER_DEVICE_MODEL',
-                'constraints': [models.UniqueConstraint(fields=('device_code',), name='oauth2_provider_device_unique_device_code')],
+                'swappable': 'OAUTH2_PROVIDER_DEVICE_GRANT_MODEL',
+                'constraints': [models.UniqueConstraint(fields=('device_code',), name='oauth2_provider_devicegrant_unique_device_code')],
             },
         ),
     ]

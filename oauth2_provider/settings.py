@@ -30,7 +30,7 @@ from oauth2_provider.utils import set_oauthlib_user_to_device_request_user, user
 USER_SETTINGS = getattr(settings, "OAUTH2_PROVIDER", None)
 
 APPLICATION_MODEL = getattr(settings, "OAUTH2_PROVIDER_APPLICATION_MODEL", "oauth2_provider.Application")
-DEVICE_MODEL = getattr(settings, "OAUTH2_PROVIDER_DEVICE_MODEL", "oauth2_provider.Device")
+DEVICE_GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL", "oauth2_provider.DeviceGrant")
 ACCESS_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL", "oauth2_provider.AccessToken")
 ID_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ID_TOKEN_MODEL", "oauth2_provider.IDToken")
 GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_GRANT_MODEL", "oauth2_provider.Grant")
@@ -68,7 +68,7 @@ DEFAULTS = {
     "APPLICATION_MODEL": APPLICATION_MODEL,
     "ACCESS_TOKEN_MODEL": ACCESS_TOKEN_MODEL,
     "ID_TOKEN_MODEL": ID_TOKEN_MODEL,
-    "DEVICE_MODEL": DEVICE_MODEL,
+    "DEVICE_GRANT_MODEL": DEVICE_GRANT_MODEL,
     "DEVICE_FLOW_INTERVAL": 5,
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
