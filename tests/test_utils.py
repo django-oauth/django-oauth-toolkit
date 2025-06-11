@@ -1,3 +1,5 @@
+import pytest
+
 from oauth2_provider import utils
 
 
@@ -25,3 +27,24 @@ CQDpSvwIvDMSIQIJAMDk47DzG9FHAghtvg1TWpy3oQIJAL6NHlS+RBufAgkA6QLA
     jwk3 = utils.jwk_from_pem(a_different_tiny_rsa_key)
 
     assert jwk3 is not jwk1
+
+
+def test_user_code_generator():
+    # Default argument, 8 characters
+    user_code = utils.user_code_generator()
+    assert isinstance(user_code, str)
+    assert len(user_code) == 8
+
+    for character in user_code:
+        assert character >= "0"
+        assert character <= "V"
+
+    another_user_code = utils.user_code_generator()
+    assert another_user_code != user_code
+
+    shorter_user_code = utils.user_code_generator(user_code_length=1)
+    assert len(shorter_user_code) == 1
+
+    with pytest.raises(ValueError):
+        utils.user_code_generator(user_code_length=0)
+        utils.user_code_generator(user_code_length=-1)

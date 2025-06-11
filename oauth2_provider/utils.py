@@ -65,6 +65,8 @@ def user_code_generator(user_code_length: int = 8) -> str:
 
     for our function we'll be using a base 32 character set
     """
+    if user_code_length < 1:
+        raise ValueError("user_code_length needs to be greater than 0")
 
     # base32 character space
     character_space = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
