@@ -1,13 +1,13 @@
 import json
 
 from django import forms, http
-from django.contrib.auth.decorators import login_required
-from django.db.models import Q
-from django.shortcuts import render
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ValidationError
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from django.views.generic import View
+from django.views.generic import DetailView, FormView, View
 from oauthlib.oauth2 import DeviceApplicationServer
 
 from oauth2_provider.compat import login_not_required
@@ -40,12 +40,43 @@ class DeviceAuthorizationView(OAuthLibMixin, View):
         return http.JsonResponse(data=response, status=status, headers=headers)
 
 
-class DeviceForm(forms.Form):
+class DeviceGrantForm(forms.Form):
     user_code = forms.CharField(required=True)
 
+    def clean_user_code(self):
+        """
+        Performs validation on the user_code provided by the user and adds to the cleaned_data dict
+        the "device_grant" object associated with the user_code, which is useful to process the
+        response in the DeviceUserCodeView.
 
-@login_required
-def device_user_code_view(request):
+        It can raise one of the following ValidationErrors, with the associated codes:
+
+        * incorrect_user_code: if a device grant associated with the user_code does not exist
+        * expired_user_code: if the device grant associated with the user_code has expired
+        * user_code_already_used: if the device grant associated with the user_code has been already
+         approved or denied. The only accepted state of the device grant is AUTHORIZATION_PENDING.
+        """
+        cleaned_data = super().clean()
+        user_code: str = cleaned_data["user_code"]
+        try:
+            device_grant: DeviceGrant = get_device_grant_model().objects.get(user_code=user_code)
+        except DeviceGrant.DoesNotExist:
+            raise ValidationError("Incorrect user code", code="incorrect_user_code")
+
+        if device_grant.is_expired():
+            raise ValidationError("Expired user code", code="expired_user_code")
+
+        # User of device has already made their decision for this device.
+        if device_grant.status != device_grant.AUTHORIZATION_PENDING:
+            raise ValidationError("User code has already been used", code="user_code_already_used")
+
+        # Make the device_grant available to the View, saving one additional db call.
+        cleaned_data["device_grant"] = device_grant
+
+        return user_code
+
+
+class DeviceUserCodeView(LoginRequiredMixin, FormView):
     """
     The view where the user is instructed (by the device) to come to in order to
     enter the user code. More details in this section of the RFC:
@@ -56,69 +87,111 @@ def device_user_code_view(request):
     in regardless, to approve the device login we're making the decision here, for
     simplicity, to require being logged in up front.
     """
-    form = DeviceForm(request.POST)
 
-    if request.method != "POST":
-        return render(request, "oauth2_provider/device/user_code.html", {"form": form})
+    template_name = "oauth2_provider/device/user_code.html"
+    form_class = DeviceGrantForm
 
-    if not form.is_valid():
-        form.add_error(None, "Form invalid")
-        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=400)
-
-    user_code: str = form.cleaned_data["user_code"]
-    try:
-        device: DeviceGrant = get_device_grant_model().objects.get(user_code=user_code)
-    except DeviceGrant.DoesNotExist:
-        form.add_error("user_code", "Incorrect user code")
-        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=404)
-
-    device.user = request.user
-    device.save(update_fields=["user"])
-
-    if device.is_expired():
-        form.add_error("user_code", "Expired user code")
-        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=400)
-
-    # User of device has already made their decision for this device
-    if device.status != device.AUTHORIZATION_PENDING:
-        form.add_error("user_code", "User code has already been used")
-        return render(request, "oauth2_provider/device/user_code.html", {"form": form}, status=400)
-
-    # 308 to indicate we want to keep the redirect being a POST request
-    return http.HttpResponsePermanentRedirect(
-        reverse(
+    def get_success_url(self):
+        return reverse(
             "oauth2_provider:device-confirm",
-            kwargs={"client_id": device.client_id, "user_code": user_code},
-        ),
-        status=308,
-    )
-
-
-@login_required
-def device_confirm_view(request: http.HttpRequest, client_id: str, user_code: str):
-    try:
-        device: DeviceGrant = get_device_grant_model().objects.get(
-            # there is a db index on client_id
-            Q(client_id=client_id) & Q(user_code=user_code)
+            kwargs={
+                "client_id": self.device_grant.client_id,
+                "user_code": self.device_grant.user_code,
+            },
         )
-    except DeviceGrant.DoesNotExist:
-        return http.HttpResponseNotFound("<h1>Device not found</h1>")
 
-    if device.status != device.AUTHORIZATION_PENDING:
-        # AUTHORIZATION_PENDING is the only accepted state, anything else implies
-        # that the user already approved/denied OR the deadline has passed (aka
-        # expired)
-        return http.HttpResponseBadRequest("Invalid")
+    def form_valid(self, form):
+        """
+        Sets the device_grant on the instance so that it can be accessed
+        in get_success_url. It comes in handy when users want to overwrite
+        get_success_url, redirecting to the URL with the URL params pointing
+        to the current device.
+        """
+        device_grant: DeviceGrant = form.cleaned_data["device_grant"]
 
-    action = request.POST.get("action")
+        device_grant.user = self.request.user
+        device_grant.save(update_fields=["user"])
 
-    if action == "accept":
-        device.status = device.AUTHORIZED
-        device.save(update_fields=["status"])
-        return http.HttpResponse("approved")
-    elif action == "deny":
-        device.status = device.DENIED
-        device.save(update_fields=["status"])
-        return http.HttpResponse("deny")
+        self.device_grant = device_grant
 
-    return render(request, "oauth2_provider/device/accept_deny.html")
+        return super().form_valid(form)
+
+
+class DeviceConfirmForm(forms.Form):
+    """
+    Simple form for the user to approve or deny the device.
+    """
+
+    action = forms.CharField(required=True)
+
+
+class DeviceConfirmView(LoginRequiredMixin, FormView):
+    """
+    The view where the user approves or denies a device.
+    """
+
+    template_name = "oauth2_provider/device/accept_deny.html"
+    form_class = DeviceConfirmForm
+
+    def get_object(self):
+        """
+        Returns the DeviceGrant object in the AUTHORIZATION_PENDING state identified
+        by the slugs client_id and user_code. Raises Http404 if not found.
+        """
+        client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
+        return get_object_or_404(
+            DeviceGrant,
+            client_id=client_id,
+            user_code=user_code,
+            status=DeviceGrant.AUTHORIZATION_PENDING,
+        )
+
+    def get_success_url(self):
+        return reverse(
+            "oauth2_provider:device-grant-status",
+            kwargs={
+                "client_id": self.kwargs["client_id"],
+                "user_code": self.kwargs["user_code"],
+            },
+        )
+
+    def get(self, request, *args, **kwargs):
+        """
+        Enable GET requests for improved user experience. But validate that the URL params
+        are correct (i.e. there exists a device grant in the db that corresponds to the URL
+        params) by calling .get_object()
+        """
+        _ = self.get_object()  # raises 404 if URL parameters are incorrect
+        return super().get(request, args, kwargs)
+
+    def form_valid(self, form):
+        """
+        Uses get_object() to retrieves the DeviceGrant object and updates its state
+        to authorized or denied, based on the user input.
+        """
+        device = self.get_object()
+        action = form.cleaned_data["action"]
+
+        if action == "accept":
+            device.status = device.AUTHORIZED
+            device.save(update_fields=["status"])
+            return super().form_valid(form)
+        elif action == "deny":
+            device.status = device.DENIED
+            device.save(update_fields=["status"])
+            return super().form_valid(form)
+        else:
+            return http.HttpResponseBadRequest()
+
+
+class DeviceGrantStatusView(LoginRequiredMixin, DetailView):
+    """
+    The view to display the status of a DeviceGrant.
+    """
+
+    model = DeviceGrant
+    template_name = "oauth2_provider/device/device_grant_status.html"
+
+    def get_object(self):
+        client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
+        return get_object_or_404(DeviceGrant, client_id=client_id, user_code=user_code)

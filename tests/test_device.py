@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 import django.http.response
 import pytest
+from django import http
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
@@ -104,7 +105,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         assert response.status_code == 200
 
         # let's make sure the device was created in the db
-        assert DeviceModel.objects.get(device_code="abc")
+        assert DeviceModel.objects.get(device_code="abc").status == DeviceModel.AUTHORIZATION_PENDING
 
         assert response.json() == {
             "verification_uri": "example.com/device",
@@ -120,18 +121,19 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
     )
     def test_device_flow_authorization_user_code_confirm_and_access_token(self):
         """
-        1. User visits the /device endpoint in their browsers and submits the user code
+        This is a full user journey test.
 
-        the device and approve deny actions occur concurrently
-        (i.e the device is polling the token endpoint while the user
-        either approves or denies the device)
+        The device initiates the flow by calling the /device-authorization endpoint and starts
+        polling the /authorize endpoint getting back error until the user approves in the
+        browser.
 
-        -2(3)-. User approves or denies the device
-        -3(2)-. Device polls the /token endpoint
+        In the meantime, the user visits the /device endpoint in their browsers to submit the
+        user code and approve, after which the /authorize returns the tokens to the device.
         """
 
         # -----------------------
-        #  0: Setup device flow
+        #  0: Setup device flow, where the device sends an authorization request and
+        #  starts polling. The polling will fail because the user has not approved yet
         # -----------------------
         self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
         self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "xyz"
@@ -142,11 +144,42 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         }
         request_as_x_www_form_urlencoded: str = urlencode(request_data)
 
-        django.http.response.JsonResponse = self.client.post(
+        device_authorization_response: http.response.JsonResponse = self.client.post(
             reverse("oauth2_provider:device-authorization"),
             data=request_as_x_www_form_urlencoded,
             content_type="application/x-www-form-urlencoded",
         )
+
+        assert device_authorization_response.__getitem__("content-type") == "application/json"
+        device = DeviceModel.objects.get(device_code="abc")
+        self.assertJSONEqual(
+            raw=device_authorization_response.content,
+            expected_data={
+                "verification_uri": "example.com/device",
+                "expires_in": 1800,
+                "user_code": device.user_code,
+                "device_code": device.device_code,
+                "interval": 5,
+            },
+        )
+
+        # Device polls /token and gets back error because the user hasn't approved yet
+        token_payload = {
+            "device_code": device.device_code,
+            "client_id": self.application.client_id,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+
+        token_response: http.response.JsonResponse = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        # TokenView should always respond with application/json as it's meant to be
+        # consumed by devices.
+        assert token_response.__getitem__("content-type") == "application/json"
+        assert token_response.status_code == 400
+        self.assertJSONEqual(raw=token_response.content, expected_data={"error": "authorization_pending"})
 
         # /device and /device_confirm require a user to be logged in
         # to access it
@@ -171,54 +204,55 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         # 1.1.0  User visits the /device endpoint in their browsers and submits wrong user code
         self.assertContains(
             self.client.post(reverse("oauth2_provider:device"), data={"user_code": "invalid_code"}),
-            status_code=404,
+            status_code=200,
             text="Incorrect user code",
             count=1,
         )
 
-        # 1.1.1  User visits the /device endpoint in their browsers, or in the command line, submits
-        # a form that does not include the expected required field in the request.
-        self.assertContains(
-            self.client.post(
-                reverse("oauth2_provider:device"), data={"not_user_code": "could_be_valid_code"}
-            ),
-            status_code=400,
-            text="Form invalid",
-            count=1,
-        )
+        # Note: the device not being in the expected test covered in the other tests
 
-        # Note: the device not being in the expected test covered in the other test
-        # test_device_flow_authorization_device_invalid_state
-
-        # 1.1.2: user submits valid user code
-        post_response_valid = self.client.post(
-            reverse("oauth2_provider:device"),
-            data={"user_code": "xyz"},
-        )
-
+        # 1.1.1: user submits valid user code
         device_confirm_url = reverse(
             "oauth2_provider:device-confirm",
             kwargs={"user_code": "xyz", "client_id": self.application.client_id},
         )
-        assert post_response_valid.status_code == 308  # Ensure it redirects with 308 status
-        assert post_response_valid["Location"] == device_confirm_url
+
+        self.assertRedirects(
+            response=self.client.post(
+                reverse("oauth2_provider:device"),
+                data={"user_code": "xyz"},
+            ),
+            expected_url=device_confirm_url,
+        )
 
         # --------------------------------------------------------------------------------
         # 2: We redirect to the accept/deny form (the user is still in their browser)
         #  and approves
         # --------------------------------------------------------------------------------
-        get_confirm = self.client.get(device_confirm_url)
-        assert get_confirm.status_code == 200
+        device_grant_status_url = reverse(
+            "oauth2_provider:device-grant-status",
+            kwargs={"user_code": "xyz", "client_id": self.application.client_id},
+        )
 
-        approve_response = self.client.post(device_confirm_url, data={"action": "accept"})
-        assert approve_response.status_code == 200
-        assert approve_response.content.decode() == "approved"
+        self.assertRedirects(
+            response=self.client.post(device_confirm_url, data={"action": "accept"}),
+            expected_url=device_grant_status_url,
+        )
+
+        # --------------------------------------------------------------------------------
+        # 3: We redirect to the device grant status page (the user is still in their browser)
+        # --------------------------------------------------------------------------------
+        self.assertContains(
+            response=self.client.get(device_grant_status_url),
+            text="Device Authorized",
+            count=1,
+        )
 
         device = DeviceModel.objects.get(device_code="abc")
         assert device.status == device.AUTHORIZED
 
         # -------------------------
-        # 3: Device polls /token
+        # 4: Device polls /token successfully
         # -------------------------
         token_payload = {
             "device_code": device.device_code,
@@ -233,7 +267,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         )
         # TokenView should always respond with application/json as it's meant to be
         # consumed by devices.
-        token_response.__getitem__("content-type") == "application/json"
+        assert token_response.__getitem__("content-type") == "application/json"
         assert token_response.status_code == 200
 
         token_data = token_response.json()
@@ -256,7 +290,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         )
         assert refresh_token.user == device.user
 
-    def test_device_flow_authorization_device_invalid_state_raises_error(self):
+    def test_device_flow_authorization_device_invalid_state_returns_form_error(self):
         """
         This test asserts that only devices in the expected state (authorization-pending)
         can be approved/denied by the user.
@@ -290,12 +324,12 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
                     reverse("oauth2_provider:device"),
                     data={"user_code": "user_code"},
                 ),
-                status_code=400,
+                status_code=200,
                 text="User code has already been used",
                 count=1,
             )
 
-    def test_device_flow_authorization_device_expired_raises_error(self):
+    def test_device_flow_authorization_device_expired_returns_form_error(self):
         """
         This test asserts that only devices in the expected state (authorization-pending)
         can be approved/denied by the user.
@@ -322,7 +356,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
                 reverse("oauth2_provider:device"),
                 data={"user_code": "user_code"},
             ),
-            status_code=400,
+            status_code=200,
             text="Expired user code",
             count=1,
         )
@@ -479,7 +513,51 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             assert r.status_code == 302
             assert r["Location"] == f"{settings.LOGIN_URL}?next={url}"
 
-    def test_device_confirm_view_returns_404_when_device_does_not_exist(self):
+    def test_device_confirm_view_GET_returns_404_when_device_does_not_exist(self):
+        UserModel.objects.create_user(
+            username="test_user_device_flow",
+            email="test_device@example.com",
+            password="password123",
+        )
+        self.client.login(username="test_user_device_flow", password="password123")
+
+        device = DeviceModel(
+            client_id="client_id",
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now(),
+        )
+        device.save()
+
+        self.assertContains(
+            response=self.client.get(
+                reverse(
+                    "oauth2_provider:device-confirm",
+                    kwargs={"user_code": "not_user_code", "client_id": "not_client_id"},
+                )
+            ),
+            status_code=404,
+            text="The requested resource was not found on this server.",
+        )
+
+        # Asserts for valid user_code and client_id but invalid states
+        for invalid_state in ["authorized", "denied", "expired"]:
+            device.status = invalid_state
+            device.save(update_fields=["status"])
+
+            self.assertContains(
+                response=self.client.get(
+                    reverse(
+                        "oauth2_provider:device-confirm",
+                        kwargs={"user_code": "not_user_code", "client_id": "client_id"},
+                    )
+                ),
+                status_code=404,
+                text="The requested resource was not found on this server.",
+            )
+
+    def test_device_confirm_view_POST_returns_404_when_device_does_not_exist(self):
         UserModel.objects.create_user(
             username="test_user_device_flow",
             email="test_device@example.com",
@@ -500,33 +578,17 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             response=self.client.post(
                 reverse(
                     "oauth2_provider:device-confirm",
-                    kwargs={"user_code": "abc", "client_id": "abc"},
-                )
+                    kwargs={"user_code": "not_user_code", "client_id": "client_id"},
+                ),
+                data={"action": "accept"},
             ),
             status_code=404,
-            text="Device not found",
+            text="The requested resource was not found on this server.",
             count=1,
         )
 
-    def test_device_confirm_view_returns_400_when_device_in_incorrect_state(self):
-        UserModel.objects.create_user(
-            username="test_user_device_flow",
-            email="test_device@example.com",
-            password="password123",
-        )
-        self.client.login(username="test_user_device_flow", password="password123")
-
-        device = DeviceModel(
-            client_id="client_id",
-            device_code="device_code",
-            user_code="user_code",
-            scope="scope",
-            expires=datetime.now(),
-        )
-        device.save()
-
-        for invalid_state in ["authorized", "expired", "denied"]:
-            # Set the device into an incorrect state.
+        # Asserts for valid user_code and client_id but invalid states
+        for invalid_state in ["authorized", "denied", "expired"]:
             device.status = invalid_state
             device.save(update_fields=["status"])
 
@@ -535,10 +597,11 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
                     reverse(
                         "oauth2_provider:device-confirm",
                         kwargs={"user_code": "user_code", "client_id": "client_id"},
-                    )
+                    ),
+                    data={"action": "accept"},
                 ),
-                status_code=400,
-                text="Invalid",
+                status_code=404,
+                text="The requested resource was not found on this server.",
                 count=1,
             )
 
