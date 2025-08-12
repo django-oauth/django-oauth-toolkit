@@ -37,8 +37,8 @@ FROM python:3.11.6-slim
 # allow embed sha1 at build time as release.
 ARG GIT_SHA1
 
-LABEL org.opencontainers.image.authors="https://jazzband.co/projects/django-oauth-toolkit"
-LABEL org.opencontainers.image.source="https://github.com/jazzband/django-oauth-toolkit"
+LABEL org.opencontainers.image.authors="https://github.com/django-oauth/django-oauth-toolkit/blob/master/AUTHORS"
+LABEL org.opencontainers.image.source="https://github.com/django-oauth/django-oauth-toolkit"
 LABEL org.opencontainers.image.revision=${GIT_SHA1}
 
 

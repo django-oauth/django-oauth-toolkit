@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    if: github.repository == 'jazzband/django-oauth-toolkit'
+    if: github.repository == 'django-oauth/django-oauth-toolkit'
     runs-on: ubuntu-latest
 
     steps:
@@ -29,10 +29,9 @@ jobs:
           python -m build
           twine check dist/*
 
-      - name: Upload packages to Jazzband
+      - name: Upload packages to PyPI
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
-        uses: pypa/gh-action-pypi-publish@master
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          user: jazzband
-          password: ${{ secrets.JAZZBAND_RELEASE_KEY }}
-          repository_url: https://jazzband.co/projects/django-oauth-toolkit/upload
+          user: __token__
+          password: ${{ secrets.PYPI_PUBLISH_TOKEN }}

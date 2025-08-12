@@ -2,17 +2,13 @@
 Contributing
 ============
 
-.. image:: https://jazzband.co/static/img/jazzband.svg
-   :target: https://jazzband.co/
-   :alt: Jazzband
-
-This is a `Jazzband <https://jazzband.co>`_ project. By contributing you agree to abide by the `Contributor Code of Conduct <https://jazzband.co/about/conduct>`_ and follow the `guidelines <https://jazzband.co/about/guidelines>`_.
+By contributing you agree to abide by the `Code of Conduct <https://github.com/django-oauth/django-oauth-toolkit/blob/master/CODE_OF_CONDUCT.md>`_ and follow the `guidelines <https://django-oauth-toolkit.readthedocs.io/en/latest/contributing.html>`_.
 
 
 Setup
 =====
 
-Fork ``django-oauth-toolkit`` repository on `GitHub <https://github.com/jazzband/django-oauth-toolkit>`_ and follow these steps:
+Fork ``django-oauth-toolkit`` repository on `GitHub <https://github.com/django-oauth/django-oauth-toolkit>`_ and follow these steps:
 
  * Create a virtualenv and activate it
  * Clone your repository locally
@@ -21,7 +17,7 @@ Issues
 ======
 
 You can find the list of bugs, enhancements and feature requests on the
-`issue tracker <https://github.com/jazzband/django-oauth-toolkit/issues>`_. If you want to fix an issue, pick up one and
+`issue tracker <https://github.com/django-oauth/django-oauth-toolkit/issues>`_. If you want to fix an issue, pick up one and
 add a comment stating you're working on it.
 
 Code Style
@@ -161,7 +157,7 @@ When you begin your PR, you'll be asked to provide the following:
   * ``Fixed`` for any bug fixes.
 
   * ``Security`` in case of vulnerabilities. (Please report any security issues to the
-     JazzBand security team ``<security@jazzband.co>``. Do not file an issue on the tracker
+     security team ``<django-oauth-security@googlegroups.com>``. Do not file an issue on the tracker
      or submit a PR until directed to do so.)
 
 * Make sure your name is in :file:`AUTHORS`. We want to give credit to all contributors!
@@ -169,7 +165,7 @@ When you begin your PR, you'll be asked to provide the following:
 If your PR is not yet ready to be merged mark it as a Work-in-Progress
 By prepending ``WIP:`` to the PR title so that it doesn't get inadvertently approved and merged.
 
-Make sure to request a review by assigning Reviewer ``jazzband/django-oauth-toolkit``.
+Make sure to request a review by assigning Reviewer ``django-oauth/django-oauth-toolkit``.
 This will assign the review to the project team and a member will review it. In the meantime you can continue to add
 commits to your topic branch (and push them up to GitHub) either if you see something that needs changing, or in
 response to a reviewer's comments.  If a reviewer asks for changes, you do not need to close the pull and reissue it
@@ -184,7 +180,7 @@ outdated code and your changes diverge too far from master, the pull request has
 
 To pull in upstream changes::
 
-    git remote add upstream https://github.com/jazzband/django-oauth-toolkit.git
+    git remote add upstream https://github.com/django-oauth/django-oauth-toolkit.git
     git fetch upstream
 
 Then merge the changes that you fetched::
@@ -316,7 +312,7 @@ Reviewing and Merging PRs
 -------------------------
 
 - Make sure the PR description includes the `pull request template
-  <https://github.com/jazzband/django-oauth-toolkit/blob/master/.github/pull_request_template.md>`_
+  <https://github.com/django-oauth/django-oauth-toolkit/blob/master/.github/pull_request_template.md>`_
 - Confirm that all required checklist items from the PR template are both indicated as done in the
   PR description and are actually done.
 - Perform a careful review and ask for any needed changes.
@@ -351,11 +347,11 @@ password: password
 Publishing a Release
 --------------------
 
-Only Project Leads can `publish a release <https://jazzband.co/about/releases>`_ to pypi.org
+Only maintainers can publish a release to pypi.org
 and rtfd.io. This checklist is a reminder of the required steps.
 
 - When planning a new release, create a `milestone
-  <https://github.com/jazzband/django-oauth-toolkit/milestones>`_
+  <https://github.com/django-oauth/django-oauth-toolkit/milestones>`_
   and assign issues, PRs, etc. to that milestone.
 - Review all commits since the last release and confirm that they are properly
   documented in the CHANGELOG. Reword entries as appropriate with links to docs
@@ -366,7 +362,7 @@ and rtfd.io. This checklist is a reminder of the required steps.
   - :file:`oauth2_provider/__init__.py` to set ``__version__ = "..."``
 
 - Once the final PR is merged, create and push a tag for the release. You'll shortly
-  get a notification from Jazzband of the availability of two pypi packages (source tgz
+  get a notification of the availability of two pypi packages (source tgz
   and wheel). Download these locally before releasing them.
 - Do a ``tox -e build`` and extract the downloaded and built wheel zip and tgz files into
   temp directories and do a ``diff -r`` to make sure they have the same content.

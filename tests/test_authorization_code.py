@@ -505,7 +505,7 @@ class TestAuthorizationCodeView(BaseTest):
         """
         Test that in case of error the querystring of the redirection uri is preserved
 
-        See https://github.com/jazzband/django-oauth-toolkit/issues/238
+        See https://github.com/django-oauth/django-oauth-toolkit/issues/238
         """
         self.client.login(username="test_user", password="123456")
 

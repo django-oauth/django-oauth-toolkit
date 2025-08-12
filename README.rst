@@ -1,21 +1,17 @@
 Django OAuth Toolkit
 ====================
 
-.. image:: https://jazzband.co/static/img/badge.svg
-   :target: https://jazzband.co/
-   :alt: Jazzband
-
 *OAuth2 goodies for the Djangonauts!*
 
 .. image:: https://badge.fury.io/py/django-oauth-toolkit.svg
     :target: http://badge.fury.io/py/django-oauth-toolkit
 
-.. image:: https://github.com/jazzband/django-oauth-toolkit/workflows/Test/badge.svg
-   :target: https://github.com/jazzband/django-oauth-toolkit/actions
+.. image:: https://github.com/django-oauth/django-oauth-toolkit/workflows/Test/badge.svg
+   :target: https://github.com/django-oauth/django-oauth-toolkit/actions
    :alt: GitHub Actions
 
-.. image:: https://codecov.io/gh/jazzband/django-oauth-toolkit/branch/master/graph/badge.svg
-   :target: https://codecov.io/gh/jazzband/django-oauth-toolkit
+.. image:: https://codecov.io/gh/django-oauth/django-oauth-toolkit/branch/master/graph/badge.svg
+   :target: https://codecov.io/gh/django-oauth/django-oauth-toolkit
    :alt: Coverage
 
 .. image:: https://img.shields.io/pypi/pyversions/django-oauth-toolkit.svg
@@ -38,7 +34,7 @@ capabilities to your Django projects. Django OAuth Toolkit makes extensive use o
 Reporting security issues
 -------------------------
 
-Please report any security issues to the JazzBand security team at <security@jazzband.co>. Do not file an issue on the tracker.
+Please report any security issues to the Django OAuth security team at <django-oauth-security@googlegroups.com>. Do not file an issue on the tracker.
 
 Requirements
 ------------
@@ -78,7 +74,7 @@ If you need an OAuth2 provider you'll want to add the following to your ``urls.p
 Changelog
 ---------
 
-See `CHANGELOG.md <https://github.com/jazzband/django-oauth-toolkit/blob/master/CHANGELOG.md>`_.
+See `CHANGELOG.md <https://github.com/django-oauth/django-oauth-toolkit/blob/master/CHANGELOG.md>`_.
 
 
 Documentation
@@ -99,9 +95,8 @@ We need help maintaining and enhancing django-oauth-toolkit (DOT).
 Join the team
 ~~~~~~~~~~~~~
 
-Please consider joining `Jazzband <https://jazzband.co>`__ (If not
-already a member) and the `DOT project
-team <https://jazzband.co/projects/django-oauth-toolkit>`__.
+There are no barriers to participation. Anyone can open an issue, pr, or review a pull request. Please
+dive in!
 
 How you can help
 ~~~~~~~~~~~~~~~~
@@ -109,15 +104,15 @@ How you can help
 See our
 `contributing <https://django-oauth-toolkit.readthedocs.io/en/latest/contributing.html>`__
 info and the open
-`issues <https://github.com/jazzband/django-oauth-toolkit/issues>`__ and
-`PRs <https://github.com/jazzband/django-oauth-toolkit/pulls>`__,
+`issues <https://github.com/django-oauth/django-oauth-toolkit/issues>`__ and
+`PRs <https://github.com/django-oauth/django-oauth-toolkit/pulls>`__,
 especially those labeled
-`help-wanted <https://github.com/jazzband/django-oauth-toolkit/labels/help-wanted>`__.
+`help-wanted <https://github.com/django-oauth/django-oauth-toolkit/labels/help-wanted>`__.
 
 Discussions
 ~~~~~~~~~~~
 Have questions or want to discuss the project?
-See `the discussions <https://github.com/jazzband/django-oauth-toolkit/discussions>`__.
+See `the discussions <https://github.com/django-oauth/django-oauth-toolkit/discussions>`__.
 
 
 Submit PRs and Perform Reviews
@@ -127,18 +122,12 @@ PR submissions and reviews are always appreciated! Since we require an
 independent review of any PR before it can be merged, having your second
 set of eyes looking at PRs is extremely valuable.
 
-Please don’t merge PRs
-~~~~~~~~~~~~~~~~~~~~~~
 
-Please be aware that we don’t want *every* Jazzband member to merge PRs
-but just a handful of project team members so that we can maintain a
-modicum of control over what goes into a release of this security oriented code base. Only `project
-leads <https://jazzband.co/projects/django-oauth-toolkit>`__ are able to
-publish releases to Pypi and it becomes difficult when creating a new
-release for the leads to deal with “unexpected” merged PRs.
-
-Become a Project Lead
+Become a Maintainer
 ~~~~~~~~~~~~~~~~~~~~~
 
-If you are interested in stepping up to be a Project Lead, please take a look at
-the `discussion about this <https://github.com/jazzband/django-oauth-toolkit/discussions/1479>`__.
+If you are interested in stepping up to be a Maintainer, please open an issue. For maintainers we're
+looking for a positive attitude, attentiveness to the specifications, strong coding and
+communication skills, and a willingness to work with others. Maintainers are responsible for
+merging pull requests, managing issues, creating releases, and ensuring the overall health of the
+project.
