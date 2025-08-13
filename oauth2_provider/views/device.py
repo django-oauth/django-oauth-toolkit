@@ -29,11 +29,10 @@ class DeviceAuthorizationView(OAuthLibMixin, View):
     def post(self, request, *args, **kwargs):
         headers, response, status = self.create_device_authorization_response(request)
 
-        device_request = DeviceRequest(client_id=request.POST["client_id"], scope=request.POST.get("scope"))
-
         if status != 200:
             return http.JsonResponse(data=json.loads(response), status=status, headers=headers)
 
+        device_request = DeviceRequest(client_id=request.POST["client_id"], scope=request.POST.get("scope"))
         device_response = DeviceCodeResponse(**response)
         create_device_grant(device_request, device_response)
 

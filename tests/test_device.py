@@ -497,6 +497,28 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "error_description": "Invalid client_id parameter value.",
         }
 
+    def test_missing_client_id(self):
+        """
+        Ensure the correct error is returned when the client id is missing.
+        """
+        request_data: dict[str, str] = {
+            "not_client_id": "client_id_that_does_not_exist",
+        }
+        request_as_x_www_form_urlencoded: str = urlencode(request_data)
+
+        response: django.http.response.JsonResponse = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=request_as_x_www_form_urlencoded,
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        assert response.status_code == 400
+
+        assert response.json() == {
+            "error": "invalid_request",
+            "error_description": "Missing client_id parameter.",
+        }
+
     def test_device_confirm_and_user_code_views_require_login(self):
         URLs = [
             reverse("oauth2_provider:device-confirm", kwargs={"user_code": None, "client_id": "abc"}),
