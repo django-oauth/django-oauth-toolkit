@@ -439,6 +439,50 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         # consumed by devices.
         self.assertEqual(response.__getitem__("content-type"), "application/json")
 
+    def test_token_view_status_equals_what_oauthlib_token_response_method_returns(self):
+        """
+        Tests the use case where oauthlib create_token_response returns a status different
+        than 200.
+        """
+
+        class MockOauthlibCoreClass:
+            def create_token_response(self, _):
+                return "url", {"headers_are_ignored": True}, '{"Key": "Value"}', 299
+
+        device = DeviceModel(
+            client_id="client_id",
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now() + timedelta(seconds=60),
+            status="authorized",
+        )
+        device.save()
+
+        token_payload = {
+            "device_code": "device_code",
+            "client_id": "client_id",
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+
+        with mock.patch(
+            "oauth2_provider.views.mixins.OAuthLibMixin.get_oauthlib_core", MockOauthlibCoreClass
+        ):
+            response = self.client.post(
+                "/o/token/",
+                data=urlencode(token_payload),
+                content_type="application/x-www-form-urlencoded",
+            )
+
+        self.assertEqual(response["content-type"], "application/json")
+        self.assertContains(
+            response=response,
+            status_code=299,
+            text='{"Key": "Value"}',
+            count=1,
+        )
+        assert not response.has_header("headers_are_ignored")
+
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
         lambda: "abc",
@@ -640,6 +684,12 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         assert device.status == device.AUTHORIZATION_PENDING  # default value
 
         # call is_expired() which should update the state
+        is_expired = device.is_expired()
+
+        assert is_expired
+        assert device.status == device.EXPIRED
+
+        # calling again is_expired() should return true and not change the state
         is_expired = device.is_expired()
 
         assert is_expired

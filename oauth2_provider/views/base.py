@@ -360,10 +360,11 @@ class TokenView(OAuthLibMixin, View):
             )
 
         url, headers, body, status = self.create_token_response(request)
-        if status != 200:
-            return http.JsonResponse(data=json.loads(body), status=status)
-
         response = http.JsonResponse(data=json.loads(body), status=status)
+
+        if status != 200:
+            return response
+
         for k, v in headers.items():
             response[k] = v
 
