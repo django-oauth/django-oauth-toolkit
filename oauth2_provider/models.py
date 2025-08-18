@@ -713,19 +713,9 @@ class AbstractDeviceGrant(models.Model):
         return False
 
 
-class DeviceManager(models.Manager):
-    def get_by_natural_key(self, client_id, device_code, user_code):
-        return self.get(client_id=client_id, device_code=device_code, user_code=user_code)
-
-
 class DeviceGrant(AbstractDeviceGrant):
-    objects = DeviceManager()
-
     class Meta(AbstractDeviceGrant.Meta):
         swappable = "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL"
-
-    def natural_key(self):
-        return (self.client_id, self.device_code, self.user_code)
 
 
 @dataclass
