@@ -20,7 +20,12 @@ from oauth2_provider.models import (
 )
 from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.settings import oauth2_settings
-from oauth2_provider.views.oidc import RPInitiatedLogoutView, _load_id_token, _validate_claims
+from oauth2_provider.views.oidc import (
+    RPInitiatedLogoutView,
+    SessionIFrameView,
+    _load_id_token,
+    _validate_claims,
+)
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -115,6 +120,13 @@ class TestConnectDiscoveryInfoView(TestCase):
     def test_get_connect_discovery_info_with_rp_logout(self):
         self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = True
         self.expect_json_response_with_rp_logout(self.oauth2_settings.OIDC_ISS_ENDPOINT)
+
+    def test_get_session_manangement_iframe_endpoint(self):
+        self.oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED = True
+        response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+        self.assertEqual(response.status_code, 200)
+        response_data = response.json()
+        self.assertIn("check_session_iframe", response_data.keys())
 
     def test_get_connect_discovery_info_without_issuer_url(self):
         self.oauth2_settings.OIDC_ISS_ENDPOINT = None
@@ -216,29 +228,31 @@ class TestJwksInfoView(TestCase):
 
 @pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_SESSION_MANAGEMENT)
-class TestAuthorizationView(TestCase):
-    def test_session_state_is_present_in_url(self):
+class TestSessionManagement(TestCase):
+    def setUp(self):
         User = get_user_model()
         Application = get_application_model()
 
-        User.objects.create_user("test_user", "test@example.com", "123456")
-        dev_user = User.objects.create_user("dev_user", "dev@example.com", "123456")
+        self.user = User.objects.create_user("test_user", "test@example.com", "123456")
+        self.developer = User.objects.create_user("dev_user", "dev@example.com", "123456")
 
-        application = Application.objects.create(
+        self.application = Application.objects.create(
             name="Test Application",
             redirect_uris=(
                 "http://localhost http://example.com http://example.org custom-scheme://example.com"
             ),
-            user=dev_user,
+            user=self.developer,
             client_type=Application.CLIENT_CONFIDENTIAL,
             authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
             client_secret="1234567890qwertyuiop",
         )
+
+    def test_session_state_is_present_in_authorization(self):
         self.client.login(username="test_user", password="123456")
         response = self.client.post(
             reverse("oauth2_provider:authorize"),
             {
-                "client_id": application.client_id,
+                "client_id": self.application.client_id,
                 "response_type": "code",
                 "state": "random_state_string",
                 "scope": "read write",
@@ -247,7 +261,16 @@ class TestAuthorizationView(TestCase):
             },
         )
         self.assertEqual(response.status_code, 302)
-        self.assertTrue("session_state" in response["Location"])
+        self.assertIn("session_state", response["Location"])
+
+    def test_cookie_name_is_included_in_iframe_endpoint(self):
+        request = RequestFactory().get(reverse("oauth2_provider:session-iframe"))
+        request.user = self.user
+        view = SessionIFrameView()
+        view.setup(request)
+        context = view.get_context_data()
+        self.assertIn("cookie_name", context)
+        self.assertEqual(context["cookie_name"], "oidc_ua_agent_state")
 
 
 def mock_request():

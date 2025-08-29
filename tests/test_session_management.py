@@ -22,6 +22,11 @@ class TestOIDCSessionManagementMiddleware(TestCase):
     def setUp(self):
         User.objects.create_user("test_user", "test@example.com", "123456")
 
+    def test_response_is_intact_if_session_management_is_disabled(self):
+        self.oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED = False
+        response = self.client.get("/a-resource")
+        self.assertFalse("oidc-session-test" in response.cookies.keys())
+
     def test_session_cookie_is_set_for_logged_users(self):
         self.client.login(username="test_user", password="123456")
         response = self.client.get("/a-resource")
