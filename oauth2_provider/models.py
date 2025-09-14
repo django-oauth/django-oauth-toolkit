@@ -537,7 +537,7 @@ class AbstractRefreshToken(models.Model):
             self = list(token)[0]
 
             with suppress(access_token_model.DoesNotExist):
-                access_token_model.objects.get(id=self.access_token_id).revoke()
+                access_token_model.objects.get(pk=self.access_token_id).revoke()
 
             self.access_token = None
             self.revoked = timezone.now()
