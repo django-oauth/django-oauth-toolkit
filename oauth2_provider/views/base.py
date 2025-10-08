@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -21,6 +22,7 @@ from ..models import get_access_token_model, get_application_model
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
 from ..signals import app_authorized
+from ..utils import session_management_state_key
 from .mixins import OAuthLibMixin
 
 
@@ -140,6 +142,35 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         except OAuthToolkitError as error:
             return self.error_response(error, application)
 
+        if oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED:
+            # https://openid.net/specs/openid-connect-session-1_0.html#CreatingUpdatingSessions
+
+            # When the OP supports session management, it MUST also
+            # return the Session State as an additional session_state
+            # parameter in the Authentication Response, the value is
+            # based on a salted cryptographic hash of Client ID,
+            # origin URL, and OP User Agent state.
+            parsed = urlparse(uri)
+            client_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+            # Create random salt.
+            salt = secrets.token_urlsafe(16)
+            encoded = " ".join(
+                [
+                    credentials["client_id"],
+                    client_origin,
+                    session_management_state_key(self.request),
+                    salt,
+                ]
+            ).encode("utf-8")
+            hashed = hashlib.sha256(encoded)
+            session_state = f"{hashed.hexdigest()}.{salt}"
+
+            # Add the session_state parameter to the query string
+            qs = dict(parse_qsl(parsed.query))
+            qs["session_state"] = session_state
+            uri = parsed._replace(query=urlencode(qs)).geturl()
+
         self.success_url = uri
         log.debug("Success url for the request: {0}".format(self.success_url))
         return self.redirect(self.success_url, application)
@@ -214,10 +245,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 for token in tokens:
                     if token.allow_scopes(scopes):
                         uri, headers, body, status = self.create_authorization_response(
-                            request=self.request,
-                            scopes=" ".join(scopes),
-                            credentials=credentials,
-                            allow=True,
+                            request=self.request, scopes=" ".join(scopes), credentials=credentials, allow=True
                         )
                         return self.redirect(uri, application)
 

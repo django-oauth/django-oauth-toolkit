@@ -1,7 +1,10 @@
 import functools
+import hashlib
 
 from django.conf import settings
 from jwcrypto import jwk
+
+from .settings import oauth2_settings
 
 
 @functools.lru_cache()
@@ -32,3 +35,11 @@ def get_timezone(time_zone):
 
             return pytz.timezone(time_zone)
         return zoneinfo.ZoneInfo(time_zone)
+
+
+def session_management_state_key(request):
+    """
+    Determine value to use as session state.
+    """
+    key = request.session.session_key or str(oauth2_settings.OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY)
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()

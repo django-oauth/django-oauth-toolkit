@@ -315,6 +315,12 @@ Default: ``False``
 
 Whether or not :doc:`oidc` support is enabled.
 
+OIDC_SESSION_MANAGEMENT_ENABLED
+~~~~~~~~~~~~
+Default: ``False``
+
+Whether or not :doc:`oidc` support is enabled.
+
 OIDC_RSA_PRIVATE_KEY
 ~~~~~~~~~~~~~~~~~~~~
 Default: ``""``
@@ -352,6 +358,18 @@ this you must also provide the service at that endpoint.
 
 If unset, the default location is used, eg if ``django-oauth-toolkit`` is
 mounted at ``/o/``, it will be ``<server-address>/o/userinfo/``.
+
+OIDC_SESSION_IFRAME_ENDPOINT
+~~~~~~~~~~~~~~~~~~~~~~
+Default: ``""``
+
+The url of the session frame endpoint. Used to advertise the location of the
+endpoint in the OIDC discovery metadata. Changing this does not change the URL
+that ``django-oauth-toolkit`` adds for the userinfo endpoint, so if you change
+this you must also provide the service at that endpoint.
+
+If unset, the default location is used, eg if ``django-oauth-toolkit`` is
+mounted at ``/o/``, it will be ``<server-address>/o/session-iframe/``.
 
 OIDC_RP_INITIATED_LOGOUT_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~

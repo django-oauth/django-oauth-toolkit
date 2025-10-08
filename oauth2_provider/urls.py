@@ -42,6 +42,7 @@ oidc_urlpatterns = [
     ),
     path(".well-known/jwks.json", views.JwksInfoView.as_view(), name="jwks-info"),
     path("userinfo/", views.UserInfoView.as_view(), name="user-info"),
+    path("session-iframe/", views.SessionIFrameView.as_view(), name="session-iframe"),
     path("logout/", views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
 ]
 
