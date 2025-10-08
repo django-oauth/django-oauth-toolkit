@@ -1,12 +1,14 @@
 import hashlib
 import json
 import logging
-from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import resolve_url
+from django.urls import reverse
+from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -154,6 +156,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         prompt = request.GET.get("prompt")
         if prompt == "login":
             return self.handle_prompt_login()
+        elif prompt == "create":
+            return self.handle_prompt_create()
 
         all_scopes = get_scopes_backend().get_all_scopes()
         kwargs["scopes_descriptions"] = [all_scopes[scope] for scope in scopes]
@@ -252,12 +256,71 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             self.get_redirect_field_name(),
         )
 
+    def handle_prompt_create(self):
+        """
+        When prompt=create is in the authorization request,
+        redirect the user to the registration page. After
+        registration, the user should be redirected back to the
+        authorization endpoint without the prompt parameter to
+        continue the OIDC flow.
+
+        Implements OpenID Connect Prompt Create 1.0 specification.
+        https://openid.net/specs/openid-connect-prompt-create-1_0.html
+
+        """
+        try:
+            assert not self.request.user.is_authenticated, "account_selection_required"
+            path = self.request.build_absolute_uri()
+
+            views_to_attempt = [oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_VIEW_NAME, "account_signup"]
+
+            registration_url = None
+            for view_name in views_to_attempt:
+                try:
+                    registration_url = reverse(view_name)
+                    continue
+                except NoReverseMatch:
+                    pass
+
+            # Parse the current URL and remove the prompt parameter
+            parsed = urlparse(path)
+            parsed_query = dict(parse_qsl(parsed.query))
+            parsed_query.pop("prompt")
+
+            # Create the next parameter to redirect back to the authorization endpoint
+            next_url = parsed._replace(query=urlencode(parsed_query)).geturl()
+
+            assert oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED, "access_denied"
+            assert registration_url is not None, "access_denied"
+
+            # Add next parameter to registration URL
+            separator = "&" if "?" in registration_url else "?"
+            redirect_to = f"{registration_url}{separator}next={quote(next_url)}"
+
+            return HttpResponseRedirect(redirect_to)
+
+        except AssertionError as exc:
+            redirect_uri = self.request.GET.get("redirect_uri")
+            if redirect_uri:
+                response_parameters = {"error": str(exc)}
+                state = self.request.GET.get("state")
+                if state:
+                    response_parameters["state"] = state
+
+                separator = "&" if "?" in redirect_uri else "?"
+                redirect_to = redirect_uri + separator + urlencode(response_parameters)
+                return self.redirect(redirect_to, application=None)
+            else:
+                return HttpResponseBadRequest(str(exc))
+
     def handle_no_permission(self):
         """
         Generate response for unauthorized users.
 
         If prompt is set to none, then we redirect with an error code
         as defined by OIDC 3.1.2.6
+
+        If prompt is set to create, then we redirect to the registration page.
 
         Some code copied from OAuthLibMixin.error_response, but that is designed
         to operated on OAuth1Error from oauthlib wrapped in a OAuthToolkitError
@@ -276,6 +339,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             separator = "&" if "?" in redirect_uri else "?"
             redirect_to = redirect_uri + separator + urlencode(response_parameters)
             return self.redirect(redirect_to, application=None)
+        elif prompt == "create":
+            # If prompt=create and user is not authenticated, redirect to registration
+            return self.handle_prompt_create()
         else:
             return super().handle_no_permission()
 

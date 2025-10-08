@@ -353,6 +353,7 @@ this you must also provide the service at that endpoint.
 If unset, the default location is used, eg if ``django-oauth-toolkit`` is
 mounted at ``/o/``, it will be ``<server-address>/o/userinfo/``.
 
+
 OIDC_RP_INITIATED_LOGOUT_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``
@@ -387,6 +388,24 @@ Default: ``True``
 Whether to delete the access, refresh and ID tokens of the user that is being logged out.
 The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
 The default is to delete the tokens of all applications if this flag is enabled.
+
+OIDC_RP_INITIATED_REGISTRATION_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Whether to allow the Relying Party (RP) to direct a user to an OpenID
+Provider (OP) to create a new account rather than authenticate with an
+existing one. This is done by adding a `prompt=create` parameter to
+the authorization request.
+
+OIDC_RP_INITIATED_REGISTRATION_VIEW_NAME
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ''
+
+The name of the view for the URL that the user will be redirected to
+in case RP-Initated Registration is enabled.
+
+
 
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~

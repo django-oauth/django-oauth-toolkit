@@ -100,7 +100,11 @@ class ConnectDiscoveryInfoView(OIDCOnlyMixin, View):
             ),
             "code_challenge_methods_supported": [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS],
             "claims_supported": oidc_claims,
+            "prompt_values_supported": ["none", "login"],
         }
+        if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
+            data["prompt_values_supported"].append("create")
+
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
             data["end_session_endpoint"] = end_session_endpoint
         response = JsonResponse(data)
