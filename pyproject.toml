@@ -95,3 +95,8 @@ select = ["E", "F", "I", "Q", "W"]
 [tool.ruff.lint.isort]
 lines-after-imports = 2
 known-first-party = ["oauth2_provider"]
+
+[tool.uv.workspace]
+members = [
+    "tests/app/idp",
+]
