@@ -16,7 +16,8 @@ access tokens are created. This is standard OAuth 2.0 behavior as defined in RFC
 Applications should manage token lifecycle using:
 
 1. **Token Expiration**: Configure `ACCESS_TOKEN_EXPIRE_SECONDS` appropriately
-   - Default is 36000 seconds (10 hours)
+   - Default is 36000 seconds (10 hours) but should be adjusted based on security requirements
+   - Many providers use shorter lifetimes (e.g., 1 hour = 3600 seconds)
    - Expired tokens are automatically invalid
    
 2. **Cleanup Command**: Use `python manage.py cleartokens` to remove expired tokens
@@ -42,6 +43,8 @@ token flow because:
 - OAuth 2.0 RFC 6749: https://www.rfc-editor.org/rfc/rfc6749.html
 - OAuth 2.0 Token Revocation RFC 7009: https://www.rfc-editor.org/rfc/rfc7009.html
 """
+import json
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
@@ -68,7 +71,10 @@ CLEARTEXT_SECRET = "1234567890abcdefghijklmnopqrstuvwxyz"
 @pytest.mark.usefixtures("oauth2_settings")
 class TestTokenRevocationOnReauthorization(TestCase):
     """
-    Test that old tokens are revoked when a user re-authorizes an application.
+    Test documenting OAuth 2.0 behavior when a user re-authorizes an application.
+    
+    These tests verify that multiple tokens can coexist, which is standard OAuth 2.0
+    behavior per RFC 6749. They also document proper token management practices.
     """
 
     factory = RequestFactory()
@@ -150,7 +156,6 @@ class TestTokenRevocationOnReauthorization(TestCase):
             self.assertEqual(token_response.status_code, 200)
 
             # Get the created token
-            import json
             token_json = json.loads(token_response.content)
             access_token = token_json.get("access_token")
             created_tokens.append(access_token)
