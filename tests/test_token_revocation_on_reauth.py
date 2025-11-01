@@ -1,8 +1,46 @@
 """
-Tests for token revocation when a user re-authorizes an application.
+Tests documenting OAuth 2.0 token behavior when a user re-authorizes an application.
 
-This addresses the issue where multiple logins create multiple access tokens
-without revoking old ones, leading to token proliferation.
+## Background:
+When a user goes through the OAuth authorization flow multiple times, multiple 
+access tokens are created. This is standard OAuth 2.0 behavior as defined in RFC 6749.
+
+## Why Multiple Tokens Are Allowed:
+1. **Multiple Devices/Sessions**: Users may legitimately have multiple active sessions
+   (phone, laptop, tablet) that each need separate tokens.
+2. **Token Rotation**: Some flows require creating new tokens before old ones expire.
+3. **Refresh Token Flow**: Tokens created with refresh tokens need to coexist to
+   support the refresh flow.
+
+## Proper Token Management:
+Applications should manage token lifecycle using:
+
+1. **Token Expiration**: Configure `ACCESS_TOKEN_EXPIRE_SECONDS` appropriately
+   - Default is 36000 seconds (10 hours)
+   - Expired tokens are automatically invalid
+   
+2. **Cleanup Command**: Use `python manage.py cleartokens` to remove expired tokens
+   - Should be run periodically (e.g., daily cron job)
+   - Cleans up expired access tokens, refresh tokens, and grants
+   
+3. **Revocation Endpoint**: Clients should explicitly revoke tokens when logging out
+   - POST to `/revoke_token/` with the token to revoke
+   - Properly implemented clients manage their own token lifecycle
+   
+4. **Client-Side Management**: Clients should store and reuse valid tokens
+   - Check for existing valid tokens before starting new authorization flow
+   - Only request new tokens when current ones are expired or invalid
+
+## Why Automatic Revocation Isn't Implemented:
+Automatically revoking old tokens when creating new ones would break the refresh
+token flow because:
+- Refresh tokens reference their associated access tokens for scope information
+- Deleting access tokens makes refresh tokens unable to validate scopes
+- This causes "invalid_scope" errors when trying to use refresh tokens
+
+## References:
+- OAuth 2.0 RFC 6749: https://www.rfc-editor.org/rfc/rfc6749.html
+- OAuth 2.0 Token Revocation RFC 7009: https://www.rfc-editor.org/rfc/rfc7009.html
 """
 import pytest
 from django.contrib.auth import get_user_model
