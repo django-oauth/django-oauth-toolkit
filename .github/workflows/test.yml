@@ -2,6 +2,10 @@ name: Test
 
 on: [push, pull_request]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-package:
     name: Test Package (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
@@ -74,8 +78,8 @@ jobs:
       fail-fast: false
       matrix:
         node-version:
-          - "18.x"
-          - "20.x"
+          - "22.x"
+          - "24.x"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
