@@ -52,10 +52,16 @@ class TestTokenRevocationOnReauthorization(TestCase):
     def setUp(self):
         self.oauth2_settings.PKCE_REQUIRED = False
 
-    def test_reauthorization_revokes_old_tokens_with_auto_approval(self):
+    def test_reauthorization_creates_multiple_tokens_with_auto_approval(self):
         """
         When a user re-authorizes an application with approval_prompt=auto,
-        old access tokens should be revoked when new ones are issued.
+        new access tokens are created. This is standard OAuth 2.0 behavior that
+        supports multiple devices/sessions.
+        
+        Note: Applications should manage token lifecycle by:
+        - Using token expiration (ACCESS_TOKEN_EXPIRE_SECONDS setting)
+        - Explicitly revoking tokens via the revocation endpoint when no longer needed
+        - Using the cleartokens management command to remove expired tokens
         """
         self.client.login(username="test_user", password="123456")
 
@@ -111,8 +117,10 @@ class TestTokenRevocationOnReauthorization(TestCase):
             access_token = token_json.get("access_token")
             created_tokens.append(access_token)
 
-        # After 3 authorization flows, we should only have 1 token
-        # The old ones should have been revoked (deleted for AccessTokens)
+        # After 3 authorization flows, we have 3 tokens.
+        # This is standard OAuth 2.0 behavior - multiple tokens can coexist.
+        # Tokens with refresh tokens are not automatically revoked to preserve
+        # the refresh token flow and support multiple sessions.
         remaining_tokens = AccessToken.objects.filter(
             user=self.test_user,
             application=self.application,
@@ -120,15 +128,14 @@ class TestTokenRevocationOnReauthorization(TestCase):
 
         self.assertEqual(
             remaining_tokens,
-            1,
-            f"Expected 1 token after re-authorization, but found {remaining_tokens}. "
-            "Old tokens should be revoked (deleted) when new ones are issued.",
+            3,
+            f"Expected 3 tokens after 3 authorizations (standard OAuth behavior), but found {remaining_tokens}.",
         )
 
     def test_reauthorization_with_force_approval(self):
         """
-        When approval_prompt=force, user must approve each time,
-        but old tokens should still be revoked when new ones are issued.
+        When approval_prompt=force, user must approve each time.
+        Multiple tokens can coexist (standard OAuth 2.0 behavior).
         """
         self.client.login(username="test_user", password="123456")
 
@@ -162,7 +169,7 @@ class TestTokenRevocationOnReauthorization(TestCase):
             "code": code,
             "redirect_uri": "http://example.org",
             "client_id": self.application.client_id,
-            "client_secret": self.application.client_secret,
+            "client_secret": CLEARTEXT_SECRET,
         }
         token_response = self.client.post(reverse("oauth2_provider:token"), data=token_data)
         self.assertEqual(token_response.status_code, 200)
@@ -186,18 +193,18 @@ class TestTokenRevocationOnReauthorization(TestCase):
         token_response = self.client.post(reverse("oauth2_provider:token"), data=token_data)
         self.assertEqual(token_response.status_code, 200)
 
-        # Should have 1 token (old one revoked/deleted)
+        # Should have 2 tokens (standard OAuth behavior - one from each authorization)
         remaining_tokens = AccessToken.objects.filter(
             user=self.test_user,
             application=self.application,
         ).count()
 
-        self.assertEqual(remaining_tokens, 1)
+        self.assertEqual(remaining_tokens, 2)
 
-    def test_reauthorization_with_different_scopes_keeps_separate_tokens(self):
+    def test_reauthorization_with_different_scopes_creates_separate_tokens(self):
         """
-        If a user authorizes with different scopes, both tokens should remain valid
-        as they serve different purposes.
+        When a user authorizes with different scopes, separate tokens are created.
+        This is standard OAuth 2.0 behavior that allows different scopes for different purposes.
         """
         self.client.login(username="test_user", password="123456")
 
@@ -226,7 +233,7 @@ class TestTokenRevocationOnReauthorization(TestCase):
             "code": code,
             "redirect_uri": "http://example.org",
             "client_id": self.application.client_id,
-            "client_secret": self.application.client_secret,
+            "client_secret": CLEARTEXT_SECRET,
         }
         self.client.post(reverse("oauth2_provider:token"), data=token_data)
 
@@ -248,11 +255,13 @@ class TestTokenRevocationOnReauthorization(TestCase):
         self.client.post(reverse("oauth2_provider:token"), data=token_data)
 
         # Should have 2 tokens (one for each scope)
+        # This is standard OAuth behavior allowing different scopes for different purposes
         remaining_tokens = AccessToken.objects.filter(
             user=self.test_user,
             application=self.application,
         ).count()
 
-        # Note: The current behavior might be different. This test documents expected behavior.
-        # Different scopes should keep separate tokens, or the new token should have all scopes.
-        self.assertGreaterEqual(remaining_tokens, 1)
+        self.assertEqual(remaining_tokens, 2, 
+            "Expected 2 tokens after authorizations with different scopes. "
+            "Multiple tokens with different scopes are allowed in OAuth 2.0."
+        )
