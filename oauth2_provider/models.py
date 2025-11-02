@@ -76,6 +76,7 @@ class AbstractApplication(models.Model):
     * :attr:`client_secret` Confidential secret issued to the client during
                             the registration process as described in :rfc:`2.2`
     * :attr:`name` Friendly name for the Application
+    * :attr:`backchannel_logout_uri` Backchannel Logout URI (OIDC-only)
     """
 
     CLIENT_CONFIDENTIAL = "confidential"
@@ -146,6 +147,9 @@ class AbstractApplication(models.Model):
         blank=True,
         help_text=_("Allowed origins list to enable CORS, space separated"),
         default="",
+    )
+    backchannel_logout_uri = models.URLField(
+        blank=True, null=True, help_text="Backchannel Logout URI where logout tokens will be sent"
     )
 
     class Meta:
