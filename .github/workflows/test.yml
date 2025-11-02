@@ -19,16 +19,27 @@ jobs:
         - '3.10'
         - '3.11'
         - '3.12'
+        - '3.13'
         django-version:
         - '4.2'
         - '5.0'
         - '5.1'
+        - '5.2'
         - 'main'
         include:
           # https://docs.djangoproject.com/en/dev/faq/install/#what-python-version-can-i-use-with-django
           - python-version: '3.8'
             django-version: '4.2'
           - python-version: '3.9'
+            django-version: '4.2'
+          - python-version: '3.14'
+            django-version: '5.2'
+          - python-version: '3.14'
+            django-version: 'main'
+        exclude:
+          - python-version: '3.13'
+            django-version: '5.0'
+          - python-version: '3.13'
             django-version: '4.2'
 
     steps:
