@@ -14,3 +14,5 @@ Fixes #
 - [ ] documentation updated
 - [ ] `CHANGELOG.md` updated (only for user relevant changes)
 - [ ] author name in `AUTHORS`
+- [ ] tests/app/idp updated to demonstrate new features
+- [ ] tests/app/rp updated to demonstrate new features

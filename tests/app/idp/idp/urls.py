@@ -17,9 +17,11 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import TemplateView
 
 
 urlpatterns = [
+    path('', TemplateView.as_view(template_name='home/index.html'), name='home'), # Maps the root URL to your home_view
     path("admin/", admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     path("accounts/", include("django.contrib.auth.urls")),
