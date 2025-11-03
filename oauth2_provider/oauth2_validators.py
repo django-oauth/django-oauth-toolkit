@@ -867,12 +867,16 @@ class OAuth2Validator(RequestValidator):
         claims = self.get_oidc_claims(token, token_handler, request)
 
         expiration_time = timezone.now() + timedelta(seconds=oauth2_settings.ID_TOKEN_EXPIRE_SECONDS)
+        if request.user.last_login:
+            auth_time = int(dateformat.format(request.user.last_login, "U"))
+        else:
+            auth_time = int(timezone.now().timestamp())
         # Required ID Token claims
         claims.update(
             **{
                 "iss": self.get_oidc_issuer_endpoint(request),
                 "exp": int(dateformat.format(expiration_time, "U")),
-                "auth_time": int(dateformat.format(request.user.last_login, "U")),
+                "auth_time": auth_time,
                 "jti": str(uuid.uuid4()),
             }
         )
