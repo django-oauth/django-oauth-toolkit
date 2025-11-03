@@ -117,10 +117,30 @@ jobs:
         run: npm run build
         working-directory: tests/app/rp
 
+  codecov-notify:
+    needs:
+      - test-package
+      - test-demo-rp
+    runs-on: ubuntu-latest
+    name: Codecov Notify
+    steps:
+      # - tell codecov to send notifications now that all jobs are complete. 
+      #   without this, codecov may notify before all coverage reports have been uploaded.
+      #   `codecov: notify: manual_trigger: true` must be set in codecov.yml, to prevent 
+      #   processing on every upload.
+      # - preferred to after_n_builds so we don't need to update that number every
+      #   time we add/remove jobs.
+      - name: Notify Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          run_command: 'send-notifications'
+          use_oidc: true
+
   success:
     needs:
       - test-package
       - test-demo-rp
+      - codecov-notify
     runs-on: ubuntu-latest
     name: Test successful
     steps:
