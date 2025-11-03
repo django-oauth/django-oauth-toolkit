@@ -369,3 +369,29 @@ and rtfd.io. This checklist is a reminder of the required steps.
   (Unfortunately the checksums do not match due to timestamps in the metadata
   so you need to compare all the files.)
 - Once happy that the above comparison checks out, approve the releases to Pypi.org.
+
+
+Errata
+======
+
+Development with astral uv package and project manager.
+-------------------------------------------------------
+
+We have experimental support for `astral uv <https://docs.astral.sh/uv/>`__. It provides an improved
+developer experience over vanilla virtualenv/venv and pip by managing multiple python versions,
+virtual environments and dependencies in a more efficient way. The ``uv run`` command automatically
+syncs dependencies and python version before running the command, saving multiple steps when 
+working on multiple branches with different dependencies.
+
+You can use uv sync to set up your environment and install dependencies and run python::
+
+... code-block:: bash
+    uv sync    # checks deps, installs virtualenv and dependencies as necessary
+    uv run ... # runs command in the uv environment, syncs deps and python version first if necessary
+
+To run tox uv use `tox uv <https://github.com/tox-dev/tox-uv>`__::
+
+... code-block:: bash
+    uv tool install tox --with tox-uv # use uv to install
+    tox --version # validate you are using the installed tox
+    tox r -e py312 # will use uv
