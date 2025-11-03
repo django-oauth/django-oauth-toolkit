@@ -57,3 +57,5 @@ db.sqlite3
 venv/
 
 /tests/app/idp/static
+
+*.orig
