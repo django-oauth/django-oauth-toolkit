@@ -8,83 +8,66 @@ concurrency:
 
 jobs:
   test-package:
-    name: Test Package (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    name: Test Package (Python ${{ matrix.python.version }}, Django ${{ matrix.django.version }})
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for Codecov OIDC token
     strategy:
       fail-fast: false
       matrix:
-        python-version:
-        - '3.10'
-        - '3.11'
-        - '3.12'
-        - '3.13'
-        django-version:
-        - '4.2'
-        - '5.0'
-        - '5.1'
-        - '5.2'
-        - 'main'
-        ## include/exclude combinations, typically for the newest and oldest django/python versions.
+        # needs to included every supported python version
+        python:
+        - { version: '3.10', toxenv: 'py310' }
+        - { version: '3.11', toxenv: 'py311' }
+        - { version: '3.12', toxenv: 'py312' }
+        - { version: '3.13', toxenv: 'py313' }
+        django:
+        - {version: '4.2', toxenv: 'dj42'}
+        - {version: '5.0', toxenv: 'dj50'}
+        - {version: '5.1', toxenv: 'dj51'}
+        - {version: '5.2', toxenv: 'dj52'}
+        - {version: 'main', toxenv: 'djmain'}
         include:
-          # https://docs.djangoproject.com/en/dev/faq/install/#what-python-version-can-i-use-with-django
-          - python-version: '3.8'
-            django-version: '4.2'
-          - python-version: '3.9'
-            django-version: '4.2'
-          - python-version: '3.14'
-            django-version: '5.2'
-          - python-version: '3.14'
-            django-version: 'main'
+          # https://docs.djangoproject.com/en/dev/faq/install/#what-python-can-i-use-with-django
+          - python: { version: '3.8', toxenv: 'py38' }
+            django: { version: '4.2', toxenv: 'dj42' }
+          - python: { version: '3.9', toxenv: 'py39' }
+            django: { version: '4.2', toxenv: 'dj42' }
+          - python: { version: '3.14', toxenv: 'py314' }
+            django: { version: '5.2', toxenv: 'dj52' }
+          - python: { version: '3.14', toxenv: 'py314' }
+            django: { version: 'main', toxenv: 'djmain' }
         exclude:
-          - python-version: '3.13'
-            django-version: '5.0'
-          - python-version: '3.13'
-            django-version: '4.2'
-          - python-version: '3.10'
-            django-version: 'main'
-          - python-version: '3.11'
-            django-version: 'main'
+          - python: { version: '3.13', toxenv: 'py313' }
+            django: { version: '5.0', toxenv: 'dj50' }
+          - python: { version: '3.13', toxenv: 'py313' }
+            django: { version: '4.2', toxenv: 'dj42' }
+          - python: { version: '3.10', toxenv: 'py310' }
+            django: { version: 'main', toxenv: 'djmain' }
+          - python: { version: '3.11', toxenv: 'py311' }
+            django: { version: 'main', toxenv: 'djmain' }
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python ${{ matrix.python.version }}
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: ${{ matrix.python.version }}
 
+    - name: Install uv
+      uses: hynek/setup-cached-uv@v2
 
-    - name: Get pip cache dir
-      id: pip-cache
-      run: |
-        echo "::set-output name=dir::$(pip cache dir)"
-
-    - name: Cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ steps.pip-cache.outputs.dir }}
-        key:
-          ${{ matrix.python-version }}-v1-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/tox.ini') }}
-        restore-keys: |
-          ${{ matrix.python-version }}-v1-
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install --upgrade tox tox-gh-actions
-
-    - name: Tox tests
-      run: |
-        tox -v
-      env:
-        DJANGO: ${{ matrix.django-version }}
-
+    - name: 🧪 Run tox targets for Python ${{ matrix.python.version }}, Django ${{ matrix.django.version }}
+      # we are not using tox-gh-actions to run our tests because it runs the tests for the django versions
+      # in sequence rather than in parallel, which slows down the test suite significantly. We use the matrix
+      # feature of GitHub Actions to run the tests in parallel instead.
+      run: uvx --with tox-uv tox -v -e ${{ matrix.python.toxenv }}-${{ matrix.django.toxenv }}
+    
     - name: Upload coverage
       uses: codecov/codecov-action@v5
       with:
-        name: Python ${{ matrix.python-version }}
+        name: Python ${{ matrix.python.version }}, Django ${{ matrix.django.version }}
         use_oidc: true
 
   test-demo-rp:
