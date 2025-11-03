@@ -123,6 +123,8 @@ jobs:
       - test-demo-rp
     runs-on: ubuntu-latest
     name: Codecov Notify
+    permissions:
+      id-token: write # Required for Codecov OIDC token
     steps:
       # - tell codecov to send notifications now that all jobs are complete. 
       #   without this, codecov may notify before all coverage reports have been uploaded.
