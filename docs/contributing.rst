@@ -380,18 +380,18 @@ Development with astral uv package and project manager.
 We have experimental support for `astral uv <https://docs.astral.sh/uv/>`__. It provides an improved
 developer experience over vanilla virtualenv/venv and pip by managing multiple python versions,
 virtual environments and dependencies in a more efficient way. The ``uv run`` command automatically
-syncs dependencies and python version before running the command, saving multiple steps when 
+syncs dependencies and python version before running the command, saving multiple steps when
 working on multiple branches with different dependencies.
 
 You can use uv sync to set up your environment and install dependencies and run python::
 
-... code-block:: bash
+.. code-block:: bash
     uv sync    # checks deps, installs virtualenv and dependencies as necessary
     uv run ... # runs command in the uv environment, syncs deps and python version first if necessary
 
 To run tox uv use `tox uv <https://github.com/tox-dev/tox-uv>`__::
 
-... code-block:: bash
+.. code-block:: bash
     uv tool install tox --with tox-uv # use uv to install
     tox --version # validate you are using the installed tox
     tox r -e py312 # will use uv
