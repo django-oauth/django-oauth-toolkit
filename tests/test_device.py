@@ -290,6 +290,79 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         )
         assert refresh_token.user == device.user
 
+    def test_user_denies_access(self):
+        """
+        This test asserts the when the user denies access, the state of the grant is saved
+        and the user is redirected to the page where they can see the "denied" state.
+
+        The /token View returning the appropriate message for the "denied" state is covered
+        in test_token_view_returns_error_if_device_in_invalid_state.
+        """
+        UserModel.objects.create_user(
+            username="test_user_device_flow",
+            email="test_device@example.com",
+            password="password123",
+        )
+        self.client.login(username="test_user_device_flow", password="password123")
+
+        device = DeviceModel(
+            client_id="client_id",
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now() + timedelta(days=1),
+            status=DeviceModel.AUTHORIZATION_PENDING,
+        )
+        device.save()
+
+        device_confirm_url = reverse(
+            "oauth2_provider:device-confirm",
+            kwargs={"user_code": "user_code", "client_id": "client_id"},
+        )
+
+        device_grant_status_url = reverse(
+            "oauth2_provider:device-grant-status",
+            kwargs={"user_code": "user_code", "client_id": "client_id"},
+        )
+
+        self.assertRedirects(
+            response=self.client.post(device_confirm_url, data={"action": "deny"}),
+            expected_url=device_grant_status_url,
+        )
+
+        device.refresh_from_db()
+        assert device.status == device.DENIED
+
+    def test_device_confirm_view_returns_400_on_incorrect_action(self):
+        """
+        This test asserts that the confirm view returns 400 if action is not
+        "accept" or "deny".
+        """
+        UserModel.objects.create_user(
+            username="test_user_device_flow",
+            email="test_device@example.com",
+            password="password123",
+        )
+        self.client.login(username="test_user_device_flow", password="password123")
+
+        device = DeviceModel(
+            client_id="client_id",
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now() + timedelta(days=1),
+            status=DeviceModel.AUTHORIZATION_PENDING,
+        )
+        device.save()
+
+        device_confirm_url = reverse(
+            "oauth2_provider:device-confirm",
+            kwargs={"user_code": "user_code", "client_id": "client_id"},
+        )
+        response = self.client.post(device_confirm_url, data={"action": "inccorect_action"})
+
+        assert response.status_code == 400
+
     def test_device_flow_authorization_device_invalid_state_returns_form_error(self):
         """
         This test asserts that only devices in the expected state (authorization-pending)
