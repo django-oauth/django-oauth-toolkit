@@ -39,7 +39,7 @@ classifiers = [
 dependencies = [
 	"django >= 4.2",
 	"requests >= 2.13.0",
-	"oauthlib >= 3.2.2",
+	"oauthlib >= 3.3.0",
 	"jwcrypto >= 1.5.0",
 ]
 

@@ -34,5 +34,26 @@
     "algorithm": "RS256",
     "allowed_origins": "http://localhost:5173\r\nhttp://127.0.0.1:5173"
   }
+},
+{
+  "model": "oauth2_provider.application",
+  "fields": {
+    "client_id": "Qg8AaxKLs1c2W3PR70Sv5QxuSEREicKUlf83iGX3",
+    "user": [
+      "superuser"
+    ],
+    "redirect_uris": "",
+    "post_logout_redirect_uris": "",
+    "client_type": "public",
+    "authorization_grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+    "client_secret": "pbkdf2_sha256$870000$x1A7AKB9YMmNX7v2otXt1C$Yxucj9o/QlF16AxqN5LXo+Se0Sy3FO5x4Q35Lw1FGqM=",
+    "hash_client_secret": true,
+    "name": "Device Authorization App",
+    "skip_authorization": false,
+    "created": "2025-11-07T16:56:23.156Z",
+    "updated": "2025-11-07T16:56:23.156Z",
+    "algorithm": "",
+    "allowed_origins": ""
+  }
 }
 ]
