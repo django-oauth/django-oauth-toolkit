@@ -562,7 +562,7 @@ class RefreshToken(AbstractRefreshToken):
 class AbstractIDToken(models.Model):
     """
     An IDToken instance represents the actual token to
-    access user's resources, as in :openid:`2`.
+    access user's resources, as defined in the OpenID Connect specification.
 
     Fields:
 
