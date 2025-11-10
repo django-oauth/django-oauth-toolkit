@@ -180,6 +180,12 @@ class TestOAuth2Validator(TransactionTestCase):
         self.request.headers = {"HTTP_AUTHORIZATION": "Basic test"}
         self.assertFalse(self.validator._authenticate_basic_auth(self.request))
 
+    def test_authenticate_basic_auth_public_app_with_device_code(self):
+        self.request.grant_type = "urn:ietf:params:oauth:grant-type:device_code"
+        self.request.headers = get_basic_auth_header("client_id", CLEARTEXT_SECRET)
+        self.application.client_type = Application.CLIENT_PUBLIC
+        self.assertTrue(self.validator._authenticate_basic_auth(self.request))
+
     def test_authenticate_check_secret(self):
         hashed = make_password(CLEARTEXT_SECRET)
         self.assertTrue(self.validator._check_secret(CLEARTEXT_SECRET, CLEARTEXT_SECRET))

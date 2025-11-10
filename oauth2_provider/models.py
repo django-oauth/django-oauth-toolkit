@@ -3,7 +3,10 @@ import logging
 import time
 import uuid
 from contextlib import suppress
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
+from typing import Callable, Optional, Union
 from urllib.parse import parse_qsl, urlparse
 
 from django.apps import apps
@@ -86,12 +89,14 @@ class AbstractApplication(models.Model):
     )
 
     GRANT_AUTHORIZATION_CODE = "authorization-code"
+    GRANT_DEVICE_CODE = "urn:ietf:params:oauth:grant-type:device_code"
     GRANT_IMPLICIT = "implicit"
     GRANT_PASSWORD = "password"
     GRANT_CLIENT_CREDENTIALS = "client-credentials"
     GRANT_OPENID_HYBRID = "openid-hybrid"
     GRANT_TYPES = (
         (GRANT_AUTHORIZATION_CODE, _("Authorization code")),
+        (GRANT_DEVICE_CODE, _("Device Code")),
         (GRANT_IMPLICIT, _("Implicit")),
         (GRANT_PASSWORD, _("Resource owner password-based")),
         (GRANT_CLIENT_CREDENTIALS, _("Client credentials")),
@@ -127,7 +132,7 @@ class AbstractApplication(models.Model):
         default="",
     )
     client_type = models.CharField(max_length=32, choices=CLIENT_TYPES)
-    authorization_grant_type = models.CharField(max_length=32, choices=GRANT_TYPES)
+    authorization_grant_type = models.CharField(max_length=44, choices=GRANT_TYPES)
     client_secret = ClientSecretField(
         max_length=255,
         blank=True,
@@ -650,9 +655,107 @@ class IDToken(AbstractIDToken):
         swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
 
 
+class AbstractDeviceGrant(models.Model):
+    class Meta:
+        abstract = True
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device_code"],
+                name="%(app_label)s_%(class)s_unique_device_code",
+            ),
+        ]
+
+    AUTHORIZED = "authorized"
+    AUTHORIZATION_PENDING = "authorization-pending"
+    EXPIRED = "expired"
+    DENIED = "denied"
+
+    DEVICE_FLOW_STATUS = (
+        (AUTHORIZED, _("Authorized")),
+        (AUTHORIZATION_PENDING, _("Authorization pending")),
+        (EXPIRED, _("Expired")),
+        (DENIED, _("Denied")),
+    )
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="%(app_label)s_%(class)s",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    device_code = models.CharField(max_length=100, unique=True)
+    user_code = models.CharField(max_length=100)
+    scope = models.CharField(max_length=64, null=True)
+    interval = models.IntegerField(default=5)
+    expires = models.DateTimeField()
+    status = models.CharField(
+        max_length=64, blank=True, choices=DEVICE_FLOW_STATUS, default=AUTHORIZATION_PENDING
+    )
+    client_id = models.CharField(max_length=100, db_index=True)
+    last_checked = models.DateTimeField(auto_now=True)
+
+    def is_expired(self):
+        """
+        Check device flow session expiration and set the status to "expired" if current time
+        is past the "expires" deadline.
+        """
+        if self.status == self.EXPIRED:
+            return True
+
+        now = datetime.now(tz=dt_timezone.utc)
+        if now >= self.expires:
+            self.status = self.EXPIRED
+            self.save(update_fields=["status"])
+            return True
+
+        return False
+
+
+class DeviceGrant(AbstractDeviceGrant):
+    class Meta(AbstractDeviceGrant.Meta):
+        swappable = "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL"
+
+
+@dataclass
+class DeviceRequest:
+    # https://datatracker.ietf.org/doc/html/rfc8628#section-3.1
+    # scope is optional
+    client_id: str
+    scope: Optional[str] = None
+
+
+@dataclass
+class DeviceCodeResponse:
+    verification_uri: str
+    expires_in: int
+    user_code: int
+    device_code: str
+    interval: int
+    verification_uri_complete: Optional[Union[str, Callable]] = None
+
+
+def create_device_grant(device_request: DeviceRequest, device_response: DeviceCodeResponse) -> DeviceGrant:
+    now = datetime.now(tz=dt_timezone.utc)
+
+    return DeviceGrant.objects.create(
+        client_id=device_request.client_id,
+        device_code=device_response.device_code,
+        user_code=device_response.user_code,
+        scope=device_request.scope,
+        expires=now + timedelta(seconds=device_response.expires_in),
+    )
+
+
 def get_application_model():
     """Return the Application model that is active in this project."""
     return apps.get_model(oauth2_settings.APPLICATION_MODEL)
+
+
+def get_device_grant_model():
+    """Return the DeviceGrant model that is active in this project."""
+    return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
 
 
 def get_grant_model():

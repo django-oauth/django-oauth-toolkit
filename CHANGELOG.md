@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1506 Support for Wildcard Origin and Redirect URIs - Adds a new setting [ALLOW_URL_WILDCARDS](https://django-oauth-toolkit.readthedocs.io/en/latest/settings.html#allow-uri-wildcards). This feature is useful for working with CI service such as cloudflare, netlify, and vercel that offer branch
 deployments for development previews and user acceptance testing.
 * #1586 Turkish language support added
+* #1539 Add device authorization grant support
 
 ### Changed
 The project is now hosted in the django-oauth organization.
