@@ -767,3 +767,50 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
 
         assert is_expired
         assert device.status == device.EXPIRED
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "def",
+    )
+    def test_device_flow_uses_requested_scope_not_default(self):
+        """
+        Test that requested scope in device authorization is used in the token,
+        not DEFAULT_SCOPES.
+        """
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
+        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [
+            set_oauthlib_user_to_device_request_user
+        ]
+
+        device_authorization_response = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=urlencode({"client_id": self.application.client_id, "scope": "read"}),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert device_authorization_response.status_code == 200
+
+        self.client.login(username="test_user", password="123456")
+        self.client.post(reverse("oauth2_provider:device"), data={"user_code": "XYZ"})
+        self.client.post(
+            reverse(
+                "oauth2_provider:device-confirm",
+                kwargs={"user_code": "XYZ", "client_id": self.application.client_id},
+            ),
+            data={"action": "accept"},
+        )
+
+        token_response = self.client.post(
+            "/o/token/",
+            data=urlencode(
+                {
+                    "device_code": "def",
+                    "client_id": self.application.client_id,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                }
+            ),
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        assert token_response.status_code == 200
+        assert token_response.json()["scope"] == "read"
