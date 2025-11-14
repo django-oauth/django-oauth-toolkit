@@ -214,19 +214,31 @@ class OAuth2Validator(RequestValidator):
         If request.client was not set, load application instance for given
         client_id and store it in request.client
         """
-
-        # we want to be sure that request has the client attribute!
-        assert hasattr(request, "client"), '"request" instance has no "client" attribute'
-
+        if request.client:
+            # check for cached client, to save the db hit if this has already been loaded
+            if not isinstance(request.client, Application):
+                # resetting request.client (client_id=%r): not an Application, something else set request.client erroneously
+                request.client = None
+            elif request.client.client_id != client_id:
+                # resetting request.client (client_id=%r): request.client.client_id does not match the given client_id
+                request.client = None
+            elif not request.client.is_usable(request):
+                # resetting request.client (client_id=%r): request.client is a valid Application, but is not usable
+                request.client = None
+            else:
+                # request.client is a valid Application, reusing it
+                return request.client
         try:
-            request.client = request.client or Application.objects.get(client_id=client_id)
-            # Check that the application can be used (defaults to always True)
-            if not request.client.is_usable(request):
-                log.debug("Failed body authentication: Application %r is disabled" % (client_id))
+            # cache not hit, loading application from database for client_id %r
+            client = Application.objects.get(client_id=client_id)
+            if not client.is_usable(request):
+                # Failed to load application: Application %r is not usable
                 return None
+            request.client = client
+            # Loaded application with client_id %r from database
             return request.client
         except Application.DoesNotExist:
-            log.debug("Failed body authentication: Application %r does not exist" % (client_id))
+            # Failed to load application: Application with client_id %r does not exist
             return None
 
     def _set_oauth2_error_on_request(self, request, access_token, scopes):
@@ -289,6 +301,7 @@ class OAuth2Validator(RequestValidator):
             pass
 
         self._load_application(request.client_id, request)
+        log.debug("Determining if client authentication is required for client %r", request.client)
         if request.client:
             return request.client.client_type == AbstractApplication.CLIENT_CONFIDENTIAL
 

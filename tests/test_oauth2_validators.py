@@ -216,8 +216,52 @@ class TestOAuth2Validator(TransactionTestCase):
         self.request.client = ""
         self.assertTrue(self.validator.client_authentication_required(self.request))
 
-    def test_load_application_fails_when_request_has_no_client(self):
-        self.assertRaises(AssertionError, self.validator.authenticate_client_id, "client_id", {})
+    def test_load_application_loads_client_id_when_request_has_no_client(self):
+        self.request.client = None
+        application = self.validator._load_application("client_id", self.request)
+        self.assertEqual(application, self.application)
+
+    def test_load_application_uses_cached_when_request_has_valid_client_matching_client_id(self):
+        self.request.client = self.application
+        application = self.validator._load_application("client_id", self.request)
+        self.assertIs(application, self.application)
+        self.assertIs(self.request.client, self.application)
+
+    def test_load_application_succeeds_when_request_has_invalid_client_valid_client_id(self):
+        self.request.client = 'invalid_client'
+        application = self.validator._load_application("client_id", self.request)
+        self.assertEqual(application, self.application)
+        self.assertEqual(self.request.client, self.application)
+
+    def test_load_application_overwrites_client_on_client_id_mismatch(self):
+        another_application = Application.objects.create(
+            client_id="another_client_id",
+            client_secret=CLEARTEXT_SECRET,
+            user=self.user,
+            client_type=Application.CLIENT_PUBLIC,
+            authorization_grant_type=Application.GRANT_PASSWORD,
+        )
+        self.request.client = another_application
+        application = self.validator._load_application("client_id", self.request)
+        self.assertEqual(application, self.application)
+        self.assertEqual(self.request.client, self.application)
+        another_application.delete()
+
+    @mock.patch.object(Application, "is_usable")
+    def test_load_application_returns_none_when_client_not_usable_cached(self, mock_is_usable):
+        mock_is_usable.return_value = False
+        self.request.client = self.application
+        application = self.validator._load_application("client_id", self.request)
+        self.assertIsNone(application)
+        self.assertIsNone(self.request.client)
+
+    @mock.patch.object(Application, "is_usable")
+    def test_load_application_returns_none_when_client_not_usable_db_lookup(self, mock_is_usable):
+        mock_is_usable.return_value = False
+        self.request.client = None
+        application = self.validator._load_application("client_id", self.request)
+        self.assertIsNone(application)
+        self.assertIsNone(self.request.client)
 
     def test_rotate_refresh_token__is_true(self):
         self.assertTrue(self.validator.rotate_refresh_token(mock.MagicMock()))
