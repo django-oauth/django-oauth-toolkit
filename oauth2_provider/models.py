@@ -477,20 +477,25 @@ class AbstractAccessToken(models.Model):
         """
         Check if the token is authorized for the given audience URI.
 
-        RFC 8707: Validates that the token includes the specified resource indicator.
+        RFC 8707: Validates that the token includes the specified resource indicator
+        using the configured resource validator (RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR).
+
         If the token has no resource indicators (empty list), it is unrestricted and
         allows any audience (backward compatibility).
 
         :param audience_uri: The URI of the resource server to check
         :return: True if the token is authorized for this audience, False otherwise
         """
+        from .settings import oauth2_settings
+
         audiences = self.get_audiences()
+        resource_validator = oauth2_settings.RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
 
-        # Empty list means unrestricted access (backward compatibility)
-        if not audiences:
+        if resource_validator:
+            return resource_validator(audience_uri, audiences)
+        else:
+            # No validator configured - allow everything (backward compat)
             return True
-
-        return audience_uri in audiences
 
     def allow_scopes(self, scopes):
         """

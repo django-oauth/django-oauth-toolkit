@@ -41,6 +41,43 @@ from .settings import oauth2_settings
 from .utils import get_timezone
 
 
+def validate_resource_as_url_prefix(request_uri, audiences):
+    """
+    Default resource validator using URL prefix matching (RFC 8707).
+
+    Validates that the request URI matches one of the token's audience claims
+    using prefix matching. The audience URI acts as a base URI that the request
+    must start with.
+
+    Examples:
+        - Token audience: "https://api.example.com/foo"
+        - Matches: "https://api.example.com/foo"
+        - Matches: "https://api.example.com/foo/"
+        - Matches: "https://api.example.com/foo/bar"
+        - Rejects: "https://other.example.com/foo/bar"
+        - Rejects: "https://api.example.com/bar"
+        - Rejects: "https://api.example.com/food-blog"
+
+    :param request_uri: String URI of the current request (without query string)
+    :param audiences: List of audience URI strings from token
+    :return: True if token is valid for this request, False otherwise
+    """
+    # No audiences = unrestricted token (backward compatibility)
+    if not audiences:
+        return True
+
+    request_normalized = request_uri.rstrip("/") + "/"
+
+    # Check if request URI starts with any of the audience URIs
+    for audience in audiences:
+        audience_normalized = audience.rstrip("/") + "/"
+
+        if request_normalized.startswith(audience_normalized):
+            return True
+
+    return False
+
+
 log = logging.getLogger("oauth2_provider")
 
 GRANT_TYPE_MAPPING = {
@@ -481,6 +518,14 @@ class OAuth2Validator(RequestValidator):
                 )
 
         if access_token and access_token.is_valid(scopes):
+            # RFC 8707: Validate token audience against request resource
+            # Use request.uri which is the full URI from the oauthlib Request object
+            request_uri = request.uri.split("?")[0]
+            if not access_token.allows_audience(request_uri):
+                # Token is valid but not authorized for this resource
+                self._set_oauth2_error_on_request(request, access_token, scopes)
+                return False
+
             request.client = access_token.application
             request.user = access_token.user
             request.scopes = list(access_token.scopes)
@@ -605,6 +650,55 @@ class OAuth2Validator(RequestValidator):
         with transaction.atomic(using=router.db_for_write(AccessToken)):
             return self._save_bearer_token(token, request, *args, **kwargs)
 
+    def _check_and_set_request_resource(self, request):
+        """
+        Handle 'resource' parameter from token requests (RFC 8707).
+        Normalizes request.resource to a JSON-encoded array of URIs.
+
+        request.resource will be set to one of:
+        - Empty string "" (no resources)
+        - JSON-encoded array '["https://api.example.com"]' or '["https://a.com", "https://b.com"]'
+        """
+        resource = getattr(request, "resource", None) or ""
+        if isinstance(resource, list):
+            request.resource = json.dumps(resource)
+        elif resource and resource.strip():
+            # It's a non-empty string - check if already JSON-encoded
+            try:
+                parsed = json.loads(resource)
+            except (json.JSONDecodeError, TypeError):
+                # Not JSON, it's a single URI string from token endpoint POST
+                request.resource = json.dumps([resource])
+            else:
+                assert isinstance(parsed, list)
+                request.resource = resource
+        else:
+            request.resource = ""
+
+        if request.grant_type == "authorization_code":
+            # Handle grant resource narrowing
+            grant = Grant.objects.filter(code=request.code, application=request.client).first()
+            grant_resource = grant.resource if (grant and grant.resource) else ""
+
+            if request.resource and grant_resource:
+                # Token request is narrowing the resource scope
+                # Validate that requested resources are a subset of granted resources
+                requested_list = json.loads(request.resource)
+                granted_list = json.loads(grant_resource)
+
+                for res in requested_list:
+                    if res not in granted_list:
+                        raise errors.CustomOAuth2Error(
+                            error="invalid_target",
+                            description=(
+                                f"Requested resource '{res}' was not included in the "
+                                "original authorization grant"
+                            ),
+                            request=request,
+                        )
+            elif grant_resource:
+                request.resource = grant_resource
+
     def _save_bearer_token(self, token, request, *args, **kwargs):
         """
         Save access and refresh token.
@@ -617,80 +711,7 @@ class OAuth2Validator(RequestValidator):
         if "scope" not in token:
             raise FatalClientError("Failed to renew access token: missing scope")
 
-        # RFC 8707: Extract resource parameter from request
-        # For authorization_code grant, resource comes from the grant (already JSON-encoded)
-        # but can be narrowed by the token request
-        # For other grants, it comes from the request directly and needs encoding
-        if request.grant_type == "authorization_code":
-            # Get resource from the grant that was validated
-            grant = Grant.objects.filter(code=request.code, application=request.client).first()
-            grant_resource = grant.resource if (grant and grant.resource) else ""
-
-            # Check if token request specifies a subset of resources
-            requested_resource = getattr(request, "resource", None)
-            if requested_resource:
-                # RFC 8707: Token request is narrowing the resource scope
-                # Validate that requested resources are a subset of granted resources
-                if isinstance(requested_resource, str):
-                    requested_list = [requested_resource]
-                else:
-                    requested_list = requested_resource
-
-                # Parse granted resources
-                if grant_resource:
-                    try:
-                        granted_list = json.loads(grant_resource)
-                    except (json.JSONDecodeError, TypeError):
-                        granted_list = []
-                else:
-                    granted_list = []
-
-                # Validate that all requested resources were granted
-                if granted_list:  # Only validate if resources were originally granted
-                    for res in requested_list:
-                        if res not in granted_list:
-                            # RFC 8707: Use invalid_target error per spec
-                            raise errors.CustomOAuth2Error(
-                                error="invalid_target",
-                                description=(
-                                    f"Requested resource '{res}' was not included in the "
-                                    "original authorization grant"
-                                ),
-                                request=request,
-                            )
-
-                request.resource = json.dumps(requested_list)
-            elif grant_resource:
-                # Use all resources from the grant
-                request.resource = grant_resource
-            else:
-                request.resource = ""
-        else:
-            # For other grant types (client_credentials, password, implicit, etc.)
-            # Extract resource from request and JSON-encode it if needed
-            resource = getattr(request, "resource", None)
-            if resource:
-                # Check if already JSON-encoded (from authorization endpoint)
-                # vs raw from token endpoint
-                if isinstance(resource, str):
-                    # Could be either a single URI or already JSON-encoded
-                    try:
-                        # Try to parse as JSON
-                        parsed = json.loads(resource)
-                        if isinstance(parsed, list):
-                            # Already JSON-encoded, use as-is
-                            request.resource = resource
-                        else:
-                            # Single URI, needs encoding
-                            request.resource = json.dumps([resource])
-                    except (json.JSONDecodeError, TypeError):
-                        # Not JSON, it's a single URI
-                        request.resource = json.dumps([resource])
-                else:
-                    # It's a list, encode it
-                    request.resource = json.dumps(resource)
-            else:
-                request.resource = ""
+        self._check_and_set_request_resource(request)
 
         # expires_in is passed to Server on initialization
         # custom server class can have logic to override this

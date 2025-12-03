@@ -101,47 +101,53 @@ by that resource server.
 
 Validating Token Audiences
 ---------------------------
-Resource servers should validate that tokens are intended for them using the ``allows_audience()`` method:
+Django OAuth Toolkit automatically validates token audiences when using ``validate_bearer_token()``.
+By default, it uses **prefix-based matching** where the token's audience URI acts as a base URI.
+
+Automatic Validation
+~~~~~~~~~~~~~~~~~~~~
+When a resource server validates a bearer token, DOT automatically checks if the request URI
+matches the token's audience claim:
 
 .. code-block:: python
 
-    from oauth2_provider.models import AccessToken
+    # In your Django REST Framework view or OAuth-protected endpoint
+    # DOT automatically validates audience - no manual check needed!
 
-    def validate_request(request):
-        """Validate that the token is intended for this resource server."""
-        token_string = request.META.get('HTTP_AUTHORIZATION', '').split(' ')[-1]
+    @require_oauth(['read'])
+    def my_api_view(request):
+        # If this executes, the token is valid AND authorized for this resource
+        return Response({'data': 'secret'})
 
-        try:
-            token = AccessToken.objects.get(token=token_string)
+The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
+will be accepted for requests to ``https://api.example.com/v1/users`` but rejected for
+``https://api.example.com/v2/users``.
 
-            # Check token is not expired
-            if token.is_expired():
-                return False
+Custom Validation Logic
+~~~~~~~~~~~~~~~~~~~~~~~~
+You can customize the validation logic by providing your own validator function:
 
-            # Check token audience (RFC 8707)
-            if not token.allows_audience('https://api.example.com'):
-                return False
+.. code-block:: python
 
+    # myapp/validators.py
+    def exact_match_validator(request_uri, audiences):
+        """Custom validator that requires exact audience match."""
+        # No audiences = unrestricted token (backward compat)
+        if not audiences:
             return True
-        except AccessToken.DoesNotExist:
-            return False
 
-The ``allows_audience()`` method checks if the token's resource field includes the specified URI.
-Tokens without resource restrictions (legacy tokens) will allow any audience for backward compatibility.
+        # Require exact match
+        return request_uri in audiences
 
-You can also retrieve all audiences for a token:
+    # settings.py
+    OAUTH2_PROVIDER = {
+        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': 'myapp.validators.exact_match_validator',
+    }
+
+To disable automatic validation entirely, set the validator to ``None``:
 
 .. code-block:: python
 
-    audiences = token.get_audiences()  # Returns list of resource URIs
-
-Security Benefits
------------------
-RFC 8707 support provides important security benefits:
-
-* **Prevents privilege escalation**: Tokens can only be used at authorized resource servers
-* **Defense in depth**: Even if a token is stolen, it cannot be used at unintended services
-* **Explicit authorization**: Users see which specific resources will be accessed
-
-The authorization server validates that token requests only specify resources from the original
-authorization, rejecting attempts to escalate privileges with an ``invalid_target`` error.
+    OAUTH2_PROVIDER = {
+        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': None,
+    }
