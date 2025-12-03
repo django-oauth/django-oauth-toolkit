@@ -19,4 +19,4 @@ py-modules = []
 [tool.uv.sources]
 # connect to the django-oauth-toolkit package in the parent workspace
 # so changes to it are reflected here without reinstalling.
-django-oauth-toolkit = { editable = true, workspace = true }
+django-oauth-toolkit = { workspace = true }

@@ -217,13 +217,16 @@ class OAuth2Validator(RequestValidator):
         if request.client:
             # check for cached client, to save the db hit if this has already been loaded
             if not isinstance(request.client, Application):
-                # resetting request.client (client_id=%r): not an Application, something else set request.client erroneously
+                # resetting request.client (client_id=%r): not an Application, something else set
+                # request.client erroneously
                 request.client = None
             elif request.client.client_id != client_id:
-                # resetting request.client (client_id=%r): request.client.client_id does not match the given client_id
+                # resetting request.client (client_id=%r): request.client.client_id does not match
+                # the given client_id
                 request.client = None
             elif not request.client.is_usable(request):
-                # resetting request.client (client_id=%r): request.client is a valid Application, but is not usable
+                # resetting request.client (client_id=%r): request.client is a valid Application,
+                # but is not usable
                 request.client = None
             else:
                 # request.client is a valid Application, reusing it
@@ -614,6 +617,81 @@ class OAuth2Validator(RequestValidator):
         if "scope" not in token:
             raise FatalClientError("Failed to renew access token: missing scope")
 
+        # RFC 8707: Extract resource parameter from request
+        # For authorization_code grant, resource comes from the grant (already JSON-encoded)
+        # but can be narrowed by the token request
+        # For other grants, it comes from the request directly and needs encoding
+        if request.grant_type == "authorization_code":
+            # Get resource from the grant that was validated
+            grant = Grant.objects.filter(code=request.code, application=request.client).first()
+            grant_resource = grant.resource if (grant and grant.resource) else ""
+
+            # Check if token request specifies a subset of resources
+            requested_resource = getattr(request, "resource", None)
+            if requested_resource:
+                # RFC 8707: Token request is narrowing the resource scope
+                # Validate that requested resources are a subset of granted resources
+                if isinstance(requested_resource, str):
+                    requested_list = [requested_resource]
+                else:
+                    requested_list = requested_resource
+
+                # Parse granted resources
+                if grant_resource:
+                    try:
+                        granted_list = json.loads(grant_resource)
+                    except (json.JSONDecodeError, TypeError):
+                        granted_list = []
+                else:
+                    granted_list = []
+
+                # Validate that all requested resources were granted
+                if granted_list:  # Only validate if resources were originally granted
+                    for res in requested_list:
+                        if res not in granted_list:
+                            # RFC 8707: Use invalid_target error per spec
+                            raise errors.CustomOAuth2Error(
+                                error="invalid_target",
+                                description=(
+                                    f"Requested resource '{res}' was not included in the "
+                                    "original authorization grant"
+                                ),
+                                request=request,
+                            )
+
+                request.resource = json.dumps(requested_list)
+            elif grant_resource:
+                # Use all resources from the grant
+                request.resource = grant_resource
+            else:
+                request.resource = ""
+        else:
+            # For other grant types (client_credentials, password, implicit, etc.)
+            # Extract resource from request and JSON-encode it if needed
+            resource = getattr(request, "resource", None)
+            if resource:
+                # Check if already JSON-encoded (from authorization endpoint)
+                # vs raw from token endpoint
+                if isinstance(resource, str):
+                    # Could be either a single URI or already JSON-encoded
+                    try:
+                        # Try to parse as JSON
+                        parsed = json.loads(resource)
+                        if isinstance(parsed, list):
+                            # Already JSON-encoded, use as-is
+                            request.resource = resource
+                        else:
+                            # Single URI, needs encoding
+                            request.resource = json.dumps([resource])
+                    except (json.JSONDecodeError, TypeError):
+                        # Not JSON, it's a single URI
+                        request.resource = json.dumps([resource])
+                else:
+                    # It's a list, encode it
+                    request.resource = json.dumps(resource)
+            else:
+                request.resource = ""
+
         # expires_in is passed to Server on initialization
         # custom server class can have logic to override this
         expires = timezone.now() + timedelta(
@@ -717,11 +795,22 @@ class OAuth2Validator(RequestValidator):
             id_token=id_token,
             application=request.client,
             source_refresh_token=source_refresh_token,
+            resource=getattr(request, "resource", ""),  # RFC 8707
         )
 
     def _create_authorization_code(self, request, code, expires=None):
         if not expires:
             expires = timezone.now() + timedelta(seconds=oauth2_settings.AUTHORIZATION_CODE_EXPIRE_SECONDS)
+
+        # RFC 8707: Extract resource parameter
+        # The resource parameter is already JSON-encoded from the view
+        resource = getattr(request, "resource", None)
+        if resource:
+            # Resource is already JSON-encoded from the view, just use it
+            resource_json = resource
+        else:
+            resource_json = ""
+
         return Grant.objects.create(
             application=request.client,
             user=request.user,
@@ -733,6 +822,7 @@ class OAuth2Validator(RequestValidator):
             code_challenge_method=request.code_challenge_method or "",
             nonce=request.nonce or "",
             claims=json.dumps(request.claims or {}),
+            resource=resource_json,
         )
 
     def _create_refresh_token(self, request, refresh_token_code, access_token, previous_refresh_token):

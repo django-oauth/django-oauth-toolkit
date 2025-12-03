@@ -44,8 +44,12 @@ Example Response::
       "client_id": "oUdofn7rfhRtKWbmhyVk",
       "username": "jdoe",
       "scope": "read write dolphin",
-      "exp": 1419356238
+      "exp": 1419356238,
+      "aud": ["https://api.example.com", "https://data.example.com"]
     }
+
+The ``aud`` field (audience) is included when the token has resource binding per RFC 8707.
+Tokens without resource restrictions will not include this field.
 
 Setup the Resource Server
 -------------------------
@@ -71,3 +75,73 @@ As allowed by RFC 7662, some external OAuth 2.0 servers support HTTP Basic Authe
 For these, use:
 ``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS=('client_id','client_secret')`` instead
 of ``RESOURCE_SERVER_AUTH_TOKEN``.
+
+
+Token Audience Binding (RFC 8707)
+==================================
+Django OAuth Toolkit supports `RFC 8707 <https://rfc-editor.org/rfc/rfc8707.html>`_ Resource Indicators,
+which allows clients to bind access tokens to specific resource servers. This prevents tokens from being
+misused at unintended services.
+
+How It Works
+------------
+Clients include a ``resource`` parameter in authorization and token requests to specify which
+resource servers they want to access:
+
+.. code-block:: http
+
+    GET /o/authorize/?client_id=CLIENT_ID
+        &response_type=code
+        &redirect_uri=https://client.example.com/callback
+        &scope=read
+        &resource=https://api.example.com
+
+The issued access token will be bound to ``https://api.example.com`` and should only be accepted
+by that resource server.
+
+Validating Token Audiences
+---------------------------
+Resource servers should validate that tokens are intended for them using the ``allows_audience()`` method:
+
+.. code-block:: python
+
+    from oauth2_provider.models import AccessToken
+
+    def validate_request(request):
+        """Validate that the token is intended for this resource server."""
+        token_string = request.META.get('HTTP_AUTHORIZATION', '').split(' ')[-1]
+
+        try:
+            token = AccessToken.objects.get(token=token_string)
+
+            # Check token is not expired
+            if token.is_expired():
+                return False
+
+            # Check token audience (RFC 8707)
+            if not token.allows_audience('https://api.example.com'):
+                return False
+
+            return True
+        except AccessToken.DoesNotExist:
+            return False
+
+The ``allows_audience()`` method checks if the token's resource field includes the specified URI.
+Tokens without resource restrictions (legacy tokens) will allow any audience for backward compatibility.
+
+You can also retrieve all audiences for a token:
+
+.. code-block:: python
+
+    audiences = token.get_audiences()  # Returns list of resource URIs
+
+Security Benefits
+-----------------
+RFC 8707 support provides important security benefits:
+
+* **Prevents privilege escalation**: Tokens can only be used at authorized resource servers
+* **Defense in depth**: Even if a token is stolen, it cannot be used at unintended services
+* **Explicit authorization**: Users see which specific resources will be accessed
+
+The authorization server validates that token requests only specify resources from the original
+authorization, rejecting attempts to escalate privileges with an ``invalid_target`` error.

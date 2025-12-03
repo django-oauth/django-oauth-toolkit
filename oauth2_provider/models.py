@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import time
 import uuid
@@ -320,6 +321,7 @@ class AbstractGrant(models.Model):
     * :attr:`scope` Required scopes, optional
     * :attr:`code_challenge` PKCE code challenge
     * :attr:`code_challenge_method` PKCE code challenge transform algorithm
+    * :attr:`resource` RFC 8707 resource indicator(s), JSON-encoded array of URIs
     """
 
     CODE_CHALLENGE_PLAIN = "plain"
@@ -346,6 +348,9 @@ class AbstractGrant(models.Model):
 
     nonce = models.CharField(max_length=255, blank=True, default="")
     claims = models.TextField(blank=True)
+
+    # RFC 8707: Resource Indicators - JSON-encoded array of resource URIs
+    resource = models.TextField(blank=True, default="")
 
     def is_expired(self):
         """
@@ -384,6 +389,7 @@ class AbstractAccessToken(models.Model):
     * :attr:`application` Application instance
     * :attr:`expires` Date and time of token expiration, in DateTime format
     * :attr:`scope` Allowed scopes
+    * :attr:`resource` RFC 8707 resource indicator(s) - JSON-encoded array of URIs
     """
 
     id = models.BigAutoField(primary_key=True)
@@ -422,8 +428,12 @@ class AbstractAccessToken(models.Model):
         blank=True,
         null=True,
     )
+
     expires = models.DateTimeField()
     scope = models.TextField(blank=True)
+
+    # RFC 8707: Resource Indicators - JSON-encoded array of resource URIs
+    resource = models.TextField(blank=True, default="")
 
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
@@ -444,6 +454,43 @@ class AbstractAccessToken(models.Model):
             return True
 
         return timezone.now() >= self.expires
+
+    def get_audiences(self):
+        """
+        Get list of audience URIs from the resource field.
+
+        RFC 8707: Returns the resource indicators as a list of URIs.
+        The resource field is stored as a JSON-encoded array.
+
+        :return: List of audience URI strings. Empty list means the token is not
+                 restricted to specific resource servers (unrestricted access).
+        """
+        if not self.resource:
+            return []
+
+        try:
+            return json.loads(self.resource)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def allows_audience(self, audience_uri):
+        """
+        Check if the token is authorized for the given audience URI.
+
+        RFC 8707: Validates that the token includes the specified resource indicator.
+        If the token has no resource indicators (empty list), it is unrestricted and
+        allows any audience (backward compatibility).
+
+        :param audience_uri: The URI of the resource server to check
+        :return: True if the token is authorized for this audience, False otherwise
+        """
+        audiences = self.get_audiences()
+
+        # Empty list means unrestricted access (backward compatibility)
+        if not audiences:
+            return True
+
+        return audience_uri in audiences
 
     def allow_scopes(self, scopes):
         """
