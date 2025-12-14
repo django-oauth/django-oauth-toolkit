@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * #1252 Fix crash  when 'client' is in token request body
 * #1496 Fix error when Bearer token string is empty but preceded by `Bearer` keyword.
+* #1628 Fix inaccurate help_text on client_secret field of Application model
 <!--
 ### Security
 -->

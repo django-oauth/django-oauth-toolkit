@@ -138,7 +138,7 @@ class AbstractApplication(models.Model):
         blank=True,
         default=generate_client_secret,
         db_index=True,
-        help_text=_("Hashed on Save. Copy it now if this is a new secret."),
+        help_text=_("Client secret for authentication"),
     )
     hash_client_secret = models.BooleanField(default=True)
     name = models.CharField(max_length=255, blank=True)
