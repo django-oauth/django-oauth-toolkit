@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "django-oauth-toolkit"
 dynamic = ["version"]
-requires-python = ">=3.8,<3.15"
+requires-python = ">=3.8"
 authors = [
   {name = "Federico Frenguelli"},
   {name = "Massimiliano Pippi"},
