@@ -8,7 +8,12 @@ from django.test import RequestFactory
 from django.urls import reverse
 
 from oauth2_provider.exceptions import BackchannelLogoutRequestError
-from oauth2_provider.models import get_application_model, get_id_token_model
+from oauth2_provider.models import (
+    get_application_model,
+    get_id_token_model,
+    get_access_token_model,
+    get_refresh_token_model,
+)
 from oauth2_provider.handlers import (
     on_user_logged_out_maybe_send_backchannel_logout,
     send_backchannel_logout_request,
@@ -21,6 +26,8 @@ from .common_testing import OAuth2ProviderTestCase as TestCase
 
 Application = get_application_model()
 IDToken = get_id_token_model()
+AccessToken = get_access_token_model()
+RefreshToken = get_refresh_token_model()
 User = get_user_model()
 
 
@@ -43,6 +50,20 @@ class TestBackchannelLogout(TestCase):
         expiration_date = now + datetime.timedelta(minutes=180)
         self.id_token = IDToken.objects.create(
             application=self.application, user=self.user, expires=expiration_date
+        )
+
+        self.access_token = AccessToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="test_access_token",
+            expires=now + datetime.timedelta(hours=1),
+            scope="read write",  # No offline_access scope
+        )
+        self.refresh_token = RefreshToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="test_refresh_token",
+            access_token=self.access_token,
         )
 
     def test_on_logout_handler_is_called_for_user(self):
@@ -78,3 +99,84 @@ class TestBackchannelLogout(TestCase):
         with patch("oauth2_provider.handlers.send_backchannel_logout_request") as mock_func:
             mock_func.side_effect = BackchannelLogoutRequestError("Bad Gateway")
             on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
+
+    def test_no_logout_sent_when_only_offline_access_refresh_tokens(self):
+        # Add offline_access scope
+        self.access_token.scope = "read write offline_access"
+        self.access_token.save()
+
+        with patch("oauth2_provider.handlers.send_backchannel_logout_request") as backchannel_handler:
+            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
+            backchannel_handler.assert_not_called()
+
+    def test_logout_sent_when_refresh_token_without_offline_access(self):
+        with patch("oauth2_provider.handlers.send_backchannel_logout_request") as backchannel_handler:
+            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
+            backchannel_handler.assert_called_once()
+            _, kwargs = backchannel_handler.call_args
+            self.assertEqual(kwargs["id_token"], self.id_token)
+
+    def test_only_one_logout_per_application_with_multiple_refresh_tokens(self):
+        # Create another refresh token for the same application
+        now = timezone.now()
+        another_access_token = AccessToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="test_access_token_2",
+            expires=now + datetime.timedelta(hours=1),
+            scope="read write",
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="test_refresh_token_2",
+            access_token=another_access_token,
+        )
+
+        # Should still be called only once despite having 2 refresh tokens
+        with patch("oauth2_provider.handlers.send_backchannel_logout_request") as backchannel_handler:
+            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
+            backchannel_handler.assert_called_once()
+
+    def test_logout_sent_for_multiple_applications(self):
+        # Create another application with backchannel logout URI
+        another_app = Application.objects.create(
+            name="test_app_2",
+            user=self.developer,
+            client_type=Application.CLIENT_PUBLIC,
+            authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+            algorithm=Application.RS256_ALGORITHM,
+            client_secret="another_secret",
+            backchannel_logout_uri="http://rp2.example.com/logout",
+        )
+
+        # Create ID token for the second application
+        another_id_token = IDToken.objects.create(
+            application=another_app, user=self.user, expires=timezone.now() + datetime.timedelta(minutes=180)
+        )
+
+        # Create access token and refresh token for the second application
+        now = timezone.now()
+        another_access_token = AccessToken.objects.create(
+            user=self.user,
+            application=another_app,
+            token="test_access_token_app2",
+            expires=now + datetime.timedelta(hours=1),
+            scope="read write",
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            application=another_app,
+            token="test_refresh_token_app2",
+            access_token=another_access_token,
+        )
+
+        # Should be called twice - once for each application - and both ID tokens were used
+        with patch("oauth2_provider.handlers.send_backchannel_logout_request") as backchannel_handler:
+            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
+            self.assertEqual(backchannel_handler.call_count, 2)
+
+            call_args_list = backchannel_handler.call_args_list
+            id_tokens_called = [call.kwargs["id_token"] for call in call_args_list]
+            self.assertIn(self.id_token, id_tokens_called)
+            self.assertIn(another_id_token, id_tokens_called)
