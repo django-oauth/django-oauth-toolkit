@@ -12,6 +12,7 @@ class AllowForm(forms.Form):
     code_challenge = forms.CharField(required=False, widget=forms.HiddenInput())
     code_challenge_method = forms.CharField(required=False, widget=forms.HiddenInput())
     claims = forms.CharField(required=False, widget=forms.HiddenInput())
+    resource = forms.CharField(required=False, widget=forms.HiddenInput())  # RFC 8707
 
 
 class ConfirmLogoutForm(forms.Form):

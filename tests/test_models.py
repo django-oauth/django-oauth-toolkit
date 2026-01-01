@@ -34,6 +34,56 @@ UserModel = get_user_model()
 IDToken = get_id_token_model()
 
 
+@pytest.mark.django_db
+def test_access_token_get_audiences():
+    """Test AccessToken.get_audiences() returns list of audience URIs"""
+    import json
+
+    user = UserModel.objects.create_user("aud_user", "test@example.com", "123456")
+    app = Application.objects.create(
+        name="Test App",
+        user=user,
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+    )
+
+    # Single resource
+    token1 = AccessToken.objects.create(
+        user=user,
+        token="token_single",
+        application=app,
+        expires=timezone.now() + timedelta(seconds=3600),
+        scope="read",
+        resource=json.dumps(["https://api.example.com/resource"]),
+    )
+    assert token1.get_audiences() == ["https://api.example.com/resource"]
+
+    # Multiple resources
+    token2 = AccessToken.objects.create(
+        user=user,
+        token="token_multi",
+        application=app,
+        expires=timezone.now() + timedelta(seconds=3600),
+        scope="read",
+        resource=json.dumps(["https://api.example.com/resource", "https://data.example.com/api"]),
+    )
+    assert token2.get_audiences() == [
+        "https://api.example.com/resource",
+        "https://data.example.com/api",
+    ]
+
+    # No resource - should return empty list
+    token3 = AccessToken.objects.create(
+        user=user,
+        token="token_none",
+        application=app,
+        expires=timezone.now() + timedelta(seconds=3600),
+        scope="read",
+        resource="",
+    )
+    assert token3.get_audiences() == []
+
+
 class BaseTestModels(TestCase):
     @classmethod
     def setUpTestData(cls):
