@@ -276,8 +276,8 @@
 	<div class="card error">
 		<h3>Session State Not Available</h3>
 		<p>
-			The authentication response does not contain a <code>session_state</code> parameter. The server
-			may not be configured to support session management.
+			The authentication response does not contain a <code>session_state</code> parameter. The
+			server may not be configured to support session management.
 		</p>
 		<p>
 			The OIDC provider must include the <code>session_state</code> parameter in the authentication
