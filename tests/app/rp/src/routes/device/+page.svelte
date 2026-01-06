@@ -314,8 +314,8 @@
 			and verification URI.
 		</li>
 		<li>
-			<strong>User authorizes:</strong> The user visits the verification URI on another device (like
-			a phone or computer), enters the user code, and approves the authorization.
+			<strong>User authorizes:</strong> The user visits the verification URI on another device
+			(like a phone or computer), enters the user code, and approves the authorization.
 		</li>
 		<li>
 			<strong>Device polls for token:</strong> Meanwhile, the device polls the token endpoint using
