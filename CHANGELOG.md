@@ -48,6 +48,7 @@ The project is now hosted in the django-oauth organization.
 * #1584 Fix IDP container in docker compose environment could not find templates and static files.
 * #1562 Fix: Handle AttributeError in IntrospectTokenView
 * #1583 Fix: Missing pt_BR translations
+* #1597 Fix: TypeError at /s/auth/o/token/
 <!--
 ### Security
 -->

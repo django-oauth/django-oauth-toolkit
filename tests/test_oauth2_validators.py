@@ -60,6 +60,8 @@ def always_invalid_token():
 class TestOAuth2Validator(TransactionTestCase):
     def setUp(self):
         self.user = UserModel.objects.create_user("user", "test@example.com", "123456")
+        self.user.last_login = None
+        self.user.save()
         self.request = mock.MagicMock(wraps=Request)
         self.request.user = self.user
         self.request.grant_type = "not client"
