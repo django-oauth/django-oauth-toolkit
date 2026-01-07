@@ -718,6 +718,25 @@ def test_redirect_to_uri_allowed_expects_allowed_uri_list():
     assert redirect_to_uri_allowed("https://example.com", ["https://example.com"])
 
 
+def test_redirect_to_uri_allowed_case_sensitive():
+    """
+    OAuth 2.0 Security Best Current Practice requires exact string matching for redirect URIs.
+    See: https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics
+
+    "When comparing client redirect URIs against pre-registered URIs, authorization
+    servers MUST utilize exact string matching."
+
+    This means https://EXAMPLE.COM should NOT match https://example.com
+    """
+    # Exact match should work
+    assert redirect_to_uri_allowed("https://example.com/callback", ["https://example.com/callback"])
+
+    # Different case in hostname should NOT match (exact string matching required)
+    assert not redirect_to_uri_allowed("https://EXAMPLE.COM/callback", ["https://example.com/callback"])
+    assert not redirect_to_uri_allowed("https://example.com/callback", ["https://EXAMPLE.COM/callback"])
+    assert not redirect_to_uri_allowed("https://Example.Com/callback", ["https://example.com/callback"])
+
+
 valid_wildcard_redirect_to_params = [
     ("https://valid.example.com", ["https://*.example.com"]),
     ("https://valid.valid.example.com", ["https://*.example.com"]),
