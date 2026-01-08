@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [unreleased]
+<!--
+### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+### Security
+-->
+
 ## [3.2.0] - 2025-11-13
 ### Added
 * Support for Django 5.2
@@ -23,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * #1252 Fix crash  when 'client' is in token request body
 * #1496 Fix error when Bearer token string is empty but preceded by `Bearer` keyword.
+* #1630 use token_checksum for lookup in _get_token_from_authentication_server
 
 ## [3.1.0] - 2025-10-03
 **NOTE**: This is the first release under the new [django-oauth](https://github.com/django-oauth) organization. The project moved in order to be more independent and to bypass quota limits on parallel CI jobs we were encountering in Jazzband. The project will emulate Django Commons going forward in it's operation. We're always on the lookout for willing maintainers and contributors. Feel free to start participating any time. PR's are always welcome.
