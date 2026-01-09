@@ -721,10 +721,9 @@ def test_redirect_to_uri_allowed_expects_allowed_uri_list():
 def test_redirect_to_uri_allowed_case_sensitive():
     """
     OAuth 2.0 Security Best Current Practice requires exact string matching for redirect URIs.
-    See: https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics
+    See: https://datatracker.ietf.org/doc/html/rfc9700#section-4.1.3
 
-    "When comparing client redirect URIs against pre-registered URIs, authorization
-    servers MUST utilize exact string matching."
+    "the authorization server MUST ensure that the two URIs are equal"
 
     This means https://EXAMPLE.COM should NOT match https://example.com
     """
