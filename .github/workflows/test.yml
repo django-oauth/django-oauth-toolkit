@@ -28,11 +28,6 @@ jobs:
         - 'main'
         ## include/exclude combinations, typically for the newest and oldest django/python versions.
         include:
-          # https://docs.djangoproject.com/en/dev/faq/install/#what-python-version-can-i-use-with-django
-          - python-version: '3.8'
-            django-version: '4.2'
-          - python-version: '3.9'
-            django-version: '4.2'
           - python-version: '3.14'
             django-version: '5.2'
           - python-version: '3.14'
@@ -126,9 +121,9 @@ jobs:
     permissions:
       id-token: write # Required for Codecov OIDC token
     steps:
-      # - tell codecov to send notifications now that all jobs are complete. 
+      # - tell codecov to send notifications now that all jobs are complete.
       #   without this, codecov may notify before all coverage reports have been uploaded.
-      #   `codecov: notify: manual_trigger: true` must be set in codecov.yml, to prevent 
+      #   `codecov: notify: manual_trigger: true` must be set in codecov.yml, to prevent
       #   processing on every upload.
       # - preferred to after_n_builds so we don't need to update that number every
       #   time we add/remove jobs.

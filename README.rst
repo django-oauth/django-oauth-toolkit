@@ -39,7 +39,7 @@ Please report any security issues to the Django OAuth security team at <django-o
 Requirements
 ------------
 
-* Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13 or 3.14
+* Python 3.10, 3.11, 3.12, 3.13 or 3.14
 * Django 4.2, 5.0, 5.1 or 5.2
 * oauthlib 3.2.2+
 
