@@ -40,7 +40,7 @@ Requirements
 ------------
 
 * Python 3.10, 3.11, 3.12, 3.13 or 3.14
-* Django 4.2, 5.0, 5.1 or 5.2
+* Django 4.2, 5.0, 5.1, 5.2 or 6.0
 * oauthlib 3.2.2+
 
 Installation

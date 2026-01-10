@@ -15,12 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+### Added
+* #1637 Support for Django 6.0
+
 ### Removed
 * #1636 Remove support for Python 3.8 and 3.9
 
 ### Fixed
 * #1628 Fix inaccurate help_text on client_secret field of Application model
-
 
 ## [3.2.0] - 2025-11-13
 ### Added
