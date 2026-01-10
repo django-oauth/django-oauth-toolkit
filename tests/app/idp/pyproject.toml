@@ -3,7 +3,7 @@ name = "idp"
 version = "0.1.0"
 description = "Django OAuth Toolkit Identity Provider Test App"
 readme = "README.md"
-requires-python = ">=3.8,<=3.14"
+requires-python = ">=3.10,<3.15"
 dependencies = [
     "Django>=4.2,<=5.2",
     "django-cors-headers==3.14.0",
