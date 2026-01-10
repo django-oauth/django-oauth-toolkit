@@ -228,7 +228,7 @@ class TestOAuth2Validator(TransactionTestCase):
         self.assertIs(self.request.client, self.application)
 
     def test_load_application_succeeds_when_request_has_invalid_client_valid_client_id(self):
-        self.request.client = 'invalid_client'
+        self.request.client = "invalid_client"
         application = self.validator._load_application("client_id", self.request)
         self.assertEqual(application, self.application)
         self.assertEqual(self.request.client, self.application)

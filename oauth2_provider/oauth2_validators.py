@@ -217,13 +217,16 @@ class OAuth2Validator(RequestValidator):
         if request.client:
             # check for cached client, to save the db hit if this has already been loaded
             if not isinstance(request.client, Application):
-                # resetting request.client (client_id=%r): not an Application, something else set request.client erroneously
+                # resetting request.client (client_id=%r):
+                # not an Application, something else set request.client erroneously
                 request.client = None
             elif request.client.client_id != client_id:
-                # resetting request.client (client_id=%r): request.client.client_id does not match the given client_id
+                # resetting request.client (client_id=%r):
+                # request.client.client_id does not match the given client_id
                 request.client = None
             elif not request.client.is_usable(request):
-                # resetting request.client (client_id=%r): request.client is a valid Application, but is not usable
+                # resetting request.client (client_id=%r):
+                # request.client is a valid Application, but is not usable
                 request.client = None
             else:
                 # request.client is a valid Application, reusing it
