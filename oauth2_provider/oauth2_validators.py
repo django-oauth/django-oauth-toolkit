@@ -448,9 +448,11 @@ class OAuth2Validator(RequestValidator):
                     expires, timezone=get_timezone(oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE)
                 )
 
+            token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
             access_token, _created = AccessToken.objects.update_or_create(
-                token=token,
+                token_checksum=token_checksum,
                 defaults={
+                    "token": token,
                     "user": user,
                     "application": None,
                     "scope": scope,

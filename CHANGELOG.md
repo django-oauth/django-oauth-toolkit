@@ -6,29 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+### Fixed
+* #1628 Fix inaccurate help_text on client_secret field of Application model
+
+
+<!--
+### Added
+### Changed
+### Deprecated
+### Removed
+### Security
+-->
+
+## [3.2.0] - 2025-11-13
 ### Added
 * Support for Django 5.2
 * Support for Python 3.14 (Django >= 5.2.8)
 * #1539 Add device authorization grant support
 
-
-<!--
-### Changed
-### Deprecated
-### Removed
--->
 ### Fixed
 * #1252 Fix crash  when 'client' is in token request body
 * #1496 Fix error when Bearer token string is empty but preceded by `Bearer` keyword.
-* #1628 Fix inaccurate help_text on client_secret field of Application model
-<!--
-### Security
--->
+* #1630 use token_checksum for lookup in _get_token_from_authentication_server
 
-## [3.1.0]
-
-
-**NOTE**: This is the first release under the new [django-oauth](https://github.com/django-oauth) organization. The project moved in order to be more independent and to bypass quota limits on parallel CI jobs we were encountering in Jazzband. The project will emulateDjango Commons going forward in it's operation. We're always on the look for willing maintainers and contributors. Feel free to start participating any time. PR's are always welcome.
+## [3.1.0] - 2025-10-03
+**NOTE**: This is the first release under the new [django-oauth](https://github.com/django-oauth) organization. The project moved in order to be more independent and to bypass quota limits on parallel CI jobs we were encountering in Jazzband. The project will emulate Django Commons going forward in it's operation. We're always on the lookout for willing maintainers and contributors. Feel free to start participating any time. PR's are always welcome.
 
 ### Added
 * #1506 Support for Wildcard Origin and Redirect URIs - Adds a new setting [ALLOW_URL_WILDCARDS](https://django-oauth-toolkit.readthedocs.io/en/latest/settings.html#allow-uri-wildcards). This feature is useful for working with CI service such as cloudflare, netlify, and vercel that offer branch
@@ -38,10 +40,6 @@ deployments for development previews and user acceptance testing.
 ### Changed
 The project is now hosted in the django-oauth organization.
 
-<!--
-### Deprecated
-### Removed
--->
 ### Fixed
 * #1517 OP prompts for logout when no OP session
 * #1512 client_secret not marked sensitive
@@ -49,9 +47,6 @@ The project is now hosted in the django-oauth organization.
 * #1584 Fix IDP container in docker compose environment could not find templates and static files.
 * #1562 Fix: Handle AttributeError in IntrospectTokenView
 * #1583 Fix: Missing pt_BR translations
-<!--
-### Security
--->
 
 
 ## [3.0.1] - 2024-09-07
