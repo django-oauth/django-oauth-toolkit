@@ -26,21 +26,20 @@ jobs:
         - '5.1'
         - '5.2'
         - 'main'
-        ## include/exclude combinations, typically for the newest and oldest django/python versions.
+        ## include/exclude version combinations, typically for the newest and oldest django/python versions.
+        ## python-version and django-version should be selected such that they minimize the number of include
+        ## and exclude entries.
         include:
-          - python-version: '3.14'
-            django-version: '5.2'
-          - python-version: '3.14'
-            django-version: 'main'
+          - { django-version: '5.2', python-version: '3.14' }
+          - { django-version: '6.0', python-version: '3.12' }
+          - { django-version: '6.0', python-version: '3.13' }
+          - { django-version: '6.0', python-version: '3.14' }
+          - { django-version: 'main', python-version: '3.14' }
         exclude:
-          - python-version: '3.13'
-            django-version: '5.0'
-          - python-version: '3.13'
-            django-version: '4.2'
-          - python-version: '3.10'
-            django-version: 'main'
-          - python-version: '3.11'
-            django-version: 'main'
+          - { django-version: '4.2', python-version: '3.13' }
+          - { django-version: '5.0', python-version: '3.13' }
+          - { django-version: 'main', python-version: '3.10' }
+          - { django-version: 'main', python-version: '3.11' }
 
     steps:
     - uses: actions/checkout@v4
@@ -49,7 +48,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-
 
     - name: Get pip cache dir
       id: pip-cache
