@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("oauth2_provider", "0013_alter_application_authorization_grant_type_device"),
+        ("oauth2_provider", "0014_alter_help_text"),
     ]
 
     operations = [

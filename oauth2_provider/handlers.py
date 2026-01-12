@@ -9,12 +9,11 @@ from django.utils import timezone
 from jwcrypto import jwt
 
 from .exceptions import BackchannelLogoutRequestError
-from .models import AbstractApplication, get_id_token_model, get_refresh_token_model
+from .models import AbstractApplication, get_id_token_model
 from .settings import oauth2_settings
 
 
 IDToken = get_id_token_model()
-RefreshToken = get_refresh_token_model()
 
 logger = logging.getLogger(__name__)
 
@@ -77,22 +76,21 @@ def on_user_logged_out_maybe_send_backchannel_logout(sender, **kwargs):
         return
 
     user = kwargs["user"]
-    # Get refresh tokens for user where scope doesn't contain offline_access
-    refresh_tokens = (
-        RefreshToken.objects.filter(user=user, access_token__scope__isnull=False)
-        .exclude(access_token__scope__icontains="offline_access")
-        .select_related("application", "access_token")
+
+    # Get ID tokens for user where Application has backchannel_logout_uri configured
+    # and scope doesn't contain offline_access (those sessions persist beyond logout)
+    id_tokens = (
+        IDToken.objects.filter(user=user, application__backchannel_logout_uri__isnull=False)
+        .exclude(scope__icontains="offline_access")
+        .select_related("application")
     )
 
     # Group by application and send one request per application
-    applications_to_logout = set()
-    for rt in refresh_tokens:
-        if rt.application.backchannel_logout_uri and rt.application not in applications_to_logout:
-            applications_to_logout.add(rt.application)
-            # Find an ID token for this user/application to use for logout
-            id_token = IDToken.objects.filter(application=rt.application, user=user).first()
-            if id_token:
-                try:
-                    handler(id_token=id_token)
-                except BackchannelLogoutRequestError as exc:
-                    logger.warn(str(exc))
+    applications_notified = set()
+    for id_token in id_tokens:
+        if id_token.application not in applications_notified:
+            applications_notified.add(id_token.application)
+            try:
+                handler(id_token=id_token)
+            except BackchannelLogoutRequestError as exc:
+                logger.warning(str(exc))
