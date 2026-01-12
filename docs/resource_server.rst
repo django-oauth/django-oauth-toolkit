@@ -44,8 +44,12 @@ Example Response::
       "client_id": "oUdofn7rfhRtKWbmhyVk",
       "username": "jdoe",
       "scope": "read write dolphin",
-      "exp": 1419356238
+      "exp": 1419356238,
+      "aud": ["https://api.example.com", "https://data.example.com"]
     }
+
+The ``aud`` field (audience) is included when the token has resource binding per RFC 8707.
+Tokens without resource restrictions will not include this field.
 
 Setup the Resource Server
 -------------------------
@@ -71,3 +75,79 @@ As allowed by RFC 7662, some external OAuth 2.0 servers support HTTP Basic Authe
 For these, use:
 ``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS=('client_id','client_secret')`` instead
 of ``RESOURCE_SERVER_AUTH_TOKEN``.
+
+
+Token Audience Binding (RFC 8707)
+==================================
+Django OAuth Toolkit supports `RFC 8707 <https://rfc-editor.org/rfc/rfc8707.html>`_ Resource Indicators,
+which allows clients to bind access tokens to specific resource servers. This prevents tokens from being
+misused at unintended services.
+
+How It Works
+------------
+Clients include a ``resource`` parameter in authorization and token requests to specify which
+resource servers they want to access:
+
+.. code-block:: http
+
+    GET /o/authorize/?client_id=CLIENT_ID
+        &response_type=code
+        &redirect_uri=https://client.example.com/callback
+        &scope=read
+        &resource=https://api.example.com
+
+The issued access token will be bound to ``https://api.example.com`` and should only be accepted
+by that resource server.
+
+Validating Token Audiences
+---------------------------
+Django OAuth Toolkit automatically validates token audiences when using ``validate_bearer_token()``.
+By default, it uses **prefix-based matching** where the token's audience URI acts as a base URI.
+
+Automatic Validation
+~~~~~~~~~~~~~~~~~~~~
+When a resource server validates a bearer token, DOT automatically checks if the request URI
+matches the token's audience claim:
+
+.. code-block:: python
+
+    # In your Django REST Framework view or OAuth-protected endpoint
+    # DOT automatically validates audience - no manual check needed!
+
+    @require_oauth(['read'])
+    def my_api_view(request):
+        # If this executes, the token is valid AND authorized for this resource
+        return Response({'data': 'secret'})
+
+The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
+will be accepted for requests to ``https://api.example.com/v1/users`` but rejected for
+``https://api.example.com/v2/users``.
+
+Custom Validation Logic
+~~~~~~~~~~~~~~~~~~~~~~~~
+You can customize the validation logic by providing your own validator function:
+
+.. code-block:: python
+
+    # myapp/validators.py
+    def exact_match_validator(request_uri, audiences):
+        """Custom validator that requires exact audience match."""
+        # No audiences = unrestricted token (backward compat)
+        if not audiences:
+            return True
+
+        # Require exact match
+        return request_uri in audiences
+
+    # settings.py
+    OAUTH2_PROVIDER = {
+        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': 'myapp.validators.exact_match_validator',
+    }
+
+To disable automatic validation entirely, set the validator to ``None``:
+
+.. code-block:: python
+
+    OAUTH2_PROVIDER = {
+        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': None,
+    }

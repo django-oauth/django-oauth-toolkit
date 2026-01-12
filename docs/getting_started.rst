@@ -302,6 +302,17 @@ Note the parameters we pass:
 
 This identifies your application, the user is asked to authorize your application to access its resources.
 
+.. note::
+   **Optional: Binding Tokens to Specific Resources**
+
+   You can add a ``resource`` parameter to bind the access token to a specific API endpoint,
+   following `RFC 8707 <https://rfc-editor.org/rfc/rfc8707.html>`_::
+
+       &resource=https://api.example.com
+
+   This prevents the token from being used at other resource servers.
+   See :doc:`resource_server` for details on validating token audiences.
+
 Go ahead and authorize the ``web-app``
 
 .. image:: _images/application-authorize-web-app.png
