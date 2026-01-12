@@ -51,6 +51,12 @@ class IntrospectTokenView(ClientProtectedScopedResourceView):
                     data["client_id"] = token.application.client_id
                 if token.user:
                     data["username"] = token.user.get_username()
+
+                # RFC 8707: Include audience list if token has resource binding
+                audiences = token.resource
+                if audiences:
+                    data["aud"] = audiences
+
                 return JsonResponse(data)
             else:
                 return JsonResponse({"active": False}, status=200)
