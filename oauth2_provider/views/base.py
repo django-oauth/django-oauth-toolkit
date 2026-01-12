@@ -113,6 +113,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             "code_challenge": self.oauth2_data.get("code_challenge", None),
             "code_challenge_method": self.oauth2_data.get("code_challenge_method", None),
             "claims": self.oauth2_data.get("claims", None),
+            "resource": self.oauth2_data.get("resource", None),  # RFC 8707
         }
         return initial_data
 
@@ -133,6 +134,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             credentials["nonce"] = form.cleaned_data.get("nonce")
         if form.cleaned_data.get("claims", False):
             credentials["claims"] = form.cleaned_data.get("claims")
+        if form.cleaned_data.get("resource", False):  # RFC 8707
+            resource_value = form.cleaned_data.get("resource")
+            # Resource may be space-separated (multiple resources) or single URI
+            if " " in resource_value:
+                # Multiple resources space-separated
+                credentials["resource"] = resource_value.split()
+            else:
+                # Single resource
+                credentials["resource"] = [resource_value]
 
         scopes = form.cleaned_data.get("scope")
         allow = form.cleaned_data.get("allow")
@@ -180,6 +190,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             kwargs["nonce"] = credentials["nonce"]
         if "claims" in credentials:
             kwargs["claims"] = json.dumps(credentials["claims"])
+        # RFC 8707: Extract resource parameter(s) from request (oauthlib doesn't handle it)
+        # Multiple resource parameters are allowed per RFC 8707
+        if "resource" in request.GET:
+            resource_list = request.GET.getlist("resource")
+            # For form display: store as space-separated string
+            # Multiple resources are rare, but we need to preserve them
+            kwargs["resource"] = " ".join(resource_list)
+            # For skip_authorization path: add list to credentials
+            credentials["resource"] = resource_list
 
         self.oauth2_data = kwargs
         # following two loc are here only because of https://code.djangoproject.com/ticket/17795
