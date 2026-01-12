@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, urlparse
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.hashers import identify_hasher, make_password
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import models, router, transaction
 from django.urls import reverse
 from django.utils import timezone
@@ -29,6 +29,20 @@ from .validators import AllowedURIValidator
 
 
 logger = logging.getLogger(__name__)
+
+
+class ResourceJSONField(models.JSONField):
+    """
+    RFC 8707 - JSON array of resource URIs.
+
+    Empty list means not restricted to specific resource servers (unrestricted access).
+    """
+
+    def get_db_prep_value(self, value, connection, prepared=False):
+        """Validate before saving to database."""
+        if value is not None and not isinstance(value, list):
+            raise ValidationError("Resource must be a list of URIs")
+        return super().get_db_prep_value(value, connection, prepared)
 
 
 class ClientSecretField(models.CharField):
@@ -320,6 +334,7 @@ class AbstractGrant(models.Model):
     * :attr:`scope` Required scopes, optional
     * :attr:`code_challenge` PKCE code challenge
     * :attr:`code_challenge_method` PKCE code challenge transform algorithm
+    * :attr:`resource` RFC 8707 resource indicator(s), JSON-encoded array of URIs
     """
 
     CODE_CHALLENGE_PLAIN = "plain"
@@ -346,6 +361,8 @@ class AbstractGrant(models.Model):
 
     nonce = models.CharField(max_length=255, blank=True, default="")
     claims = models.TextField(blank=True)
+
+    resource = ResourceJSONField(blank=True, default=list)
 
     def is_expired(self):
         """
@@ -384,6 +401,7 @@ class AbstractAccessToken(models.Model):
     * :attr:`application` Application instance
     * :attr:`expires` Date and time of token expiration, in DateTime format
     * :attr:`scope` Allowed scopes
+    * :attr:`resource` RFC 8707 resource indicator(s) - JSON-encoded array of URIs
     """
 
     id = models.BigAutoField(primary_key=True)
@@ -422,8 +440,11 @@ class AbstractAccessToken(models.Model):
         blank=True,
         null=True,
     )
+
     expires = models.DateTimeField()
     scope = models.TextField(blank=True)
+
+    resource = ResourceJSONField(blank=True, default=list)
 
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
@@ -444,6 +465,30 @@ class AbstractAccessToken(models.Model):
             return True
 
         return timezone.now() >= self.expires
+
+    def allows_audience(self, audience_uri):
+        """
+        Check if the token is authorized for the given audience URI.
+
+        RFC 8707: Validates that the token includes the specified resource indicator
+        using the configured resource validator (RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR).
+
+        If the token has no resource indicators (empty list), it is unrestricted and
+        allows any audience (backward compatibility).
+
+        :param audience_uri: The URI of the resource server to check
+        :return: True if the token is authorized for this audience, False otherwise
+        """
+        from .settings import oauth2_settings
+
+        audiences = self.resource
+        resource_validator = oauth2_settings.RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
+
+        if resource_validator:
+            return resource_validator(audience_uri, audiences)
+        else:
+            # No validator configured - allow everything (backward compat)
+            return True
 
     def allow_scopes(self, scopes):
         """
@@ -500,6 +545,7 @@ class AbstractRefreshToken(models.Model):
     * :attr:`access_token` AccessToken instance this refresh token is
                            bounded to
     * :attr:`revoked` Timestamp of when this refresh token was revoked
+    * :attr:`resource` RFC 8707 resource indicator(s), JSON-encoded array of URIs
     """
 
     id = models.BigAutoField(primary_key=True)
@@ -516,6 +562,8 @@ class AbstractRefreshToken(models.Model):
         related_name="refresh_token",
     )
     token_family = models.UUIDField(null=True, blank=True, editable=False)
+
+    resource = ResourceJSONField(blank=True, default=list)
 
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)

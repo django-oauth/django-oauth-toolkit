@@ -114,7 +114,11 @@ DEFAULTS = {
     "RESOURCE_SERVER_AUTH_TOKEN": None,
     "RESOURCE_SERVER_INTROSPECTION_CREDENTIALS": None,
     "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
-    # Authentication Server Exp Timezone: the time zone use dby Auth Server for generate EXP
+    # Resource Server Token Resource Validator (RFC 8707)
+    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
+        "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
+    ),
+    # Authentication Server Exp Timezone: the time zone used by Auth Server for generate EXP
     "AUTHENTICATION_SERVER_EXP_TIME_ZONE": "UTC",
     # Whether or not PKCE is required
     "PKCE_REQUIRED": True,
@@ -154,6 +158,7 @@ IMPORT_STRINGS = (
     "GRANT_ADMIN_CLASS",
     "ID_TOKEN_ADMIN_CLASS",
     "REFRESH_TOKEN_ADMIN_CLASS",
+    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR",
 )
 
 
