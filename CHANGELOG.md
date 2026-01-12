@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * #1637 Support for Django 6.0
+* Support for OIDC Session Management (https://openid.net/specs/openid-connect-session-1_0.html)
 
 ### Removed
 * #1636 Remove support for Python 3.8 and 3.9
