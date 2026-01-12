@@ -45,6 +45,11 @@
                 <p><b>{% trans "Allowed Origins" %}</b></p>
                 <textarea class="input-block-level" readonly>{{ application.allowed_origins }}</textarea>
             </li>
+
+            <li>
+              <p><b>{% trans "Backchannel Logout URI" %}</b></p>
+              <input class="input-block-level" type="text" value="{{ application.backchannel_logout_uri }}" readonly>
+            </li>
         </ul>
 
         <div class="btn-toolbar">
