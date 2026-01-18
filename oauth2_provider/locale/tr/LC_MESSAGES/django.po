@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-07-11 14:11+0300\n"
+"POT-Creation-Date: 2026-01-18 08:35+0300\n"
 "PO-Revision-Date: 2025-07-11 14:15+0300\n"
 "Last-Translator: Cihad GUNDOGDU <cihadgundogdu@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,84 +16,106 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
-#: oauth2_provider/models.py:84
+
+#: oauth2_provider/models.py:87
 msgid "Confidential"
 msgstr "Gizli"
 
-#: oauth2_provider/models.py:85
+#: oauth2_provider/models.py:88
 msgid "Public"
 msgstr "Herkese açık"
 
-#: oauth2_provider/models.py:94
+#: oauth2_provider/models.py:98
 msgid "Authorization code"
 msgstr "Yetkilendirme kodu"
 
-#: oauth2_provider/models.py:95
+#: oauth2_provider/models.py:99
+msgid "Device Code"
+msgstr "Cihaz Kodu"
+
+#: oauth2_provider/models.py:100
 msgid "Implicit"
 msgstr "Açık"
 
-#: oauth2_provider/models.py:96
+#: oauth2_provider/models.py:101
 msgid "Resource owner password-based"
 msgstr "Kaynak sahibi şifre tabanlı"
 
-#: oauth2_provider/models.py:97
+#: oauth2_provider/models.py:102
 msgid "Client credentials"
 msgstr "İstemci kimlik bilgileri"
 
-#: oauth2_provider/models.py:98
+#: oauth2_provider/models.py:103
 msgid "OpenID connect hybrid"
 msgstr "OpenID connect hibrit"
 
-#: oauth2_provider/models.py:105
+#: oauth2_provider/models.py:110
 msgid "No OIDC support"
 msgstr "OpenID Connect desteği yok"
 
-#: oauth2_provider/models.py:106
+#: oauth2_provider/models.py:111
 msgid "RSA with SHA-2 256"
 msgstr "RSA ile SHA-2 256"
 
-#: oauth2_provider/models.py:107
+#: oauth2_provider/models.py:112
 msgid "HMAC with SHA-2 256"
 msgstr "HMAC ile SHA-2 256"
 
-#: oauth2_provider/models.py:122
+#: oauth2_provider/models.py:127
 msgid "Allowed URIs list, space separated"
 msgstr "İzin verilen URI'ler listesi, boşlukla ayrılmış"
 
-#: oauth2_provider/models.py:126
+#: oauth2_provider/models.py:131
 msgid "Allowed Post Logout URIs list, space separated"
 msgstr "İzin verilen Oturum Kapatma URI'leri listesi, boşlukla ayrılmış"
 
-#: oauth2_provider/models.py:136
-msgid "Hashed on Save. Copy it now if this is a new secret."
-msgstr "Kaydedildiğinde Hashlendi. Bu yeni bir gizli anahtar ise şimdi kopyalayın."
+#: oauth2_provider/models.py:141
+msgid "Client secret for authentication"
+msgstr "Kimlik doğrulama için istemci gizli anahtarı"
 
-#: oauth2_provider/models.py:147
+#: oauth2_provider/models.py:152
 msgid "Allowed origins list to enable CORS, space separated"
-msgstr "CORS'u etkinleştirmek için izin verilen kökenler listesi, boşlukla ayrılmış"
+msgstr ""
+"CORS'u etkinleştirmek için izin verilen kökenler listesi, boşlukla ayrılmış"
 
-#: oauth2_provider/models.py:227
+#: oauth2_provider/models.py:232
 #, python-brace-format
 msgid "redirect_uris cannot be empty with grant_type {grant_type}"
 msgstr "redirect_uris {grant_type} ile boş olamaz"
 
-#: oauth2_provider/models.py:244
+#: oauth2_provider/models.py:249
 msgid "You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm"
 msgstr "RSA algoritmasını kullanmak için OIDC_RSA_PRIVATE_KEY ayarlanmalıdır"
 
-#: oauth2_provider/models.py:253
+#: oauth2_provider/models.py:258
 msgid "You cannot use HS256 with public grants or clients"
 msgstr "HS256'yı herkese açık izinler veya istemcilerle kullanamazsınız"
 
-#: oauth2_provider/oauth2_validators.py:225
+#: oauth2_provider/models.py:674
+msgid "Authorized"
+msgstr "Yetkilendirildi"
+
+#: oauth2_provider/models.py:675
+msgid "Authorization pending"
+msgstr "Yetkilendirme bekleniyor"
+
+#: oauth2_provider/models.py:676
+msgid "Expired"
+msgstr "Süresi dolmuş"
+
+#: oauth2_provider/models.py:677
+msgid "Denied"
+msgstr "Reddedildi"
+
+#: oauth2_provider/oauth2_validators.py:252
 msgid "The access token is invalid."
 msgstr "Geçersiz erişim belirteci."
 
-#: oauth2_provider/oauth2_validators.py:232
+#: oauth2_provider/oauth2_validators.py:259
 msgid "The access token has expired."
 msgstr "Erişim belirteci süresi dolmuş."
 
-#: oauth2_provider/oauth2_validators.py:239
+#: oauth2_provider/oauth2_validators.py:266
 msgid "The access token is valid but does not have enough scope."
 msgstr "Erişim belirteci geçerli ancak yeterli kapsamı yok."
 
