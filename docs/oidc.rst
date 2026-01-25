@@ -288,7 +288,10 @@ mapping a claim name to claim data::
 
 The second form gets no request object, and should return a dictionary
 mapping a claim name to a callable, accepting a request and producing
-the claim data::
+the claim data:
+
+.. code-block:: python
+
     class CustomOAuth2Validator(OAuth2Validator):
         # Extend the standard scopes to add a new "permissions" scope
         # which returns a "permissions" claim:
@@ -332,7 +335,10 @@ For example, a ``given_name`` claim is only returned if the ``profile`` scope wa
 
 To change the list of claims and which scopes result in their being returned,
 override ``oidc_claim_scope`` with a dict keyed by claim with a value of scope.
-The following example adds instructions to return the ``foo`` claim when the ``bar`` scope is granted::
+The following example adds instructions to return the ``foo`` claim when the ``bar`` scope is granted:
+
+.. code-block:: python
+
     class CustomOAuth2Validator(OAuth2Validator):
         oidc_claim_scope = OAuth2Validator.oidc_claim_scope
         oidc_claim_scope.update({"foo": "bar"})

@@ -32,7 +32,7 @@ createapplication
 
 The ``createapplication`` management command provides a shortcut to create a new application in a programmatic way.
 
-.. code-block:: sh
+.. code-block:: text
 
     usage: manage.py createapplication [-h] [--client-id CLIENT_ID] [--user USER]
                                        [--redirect-uris REDIRECT_URIS]

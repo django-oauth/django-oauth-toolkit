@@ -17,6 +17,7 @@ inside their Django applications.
 
 .. automodule:: oauth2_provider.views.mixins
     :members:
+    :noindex:
 
 Base
 ----
