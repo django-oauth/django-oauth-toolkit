@@ -381,6 +381,39 @@ token, so you will probably want to reuse that::
             claims["color_scheme"] = get_color_scheme(request.user)
             return claims
 
+
+Session Management
+==================
+
+The `OpenID Connect Session Management 1.0
+<https://openid.net/specs/openid-connect-session-1_0.html>`_
+specification defines how to monitor the End-User's login status at
+the OpenID Provider on an ongoing basis so that the Relying Party can
+log out an End-User who has logged out of the OpenID Provider.
+
+To enable it, you will need to add
+``oauth2_provider.middleware.OIDCSessionManagementMiddleware`` to MIDDLEWARES and set
+``OIDC_SESSION_MANAGEMENT_ENABLED`` to ``True`` on
+``OAUTH2_PROVIDER``. You will also need to provide a string on
+``OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY``. This setting is
+needed to ensure that the browser state for all unauthenticated users
+is fixed and the same even if you are running multiple server
+processes :::
+
+    import os
+
+    MIDDLEWARES = [
+        # Other middleware...
+        oauth2_provider.middleware.OIDCSessionManagementMiddleware,
+    ]
+
+    OAUTH2_PROVIDER = {
+        # ... other settings
+        "OIDC_SESSION_MANAGEMENT_ENABLED": True,
+        "OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY": os.environ.get("OIDC_DEFAULT_SESSION_KEY"),
+    }
+
+
 Customizing the login flow
 ==========================
 

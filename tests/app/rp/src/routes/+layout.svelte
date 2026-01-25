@@ -1,6 +1,12 @@
 <script>
+	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { OidcContext } from '@dopry/svelte-oidc';
+	import { env } from '$env/dynamic/public';
+
+	// OIDC Configuration
+	const metadata = {};
 
 	// Materialize tabs initialization
 	onMount(() => {
@@ -60,13 +66,37 @@
 					>Device Authorization Flow</a
 				>
 			</li>
+			<li class="tab">
+				<a href="/session" class:active={$page.url.pathname === '/session'}
+					>Session Management</a
+				>
+			</li>
 		</ul>
 	</div>
 </nav>
 
-<div class="container">
-	<slot />
-</div>
+{#if browser}
+	<OidcContext
+		issuer={env.PUBLIC_OIDC_ISSUER}
+		client_id={env.PUBLIC_OAUTH_CLIENT_ID}
+		redirect_uri={env.PUBLIC_OIDC_REDIRECT_URI}
+		post_logout_redirect_uri={env.PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI}
+		{metadata}
+		scope="openid"
+		extraOptions={{
+			mergeClaims: true,
+			monitorSession: true
+		}}
+	>
+		<div class="container">
+			<slot />
+		</div>
+	</OidcContext>
+{:else}
+	<div class="container">
+		<slot />
+	</div>
+{/if}
 
 <style>
 	.tabs .tab a {
