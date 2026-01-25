@@ -100,3 +100,4 @@ def set_oauthlib_user_to_device_request_user(request: Request) -> None:
 
     device: DeviceGrant = get_device_grant_model().objects.get(device_code=request._params["device_code"])
     request.user = device.user
+    request.scopes = device.scope.split() if device.scope else []
