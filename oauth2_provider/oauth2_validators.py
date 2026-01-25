@@ -41,6 +41,43 @@ from .settings import oauth2_settings
 from .utils import get_timezone
 
 
+def validate_resource_as_url_prefix(request_uri, audiences):
+    """
+    Default resource validator using URL prefix matching (RFC 8707).
+
+    Validates that the request URI matches one of the token's audience claims
+    using prefix matching. The audience URI acts as a base URI that the request
+    must start with.
+
+    Examples:
+        - Token audience: "https://api.example.com/foo"
+        - Matches: "https://api.example.com/foo"
+        - Matches: "https://api.example.com/foo/"
+        - Matches: "https://api.example.com/foo/bar"
+        - Rejects: "https://other.example.com/foo/bar"
+        - Rejects: "https://api.example.com/bar"
+        - Rejects: "https://api.example.com/food-blog"
+
+    :param request_uri: String URI of the current request (without query string)
+    :param audiences: List of audience URI strings from token
+    :return: True if token is valid for this request, False otherwise
+    """
+    # No audiences = unrestricted token
+    if not audiences:
+        return True
+
+    request_normalized = request_uri.rstrip("/") + "/"
+
+    # Check if request URI starts with any of the audience URIs
+    for audience in audiences:
+        audience_normalized = audience.rstrip("/") + "/"
+
+        if request_normalized.startswith(audience_normalized):
+            return True
+
+    return False
+
+
 log = logging.getLogger("oauth2_provider")
 
 GRANT_TYPE_MAPPING = {
@@ -483,6 +520,14 @@ class OAuth2Validator(RequestValidator):
                 )
 
         if access_token and access_token.is_valid(scopes):
+            # RFC 8707: Validate token audience against request resource
+            # Use request.uri which is the full URI from the oauthlib Request object
+            request_uri = request.uri.split("?")[0]
+            if not access_token.allows_audience(request_uri):
+                # Token is valid but not authorized for this resource
+                self._set_oauth2_error_on_request(request, access_token, scopes)
+                return False
+
             request.client = access_token.application
             request.user = access_token.user
             request.scopes = list(access_token.scopes)
@@ -607,6 +652,71 @@ class OAuth2Validator(RequestValidator):
         with transaction.atomic(using=router.db_for_write(AccessToken)):
             return self._save_bearer_token(token, request, *args, **kwargs)
 
+    def _check_and_set_request_resource(self, request):
+        """
+        Handle 'resource' parameter from token requests (RFC 8707).
+        Normalizes request.resource to a list of URIs.
+
+        request.resource will be set to one of:
+        - None (no resources)
+        - List of URIs: ["https://api.example.com"] or ["https://a.com", "https://b.com"]
+        """
+        resource = getattr(request, "resource", None)
+
+        if isinstance(resource, list):
+            # Already a list, use as-is
+            request.resource = resource or []
+        elif resource and isinstance(resource, str) and resource.strip():
+            # Single URI string from token endpoint POST
+            request.resource = [resource]
+        else:
+            request.resource = []
+
+        if request.grant_type == "authorization_code":
+            # Handle grant resource narrowing
+            grant = Grant.objects.filter(code=request.code, application=request.client).first()
+            grant_resource = (grant.resource or []) if grant else []
+
+            if request.resource and grant_resource:
+                # Token request is narrowing the resource scope
+                # Validate that requested resources are a subset of granted resources
+                for res in request.resource:
+                    if res not in grant_resource:
+                        raise errors.CustomOAuth2Error(
+                            error="invalid_target",
+                            description=(
+                                f"The requested resource '{res}' is not allowed. "
+                                "Token request cannot escalate resource permissions beyond the "
+                                "original authorization grant"
+                            ),
+                            request=request,
+                        )
+            elif grant_resource:
+                request.resource = grant_resource
+
+        elif request.grant_type == "refresh_token":
+            # Preserve resource from the refresh token
+            refresh_token_instance = getattr(request, "refresh_token_instance", None)
+            if refresh_token_instance and refresh_token_instance.resource:
+                # If no resource specified in request, inherit from refresh token
+                if not request.resource:
+                    request.resource = refresh_token_instance.resource
+                # If resource specified, validate it's a subset of refresh token's resources
+                elif request.resource != refresh_token_instance.resource:
+                    refresh_list = refresh_token_instance.resource
+
+                    for res in request.resource:
+                        if res not in refresh_list:
+                            raise errors.CustomOAuth2Error(
+                                error="invalid_target",
+                                description=(
+                                    f"The requested resource '{res}' is not allowed. "
+                                    "Token refresh cannot request resources beyond the "
+                                    "original refresh token scope"
+                                ),
+                                request=request,
+                            )
+
     def _save_bearer_token(self, token, request, *args, **kwargs):
         """
         Save access and refresh token.
@@ -618,6 +728,8 @@ class OAuth2Validator(RequestValidator):
 
         if "scope" not in token:
             raise FatalClientError("Failed to renew access token: missing scope")
+
+        self._check_and_set_request_resource(request)
 
         # expires_in is passed to Server on initialization
         # custom server class can have logic to override this
@@ -722,11 +834,16 @@ class OAuth2Validator(RequestValidator):
             id_token=id_token,
             application=request.client,
             source_refresh_token=source_refresh_token,
+            resource=getattr(request, "resource", []),  # RFC 8707
         )
 
     def _create_authorization_code(self, request, code, expires=None):
         if not expires:
             expires = timezone.now() + timedelta(seconds=oauth2_settings.AUTHORIZATION_CODE_EXPIRE_SECONDS)
+
+        # RFC 8707: Extract resource parameter
+        resource = getattr(request, "resource", [])
+
         return Grant.objects.create(
             application=request.client,
             user=request.user,
@@ -738,6 +855,7 @@ class OAuth2Validator(RequestValidator):
             code_challenge_method=request.code_challenge_method or "",
             nonce=request.nonce or "",
             claims=json.dumps(request.claims or {}),
+            resource=resource,
         )
 
     def _create_refresh_token(self, request, refresh_token_code, access_token, previous_refresh_token):
@@ -751,6 +869,7 @@ class OAuth2Validator(RequestValidator):
             application=request.client,
             access_token=access_token,
             token_family=token_family,
+            resource=getattr(request, "resource", []),  # RFC 8707
         )
 
     def revoke_token(self, token, token_type_hint, request, *args, **kwargs):

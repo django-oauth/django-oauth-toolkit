@@ -111,6 +111,7 @@ class TestTokenIntrospectionAuth(TestCase):
     def setUpTestData(cls):
         cls.validator = OAuth2Validator()
         cls.request = mock.MagicMock(wraps=Request)
+        cls.request.uri = "https://example.com/resource"
         cls.resource_server_user = UserModel.objects.create_user(
             "resource_server", "test@example.com", "123456"
         )
