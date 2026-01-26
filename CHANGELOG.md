@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * #1637 Support for Django 6.0
+* #1545 Support for OIDC Back-Channel Logout
 
 ### Removed
 * #1636 Remove support for Python 3.8 and 3.9
@@ -30,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Support for Python 3.14 (Django >= 5.2.8)
 * #1539 Add device authorization grant support
 
+<!--
+### Changed
+### Deprecated
+### Removed
+-->
 ### Fixed
 * #1252 Fix crash  when 'client' is in token request body
 * #1496 Fix error when Bearer token string is empty but preceded by `Bearer` keyword.

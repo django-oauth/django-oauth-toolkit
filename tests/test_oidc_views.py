@@ -152,6 +152,18 @@ class TestConnectDiscoveryInfoView(TestCase):
         self.assertEqual(response.status_code, 200)
         assert response.json()["id_token_signing_alg_values_supported"] == ["HS256"]
 
+    def test_get_backchannel_logout_support_info_when_enabled(self):
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = True
+        response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+        response_data = response.json()
+        self.assertTrue("backchannel_logout_supported" in response_data)
+
+    def test_no_backchannel_logout_support_when_disabled(self):
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = False
+        response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+        response_data = response.json()
+        self.assertFalse("backchannel_logout_supported" in response_data)
+
 
 @pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
