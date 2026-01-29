@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+### Added
+* #1373 Integration and docs for Django Ninja authentication
+
 ### Deprecated
 * Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
   Unix timestamps and are always interpreted as UTC per RFC 7662/RFC 7519. The setting still works
