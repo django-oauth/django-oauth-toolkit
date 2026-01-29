@@ -1,10 +1,11 @@
 """
 Custom Sphinx documentation module to link to parts of the OAuth2 RFC.
 """
+
 from docutils import nodes
 
 
-base_url = "http://tools.ietf.org/html/rfc6749"
+base_url = "https://rfc-editor.org/rfc/rfc6749.html"
 
 
 def rfclink(name, rawtext, text, lineno, inliner, options={}, content=[]):

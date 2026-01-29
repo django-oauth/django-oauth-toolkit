@@ -1,10 +1,10 @@
 from datetime import timedelta
 
+import pytest
 from django.conf.urls import include
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpResponse
-from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import path, re_path
 from django.utils import timezone
@@ -14,18 +14,17 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework.views import APIView
 
 from oauth2_provider.contrib.rest_framework import (
-    IsAuthenticatedOrTokenHasScope, OAuth2Authentication,
-    TokenHasReadWriteScope, TokenHasResourceScope,
-    TokenHasScope, TokenMatchesOASRequirements
+    IsAuthenticatedOrTokenHasScope,
+    OAuth2Authentication,
+    TokenHasReadWriteScope,
+    TokenHasResourceScope,
+    TokenHasScope,
+    TokenMatchesOASRequirements,
 )
 from oauth2_provider.models import get_access_token_model, get_application_model
-from oauth2_provider.settings import oauth2_settings
 
-
-try:
-    from unittest import mock
-except ImportError:
-    import mock
+from . import presets
+from .common_testing import OAuth2ProviderTestCase as TestCase
 
 
 Application = get_application_model()
@@ -85,7 +84,10 @@ class MethodScopeAltViewBad(OAuth2View):
 
 class MissingAuthentication(BaseAuthentication):
     def authenticate(self, request):
-        return ("junk", "junk",)
+        return (
+            "junk",
+            "junk",
+        )
 
 
 class BrokenOAuth2View(MockView):
@@ -125,31 +127,30 @@ urlpatterns = [
 
 
 @override_settings(ROOT_URLCONF=__name__)
+@pytest.mark.nologinrequiredmiddleware
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.REST_FRAMEWORK_SCOPES)
 class TestOAuth2Authentication(TestCase):
-    def setUp(self):
-        oauth2_settings._SCOPES = ["read", "write", "scope1", "scope2", "resource1"]
+    @classmethod
+    def setUpTestData(cls):
+        cls.test_user = UserModel.objects.create_user("test_user", "test@example.com", "123456")
+        cls.dev_user = UserModel.objects.create_user("dev_user", "dev@example.com", "123456")
 
-        self.test_user = UserModel.objects.create_user("test_user", "test@example.com", "123456")
-        self.dev_user = UserModel.objects.create_user("dev_user", "dev@example.com", "123456")
-
-        self.application = Application.objects.create(
+        cls.application = Application.objects.create(
             name="Test Application",
             redirect_uris="http://localhost http://example.com http://example.org",
-            user=self.dev_user,
+            user=cls.dev_user,
             client_type=Application.CLIENT_CONFIDENTIAL,
             authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
         )
 
-        self.access_token = AccessToken.objects.create(
-            user=self.test_user,
+        cls.access_token = AccessToken.objects.create(
+            user=cls.test_user,
             scope="read write",
             expires=timezone.now() + timedelta(seconds=300),
             token="secret-access-token-key",
-            application=self.application
+            application=cls.application,
         )
-
-    def tearDown(self):
-        oauth2_settings._SCOPES = ["read", "write"]
 
     def _create_authorization_header(self, token):
         return "Bearer {0}".format(token)
@@ -305,8 +306,8 @@ class TestOAuth2Authentication(TestCase):
         response = self.client.post("/oauth2-resource-scoped-test/", HTTP_AUTHORIZATION=auth)
         self.assertEqual(response.status_code, 403)
 
-    @mock.patch.object(oauth2_settings, "ERROR_RESPONSE_WITH_SCOPES", new=True)
     def test_required_scope_in_response(self):
+        self.oauth2_settings.ERROR_RESPONSE_WITH_SCOPES = True
         self.access_token.scope = "scope2"
         self.access_token.save()
 
@@ -415,3 +416,9 @@ class TestOAuth2Authentication(TestCase):
         auth = self._create_authorization_header(self.access_token.token)
         response = self.client.get("/oauth2-authentication-none/", HTTP_AUTHORIZATION=auth)
         self.assertEqual(response.status_code, 401)
+
+    def test_invalid_hex_string_in_query(self):
+        auth = self._create_authorization_header(self.access_token.token)
+        response = self.client.get("/oauth2-test/?q=73%%20of%20Arkansans", HTTP_AUTHORIZATION=auth)
+        # Should respond with a 400 rather than raise a ValueError
+        self.assertEqual(response.status_code, 400)

@@ -43,8 +43,8 @@ Django OAuth Toolkit provides decorators to help you in protecting your function
 .. function:: rw_protected_resource(scopes=None, validator_cls=OAuth2Validator, server_cls=Server)
 
     Decorator to protect views by providing OAuth2 authentication and read/write scopes out of the
-    box. GET, HEAD, OPTIONS http methods require "read" scope.
-    Otherwise "write" scope is required::
+    box. ``GET``, ``HEAD``, ``OPTIONS`` HTTP methods require ``'read'`` scope.
+    Otherwise ``'write'`` scope is required::
 
         from oauth2_provider.decorators import rw_protected_resource
 
@@ -54,7 +54,7 @@ Django OAuth Toolkit provides decorators to help you in protecting your function
             # ...
             pass
 
-    If you need, you can ask for other scopes over "read" and "write"::
+    If you need, you can ask for other scopes over ``'read'`` and ``'write'``::
 
         from oauth2_provider.decorators import rw_protected_resource
 

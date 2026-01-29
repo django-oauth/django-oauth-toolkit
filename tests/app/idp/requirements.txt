@@ -1,0 +1,5 @@
+Django>=4.2,<=5.2
+django-cors-headers==4.6.0
+django-environ==0.12.0
+
+-e ../../../

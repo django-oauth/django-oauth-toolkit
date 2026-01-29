@@ -1,4 +1,5 @@
 import base64
+from unittest import mock
 
 
 def get_basic_auth_header(user, password):
@@ -13,3 +14,19 @@ def get_basic_auth_header(user, password):
     }
 
     return auth_headers
+
+
+def spy_on(meth):
+    """
+    Util function to add a spy onto a method of a class.
+    """
+    spy = mock.MagicMock()
+
+    def wrapper(self, *args, **kwargs):
+        spy(self, *args, **kwargs)
+        return_value = meth(self, *args, **kwargs)
+        spy.returned = return_value
+        return return_value
+
+    wrapper.spy = spy
+    return wrapper

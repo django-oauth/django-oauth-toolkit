@@ -70,8 +70,8 @@ IsAuthenticatedOrTokenHasScope
 ------------------------------
 The `IsAuthenticatedOrTokenHasScope` permission class allows access only when the current access token has been authorized for **all** the scopes listed in the `required_scopes` field of the view but according to the request's method.
 It also allows access to Authenticated users who are authenticated in django, but were not authenticated through the OAuth2Authentication class.
-This allows for protection of the API using scopes, but still let's users browse the full browseable API.
-To restrict users to only browse the parts of the browseable API they should be allowed to see, you can combine this with the DjangoModelPermission or the DjangoObjectPermission.
+This allows for protection of the API using scopes, but still let's users browse the full browsable API.
+To restrict users to only browse the parts of the browsable API they should be allowed to see, you can combine this with the DjangoModelPermission or the DjangoObjectPermission.
 
 For example:
 

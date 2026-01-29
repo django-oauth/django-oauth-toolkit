@@ -1,38 +1,45 @@
 import calendar
-import json
+import hashlib
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.http import HttpResponse
+from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
-from oauth2_provider.models import get_access_token_model
-from oauth2_provider.views import ClientProtectedScopedResourceView
+from ..compat import login_not_required
+from ..models import get_access_token_model
+from ..views.generic import ClientProtectedScopedResourceView
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+@method_decorator(login_not_required, name="dispatch")
 class IntrospectTokenView(ClientProtectedScopedResourceView):
     """
     Implements an endpoint for token introspection based
-    on RFC 7662 https://tools.ietf.org/html/rfc7662
+    on RFC 7662 https://rfc-editor.org/rfc/rfc7662.html
 
     To access this view the request must pass a OAuth2 Bearer Token
     which is allowed to access the scope `introspection`.
     """
+
     required_scopes = ["introspection"]
 
     @staticmethod
     def get_token_response(token_value=None):
-        try:
-            token = get_access_token_model().objects.select_related(
-                "user", "application"
-                ).get(token=token_value)
-        except ObjectDoesNotExist:
-            return HttpResponse(
-                content=json.dumps({"active": False}),
-                status=401,
-                content_type="application/json"
+        if token_value is None:
+            return JsonResponse(
+                {"error": "invalid_request", "error_description": "Token parameter is missing."},
+                status=400,
             )
+        try:
+            token_checksum = hashlib.sha256(token_value.encode("utf-8")).hexdigest()
+            token = (
+                get_access_token_model()
+                .objects.select_related("user", "application")
+                .get(token_checksum=token_checksum)
+            )
+        except ObjectDoesNotExist:
+            return JsonResponse({"active": False}, status=200)
         else:
             if token.is_valid():
                 data = {
@@ -44,11 +51,9 @@ class IntrospectTokenView(ClientProtectedScopedResourceView):
                     data["client_id"] = token.application.client_id
                 if token.user:
                     data["username"] = token.user.get_username()
-                return HttpResponse(content=json.dumps(data), status=200, content_type="application/json")
+                return JsonResponse(data)
             else:
-                return HttpResponse(content=json.dumps({
-                    "active": False,
-                }), status=200, content_type="application/json")
+                return JsonResponse({"active": False}, status=200)
 
     def get(self, request, *args, **kwargs):
         """

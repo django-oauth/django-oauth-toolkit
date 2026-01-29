@@ -1,0 +1,59 @@
+[
+{
+  "model": "auth.user",
+  "fields": {
+    "password": "pbkdf2_sha256$390000$29LoVHfFRlvEOJ9clv73Wx$fx5ejfUJ+nYsnBXFf21jZvDsq4o3p5io3TrAGKAVTq4=",
+    "last_login": "2023-11-11T17:24:19.359Z",
+    "is_superuser": true,
+    "username": "superuser",
+    "first_name": "",
+    "last_name": "",
+    "email": "",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2023-05-01T19:53:59.622Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "oauth2_provider.application",
+  "fields": {
+    "client_id": "2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm",
+    "user": null,
+    "redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173",
+    "post_logout_redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173",
+    "client_type": "public",
+    "authorization_grant_type": "authorization-code",
+    "client_secret": "pbkdf2_sha256$600000$HEYByn6WXiQUI1D6ezTnAf$qPLekt0t3ZssnzEOvQkeOSfxx7tbs/gcC3O0CthtP2A=",
+    "hash_client_secret": true,
+    "name": "OIDC - Authorization Code",
+    "skip_authorization": true,
+    "created": "2023-05-01T20:27:46.167Z",
+    "updated": "2023-11-11T17:23:44.643Z",
+    "algorithm": "RS256",
+    "allowed_origins": "http://localhost:5173\r\nhttp://127.0.0.1:5173"
+  }
+},
+{
+  "model": "oauth2_provider.application",
+  "fields": {
+    "client_id": "Qg8AaxKLs1c2W3PR70Sv5QxuSEREicKUlf83iGX3",
+    "user": [
+      "superuser"
+    ],
+    "redirect_uris": "",
+    "post_logout_redirect_uris": "",
+    "client_type": "public",
+    "authorization_grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+    "client_secret": "pbkdf2_sha256$870000$x1A7AKB9YMmNX7v2otXt1C$Yxucj9o/QlF16AxqN5LXo+Se0Sy3FO5x4Q35Lw1FGqM=",
+    "hash_client_secret": true,
+    "name": "Device Authorization App",
+    "skip_authorization": false,
+    "created": "2025-11-07T16:56:23.156Z",
+    "updated": "2025-11-07T16:56:23.156Z",
+    "algorithm": "",
+    "allowed_origins": ""
+  }
+}
+]

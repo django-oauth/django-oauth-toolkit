@@ -1,0 +1,40 @@
+volumes:
+  idp-data:
+
+
+x-idp: &idp
+  image: django-oauth-toolkit/idp
+  volumes:
+    - idp-data:/data
+
+services:
+  idp-migrate:
+    <<: *idp
+    build: .
+    command: python manage.py migrate
+
+  idp-loaddata:
+    <<: *idp
+    command: python manage.py loaddata fixtures/seed.json
+    depends_on:
+      idp-migrate:
+        condition: service_completed_successfully
+
+  idp:
+    <<: *idp
+    command: gunicorn idp.wsgi:application -w 4 -b 0.0.0.0:80 --chdir=/code --timeout 120  --error-logfile '-' --log-level debug --access-logfile '-'
+    ports:
+      # map to dev port.
+      - "8000:80"
+    depends_on:
+      idp-loaddata:
+        condition: service_completed_successfully
+
+  rp:
+    image: django-oauth-toolkit/rp
+    build: ./tests/app/rp
+    ports:
+      # map to dev port.
+      - "5173:3000"
+    depends_on:
+      - idp

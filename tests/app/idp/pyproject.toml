@@ -1,0 +1,22 @@
+[project]
+name = "idp"
+version = "0.1.0"
+description = "Django OAuth Toolkit Identity Provider Test App"
+readme = "README.md"
+requires-python = ">=3.8,<=3.14"
+dependencies = [
+    "Django>=4.2,<=5.2",
+    "django-cors-headers==3.14.0",
+    "django-environ==0.11.2",
+    "django-oauth-toolkit",
+]
+
+
+[tool.setuptools]
+# we're not packaging this as a module, so tell setup tools not to do anything.
+py-modules = []
+
+[tool.uv.sources]
+# connect to the django-oauth-toolkit package in the parent workspace
+# so changes to it are reflected here without reinstalling.
+django-oauth-toolkit = { editable = true, workspace = true }

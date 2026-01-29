@@ -1,0 +1,197 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2022-11-28 09:45+0900\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: Sora Yanai <sora@mail.skyarrow.xyz>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: ja-JP\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+#: models.py:66
+msgid "Confidential"
+msgstr "プライベート"
+
+#: models.py:67
+msgid "Public"
+msgstr "公開"
+
+#: models.py:76
+msgid "Authorization code"
+msgstr "認証コード"
+
+#: models.py:77
+msgid "Implicit"
+msgstr "Implicit Flow"
+
+#: models.py:78
+msgid "Resource owner password-based"
+msgstr "リソース所有者のパスワードに基づく"
+
+#: models.py:79
+msgid "Client credentials"
+msgstr "ユーザ証明書"
+
+#: models.py:80
+msgid "OpenID connect hybrid"
+msgstr "OpenID Connect ハイブリットフロー"
+
+#: models.py:87
+msgid "No OIDC support"
+msgstr "OIDCをサポートしない"
+
+#: models.py:88
+msgid "RSA with SHA-2 256"
+msgstr "RSA with SHA-2 256"
+
+#: models.py:89
+msgid "HMAC with SHA-2 256"
+msgstr "HMAC with SHA-2 256"
+
+#: models.py:104
+msgid "Allowed URIs list, space separated"
+msgstr "許可されるURLのリスト（半角スペース区切り）"
+
+#: models.py:113
+msgid "Hashed on Save. Copy it now if this is a new secret."
+msgstr "保存時にハッシュ化されます。新しいシークレットであれば、今すぐコピーしてください。"
+
+#: models.py:175
+#, python-brace-format
+msgid "Unauthorized redirect scheme: {scheme}"
+msgstr "{scheme} は許可されないリダイレクトスキームです"
+
+#: models.py:179
+#, python-brace-format
+msgid "redirect_uris cannot be empty with grant_type {grant_type}"
+msgstr "{grant_type} 認証タイプではリダイレクトURLを空欄にすることはできません"
+
+#: models.py:185
+msgid "You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm"
+msgstr "RSAアルゴリズムを使用する場合はOIDC_RSA_PRIVATE_KEYを設定する必要があります"
+
+#: models.py:194
+msgid "You cannot use HS256 with public grants or clients"
+msgstr "HS256を公開認証やユーザに使用することはできません"
+
+#: oauth2_validators.py:211
+msgid "The access token is invalid."
+msgstr "アクセストークンが無効です。"
+
+#: oauth2_validators.py:218
+msgid "The access token has expired."
+msgstr "アクセストークンの有効期限が切れています。"
+
+#: oauth2_validators.py:225
+msgid "The access token is valid but does not have enough scope."
+msgstr "アクセストークンは有効ですが、十分な権限を持っていません。"
+
+#: templates/oauth2_provider/application_confirm_delete.html:6
+msgid "Are you sure to delete the application"
+msgstr "アプリケーションを本当に削除してよろしいでしょうか？"
+
+#: templates/oauth2_provider/application_confirm_delete.html:12
+#: templates/oauth2_provider/authorize.html:29
+msgid "Cancel"
+msgstr "キャンセル"
+
+#: templates/oauth2_provider/application_confirm_delete.html:13
+#: templates/oauth2_provider/application_detail.html:38
+#: templates/oauth2_provider/authorized-token-delete.html:7
+msgid "Delete"
+msgstr "削除"
+
+#: templates/oauth2_provider/application_detail.html:10
+msgid "Client id"
+msgstr "ユーザID"
+
+#: templates/oauth2_provider/application_detail.html:15
+msgid "Client secret"
+msgstr "ユーザパスワード"
+
+#: templates/oauth2_provider/application_detail.html:20
+msgid "Client type"
+msgstr "ユーザタイプ"
+
+#: templates/oauth2_provider/application_detail.html:25
+msgid "Authorization Grant Type"
+msgstr "認証方式"
+
+#: templates/oauth2_provider/application_detail.html:30
+msgid "Redirect Uris"
+msgstr "リダイレクトURL"
+
+#: templates/oauth2_provider/application_detail.html:36
+#: templates/oauth2_provider/application_form.html:35
+msgid "Go Back"
+msgstr "戻る"
+
+#: templates/oauth2_provider/application_detail.html:37
+msgid "Edit"
+msgstr "編集"
+
+#: templates/oauth2_provider/application_form.html:9
+msgid "Edit application"
+msgstr "アプリケーションを編集する"
+
+#: templates/oauth2_provider/application_form.html:37
+msgid "Save"
+msgstr "保存"
+
+#: templates/oauth2_provider/application_list.html:6
+msgid "Your applications"
+msgstr "アプリケーション"
+
+#: templates/oauth2_provider/application_list.html:14
+msgid "New Application"
+msgstr "新規アプリケーション"
+
+#: templates/oauth2_provider/application_list.html:17
+msgid "No applications defined"
+msgstr "アプリケーションがありません"
+
+#: templates/oauth2_provider/application_list.html:17
+msgid "Click here"
+msgstr "ここをクリック"
+
+#: templates/oauth2_provider/application_list.html:17
+msgid "if you want to register a new one"
+msgstr "して、新しいアプリケーションを登録"
+
+#: templates/oauth2_provider/application_registration_form.html:5
+msgid "Register a new application"
+msgstr "新規アプリケーションの登録"
+
+#: templates/oauth2_provider/authorize.html:8
+#: templates/oauth2_provider/authorize.html:30
+msgid "Authorize"
+msgstr "認証"
+
+#: templates/oauth2_provider/authorize.html:17
+msgid "Application requires the following permissions"
+msgstr "アプリケーションには以下の権限が必要です。"
+
+#: templates/oauth2_provider/authorized-token-delete.html:6
+msgid "Are you sure you want to delete this token?"
+msgstr "このトークンを本当に削除してよろしいですか？"
+
+#: templates/oauth2_provider/authorized-tokens.html:6
+msgid "Tokens"
+msgstr "トークン"
+
+#: templates/oauth2_provider/authorized-tokens.html:11
+msgid "revoke"
+msgstr "取り消す"
+
+#: templates/oauth2_provider/authorized-tokens.html:19
+msgid "There are no authorized tokens yet."
+msgstr "認証されたトークンはありません"

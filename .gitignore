@@ -26,9 +26,11 @@ pip-log.txt
 
 # Unit test / coverage reports
 .cache
+.pytest_cache
 .coverage
 .tox
 .pytest_cache/
+.ruff_cache/
 nosetests.xml
 
 # Translations
@@ -47,3 +49,13 @@ _build
 
 # Sqlite database files
 *.sqlite
+
+/venv/
+/coverage.xml
+
+db.sqlite3
+venv/
+
+/tests/app/idp/static
+
+*.orig

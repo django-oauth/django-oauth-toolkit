@@ -17,6 +17,11 @@
             </li>
 
             <li>
+                <p><b>{% trans "Hash client secret" %}</b></p>
+                <p>{{ application.hash_client_secret|yesno:_("yes,no") }}</p>
+            </li>
+
+            <li>
                 <p><b>{% trans "Client type" %}</b></p>
                 <p>{{ application.client_type }}</p>
             </li>
@@ -30,12 +35,22 @@
                 <p><b>{% trans "Redirect Uris" %}</b></p>
                 <textarea class="input-block-level" readonly>{{ application.redirect_uris }}</textarea>
             </li>
+
+            <li>
+                <p><b>{% trans "Post Logout Redirect Uris" %}</b></p>
+                <textarea class="input-block-level" readonly>{{ application.post_logout_redirect_uris }}</textarea>
+            </li>
+
+            <li>
+                <p><b>{% trans "Allowed Origins" %}</b></p>
+                <textarea class="input-block-level" readonly>{{ application.allowed_origins }}</textarea>
+            </li>
         </ul>
 
         <div class="btn-toolbar">
             <a class="btn" href="{% url "oauth2_provider:list" %}">{% trans "Go Back" %}</a>
-            <a class="btn btn-primary" href="{% url "oauth2_provider:update" application.id %}">{% trans "Edit" %}</a>
-            <a class="btn btn-danger" href="{% url "oauth2_provider:delete" application.id %}">{% trans "Delete" %}</a>
+            <a class="btn btn-primary" href="{% url "oauth2_provider:update" application.pk %}">{% trans "Edit" %}</a>
+            <a class="btn btn-danger" href="{% url "oauth2_provider:delete" application.pk %}">{% trans "Delete" %}</a>
         </div>
     </div>
 {% endblock content %}

@@ -2,9 +2,7 @@ import logging
 
 from django.core.exceptions import ImproperlyConfigured
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import (
-    SAFE_METHODS, BasePermission, IsAuthenticated
-)
+from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 
 from ...settings import oauth2_settings
 from .authentication import OAuth2Authentication
@@ -33,10 +31,10 @@ class TokenHasScope(BasePermission):
 
             # Provide information about required scope?
             include_required_scope = (
-                oauth2_settings.ERROR_RESPONSE_WITH_SCOPES and
-                required_scopes and
-                not token.is_expired() and
-                not token.allow_scopes(required_scopes)
+                oauth2_settings.ERROR_RESPONSE_WITH_SCOPES
+                and required_scopes
+                and not token.is_expired()
+                and not token.allow_scopes(required_scopes)
             )
 
             if include_required_scope:
@@ -47,9 +45,11 @@ class TokenHasScope(BasePermission):
 
             return False
 
-        assert False, ("TokenHasScope requires the"
-                       "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
-                       "class to be used.")
+        assert False, (
+            "TokenHasScope requires the"
+            "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
+            "class to be used."
+        )
 
     def get_scopes(self, request, view):
         try:
@@ -96,9 +96,7 @@ class TokenHasResourceScope(TokenHasScope):
         else:
             scope_type = oauth2_settings.WRITE_SCOPE
 
-        required_scopes = [
-            "{}:{}".format(scope, scope_type) for scope in view_scopes
-        ]
+        required_scopes = ["{}:{}".format(scope, scope_type) for scope in view_scopes]
 
         return required_scopes
 
@@ -109,10 +107,11 @@ class IsAuthenticatedOrTokenHasScope(BasePermission):
     This only returns True if the user is authenticated, but not using a token
     or using a token, and the token has the correct scope.
 
-    This is usefull when combined with the DjangoModelPermissions to allow people browse
+    This is useful when combined with the DjangoModelPermissions to allow people browse
     the browsable api's if they log in using the a non token bassed middleware,
     and let them access the api's using a rest client with a token
     """
+
     def has_permission(self, request, view):
         is_authenticated = IsAuthenticated().has_permission(request, view)
         oauth2authenticated = False
@@ -155,8 +154,11 @@ class TokenMatchesOASRequirements(BasePermission):
 
             m = request.method.upper()
             if m in required_alternate_scopes:
-                log.debug("Required scopes alternatives to access resource: {0}"
-                          .format(required_alternate_scopes[m]))
+                log.debug(
+                    "Required scopes alternatives to access resource: {0}".format(
+                        required_alternate_scopes[m]
+                    )
+                )
                 for alt in required_alternate_scopes[m]:
                     if token.is_valid(alt):
                         return True
@@ -165,9 +167,11 @@ class TokenMatchesOASRequirements(BasePermission):
                 log.warning("no scope alternates defined for method {0}".format(m))
                 return False
 
-        assert False, ("TokenMatchesOASRequirements requires the"
-                       "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
-                       "class to be used.")
+        assert False, (
+            "TokenMatchesOASRequirements requires the"
+            "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
+            "class to be used."
+        )
 
     def get_required_alternate_scopes(self, request, view):
         try:
@@ -175,4 +179,5 @@ class TokenMatchesOASRequirements(BasePermission):
         except AttributeError:
             raise ImproperlyConfigured(
                 "TokenMatchesOASRequirements requires the view to"
-                " define the required_alternate_scopes attribute")
+                " define the required_alternate_scopes attribute"
+            )

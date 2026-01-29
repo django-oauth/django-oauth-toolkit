@@ -100,7 +100,7 @@ Example (this is the default page you may find on ``templates/oauth2_provider/au
                         {% endif %}
                     {% endfor %}
 
-                    <p>{% trans "Application requires following permissions" %}</p>
+                    <p>{% trans "Application requires the following permissions" %}</p>
                     <ul>
                         {% for scope in scopes_descriptions %}
                             <li>{{ scope }}</li>
@@ -165,10 +165,11 @@ This template gets passed the following template context variables:
     - ``client_type``
     - ``authorization_grant_type``
     - ``redirect_uris``
+    - ``post_logout_redirect_uris``
 
 .. caution::
     In the default implementation this template in extended by `application_registration_form.html`_.
-    Be sure to provide the same blocks if you are only overiding this template.
+    Be sure to provide the same blocks if you are only overriding this template.
 
 application_registration_form.html
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -184,6 +185,7 @@ This template gets passed the following template context variable:
     - ``client_type``
     - ``authorization_grant_type``
     - ``redirect_uris``
+    - ``post_logout_redirect_uris``
 
 .. note::
     In the default implementation this template extends `application_form.html`_.

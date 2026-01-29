@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-oauth-toolkit"
+dynamic = ["version"]
+requires-python = ">=3.8"
+authors = [
+  {name = "Federico Frenguelli"},
+  {name = "Massimiliano Pippi"},
+  {email = "synasius@gmail.com"},
+]
+description = "OAuth2 Provider for Django"
+keywords = ["django", "oauth", "oauth2", "oauthlib"]
+license = {file = "LICENSE"}
+readme = "README.rst"
+classifiers = [
+	"Development Status :: 5 - Production/Stable",
+	"Environment :: Web Environment",
+	"Framework :: Django",
+	"Framework :: Django :: 4.2",
+	"Framework :: Django :: 5.0",
+	"Framework :: Django :: 5.1",
+	"Framework :: Django :: 5.2",
+	"Intended Audience :: Developers",
+	"License :: OSI Approved :: BSD License",
+	"Operating System :: OS Independent",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.8",
+	"Programming Language :: Python :: 3.9",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
+	"Programming Language :: Python :: 3.14",
+	"Topic :: Internet :: WWW/HTTP",
+]
+dependencies = [
+	"django >= 4.2",
+	"requests >= 2.13.0",
+	"oauthlib >= 3.3.0",
+	"jwcrypto >= 1.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+	"pytest",
+	"pytest-cov",
+	"m2r",
+	"sphinx-rtd-theme",
+]
+
+[project.urls]
+Homepage = "https://django-oauth-toolkit.readthedocs.io/"
+Repository = "https://github.com/django-oauth/django-oauth-toolkit"
+
+[tool.setuptools.dynamic]
+version = {attr = "oauth2_provider.__version__"}
+
+# Ref: https://github.com/codespell-project/codespell#using-a-config-file
+[tool.codespell]
+skip = '.git,package-lock.json,locale,AUTHORS,tox.ini'
+check-hidden = true
+ignore-regex = '.*pragma: codespell-ignore.*'
+ignore-words-list = 'assertIn'
+
+[tool.coverage.run]
+source = ["oauth2_provider"]
+omit = ["*/migrations/*"]
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.pytest.ini_options]
+django_find_project = false
+addopts = [
+    "--cov=oauth2_provider",
+    "--cov-report=",
+    "--cov-append",
+    "-s"
+]
+markers = [
+    "oauth2_settings: Custom OAuth2 settings to use - use with oauth2_settings fixture",
+    "nologinrequiredmiddleware",
+]
+
+[tool.ruff]
+line-length = 110
+exclude = [".tox", "build/", "dist/", "docs/", "oauth2_provider/migrations/", "tests/migrations/", "manage.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "Q", "W"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+known-first-party = ["oauth2_provider"]
+
+[tool.uv.workspace]
+members = [
+    "tests/app/idp",
+]

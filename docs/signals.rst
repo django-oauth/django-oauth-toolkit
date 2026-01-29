@@ -4,7 +4,7 @@ Signals
 Django-oauth-toolkit sends messages to various signals, depending on the action
 that has been triggered.
 
-You can easily import signals from `oauth2_provider.signals` and attach your
+You can easily import signals from ``oauth2_provider.signals`` and attach your
 own listeners.
 
 For example:
@@ -20,5 +20,5 @@ For example:
 
 Currently supported signals are:
 
-* `oauth2_provider.signals.app_authorized` - fired once an oauth code has been
+* ``oauth2_provider.signals.app_authorized`` - fired once an oauth code has been
   authorized and an access token has been granted

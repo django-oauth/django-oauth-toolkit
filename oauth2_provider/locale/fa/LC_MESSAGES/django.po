@@ -1,0 +1,202 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <HOSSSHAKIBA@OUTLOOK.COM>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2021-05-01 15:33+0430\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: HOSSEIN SHAKIBA <HOSSSHAKIBA@OUTLOOK.COM>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#: models.py:49
+msgid "Confidential"
+msgstr "محرمانه"
+
+#: models.py:50
+msgid "Public"
+msgstr "عمومی"
+
+#: models.py:59
+msgid "Authorization code"
+msgstr "کد مجوز"
+
+#: models.py:60
+msgid "Implicit"
+msgstr "ضمنی"
+
+#: models.py:61
+msgid "Resource owner password-based"
+msgstr "صاحب منبع مبتنی بر رمز عبور"
+
+#: models.py:62
+msgid "Client credentials"
+msgstr "اعتبار مخاطب"
+
+#: models.py:63
+msgid "OpenID connect hybrid"
+msgstr "اتصال ترکیبی OpenID"
+
+#: models.py:70
+msgid "No OIDC support"
+msgstr "OIDC پشتیبانی وجود ندارد از"
+
+#: models.py:71
+msgid "RSA with SHA-2 256"
+msgstr "SHA-2 256 با RSA"
+
+#: models.py:72
+msgid "HMAC with SHA-2 256"
+msgstr "SHA-2 256 با HMAC"
+
+#: models.py:87
+msgid "Allowed URIs list, space separated"
+msgstr "مجاز، با فاصله از هم جدا شده‌اند URIs فهرست"
+
+#: models.py:152
+#, python-brace-format
+msgid "Unauthorized redirect scheme: {scheme}"
+msgstr "{scheme} :طرح تغییر مسیر غیرمجاز"
+
+#: models.py:156
+#, python-brace-format
+msgid "redirect_uris cannot be empty with grant_type {grant_type}"
+msgstr "{grant_type} خالی باشد grant_type نمی تواند با redirect_uris "
+
+#: models.py:162
+msgid "You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm"
+msgstr "را تنظیم کنید OIDC_RSA_PRIVATE_KEY باید RSA برای استفاده از الگوریتم"
+
+#: models.py:171
+msgid "You cannot use HS256 with public grants or clients"
+msgstr ""
+
+#: oauth2_validators.py:181
+msgid "The access token is invalid."
+msgstr "توکن دسترسی نامعتبر است"
+
+#: oauth2_validators.py:188
+msgid "The access token has expired."
+msgstr "توکن دسترسی منقضی شده است"
+
+#: oauth2_validators.py:195
+msgid "The access token is valid but does not have enough scope."
+msgstr "توکن دسترسی معتبر است اما دامنه کافی ندارد"
+
+#: templates/oauth2_provider/application_confirm_delete.html:6
+msgid "Are you sure to delete the application"
+msgstr "آیا مطمئن هستید که برنامه را حذف می کنید"
+
+#: templates/oauth2_provider/application_confirm_delete.html:12
+#: templates/oauth2_provider/authorize.html:29
+msgid "Cancel"
+msgstr "لغو"
+
+#: templates/oauth2_provider/application_confirm_delete.html:13
+#: templates/oauth2_provider/application_detail.html:38
+#: templates/oauth2_provider/authorized-token-delete.html:7
+msgid "Delete"
+msgstr "حذف"
+
+#: templates/oauth2_provider/application_detail.html:10
+msgid "Client id"
+msgstr "شناسه(آیدی) کاربر"
+
+#: templates/oauth2_provider/application_detail.html:15
+msgid "Client secret"
+msgstr "راز کاربر"
+
+#: templates/oauth2_provider/application_detail.html:20
+msgid "Client type"
+msgstr "نوع کاربر"
+
+#: templates/oauth2_provider/application_detail.html:25
+msgid "Authorization Grant Type"
+msgstr "نوع اعطای مجوز"
+
+#: templates/oauth2_provider/application_detail.html:30
+msgid "Redirect Uris"
+msgstr "تغییر مسیر URIs"
+
+#: templates/oauth2_provider/application_detail.html:36
+#: templates/oauth2_provider/application_form.html:35
+msgid "Go Back"
+msgstr "بازگشت"
+
+#: templates/oauth2_provider/application_detail.html:37
+msgid "Edit"
+msgstr "ویرایش"
+
+#: templates/oauth2_provider/application_form.html:9
+msgid "Edit application"
+msgstr "ویرایش برنامه"
+
+#: templates/oauth2_provider/application_form.html:37
+msgid "Save"
+msgstr "ذخیره"
+
+#: templates/oauth2_provider/application_list.html:6
+msgid "Your applications"
+msgstr "برنامه شما"
+
+#: templates/oauth2_provider/application_list.html:14
+msgid "New Application"
+msgstr "برنامه جدید"
+
+#: templates/oauth2_provider/application_list.html:17
+msgid "No applications defined"
+msgstr "هیچ برنامه ای تعریف نشده است"
+
+#: templates/oauth2_provider/application_list.html:17
+msgid "Click here"
+msgstr "اینجا کلیک کنید"
+
+#: templates/oauth2_provider/application_list.html:17
+msgid "if you want to register a new one"
+msgstr "اگر می خواهید مورد جدیدی ثبت کنید"
+
+#: templates/oauth2_provider/application_registration_form.html:5
+msgid "Register a new application"
+msgstr "ثبت یک برنامه جدید"
+
+#: templates/oauth2_provider/authorize.html:8
+#: templates/oauth2_provider/authorize.html:30
+msgid "Authorize"
+msgstr "اجازه دادن"
+
+#: templates/oauth2_provider/authorize.html:17
+msgid "Application requires the following permissions"
+msgstr "برنامه به مجوزهای زیر نیاز دارد"
+
+#: templates/oauth2_provider/authorized-oob.html:12
+msgid "Success"
+msgstr "موفقیت"
+
+#: templates/oauth2_provider/authorized-oob.html:14
+msgid "Please return to your application and enter this code:"
+msgstr "لطفاً به برنامه خود برگردید و این کد را وارد کنید:"
+
+#: templates/oauth2_provider/authorized-token-delete.html:6
+msgid "Are you sure you want to delete this token?"
+msgstr "آیا مطمئن هستید که می خواهید این توکن را حذف کنید؟"
+
+#: templates/oauth2_provider/authorized-tokens.html:6
+msgid "Tokens"
+msgstr "توکن‌ها"
+
+#: templates/oauth2_provider/authorized-tokens.html:11
+msgid "revoke"
+msgstr "باطل کردن"
+
+#: templates/oauth2_provider/authorized-tokens.html:19
+msgid "There are no authorized tokens yet."
+msgstr "هنوز هیچ توکن مجازی وجود ندارد."

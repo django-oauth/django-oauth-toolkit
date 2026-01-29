@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.7
+    hooks:
+      - id: ruff
+        args: [ --fix ]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-ast
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-xml
+      - id: check-yaml
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v1.0.0
+    hooks:
+      - id: sphinx-lint
+#  Configuration for codespell is in pyproject.toml
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+    - id: codespell
+      exclude: (package-lock.json|/locale/)
+      additional_dependencies:
+      - tomli

@@ -1,9 +1,16 @@
+import hashlib
+import logging
+
 from django.contrib.auth import authenticate
 from django.utils.cache import patch_vary_headers
-from django.utils.deprecation import MiddlewareMixin
+
+from oauth2_provider.models import get_access_token_model
 
 
-class OAuth2TokenMiddleware(MiddlewareMixin):
+log = logging.getLogger(__name__)
+
+
+class OAuth2TokenMiddleware:
     """
     Middleware for OAuth2 user authentication
 
@@ -23,7 +30,10 @@ class OAuth2TokenMiddleware(MiddlewareMixin):
     reverse proxy can create proper cache keys.
     """
 
-    def process_request(self, request):
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
         # do something only if request contains a Bearer token
         if request.META.get("HTTP_AUTHORIZATION", "").startswith("Bearer"):
             if not hasattr(request, "user") or request.user.is_anonymous:
@@ -31,6 +41,26 @@ class OAuth2TokenMiddleware(MiddlewareMixin):
                 if user:
                     request.user = request._cached_user = user
 
-    def process_response(self, request, response):
+        response = self.get_response(request)
         patch_vary_headers(response, ("Authorization",))
+        return response
+
+
+class OAuth2ExtraTokenMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        authheader = request.META.get("HTTP_AUTHORIZATION", "")
+        splits = authheader.split(maxsplit=1)
+        if authheader.startswith("Bearer") and len(splits) == 2:
+            tokenstring = splits[1]
+            AccessToken = get_access_token_model()
+            try:
+                token_checksum = hashlib.sha256(tokenstring.encode("utf-8")).hexdigest()
+                token = AccessToken.objects.get(token_checksum=token_checksum)
+                request.access_token = token
+            except AccessToken.DoesNotExist as e:
+                log.exception(e)
+        response = self.get_response(request)
         return response

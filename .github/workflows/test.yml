@@ -1,0 +1,150 @@
+name: Test
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-package:
+    name: Test Package (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for Codecov OIDC token
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+        - '3.10'
+        - '3.11'
+        - '3.12'
+        - '3.13'
+        django-version:
+        - '4.2'
+        - '5.0'
+        - '5.1'
+        - '5.2'
+        - 'main'
+        ## include/exclude combinations, typically for the newest and oldest django/python versions.
+        include:
+          # https://docs.djangoproject.com/en/dev/faq/install/#what-python-version-can-i-use-with-django
+          - python-version: '3.8'
+            django-version: '4.2'
+          - python-version: '3.9'
+            django-version: '4.2'
+          - python-version: '3.14'
+            django-version: '5.2'
+          - python-version: '3.14'
+            django-version: 'main'
+        exclude:
+          - python-version: '3.13'
+            django-version: '5.0'
+          - python-version: '3.13'
+            django-version: '4.2'
+          - python-version: '3.10'
+            django-version: 'main'
+          - python-version: '3.11'
+            django-version: 'main'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+
+    - name: Get pip cache dir
+      id: pip-cache
+      run: |
+        echo "::set-output name=dir::$(pip cache dir)"
+
+    - name: Cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pip-cache.outputs.dir }}
+        key:
+          ${{ matrix.python-version }}-v1-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/tox.ini') }}
+        restore-keys: |
+          ${{ matrix.python-version }}-v1-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install --upgrade tox tox-gh-actions
+
+    - name: Tox tests
+      run: |
+        tox -v
+      env:
+        DJANGO: ${{ matrix.django-version }}
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v5
+      with:
+        name: Python ${{ matrix.python-version }}
+        use_oidc: true
+
+  test-demo-rp:
+    name: Test Demo Relying Party
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - "22.x"
+          - "24.x"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: tests/app/rp
+
+      - name: Run Lint
+        run: npm run lint
+        working-directory: tests/app/rp
+
+      - name: Run build
+        run: npm run build
+        working-directory: tests/app/rp
+
+  codecov-notify:
+    needs:
+      - test-package
+      - test-demo-rp
+    runs-on: ubuntu-latest
+    name: Codecov Notify
+    permissions:
+      id-token: write # Required for Codecov OIDC token
+    steps:
+      # - tell codecov to send notifications now that all jobs are complete. 
+      #   without this, codecov may notify before all coverage reports have been uploaded.
+      #   `codecov: notify: manual_trigger: true` must be set in codecov.yml, to prevent 
+      #   processing on every upload.
+      # - preferred to after_n_builds so we don't need to update that number every
+      #   time we add/remove jobs.
+      - name: Notify Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          run_command: 'send-notifications'
+          use_oidc: true
+
+  success:
+    needs:
+      - test-package
+      - test-demo-rp
+      - codecov-notify
+    runs-on: ubuntu-latest
+    name: Test successful
+    steps:
+      - name: Success
+        run: echo Test successful

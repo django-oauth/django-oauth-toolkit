@@ -1,18 +1,21 @@
 from io import StringIO
 
+import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import TestCase
 
 from oauth2_provider.models import get_application_model
+
+from . import presets
+from .common_testing import OAuth2ProviderTestCase as TestCase
 
 
 Application = get_application_model()
 
 
 class CreateApplicationTest(TestCase):
-
     def test_command_creates_application(self):
         output = StringIO()
         self.assertEqual(Application.objects.count(), 0)
@@ -24,7 +27,7 @@ class CreateApplicationTest(TestCase):
             stdout=output,
         )
         self.assertEqual(Application.objects.count(), 1)
-        self.assertIn("New application created successfully", output.getvalue())
+        self.assertIn("created successfully", output.getvalue())
 
     def test_missing_required_args(self):
         self.assertEqual(Application.objects.count(), 0)
@@ -84,7 +87,7 @@ class CreateApplicationTest(TestCase):
         )
         app = Application.objects.get()
 
-        self.assertEqual(app.client_secret, "SECRET")
+        self.assertTrue(check_password("SECRET", app.client_secret))
 
     def test_application_created_with_client_id(self):
         call_command(
@@ -112,7 +115,23 @@ class CreateApplicationTest(TestCase):
 
         self.assertEqual(app.user, user)
 
+    @pytest.mark.usefixtures("oauth2_settings")
+    @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+    def test_application_created_with_algorithm(self):
+        call_command(
+            "createapplication",
+            "confidential",
+            "authorization-code",
+            "--redirect-uris=http://example.com http://example2.com",
+            "--algorithm=RS256",
+        )
+        app = Application.objects.get()
+
+        self.assertEqual(app.algorithm, "RS256")
+
     def test_validation_failed_message(self):
+        import django
+
         output = StringIO()
         call_command(
             "createapplication",
@@ -123,6 +142,10 @@ class CreateApplicationTest(TestCase):
             stdout=output,
         )
 
-        self.assertIn("user", output.getvalue())
-        self.assertIn("783", output.getvalue())
-        self.assertIn("does not exist", output.getvalue())
+        output_str = output.getvalue()
+        self.assertIn("user", output_str)
+        self.assertIn("783", output_str)
+        if django.VERSION < (5, 2):
+            self.assertIn("does not exist", output_str)
+        else:
+            self.assertIn("is not a valid choice", output_str)

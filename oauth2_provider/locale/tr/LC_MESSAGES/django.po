@@ -1,0 +1,215 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-07-11 14:11+0300\n"
+"PO-Revision-Date: 2025-07-11 14:15+0300\n"
+"Last-Translator: Cihad GUNDOGDU <cihadgundogdu@gmail.com>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: tr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+#: oauth2_provider/models.py:84
+msgid "Confidential"
+msgstr "Gizli"
+
+#: oauth2_provider/models.py:85
+msgid "Public"
+msgstr "Herkese açık"
+
+#: oauth2_provider/models.py:94
+msgid "Authorization code"
+msgstr "Yetkilendirme kodu"
+
+#: oauth2_provider/models.py:95
+msgid "Implicit"
+msgstr "Açık"
+
+#: oauth2_provider/models.py:96
+msgid "Resource owner password-based"
+msgstr "Kaynak sahibi şifre tabanlı"
+
+#: oauth2_provider/models.py:97
+msgid "Client credentials"
+msgstr "İstemci kimlik bilgileri"
+
+#: oauth2_provider/models.py:98
+msgid "OpenID connect hybrid"
+msgstr "OpenID connect hibrit"
+
+#: oauth2_provider/models.py:105
+msgid "No OIDC support"
+msgstr "OpenID Connect desteği yok"
+
+#: oauth2_provider/models.py:106
+msgid "RSA with SHA-2 256"
+msgstr "RSA ile SHA-2 256"
+
+#: oauth2_provider/models.py:107
+msgid "HMAC with SHA-2 256"
+msgstr "HMAC ile SHA-2 256"
+
+#: oauth2_provider/models.py:122
+msgid "Allowed URIs list, space separated"
+msgstr "İzin verilen URI'ler listesi, boşlukla ayrılmış"
+
+#: oauth2_provider/models.py:126
+msgid "Allowed Post Logout URIs list, space separated"
+msgstr "İzin verilen Oturum Kapatma URI'leri listesi, boşlukla ayrılmış"
+
+#: oauth2_provider/models.py:136
+msgid "Hashed on Save. Copy it now if this is a new secret."
+msgstr "Kaydedildiğinde Hashlendi. Bu yeni bir gizli anahtar ise şimdi kopyalayın."
+
+#: oauth2_provider/models.py:147
+msgid "Allowed origins list to enable CORS, space separated"
+msgstr "CORS'u etkinleştirmek için izin verilen kökenler listesi, boşlukla ayrılmış"
+
+#: oauth2_provider/models.py:227
+#, python-brace-format
+msgid "redirect_uris cannot be empty with grant_type {grant_type}"
+msgstr "redirect_uris {grant_type} ile boş olamaz"
+
+#: oauth2_provider/models.py:244
+msgid "You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm"
+msgstr "RSA algoritmasını kullanmak için OIDC_RSA_PRIVATE_KEY ayarlanmalıdır"
+
+#: oauth2_provider/models.py:253
+msgid "You cannot use HS256 with public grants or clients"
+msgstr "HS256'yı herkese açık izinler veya istemcilerle kullanamazsınız"
+
+#: oauth2_provider/oauth2_validators.py:225
+msgid "The access token is invalid."
+msgstr "Geçersiz erişim belirteci."
+
+#: oauth2_provider/oauth2_validators.py:232
+msgid "The access token has expired."
+msgstr "Erişim belirteci süresi dolmuş."
+
+#: oauth2_provider/oauth2_validators.py:239
+msgid "The access token is valid but does not have enough scope."
+msgstr "Erişim belirteci geçerli ancak yeterli kapsamı yok."
+
+#: oauth2_provider/templates/oauth2_provider/application_confirm_delete.html:6
+msgid "Are you sure to delete the application"
+msgstr "Uygulamayı silmek istediğinize emin misiniz"
+
+#: oauth2_provider/templates/oauth2_provider/application_confirm_delete.html:12
+#: oauth2_provider/templates/oauth2_provider/authorize.html:29
+msgid "Cancel"
+msgstr "İptal"
+
+#: oauth2_provider/templates/oauth2_provider/application_confirm_delete.html:13
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:53
+#: oauth2_provider/templates/oauth2_provider/authorized-token-delete.html:7
+msgid "Delete"
+msgstr "Sil"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:10
+msgid "Client id"
+msgstr "İstemci kimliği"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:15
+msgid "Client secret"
+msgstr "İstemci gizli anahtarı"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:20
+msgid "Hash client secret"
+msgstr "İstemci gizli anahtarını hashle"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:21
+msgid "yes,no"
+msgstr "evet,hayır"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:25
+msgid "Client type"
+msgstr "İstemci türü"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:30
+msgid "Authorization Grant Type"
+msgstr "Yetkilendirme İzni Türü"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:35
+msgid "Redirect Uris"
+msgstr "Yönlendirme URI'leri"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:40
+msgid "Post Logout Redirect Uris"
+msgstr "Oturum Kapatma Yönlendirme URI'leri"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:45
+msgid "Allowed Origins"
+msgstr "İzin Verilen Orijinler"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:51
+#: oauth2_provider/templates/oauth2_provider/application_form.html:35
+msgid "Go Back"
+msgstr "Geri Dön"
+
+#: oauth2_provider/templates/oauth2_provider/application_detail.html:52
+msgid "Edit"
+msgstr "Düzenle"
+
+#: oauth2_provider/templates/oauth2_provider/application_form.html:9
+msgid "Edit application"
+msgstr "Uygulamayı düzenle"
+
+#: oauth2_provider/templates/oauth2_provider/application_form.html:37
+msgid "Save"
+msgstr "Kaydet"
+
+#: oauth2_provider/templates/oauth2_provider/application_list.html:6
+msgid "Your applications"
+msgstr "Uygulamalarınız"
+
+#: oauth2_provider/templates/oauth2_provider/application_list.html:14
+msgid "New Application"
+msgstr "Yeni Uygulama"
+
+#: oauth2_provider/templates/oauth2_provider/application_list.html:17
+msgid "No applications defined"
+msgstr "Tanımlı uygulama yok"
+
+#: oauth2_provider/templates/oauth2_provider/application_list.html:17
+msgid "Click here"
+msgstr "Buraya tıklayın"
+
+#: oauth2_provider/templates/oauth2_provider/application_list.html:17
+msgid "if you want to register a new one"
+msgstr "eğer yeni bir tane kaydetmek istiyorsanız"
+
+#: oauth2_provider/templates/oauth2_provider/application_registration_form.html:5
+msgid "Register a new application"
+msgstr "Yeni bir uygulama kaydet"
+
+#: oauth2_provider/templates/oauth2_provider/authorize.html:8
+#: oauth2_provider/templates/oauth2_provider/authorize.html:30
+msgid "Authorize"
+msgstr "Yetkilendir"
+
+#: oauth2_provider/templates/oauth2_provider/authorize.html:17
+msgid "Application requires the following permissions"
+msgstr "Uygulama aşağıdaki izinleri gerektirir"
+
+#: oauth2_provider/templates/oauth2_provider/authorized-token-delete.html:6
+msgid "Are you sure you want to delete this token?"
+msgstr "Bu tokeni silmek istediğinize emin misiniz?"
+
+#: oauth2_provider/templates/oauth2_provider/authorized-tokens.html:6
+msgid "Tokens"
+msgstr "Tokenler"
+
+#: oauth2_provider/templates/oauth2_provider/authorized-tokens.html:11
+msgid "revoke"
+msgstr "iptal et"
+
+#: oauth2_provider/templates/oauth2_provider/authorized-tokens.html:19
+msgid "There are no authorized tokens yet."
+msgstr "Henüz yetkilendirilmiş token yok."

@@ -33,7 +33,9 @@ def protected_resource(scopes=None, validator_cls=OAuth2Validator, server_cls=Se
                 request.resource_owner = oauthlib_req.user
                 return view_func(request, *args, **kwargs)
             return HttpResponseForbidden()
+
         return _validate
+
     return decorator
 
 
@@ -62,8 +64,7 @@ def rw_protected_resource(scopes=None, validator_cls=OAuth2Validator, server_cls
             if not set(read_write_scopes).issubset(set(provided_scopes)):
                 raise ImproperlyConfigured(
                     "rw_protected_resource decorator requires following scopes {0}"
-                    " to be in OAUTH2_PROVIDER['SCOPES'] list in settings".format(
-                        read_write_scopes)
+                    " to be in OAUTH2_PROVIDER['SCOPES'] list in settings".format(read_write_scopes)
                 )
 
             # Check if method is safe
@@ -80,5 +81,7 @@ def rw_protected_resource(scopes=None, validator_cls=OAuth2Validator, server_cls
                 request.resource_owner = oauthlib_req.user
                 return view_func(request, *args, **kwargs)
             return HttpResponseForbidden()
+
         return _validate
+
     return decorator

@@ -38,7 +38,7 @@ using the *Class Based View* approach.
 .. class:: ReadWriteScopedResourceView(ReadWriteScopedResourceMixin, ProtectedResourceView):
 
     A view that provides OAuth2 authentication and read/write default scopes.
-    ``GET``, ``HEAD``, ``OPTIONS`` http methods require ``read`` scope, others methods
+    ``GET``, ``HEAD``, ``OPTIONS`` HTTP methods require ``read`` scope, others methods
     need the ``write`` scope. If you need, you can always specify an additional list of
     scopes in the ``required_scopes`` field::
 

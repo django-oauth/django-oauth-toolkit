@@ -1,0 +1,73 @@
+venv
+__pycache__
+.tox
+.github
+.vscode
+.django_oauth_toolkit.egg-info
+.coverage
+coverage.xml
+
+# every time we change this we need to do the COPY . /code and
+# RUN pip install -r requirements.txt again
+# so don't include the Dockerfile in the context.
+Dockerfile
+docker-compose.yml
+
+
+# from .gitignore
+*.py[cod]
+
+*.swp
+
+# C extensions
+*.so
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+bin
+var
+sdist
+develop-eggs
+.installed.cfg
+lib
+lib64
+__pycache__
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.cache
+.pytest_cache
+.coverage
+.tox
+.pytest_cache/
+nosetests.xml
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+.project
+.pydevproject
+
+# PyCharm stuff
+.idea
+
+# Sphinx build dir
+_build
+
+# Sqlite database files
+*.sqlite
+
+/venv/
+/coverage.xml
+
+db.sqlite3
+venv/

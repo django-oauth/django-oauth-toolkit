@@ -8,7 +8,7 @@
         {% for authorized_token in authorized_tokens %}
             <li>
                 {{ authorized_token.application }}
-                (<a href="{% url 'oauth2_provider:authorized-token-delete' authorized_token.pk %}">revoke</a>)
+                (<a href="{% url 'oauth2_provider:authorized-token-delete' authorized_token.pk %}">{% trans "revoke" %}</a>)
             </li>
             <ul>
             {% for scope_name, scope_description in authorized_token.scopes.items %}

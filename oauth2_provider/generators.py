@@ -8,6 +8,7 @@ class BaseHashGenerator:
     """
     All generators should extend this class overriding `.hash()` method.
     """
+
     def hash(self):
         raise NotImplementedError()
 
@@ -16,7 +17,7 @@ class ClientIdGenerator(BaseHashGenerator):
     def hash(self):
         """
         Generate a client_id for Basic Authentication scheme without colon char
-        as in http://tools.ietf.org/html/rfc2617#section-2
+        as in https://rfc-editor.org/rfc/rfc2617.html#section-2
         """
         return oauthlib_generate_client_id(length=40, chars=UNICODE_ASCII_CHARACTER_SET)
 
