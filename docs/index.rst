@@ -35,6 +35,7 @@ Index
    getting_started
    tutorial/tutorial
    rest-framework/rest-framework
+   ninja
    views/views
    templates
    views/details
