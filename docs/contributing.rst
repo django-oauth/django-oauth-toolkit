@@ -253,6 +253,7 @@ tests both ways. You can see the configurations used in tests/settings.py and te
 
 When there are multiple databases defined, Django tests will not work unless they are told which database(s) to work with.
 For test writers this means any test must either:
+
 - instead of Django's TestCase or TransactionTestCase use the versions of those
   classes defined in tests/common_testing.py
 - when using pytest's `django_db` mark, define it like this:
@@ -386,12 +387,14 @@ working on multiple branches with different dependencies.
 You can use uv sync to set up your environment and install dependencies and run python::
 
 .. code-block:: bash
+
     uv sync    # checks deps, installs virtualenv and dependencies as necessary
     uv run ... # runs command in the uv environment, syncs deps and python version first if necessary
 
 To run tox uv use `tox uv <https://github.com/tox-dev/tox-uv>`__::
 
 .. code-block:: bash
+
     uv tool install tox --with tox-uv # use uv to install
     tox --version # validate you are using the installed tox
     tox r -e py312 # will use uv

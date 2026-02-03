@@ -54,5 +54,5 @@ using the *Class Based View* approach.
                 return HttpResponse('Hello, World!')
 
 
-Generic views in DOT are obtained composing a set of mixins you can find in the :doc:`views.mixins <mixins>`
+Generic views in DOT are obtained composing a set of mixins you can find in the :ref:`Mixins`
 module: feel free to use those mixins directly if you want to provide your own class based views.

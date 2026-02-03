@@ -32,7 +32,7 @@ createapplication
 
 The ``createapplication`` management command provides a shortcut to create a new application in a programmatic way.
 
-.. code-block:: sh
+.. code-block:: console
 
     usage: manage.py createapplication [-h] [--client-id CLIENT_ID] [--user USER]
                                        [--redirect-uris REDIRECT_URIS]
@@ -91,4 +91,3 @@ The ``createapplication`` management command provides a shortcut to create a new
       --skip-checks         Skip system checks.
 
 If you let ``createapplication`` auto-generate the secret then it displays the value before hashing it.
-
