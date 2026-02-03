@@ -354,7 +354,7 @@ If unset, the default location is used, eg if ``django-oauth-toolkit`` is
 mounted at ``/o/``, it will be ``<server-address>/o/userinfo/``.
 
 OIDC_RP_INITIATED_LOGOUT_ENABLED
-~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``
 
 When is set to ``False`` (default) the `OpenID Connect RP-Initiated Logout <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_
@@ -369,13 +369,13 @@ Whether to always prompt the :term:`Resource Owner` (End User) to confirm a logo
 :term:`Client` (Relying Party). If it is disabled the :term:`Resource Owner` (End User) will only be prompted if required by the standard.
 
 OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``
 
 Enable this setting to require `https` in post logout redirect URIs. `http` is only allowed when a :term:`Client` is `confidential`.
 
 OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``True``
 
 Whether expired ID tokens are accepted for RP-Initiated Logout. The Tokens must still be signed by the OP and otherwise valid.
