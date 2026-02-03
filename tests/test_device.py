@@ -141,6 +141,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
 
         request_data: dict[str, str] = {
             "client_id": self.application.client_id,
+            "scope": "read",
         }
         request_as_x_www_form_urlencoded: str = urlencode(request_data)
 
@@ -224,6 +225,11 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             ),
             expected_url=device_confirm_url,
         )
+
+        get_response = self.client.get(device_confirm_url)
+        assert get_response.status_code == 200
+        assert "scopes_descriptions" in get_response.context
+        assert "Reading scope" in get_response.context["scopes_descriptions"]
 
         # --------------------------------------------------------------------------------
         # 2: We redirect to the accept/deny form (the user is still in their browser)
