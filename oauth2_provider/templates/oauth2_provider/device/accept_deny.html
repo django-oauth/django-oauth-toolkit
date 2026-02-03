@@ -5,7 +5,12 @@
     <title>Accept or Deny</title>
 </head>
 <body>
-    <h1>Please choose an action:</h1>
+    <h1>The device requests access to the following scopes:</h1>
+    <ul>
+        {% for scope in scopes_descriptions %}
+            <li>{{ scope }}</li>
+        {% endfor %}
+    </ul>
     <form method="post">
         {% csrf_token %}
         <button type="submit" name="action" value="accept">Accept</button>
