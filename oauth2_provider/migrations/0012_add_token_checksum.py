@@ -9,6 +9,20 @@ def forwards_func(apps, schema_editor):
     Forward migration touches every "old" accesstoken.token which will cause the checksum to be computed.
     """
     AccessToken = apps.get_model(oauth2_settings.ACCESS_TOKEN_MODEL)
+    
+    # Arbitrary value
+    THRESHOLD = 50000
+    count = AccessToken.objects.count()
+
+    if count > THRESHOLD:
+        raise CommandError(
+            f"Migration aborted: {count} AccessTokens found. "
+            f"Updating more than {THRESHOLD} rows via RunPython is too slow. "
+            "Please run the data update via a background task/management command "
+            "before applying this migration."
+        )
+
+    # If under threshold, proceed with the update
     accesstokens = AccessToken._default_manager.iterator()
     for accesstoken in accesstokens:
         accesstoken.save(update_fields=['token_checksum'])
