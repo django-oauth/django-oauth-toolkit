@@ -99,6 +99,9 @@ class DeviceUserCodeView(LoginRequiredMixin, FormView):
             },
         )
 
+    def get_initial(self):
+        return {"user_code": self.request.GET.get("user_code", "")}
+
     def form_valid(self, form):
         """
         Sets the device_grant on the instance so that it can be accessed
