@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 * #1628 Fix inaccurate help_text on client_secret field of Application model
+* #1656 Fix duplicate unique constraint for device_code on Oracle 19c
 
 ## [3.2.0] - 2025-11-13
 ### Added
