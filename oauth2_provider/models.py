@@ -658,12 +658,6 @@ class IDToken(AbstractIDToken):
 class AbstractDeviceGrant(models.Model):
     class Meta:
         abstract = True
-        constraints = [
-            models.UniqueConstraint(
-                fields=["device_code"],
-                name="%(app_label)s_%(class)s_unique_device_code",
-            ),
-        ]
 
     AUTHORIZED = "authorized"
     AUTHORIZATION_PENDING = "authorization-pending"
