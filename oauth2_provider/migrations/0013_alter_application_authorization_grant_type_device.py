@@ -35,7 +35,6 @@ class Migration(migrations.Migration):
             options={
                 'abstract': False,
                 'swappable': 'OAUTH2_PROVIDER_DEVICE_GRANT_MODEL',
-                'constraints': [models.UniqueConstraint(fields=('device_code',), name='oauth2_provider_devicegrant_unique_device_code')],
             },
         ),
     ]
