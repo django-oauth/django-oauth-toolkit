@@ -777,18 +777,27 @@ class OAuth2Validator(RequestValidator):
                 # slightly inefficient on Python2, but the queryset contains only one instance
                 list(map(lambda t: t.revoke(), other_type.objects.filter(token=token)))
 
-    def validate_user(self, username, password, client, request, *args, **kwargs):
+    def create_a_new_request(self, request) -> HttpRequest:
         """
-        Check username and password correspond to a valid and active User
+        Copy the request object to a new HttpRequest object.
+        Create one with attributes likely to be used.
+        Override this method to customize the request object which
+        is passed to the authenticate method.
         """
-        # Passing the optional HttpRequest adds compatibility for backends
-        # which depend on its presence. Create one with attributes likely
-        # to be used.
         http_request = HttpRequest()
         http_request.path = request.uri
         http_request.method = request.http_method
         getattr(http_request, request.http_method).update(dict(request.decoded_body))
         http_request.META = request.headers
+        return http_request
+
+    def validate_user(self, username, password, client, request, *args, **kwargs):
+        """
+        Check username and password correspond to a valid and active User
+        """
+        # Passing the optional HttpRequest adds compatibility for backends
+        # which depend on its presence.
+        http_request = self.create_a_new_request(request)
         u = authenticate(http_request, username=username, password=password)
         if u is not None and u.is_active:
             request.user = u
