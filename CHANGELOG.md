@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 * #1373 Integration and docs for Django Ninja authentication
 * #1546 Support for RP-Initiated Registration
+* #1099 Add RFC 8414 OAuth 2.0 Authorization Server Metadata endpoint (`/.well-known/oauth-authorization-server`)
 * #1635 Dynamic help text on the application form's `client_secret` field, warning users to copy the
   secret on creation and explaining it is hashed and unrecoverable when editing.
 * #670 Dynamic Client Registration Protocol (RFC 7591 / RFC 7592) — `DynamicClientRegistrationView` and

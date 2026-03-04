@@ -136,6 +136,20 @@ DEFAULTS = {
     "DCR_REGISTRATION_SCOPE": "oauth2_provider:registration",
     "DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS": None,  # None = year 9999 (no expiry)
     "DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE": True,
+    # RFC 8414 Authorization Server Metadata
+    "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code", "token"],
+    "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+        "client_secret_post",
+        "client_secret_basic",
+    ],
+    "OAUTH2_GRANT_TYPES_SUPPORTED": [
+        "authorization_code",
+        "implicit",
+        "password",
+        "client_credentials",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    ],
 }
 
 # List of settings that cannot be empty
@@ -326,6 +340,37 @@ class OAuth2ProviderSettings:
         if hasattr(self, "_user_settings"):
             delattr(self, "_user_settings")
         self._warn_deprecated_settings()
+
+    def oauth2_metadata_issuer(self, request):
+        """
+        Get the OAuth2 authorization server metadata issuer URL.
+
+        If ``OIDC_ISS_ENDPOINT`` is configured it is returned verbatim.
+        Otherwise the issuer is derived from the incoming request by locating the
+        ``/.well-known/oauth-authorization-server`` marker in the request URL and
+        splitting around it:
+
+        * text *before* the marker is the base — this preserves any mount prefix
+          (e.g. ``https://host/o/.well-known/oauth-authorization-server`` →
+          ``https://host/o``);
+        * text *after* the marker is the RFC 8414 issuer path component, appended
+          back to the base (e.g.
+          ``https://host/.well-known/oauth-authorization-server/tenant1`` →
+          ``https://host/tenant1``).
+
+        Deriving it from the request path (rather than reversing a URL name)
+        keeps working when the view is mounted outside the ``oauth2_provider``
+        namespace, and supports both the root/prefixed mounts and RFC 8414's
+        path-component (nested ``.well-known``) form.
+        """
+        if self.OIDC_ISS_ENDPOINT:
+            return self.OIDC_ISS_ENDPOINT
+        abs_url = request.build_absolute_uri(request.path)
+        base, _, issuer_path = abs_url.partition("/.well-known/oauth-authorization-server")
+        issuer_path = issuer_path.strip("/")
+        if issuer_path:
+            return f"{base}/{issuer_path}"
+        return base
 
     def oidc_issuer(self, request):
         """

@@ -5,8 +5,8 @@ from django.conf import settings
 from django.contrib.auth import get_user, get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
-from django.test import RequestFactory
-from django.urls import reverse
+from django.test import RequestFactory, override_settings
+from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from pytest_django.asserts import assertRedirects
 
@@ -164,6 +164,12 @@ class TestConnectDiscoveryInfoView(TestCase):
         response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
         self.assertEqual(response.status_code, 200)
         assert response.json()["id_token_signing_alg_values_supported"] == ["HS256"]
+
+    @override_settings(ROOT_URLCONF="tests.urls_oidc_discovery_only")
+    def test_get_connect_discovery_info_fails_fast_on_unregistered_endpoint(self):
+        """Required OIDC endpoints must fail fast, not emit null, when unreversible."""
+        with self.assertRaises(NoReverseMatch):
+            self.client.get("/.well-known/openid-configuration")
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -1163,3 +1169,161 @@ def test_userinfo_endpoint_custom_claims_email_scopeplain(oidc_email_scope_token
 
     assert "email" in data
     assert data["email"] == EXAMPLE_EMAIL
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestOAuthServerMetadataView(TestCase):
+    def test_get_oauth_server_metadata(self):
+        expected_response = {
+            "issuer": "http://localhost/o",
+            "authorization_endpoint": "http://localhost/o/authorize/",
+            "token_endpoint": "http://localhost/o/token/",
+            "revocation_endpoint": "http://localhost/o/revoke_token/",
+            "introspection_endpoint": "http://localhost/o/introspect/",
+            "response_types_supported": ["code", "token"],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ],
+            "scopes_supported": ["openid", "read", "write"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "revocation_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "introspection_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "code_challenge_methods_supported": ["plain", "S256"],
+            "jwks_uri": "http://localhost/o/.well-known/jwks.json",
+        }
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response.json() == expected_response
+
+    def test_get_oauth_server_metadata_without_issuer_url(self):
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        expected_response = {
+            "issuer": "http://testserver/o",
+            "authorization_endpoint": "http://testserver/o/authorize/",
+            "token_endpoint": "http://testserver/o/token/",
+            "revocation_endpoint": "http://testserver/o/revoke_token/",
+            "introspection_endpoint": "http://testserver/o/introspect/",
+            "response_types_supported": ["code", "token"],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ],
+            "scopes_supported": ["openid", "read", "write"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "revocation_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "introspection_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "code_challenge_methods_supported": ["plain", "S256"],
+            "jwks_uri": "http://testserver/o/.well-known/jwks.json",
+        }
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response.json() == expected_response
+
+    def test_get_oauth_server_metadata_no_rsa_key(self):
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = None
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert "jwks_uri" not in response.json()
+
+    def test_get_oauth_server_metadata_cors_header(self):
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response["Access-Control-Allow-Origin"] == "*"
+
+    def test_get_oauth_server_metadata_oidc_disabled(self):
+        """RFC 8414 metadata endpoint is available even when OIDC is disabled."""
+        self.oauth2_settings.OIDC_ENABLED = False
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        assert "issuer" in data
+        assert "authorization_endpoint" in data
+        assert "token_endpoint" in data
+        assert "jwks_uri" not in data
+
+    @override_settings(ROOT_URLCONF="tests.urls_split_metadata")
+    def test_get_oauth_server_metadata_root_mounted_with_prefixed_endpoints(self):
+        """Documented deployment: metadata at the root, endpoints under /o/.
+
+        The issuer is derived from the root-mounted metadata URL while the
+        endpoint URLs keep their /o/ prefix from ``reverse()``.
+        """
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        response = self.client.get("/.well-known/oauth-authorization-server")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        assert data["issuer"] == "http://testserver"
+        assert data["authorization_endpoint"] == "http://testserver/o/authorize/"
+        assert data["token_endpoint"] == "http://testserver/o/token/"
+        assert data["revocation_endpoint"] == "http://testserver/o/revoke_token/"
+        assert data["introspection_endpoint"] == "http://testserver/o/introspect/"
+        assert data["jwks_uri"] == "http://testserver/o/.well-known/jwks.json"
+
+    @override_settings(ROOT_URLCONF="tests.urls_split_metadata")
+    def test_get_oauth_server_metadata_rfc8414_path_component_issuer(self):
+        """RFC 8414 path-component form: /.well-known/.../<issuer_path>.
+
+        The issuer path after the well-known marker is preserved in the derived
+        issuer, per RFC 8414 for issuers with a path component.
+        """
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        response = self.client.get("/.well-known/oauth-authorization-server/tenant1")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        assert data["issuer"] == "http://testserver/tenant1"
+        # Endpoint URLs still come from where the toolkit is mounted (/o/).
+        assert data["authorization_endpoint"] == "http://testserver/o/authorize/"
+        assert data["token_endpoint"] == "http://testserver/o/token/"
+
+    @override_settings(ROOT_URLCONF="tests.urls_split_metadata")
+    def test_get_oauth_server_metadata_all_discovery_urls_for_prefixed_issuer(self):
+        """An issuer under a path (http://host/o) is discoverable at all three URLs.
+
+        1. OIDC discovery (issuer + /.well-known/openid-configuration),
+        2. strict RFC 8414 (well-known at the root, issuer path appended), and
+        3. the pragmatic fallback (issuer + /.well-known/oauth-authorization-server)
+        must all resolve and agree on the issuer.
+        """
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        for url in [
+            "/o/.well-known/openid-configuration",
+            "/.well-known/oauth-authorization-server/o",
+            "/o/.well-known/oauth-authorization-server",
+        ]:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            assert response.json()["issuer"] == "http://testserver/o", url
+
+    @override_settings(ROOT_URLCONF="tests.urls_metadata_only")
+    def test_get_oauth_server_metadata_omits_unregistered_endpoints(self):
+        """Endpoints whose URL name is not registered are omitted, not 500s."""
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        # None of the endpoint routes exist in this URLconf, so they are dropped
+        # along with the capability fields that describe them.
+        for key in [
+            "authorization_endpoint",
+            "token_endpoint",
+            "revocation_endpoint",
+            "introspection_endpoint",
+            "code_challenge_methods_supported",
+            "token_endpoint_auth_methods_supported",
+            "revocation_endpoint_auth_methods_supported",
+            "introspection_endpoint_auth_methods_supported",
+            "jwks_uri",
+        ]:
+            assert key not in data
+        # Static metadata is still present.
+        assert "issuer" in data
+        assert data["scopes_supported"] == ["openid", "read", "write"]
