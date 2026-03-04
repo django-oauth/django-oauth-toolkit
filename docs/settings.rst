@@ -429,6 +429,33 @@ Default: ``["client_secret_post", "client_secret_basic"]``
 
 The authentication methods that are advertised to be supported by this server.
 
+OAUTH2_RESPONSE_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["code", "token"]``
+
+The response types advertised by the :doc:`oauth2_server_metadata` endpoint.
+
+OAUTH2_GRANT_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default::
+
+    [
+        "authorization_code",
+        "implicit",
+        "password",
+        "client_credentials",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    ]
+
+The grant types advertised by the :doc:`oauth2_server_metadata` endpoint.
+
+OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["client_secret_post", "client_secret_basic"]``
+
+The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
+
 CLEAR_EXPIRED_TOKENS_BATCH_SIZE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``10000``
