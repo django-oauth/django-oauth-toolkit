@@ -41,6 +41,7 @@ Index
    models
    advanced_topics
    oidc
+   oauth2_server_metadata
    signals
    settings
    resource_server
