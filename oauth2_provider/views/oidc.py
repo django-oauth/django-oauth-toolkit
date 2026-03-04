@@ -34,6 +34,7 @@ from ..models import (
 )
 from ..settings import oauth2_settings
 from ..utils import jwk_from_pem
+from .metadata import ServerMetadataViewMixin
 from .mixins import OAuthLibMixin, OIDCLogoutOnlyMixin, OIDCOnlyMixin
 
 
@@ -41,38 +42,15 @@ Application = get_application_model()
 
 
 @method_decorator(login_not_required, name="dispatch")
-class ConnectDiscoveryInfoView(OIDCOnlyMixin, View):
+class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
     """
     View used to show oidc provider configuration information per
     `OpenID Provider Metadata <https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata>`_
     """
 
     def get(self, request, *args, **kwargs):
-        issuer_url = oauth2_settings.OIDC_ISS_ENDPOINT
-
-        if not issuer_url:
-            issuer_url = oauth2_settings.oidc_issuer(request)
-            authorization_endpoint = request.build_absolute_uri(reverse("oauth2_provider:authorize"))
-            token_endpoint = request.build_absolute_uri(reverse("oauth2_provider:token"))
-            userinfo_endpoint = oauth2_settings.OIDC_USERINFO_ENDPOINT or request.build_absolute_uri(
-                reverse("oauth2_provider:user-info")
-            )
-            jwks_uri = request.build_absolute_uri(reverse("oauth2_provider:jwks-info"))
-            if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
-                end_session_endpoint = request.build_absolute_uri(
-                    reverse("oauth2_provider:rp-initiated-logout")
-                )
-        else:
-            parsed_url = urlparse(oauth2_settings.OIDC_ISS_ENDPOINT)
-            host = parsed_url.scheme + "://" + parsed_url.netloc
-            authorization_endpoint = "{}{}".format(host, reverse("oauth2_provider:authorize"))
-            token_endpoint = "{}{}".format(host, reverse("oauth2_provider:token"))
-            userinfo_endpoint = oauth2_settings.OIDC_USERINFO_ENDPOINT or "{}{}".format(
-                host, reverse("oauth2_provider:user-info")
-            )
-            jwks_uri = "{}{}".format(host, reverse("oauth2_provider:jwks-info"))
-            if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
-                end_session_endpoint = "{}{}".format(host, reverse("oauth2_provider:rp-initiated-logout"))
+        issuer_url = oauth2_settings.oidc_issuer(request)
+        userinfo_endpoint = oauth2_settings.OIDC_USERINFO_ENDPOINT or self._get_endpoint_url(request, "user-info")
 
         signing_algorithms = [Application.HS256_ALGORITHM]
         if oauth2_settings.OIDC_RSA_PRIVATE_KEY:
@@ -87,10 +65,10 @@ class ConnectDiscoveryInfoView(OIDCOnlyMixin, View):
 
         data = {
             "issuer": issuer_url,
-            "authorization_endpoint": authorization_endpoint,
-            "token_endpoint": token_endpoint,
+            "authorization_endpoint": self._get_endpoint_url(request, "authorize"),
+            "token_endpoint": self._get_endpoint_url(request, "token"),
             "userinfo_endpoint": userinfo_endpoint,
-            "jwks_uri": jwks_uri,
+            "jwks_uri": self._get_endpoint_url(request, "jwks-info"),
             "scopes_supported": scopes_supported,
             "response_types_supported": oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED,
             "subject_types_supported": oauth2_settings.OIDC_SUBJECT_TYPES_SUPPORTED,
@@ -102,7 +80,7 @@ class ConnectDiscoveryInfoView(OIDCOnlyMixin, View):
             "claims_supported": oidc_claims,
         }
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
-            data["end_session_endpoint"] = end_session_endpoint
+            data["end_session_endpoint"] = self._get_endpoint_url(request, "rp-initiated-logout")
         response = JsonResponse(data)
         response["Access-Control-Allow-Origin"] = "*"
         return response

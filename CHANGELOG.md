@@ -110,6 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.3.0] - 2025-05-21
 
 ### Added
+* #1099 Add RFC 8414 OAuth 2.0 Authorization Server Metadata endpoint (`/.well-known/oauth-authorization-server`)
 * #1637 Support for Django 6.0
 * #1642 Provide App Name and Scope in Device Confirmation View
 

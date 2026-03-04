@@ -23,6 +23,11 @@ base_urlpatterns = [
         views.DeviceGrantStatusView.as_view(),
         name="device-grant-status",
     ),
+    path(
+        ".well-known/oauth-authorization-server",
+        views.OAuthServerMetadataView.as_view(),
+        name="oauth-server-metadata",
+    ),
 ]
 
 
