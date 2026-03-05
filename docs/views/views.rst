@@ -11,3 +11,4 @@ Django OAuth Toolkit provides a set of pre-defined views for different purposes:
    application
    token
    mixins
+   dynamic_client_registration
