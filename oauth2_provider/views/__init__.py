@@ -18,3 +18,7 @@ from .introspect import IntrospectTokenView
 from .oidc import ConnectDiscoveryInfoView, JwksInfoView, RPInitiatedLogoutView, UserInfoView
 from .token import AuthorizedTokenDeleteView, AuthorizedTokensListView
 from .device import DeviceAuthorizationView, DeviceUserCodeView, DeviceConfirmView, DeviceGrantStatusView
+from .dynamic_client_registration import (
+    DynamicClientRegistrationView,
+    DynamicClientRegistrationManagementView,
+)
