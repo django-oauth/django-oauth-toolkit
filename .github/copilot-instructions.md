@@ -1,0 +1,1 @@
+For all coding standards, review guidelines, and persona instructions, strictly adhere to the rules defined in /AGENTS.md
