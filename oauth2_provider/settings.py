@@ -24,10 +24,13 @@ from django.urls import reverse
 from django.utils.module_loading import import_string
 from oauthlib.common import Request
 
+from oauth2_provider.utils import set_oauthlib_user_to_device_request_user, user_code_generator
+
 
 USER_SETTINGS = getattr(settings, "OAUTH2_PROVIDER", None)
 
 APPLICATION_MODEL = getattr(settings, "OAUTH2_PROVIDER_APPLICATION_MODEL", "oauth2_provider.Application")
+DEVICE_GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL", "oauth2_provider.DeviceGrant")
 ACCESS_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL", "oauth2_provider.AccessToken")
 ID_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ID_TOKEN_MODEL", "oauth2_provider.IDToken")
 GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_GRANT_MODEL", "oauth2_provider.Grant")
@@ -39,6 +42,10 @@ DEFAULTS = {
     "CLIENT_SECRET_GENERATOR_LENGTH": 128,
     "CLIENT_SECRET_HASHER": "default",
     "ACCESS_TOKEN_GENERATOR": None,
+    "OAUTH_DEVICE_VERIFICATION_URI": None,
+    "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE": None,
+    "OAUTH_DEVICE_USER_CODE_GENERATOR": user_code_generator,
+    "OAUTH_PRE_TOKEN_VALIDATION": [set_oauthlib_user_to_device_request_user],
     "REFRESH_TOKEN_GENERATOR": None,
     "EXTRA_SERVER_KWARGS": {},
     "OAUTH2_SERVER_CLASS": "oauthlib.oauth2.Server",
@@ -61,6 +68,8 @@ DEFAULTS = {
     "APPLICATION_MODEL": APPLICATION_MODEL,
     "ACCESS_TOKEN_MODEL": ACCESS_TOKEN_MODEL,
     "ID_TOKEN_MODEL": ID_TOKEN_MODEL,
+    "DEVICE_GRANT_MODEL": DEVICE_GRANT_MODEL,
+    "DEVICE_FLOW_INTERVAL": 5,
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
     "APPLICATION_ADMIN_CLASS": "oauth2_provider.admin.ApplicationAdmin",
@@ -268,6 +277,11 @@ class OAuth2ProviderSettings:
                 ("refresh_token_expires_in", "REFRESH_TOKEN_EXPIRE_SECONDS"),
                 ("token_generator", "ACCESS_TOKEN_GENERATOR"),
                 ("refresh_token_generator", "REFRESH_TOKEN_GENERATOR"),
+                ("verification_uri", "OAUTH_DEVICE_VERIFICATION_URI"),
+                ("verification_uri_complete", "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE"),
+                ("interval", "DEVICE_FLOW_INTERVAL"),
+                ("user_code_generator", "OAUTH_DEVICE_USER_CODE_GENERATOR"),
+                ("pre_token", "OAUTH_PRE_TOKEN_VALIDATION"),
             ]
         }
         kwargs.update(self.EXTRA_SERVER_KWARGS)

@@ -1,0 +1,8 @@
+
+codecov:
+  # since we're uploading coverage from multiple parallel jobs,Codecov doesn't
+  # inherently know when all reports have been uploaded for a given commit. To
+  # prevent premature processing and ensure a complete report, we send
+  # notification when all jobs are done.
+  notify:
+    manual_trigger: true

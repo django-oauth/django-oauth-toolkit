@@ -1,0 +1,16 @@
+{% extends "oauth2_provider/base.html" %}
+{% block content %}
+<html>
+<head>
+    <title>Accept or Deny</title>
+</head>
+<body>
+    <h1>Please choose an action:</h1>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="action" value="accept">Accept</button>
+        <button type="submit" name="action" value="deny">Deny</button>
+    </form>
+</body>
+</html>
+{% endblock content %}

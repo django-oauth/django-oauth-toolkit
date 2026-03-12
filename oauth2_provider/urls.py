@@ -11,6 +11,18 @@ base_urlpatterns = [
     path("token/", views.TokenView.as_view(), name="token"),
     path("revoke_token/", views.RevokeTokenView.as_view(), name="revoke-token"),
     path("introspect/", views.IntrospectTokenView.as_view(), name="introspect"),
+    path("device-authorization/", views.DeviceAuthorizationView.as_view(), name="device-authorization"),
+    path("device/", views.DeviceUserCodeView.as_view(), name="device"),
+    path(
+        "device-confirm/<slug:client_id>/<slug:user_code>",
+        views.DeviceConfirmView.as_view(),
+        name="device-confirm",
+    ),
+    path(
+        "device-grant-status/<slug:client_id>/<slug:user_code>",
+        views.DeviceGrantStatusView.as_view(),
+        name="device-grant-status",
+    ),
 ]
 
 

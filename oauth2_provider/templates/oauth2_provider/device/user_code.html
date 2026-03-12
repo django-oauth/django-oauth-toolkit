@@ -1,0 +1,16 @@
+{% extends "oauth2_provider/base.html" %}
+{% block content %}
+<html>
+<head>
+    <title>Device code</title>
+</head>
+<body>
+    <h1>Enter code displayed on device</h1>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Verify</button>
+    </form>
+</body>
+</html>
+{% endblock content %}

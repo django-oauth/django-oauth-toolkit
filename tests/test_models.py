@@ -168,7 +168,7 @@ class TestCustomModels(BaseTestModels):
         If a custom application model is installed, it should be present in
         the related objects and not the swapped out one.
 
-        See issue #90 (https://github.com/jazzband/django-oauth-toolkit/issues/90)
+        See issue #90 (https://github.com/django-oauth/django-oauth-toolkit/issues/90)
         """
         related_object_names = [
             f.name

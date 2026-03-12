@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "django-oauth-toolkit"
 dynamic = ["version"]
-requires-python = ">= 3.8"
+requires-python = ">=3.10"
 authors = [
   {name = "Federico Frenguelli"},
   {name = "Massimiliano Pippi"},
@@ -22,21 +22,23 @@ classifiers = [
 	"Framework :: Django :: 4.2",
 	"Framework :: Django :: 5.0",
 	"Framework :: Django :: 5.1",
+	"Framework :: Django :: 5.2",
+	"Framework :: Django :: 6.0",
 	"Intended Audience :: Developers",
 	"License :: OSI Approved :: BSD License",
 	"Operating System :: OS Independent",
 	"Programming Language :: Python :: 3",
-	"Programming Language :: Python :: 3.8",
-	"Programming Language :: Python :: 3.9",
 	"Programming Language :: Python :: 3.10",
 	"Programming Language :: Python :: 3.11",
 	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
+	"Programming Language :: Python :: 3.14",
 	"Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = [
 	"django >= 4.2",
 	"requests >= 2.13.0",
-	"oauthlib >= 3.2.2",
+	"oauthlib >= 3.3.0",
 	"jwcrypto >= 1.5.0",
 ]
 
@@ -50,14 +52,17 @@ dev = [
 
 [project.urls]
 Homepage = "https://django-oauth-toolkit.readthedocs.io/"
-Repository = "https://github.com/jazzband/django-oauth-toolkit"
+Repository = "https://github.com/django-oauth/django-oauth-toolkit"
 
 [tool.setuptools.dynamic]
 version = {attr = "oauth2_provider.__version__"}
 
+[tool.setuptools.packages.find]
+include = ["oauth2_provider", "oauth2_provider.*"]
+
 # Ref: https://github.com/codespell-project/codespell#using-a-config-file
 [tool.codespell]
-skip = '.git,package-lock.json,locale,AUTHORS,tox.ini'
+skip = '.git,package-lock.json,locale,AUTHORS,tox.ini,rfcs'
 check-hidden = true
 ignore-regex = '.*pragma: codespell-ignore.*'
 ignore-words-list = 'assertIn'
@@ -84,7 +89,7 @@ markers = [
 
 [tool.ruff]
 line-length = 110
-exclude = [".tox", "build/", "dist/", "docs/", "oauth2_provider/migrations/", "tests/migrations/", "manage.py"]
+exclude = [".tox", "build/", "dist/", "docs/", "oauth2_provider/migrations/", "tests/migrations/", "manage.py", "rfcs/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "Q", "W"]
@@ -92,3 +97,8 @@ select = ["E", "F", "I", "Q", "W"]
 [tool.ruff.lint.isort]
 lines-after-imports = 2
 known-first-party = ["oauth2_provider"]
+
+[tool.uv.workspace]
+members = [
+    "tests/app/idp",
+]

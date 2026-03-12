@@ -4,17 +4,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+<!-- preserve the following to copy/paste on new releases -->
+<!-- ## [unreleased] -->
+<!-- ### Added -->
+<!-- ### Changed -->
+<!-- ### Deprecated -->
+<!-- ### Removed -->
+<!-- ### Fixed -->
+<!-- ### Security -->
 
 ## [unreleased]
+
 ### Added
-* #1506 Support for Wildcard Origin and Redirect URIs
+* #1637 Support for Django 6.0
+
+### Removed
+* #1636 Remove support for Python 3.8 and 3.9
+
+### Fixed
+* #1628 Fix inaccurate help_text on client_secret field of Application model
+
+## [3.2.0] - 2025-11-13
+### Added
+* Support for Django 5.2
+* Support for Python 3.14 (Django >= 5.2.8)
+* #1539 Add device authorization grant support
+
+### Fixed
+* #1252 Fix crash  when 'client' is in token request body
+* #1496 Fix error when Bearer token string is empty but preceded by `Bearer` keyword.
+* #1630 use token_checksum for lookup in _get_token_from_authentication_server
+* #1597 Fix: TypeError at /s/auth/o/token/
+
+## [3.1.0] - 2025-10-03
+**NOTE**: This is the first release under the new [django-oauth](https://github.com/django-oauth) organization. The project moved in order to be more independent and to bypass quota limits on parallel CI jobs we were encountering in Jazzband. The project will emulate Django Commons going forward in it's operation. We're always on the lookout for willing maintainers and contributors. Feel free to start participating any time. PR's are always welcome.
+
+### Added
+* #1506 Support for Wildcard Origin and Redirect URIs - Adds a new setting [ALLOW_URL_WILDCARDS](https://django-oauth-toolkit.readthedocs.io/en/latest/settings.html#allow-uri-wildcards). This feature is useful for working with CI service such as cloudflare, netlify, and vercel that offer branch
+deployments for development previews and user acceptance testing.
 * #1586 Turkish language support added
 
-<!--
 ### Changed
-### Deprecated
-### Removed
--->
+The project is now hosted in the django-oauth organization.
+
 ### Fixed
 * #1517 OP prompts for logout when no OP session
 * #1512 client_secret not marked sensitive
@@ -22,11 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1584 Fix IDP container in docker compose environment could not find templates and static files.
 * #1562 Fix: Handle AttributeError in IntrospectTokenView
 * #1583 Fix: Missing pt_BR translations
-* #1597 Fix: TypeError at /s/auth/o/token/
-<!--
-### Security
--->
-
 
 ## [3.0.1] - 2024-09-07
 ### Fixed
@@ -242,7 +269,7 @@ This is a major release with **BREAKING** changes. Please make sure to review th
 ## [1.6.1] 2021-12-23
 
 ### Changed
-* Note: Only Django 4.0.1+ is supported due to a regression in Django 4.0.0. [Explanation](https://github.com/jazzband/django-oauth-toolkit/pull/1046#issuecomment-998015272)
+* Note: Only Django 4.0.1+ is supported due to a regression in Django 4.0.0. [Explanation](https://github.com/django-oauth/django-oauth-toolkit/pull/1046#issuecomment-998015272)
 
 ### Fixed
 * Miscellaneous 1.6.0 packaging issues.
@@ -333,7 +360,7 @@ This is a major release with **BREAKING** changes. Please make sure to review th
 
 ### Fixed
 * #812: Reverts #643 pass wrong request object to authenticate function.
-* Fix concurrency issue with refresh token requests (#[810](https://github.com/jazzband/django-oauth-toolkit/pull/810))
+* Fix concurrency issue with refresh token requests (#[810](https://github.com/django-oauth/django-oauth-toolkit/pull/810))
 * #817: Reverts #734 tutorial documentation error.
 
 
@@ -372,16 +399,16 @@ This is a major release with **BREAKING** changes. Please make sure to review th
 
 ### Fixed
 * Fix a race condition in creation of AccessToken with external oauth2 server.
-* Fix several concurrency issues. (#[638](https://github.com/jazzband/django-oauth-toolkit/issues/638))
-* Fix to pass `request` to `django.contrib.auth.authenticate()` (#[636](https://github.com/jazzband/django-oauth-toolkit/issues/636))
+* Fix several concurrency issues. (#[638](https://github.com/django-oauth/django-oauth-toolkit/issues/638))
+* Fix to pass `request` to `django.contrib.auth.authenticate()` (#[636](https://github.com/django-oauth/django-oauth-toolkit/issues/636))
 * Fix missing `oauth2_error` property exception oauthlib_core.verify_request method raises exceptions in authenticate.
-  (#[633](https://github.com/jazzband/django-oauth-toolkit/issues/633))
+  (#[633](https://github.com/django-oauth/django-oauth-toolkit/issues/633))
 * Fix "django.db.utils.NotSupportedError: FOR UPDATE cannot be applied to the nullable side of an outer join" for postgresql.
-  (#[714](https://github.com/jazzband/django-oauth-toolkit/issues/714))
+  (#[714](https://github.com/django-oauth/django-oauth-toolkit/issues/714))
 * Fix to return a new refresh token during grace period rather than the recently-revoked one.
-  (#[702](https://github.com/jazzband/django-oauth-toolkit/issues/702))
+  (#[702](https://github.com/django-oauth/django-oauth-toolkit/issues/702))
 * Fix a bug in refresh token revocation.
-  (#[625](https://github.com/jazzband/django-oauth-toolkit/issues/625))
+  (#[625](https://github.com/django-oauth/django-oauth-toolkit/issues/625))
 
 ## 1.2.0 [2018-06-03]
 
@@ -403,7 +430,7 @@ This is a major release with **BREAKING** changes. Please make sure to review th
 * **Critical**: Django OAuth Toolkit 1.1.0 contained a migration that would revoke all existing
   RefreshTokens (`0006_auto_20171214_2232`). This release corrects the migration.
   If you have already ran it in production, please see the following issue for more details:
-  https://github.com/jazzband/django-oauth-toolkit/issues/589
+  https://github.com/django-oauth/django-oauth-toolkit/issues/589
 
 
 ## 1.1.0 [2018-04-13]

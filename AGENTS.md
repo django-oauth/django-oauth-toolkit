@@ -1,0 +1,12 @@
+- MUST ensure all new or updated code complies with relevant OAuth and OIDC RFCs.
+- MUST add or update test coverage for all new features.
+- MUST follow Python best practices.
+- MUST follow Django best practices.
+- SHOULD demonstrate new features in `/tests/app/idp` and `/tests/app/rp` where possible.
+- MUST keep changes focused on the feature at hand; do not change nearby code or formatting only because of proximity.
+- MUST ensure all new or updated code adheres to Ruff lint and format rules per the tox configuration.
+- MUST keep user-facing documentation in `docs/` in sync with behavior changes.
+- SHOULD follow guidance and best practices for upstream OAuthLib integration.
+- MUST modify `rfcs/*` only for protocol/spec-facing changes or necessary corpus maintenance; avoid unrelated churn.
+- MUST follow Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) for commit messages and keep commits atomic when creating commits.
+- MUST update `rfcs/README.md` when adding or changing specs.

@@ -505,7 +505,7 @@ class TestAuthorizationCodeView(BaseTest):
         """
         Test that in case of error the querystring of the redirection uri is preserved
 
-        See https://github.com/jazzband/django-oauth-toolkit/issues/238
+        See https://github.com/django-oauth/django-oauth-toolkit/issues/238
         """
         self.client.login(username="test_user", password="123456")
 
@@ -1307,6 +1307,27 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         self.assertEqual(content["token_type"], "Bearer")
         self.assertEqual(content["scope"], "read write")
         self.assertEqual(content["expires_in"], self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS)
+
+    def test_request_body_params_client_typo(self):
+        """
+        Verify that using incorrect parameter name (client instead of client_id) returns invalid_client error
+        """
+        self.client.login(username="test_user", password="123456")
+        authorization_code = self.get_auth()
+
+        token_request_data = {
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "http://example.org",
+            "client": self.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data)
+        self.assertEqual(response.status_code, 401)
+
+        content = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(content["error"], "invalid_client")
 
     def test_public(self):
         """

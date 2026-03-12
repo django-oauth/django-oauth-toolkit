@@ -16,13 +16,13 @@ See our :doc:`Changelog <changelog>` for information on updates.
 Support
 -------
 
-If you need help please submit a `question <https://github.com/jazzband/django-oauth-toolkit/issues/new?assignees=&labels=question&template=question.md&title=>`_.
+If you need help please submit a `question <https://github.com/django-oauth/django-oauth-toolkit/issues/new?assignees=&labels=question&template=question.md&title=>`_.
 
 Requirements
 ------------
 
-* Python 3.8+
-* Django 4.2, 5.0 or 5.1
+* Python 3.10, 3.11, 3.12, 3.13 or 3.14
+* Django 4.2, 5.0, 5.1, 5.2 or 6.0
 * oauthlib 3.2.2+
 
 Index

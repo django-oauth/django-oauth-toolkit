@@ -449,7 +449,7 @@ List of non-namespaced settings
 .. note::
    These settings must be set as top-level Django settings (outside of ``OAUTH2_PROVIDER``),
    because of the way Django currently implements swappable models.
-   See `issue #90 <https://github.com/jazzband/django-oauth-toolkit/issues/90>`_ for details.
+   See `issue #90 <https://github.com/django-oauth/django-oauth-toolkit/issues/90>`_ for details.
 
 
 OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL
