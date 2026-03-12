@@ -537,7 +537,7 @@ class AbstractRefreshToken(models.Model):
             self = list(token)[0]
 
             with suppress(access_token_model.DoesNotExist):
-                access_token_model.objects.get(id=self.access_token_id).revoke()
+                access_token_model.objects.get(pk=self.access_token_id).revoke()
 
             self.access_token = None
             self.revoked = timezone.now()
@@ -815,9 +815,9 @@ def clear_expired():
         current_no = start_no = queryset.count()
 
         while current_no:
-            flat_queryset = queryset.values_list("id", flat=True)[:CLEAR_EXPIRED_TOKENS_BATCH_SIZE]
+            flat_queryset = queryset.values_list("pk", flat=True)[:CLEAR_EXPIRED_TOKENS_BATCH_SIZE]
             batch_length = flat_queryset.count()
-            queryset.model.objects.filter(id__in=list(flat_queryset)).delete()
+            queryset.model.objects.filter(pk__in=list(flat_queryset)).delete()
             logger.debug(f"{batch_length} tokens deleted, {current_no - batch_length} left")
             queryset = queryset.model.objects.filter(query)
             time.sleep(CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL)
