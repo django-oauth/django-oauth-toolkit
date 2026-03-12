@@ -64,6 +64,8 @@ The project is now hosted in the django-oauth organization.
 ### WARNING - POTENTIAL BREAKING CHANGES
 * Changes to the `AbstractAccessToken` model require doing a `manage.py migrate` after upgrading.
 * If you use swappable models you will need to make sure your custom models are also updated (usually `manage.py makemigrations`).
+* This migration won't run, if application has over 50000 objects to update, as it would lead to the app downtime. Clear up your
+* old tokens or update them before applying the migration.
 * Old Django versions below 4.2 are no longer supported.
 * A few deprecations warned about in 2.4.0 (#1345) have been removed. See below.
 
