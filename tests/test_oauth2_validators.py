@@ -110,6 +110,72 @@ class TestOAuth2Validator(TransactionTestCase):
         self.blank_secret_request.client_secret = "wrong_client_secret"
         self.assertFalse(self.validator._authenticate_request_body(self.blank_secret_request))
 
+    def test_authenticate_request_body_with_plus_in_secret(self):
+        """
+        client_secret containing '+' must authenticate correctly when sent
+        in the POST body as '%2B' (RFC 6749 compliant) or as a raw '+'.
+
+        Regression test for https://github.com/jazzband/django-oauth-toolkit/issues/1639
+        """
+        secret_with_plus = "secret+with+plus"
+        self.application.client_secret = secret_with_plus
+        self.application.hash_client_secret = False
+        self.application.save()
+
+        self.request.client_id = "client_id"
+
+        # RFC-compliant: client encodes '+' as '%2B' in the body
+        self.request.body = "client_id=client_id&client_secret=secret%2Bwith%2Bplus"
+        self.assertTrue(
+            self.validator._authenticate_request_body(self.request),
+            "Authentication must succeed when '+' is sent as '%2B' in body",
+        )
+
+        # Lenient: client sends '+' literally in the body (common real-world case)
+        self.request.body = "client_id=client_id&client_secret=secret+with+plus"
+        self.assertTrue(
+            self.validator._authenticate_request_body(self.request),
+            "Authentication must succeed when '+' is sent literally in body",
+        )
+
+        self.application.hash_client_secret = True
+        self.application.save()
+
+    def test_authenticate_basic_auth_with_plus_in_secret(self):
+        """
+        client_secret containing '+' must authenticate correctly when sent
+        in the Basic Auth header, both with and without RFC 6749 URL-encoding.
+
+        Regression test for https://github.com/jazzband/django-oauth-toolkit/issues/1639
+        """
+        import base64
+
+        secret_with_plus = "secret+with+plus"
+        self.application.client_secret = secret_with_plus
+        self.application.hash_client_secret = False
+        self.application.save()
+
+        self.request.encoding = "utf-8"
+
+        # RFC-compliant: client URL-encodes '+' as '%2B' before base64 encoding
+        encoded = base64.b64encode(b"client_id:secret%2Bwith%2Bplus").decode("utf-8")
+        self.request.headers = {"HTTP_AUTHORIZATION": f"Basic {encoded}"}
+        self.assertTrue(
+            self.validator._authenticate_basic_auth(self.request),
+            "Authentication must succeed when '+' is sent as '%2B' in Basic Auth",
+        )
+
+        # Lenient: client sends '+' literally (without URL-encoding) before base64
+        encoded_raw = base64.b64encode(b"client_id:secret+with+plus").decode("utf-8")
+        self.request.headers = {"HTTP_AUTHORIZATION": f"Basic {encoded_raw}"}
+        self.assertTrue(
+            self.validator._authenticate_basic_auth(self.request),
+            "Authentication must succeed when '+' is sent literally in Basic Auth",
+        )
+
+        self.application.hash_client_secret = True
+        self.application.save()
+
     def test_authenticate_request_body_unhashed_secret(self):
         self.application.client_secret = CLEARTEXT_SECRET
         self.application.hash_client_secret = False

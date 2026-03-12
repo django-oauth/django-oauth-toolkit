@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+### Fixed
+#1639 preserve '+' in client_secret during authentication
+
 ### Added
 * #1637 Support for Django 6.0
 

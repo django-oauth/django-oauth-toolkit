@@ -8,7 +8,7 @@ import logging
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from urllib.parse import unquote_plus
+from urllib.parse import unquote, unquote_plus
 
 import requests
 from django.conf import settings
@@ -157,7 +157,11 @@ class OAuth2Validator(RequestValidator):
             return False
 
         try:
-            client_id, client_secret = map(unquote_plus, auth_string_decoded.split(":", 1))
+            # Use unquote (not unquote_plus) so that a literal '+' in the
+            # credential is preserved. Per RFC 6749 section 2.3.1, spaces must
+            # be encoded as '%20', not '+', so '+' should always mean a literal
+            # plus sign here.
+            client_id, client_secret = map(unquote, auth_string_decoded.split(":", 1))
         except ValueError:
             log.debug("Failed basic auth, Invalid base64 encoding.")
             return False
@@ -188,10 +192,24 @@ class OAuth2Validator(RequestValidator):
         clients unable to directly utilize the HTTP Basic authentication scheme.
         See rfc:`2.3.1` for more details.
         """
-        # TODO: check if oauthlib has already unquoted client_id and client_secret
         try:
             client_id = request.client_id
-            client_secret = getattr(request, "client_secret", "") or ""
+            # oauthlib uses parse_qsl to decode the request body, which converts
+            # '+' to space per form-encoding rules. To correctly handle secrets
+            # containing '+', we re-parse the raw body using unquote (not
+            # unquote_plus) so that '+' is preserved as a literal plus sign.
+            # Per RFC 6749 section 2.3.1, spaces must be encoded as '%20'.
+            client_secret = ""
+            body = getattr(request, "body", None) or ""
+            if body:
+                for pair in body.split("&"):
+                    if "=" in pair:
+                        k, _, v = pair.partition("=")
+                        if unquote(k) == "client_secret":
+                            client_secret = unquote(v)
+                            break
+            if not client_secret:
+                client_secret = getattr(request, "client_secret", "") or ""
         except AttributeError:
             return False
 
