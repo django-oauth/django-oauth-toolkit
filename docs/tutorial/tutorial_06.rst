@@ -29,6 +29,8 @@ but generally, it is assumed the device is unable to safely store the client sec
 
 Ensure the setting ``OAUTH_DEVICE_VERIFICATION_URI`` is set to a URI you want to return in the
 `verification_uri` key in the response. This is what the device will display to the user.
+Optionally, configure ``OAUTH_DEVICE_VERIFICATION_URI_COMPLETE`` to something like
+``http://127.0.0.1:8000/o/device?user_code={user_code}``.
 
 1. Navigate to the tests/app/idp directory:
 
