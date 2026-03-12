@@ -57,9 +57,12 @@ Repository = "https://github.com/django-oauth/django-oauth-toolkit"
 [tool.setuptools.dynamic]
 version = {attr = "oauth2_provider.__version__"}
 
+[tool.setuptools.packages.find]
+include = ["oauth2_provider", "oauth2_provider.*"]
+
 # Ref: https://github.com/codespell-project/codespell#using-a-config-file
 [tool.codespell]
-skip = '.git,package-lock.json,locale,AUTHORS,tox.ini'
+skip = '.git,package-lock.json,locale,AUTHORS,tox.ini,rfcs'
 check-hidden = true
 ignore-regex = '.*pragma: codespell-ignore.*'
 ignore-words-list = 'assertIn'
@@ -86,7 +89,7 @@ markers = [
 
 [tool.ruff]
 line-length = 110
-exclude = [".tox", "build/", "dist/", "docs/", "oauth2_provider/migrations/", "tests/migrations/", "manage.py"]
+exclude = [".tox", "build/", "dist/", "docs/", "oauth2_provider/migrations/", "tests/migrations/", "manage.py", "rfcs/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "Q", "W"]
