@@ -1,11 +1,13 @@
 import contextlib
 import datetime
 import json
+import secrets
 
 import pytest
 import requests
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
+from django.http import HttpRequest
 from django.utils import timezone
 from jwcrypto import jwt
 from oauthlib.common import Request
@@ -402,6 +404,47 @@ class TestOAuth2Validator(TransactionTestCase):
 
         self.assertIsNotNone(user)
         self.assertEqual(content["username"], user.username)
+
+    def test_validate_user_uses_default_create_a_new_request(self):
+        password = secrets.token_hex(16)
+        request = mock.MagicMock(
+            wraps=Request,
+            uri="/",
+            http_method="POST",
+            decoded_body=[("username", self.user.username), ("password", password)],
+            headers={"Authorization": "Basic 123456"},
+        )
+        with mock.patch("oauth2_provider.oauth2_validators.authenticate") as mock_authenticate:
+            mock_authenticate.return_value = self.user
+            success = self.validator.validate_user(self.user.username, password, self.application, request)
+        self.assertTrue(success)
+        self.assertEqual(request.user, self.user, "Successfully authenticated user is set to the request")
+        call_with_original_request = mock.call(request, username="user", password=password)
+        self.assertNotIn(
+            call_with_original_request,
+            mock_authenticate.mock_calls,
+            "The request should not be passed directly to the authenticate method",
+        )
+
+    def test_validate_user_with_overridden_create_a_new_request(self):
+        copy_of_request = mock.MagicMock(wraps=HttpRequest)
+
+        class TestOAuth2Validator(OAuth2Validator):
+            def create_a_new_request(self, request):
+                return copy_of_request
+
+        validator = TestOAuth2Validator()
+        password = secrets.token_hex(16)
+        request = mock.MagicMock(wraps=Request)
+        with mock.patch("oauth2_provider.oauth2_validators.authenticate") as mock_authenticate:
+            mock_authenticate.return_value = self.user
+            success = validator.validate_user(self.user.username, password, self.application, request)
+        self.assertTrue(success)
+        self.assertEqual(request.user, self.user, "Successfully authenticated user is set to the request")
+        # Check that overridden method is called and the request is passed to the authenticate method
+        mock_authenticate.assert_called_once_with(
+            copy_of_request, username=self.user.username, password=password
+        )
 
 
 class TestOAuth2ValidatorProvidesErrorData(TransactionTestCase):

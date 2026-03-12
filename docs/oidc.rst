@@ -381,6 +381,27 @@ token, so you will probably want to reuse that::
             claims["color_scheme"] = get_color_scheme(request.user)
             return claims
 
+
+Adding more information to the request object passed to the authentication backends
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, a new ``HttpRequest`` object is created for the authenticate method
+which does not have all the attributes of the original request.
+
+If you need to add more information to the request object passed to the
+authentication backends, you can override the ``create_a_new_request`` method.
+For example, if you have a multi-tenant middleware that adds a ``tenant_id``
+attribute to the request, you can include it in the request object passed to
+the authentication backends by overriding the ``create_a_new_request`` method::
+
+    class CustomOAuth2Validator(OAuth2Validator):
+
+        def create_a_new_request(self, request):
+            new_request = super().create_a_new_request(request)
+            setattr(new_request, "tenant_id", request.tenant_id)
+            return new_request
+
+
 Customizing the login flow
 ==========================
 
