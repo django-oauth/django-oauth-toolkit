@@ -563,7 +563,7 @@ class AbstractIDToken(models.Model):
     """
     An IDToken instance represents the actual token to
     access user's resources, as in
-    `OpenID Connect Core 1.0 Section 2 <https://openid.net/specs/openid-connect-core-1_0.html#IDToken/>`_.
+    `OpenID Connect Core 1.0 Section 2 <https://openid.net/specs/openid-connect-core-1_0.html#IDToken>`_.
 
     Fields:
 
