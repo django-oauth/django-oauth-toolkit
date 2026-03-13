@@ -713,6 +713,15 @@ class OAuth2Validator(RequestValidator):
         else:
             request.resource = []
 
+        # RFC 8707: Validate that each resource is an absolute URI without userinfo
+        for res in request.resource:
+            if _parse_and_validate_uri(res) is None:
+                raise errors.CustomOAuth2Error(
+                    error="invalid_target",
+                    description=f"The resource '{res}' is not a valid absolute URI.",
+                    request=request,
+                )
+
         if request.grant_type == "authorization_code":
             # Handle grant resource narrowing
             grant = Grant.objects.filter(code=request.code, application=request.client).first()
