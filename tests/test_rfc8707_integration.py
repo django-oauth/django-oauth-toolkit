@@ -668,3 +668,82 @@ def test_rfc8707_refresh_token_rotation_preserves_resource(client, oauth2_settin
     # Verify new refresh token also has resource preserved
     refresh_token_2 = RefreshToken.objects.get(token=new_refresh_token)
     assert refresh_token_2.resource == ["https://api.example.com/protected"]
+
+
+@pytest.mark.django_db
+@pytest.mark.oauth2_settings({"PKCE_REQUIRED": False, "ROTATE_REFRESH_TOKEN": False})
+def test_rfc8707_non_rotating_refresh_preserves_resource(client, oauth2_settings):
+    """
+    Test that resource is preserved on the reused access token when
+    ROTATE_REFRESH_TOKEN is False (non-rotating refresh path).
+    """
+
+    User = get_user_model()
+    Application = get_application_model()
+
+    user = User.objects.create_user("nonrotate_user", "test@example.com", "123456")
+    plaintext_secret = "test-secret-nonrotate"
+
+    app = Application.objects.create(
+        name="Non-Rotate Test Client",
+        user=user,
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        redirect_uris="https://client.example.com/callback",
+        skip_authorization=True,
+        client_secret=plaintext_secret,
+    )
+
+    client.force_login(user)
+
+    # Step 1: Authorization with resource
+    auth_url = reverse("oauth2_provider:authorize")
+    params = {
+        "client_id": app.client_id,
+        "response_type": "code",
+        "redirect_uri": "https://client.example.com/callback",
+        "scope": "read write",
+    }
+    query_string = urlencode(params) + "&resource=https://api.example.com/protected"
+    auth_response = client.get(f"{auth_url}?{query_string}")
+
+    assert auth_response.status_code == 302
+    code = auth_response.url.split("code=")[1].split("&")[0]
+
+    # Step 2: Exchange code for tokens
+    token_url = reverse("oauth2_provider:token")
+    token_response = client.post(
+        token_url,
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "https://client.example.com/callback",
+            "client_id": app.client_id,
+            "client_secret": plaintext_secret,
+        },
+    )
+
+    assert token_response.status_code == 200
+    token_data = token_response.json()
+    original_refresh_token = token_data["refresh_token"]
+
+    # Step 3: Refresh (non-rotating — same refresh token reused, access token updated in place)
+    refresh_response = client.post(
+        token_url,
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": original_refresh_token,
+            "client_id": app.client_id,
+            "client_secret": plaintext_secret,
+        },
+    )
+
+    assert refresh_response.status_code == 200
+    refresh_data = refresh_response.json()
+
+    # Same refresh token should be returned
+    assert refresh_data["refresh_token"] == original_refresh_token
+
+    # Verify the updated access token preserves resource
+    access_token = AccessToken.objects.get(token=refresh_data["access_token"])
+    assert access_token.resource == ["https://api.example.com/protected"]
