@@ -78,6 +78,36 @@ def mocked_requests_post(url, data, *args, **kwargs):
     )
 
 
+def mocked_introspect_with_aud_list(url, data, *args, **kwargs):
+    """Mock response with aud as a list of URIs (RFC 8707)."""
+    return MockResponse(
+        {
+            "active": True,
+            "scope": "read write dolphin",
+            "client_id": "client_id_aud",
+            "username": "aud_user",
+            "exp": int(calendar.timegm(default_exp.timetuple())),
+            "aud": ["https://api.example.com/v1", "https://data.example.com"],
+        },
+        200,
+    )
+
+
+def mocked_introspect_with_aud_string(url, data, *args, **kwargs):
+    """Mock response with aud as a single string."""
+    return MockResponse(
+        {
+            "active": True,
+            "scope": "read write dolphin",
+            "client_id": "client_id_aud",
+            "username": "aud_user",
+            "exp": int(calendar.timegm(default_exp.timetuple())),
+            "aud": "https://api.example.com/v1",
+        },
+        200,
+    )
+
+
 def mocked_introspect_request_short_living_token(url, data, *args, **kwargs):
     exp = datetime.datetime.now() + datetime.timedelta(minutes=30)
 
@@ -289,3 +319,39 @@ class TestTokenIntrospectionAuth(TestCase):
         }
         response = self.client.post("/oauth2-test-resource/", **auth_headers)
         self.assertEqual(response.content.decode("utf-8"), "This is a protected resource")
+
+    @mock.patch("requests.post", side_effect=mocked_introspect_with_aud_list)
+    def test_introspection_maps_aud_list_to_resource(self, mock_get):
+        """Introspection response with aud list is mapped to AccessToken.resource"""
+        token = self.validator._get_token_from_authentication_server(
+            "aud_token",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsInstance(token, AccessToken)
+        self.assertEqual(token.resource, ["https://api.example.com/v1", "https://data.example.com"])
+
+    @mock.patch("requests.post", side_effect=mocked_introspect_with_aud_string)
+    def test_introspection_maps_aud_string_to_resource(self, mock_get):
+        """Introspection response with aud as single string is normalized to list"""
+        token = self.validator._get_token_from_authentication_server(
+            "aud_token_str",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsInstance(token, AccessToken)
+        self.assertEqual(token.resource, ["https://api.example.com/v1"])
+
+    @mock.patch("requests.post", side_effect=mocked_requests_post)
+    def test_introspection_without_aud_has_empty_resource(self, mock_get):
+        """Introspection response without aud results in empty (unrestricted) resource"""
+        token = self.validator._get_token_from_authentication_server(
+            "no_aud_token",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsInstance(token, AccessToken)
+        self.assertEqual(token.resource, [])
