@@ -158,6 +158,57 @@ def test_rfc8707_client_credentials_flow_with_resource(client):
 
 
 @pytest.mark.django_db
+def test_rfc8707_rejects_invalid_resource_uri(client):
+    """
+    Token request with a malformed resource URI is rejected with invalid_target.
+    """
+
+    User = get_user_model()
+    Application = get_application_model()
+
+    user = User.objects.create_user("invalid_uri_user", "test@example.com", "123456")
+    plaintext_secret = "test-secret-invalid"
+
+    app = Application.objects.create(
+        name="Invalid URI Test Client",
+        user=user,
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+        client_secret=plaintext_secret,
+    )
+
+    token_url = reverse("oauth2_provider:token")
+
+    # Relative URI (not absolute)
+    response = client.post(
+        token_url,
+        {
+            "grant_type": "client_credentials",
+            "client_id": app.client_id,
+            "client_secret": plaintext_secret,
+            "resource": "/not/absolute",
+        },
+    )
+    assert response.status_code == 400
+    error_data = json.loads(response.content)
+    assert error_data["error"] == "invalid_target"
+
+    # URI with userinfo
+    response = client.post(
+        token_url,
+        {
+            "grant_type": "client_credentials",
+            "client_id": app.client_id,
+            "client_secret": plaintext_secret,
+            "resource": "https://user:pass@api.example.com/v1",
+        },
+    )
+    assert response.status_code == 400
+    error_data = json.loads(response.content)
+    assert error_data["error"] == "invalid_target"
+
+
+@pytest.mark.django_db
 @pytest.mark.oauth2_settings({"PKCE_REQUIRED": False})
 def test_rfc8707_implicit_flow_with_resource(client, oauth2_settings):
     """
