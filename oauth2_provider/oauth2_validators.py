@@ -524,8 +524,12 @@ class OAuth2Validator(RequestValidator):
             # Use request.uri which is the full URI from the oauthlib Request object
             request_uri = request.uri.split("?")[0]
             if not access_token.allows_audience(request_uri):
-                # Token is valid but not authorized for this resource
-                self._set_oauth2_error_on_request(request, access_token, scopes)
+                request.oauth2_error = OrderedDict(
+                    [
+                        ("error", "invalid_token"),
+                        ("error_description", _("The access token is not valid for this resource.")),
+                    ]
+                )
                 return False
 
             request.client = access_token.application
