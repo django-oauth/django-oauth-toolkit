@@ -136,12 +136,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             credentials["claims"] = form.cleaned_data.get("claims")
         if form.cleaned_data.get("resource", False):  # RFC 8707
             resource_value = form.cleaned_data.get("resource")
-            # Resource may be space-separated (multiple resources) or single URI
+            # RFC 8707 uses repeated query params for multiple resources, but the
+            # authorization form stores them as a single space-separated hidden field.
             if " " in resource_value:
-                # Multiple resources space-separated
                 credentials["resource"] = resource_value.split()
             else:
-                # Single resource
                 credentials["resource"] = [resource_value]
 
         scopes = form.cleaned_data.get("scope")
