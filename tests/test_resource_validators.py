@@ -134,6 +134,24 @@ class TestResourceValidatorPrefixMatch(TestCase):
 
         self.assertTrue(result)
 
+    def test_rejects_dot_segment_bypass(self):
+        """Path traversal with '..' must not bypass audience check"""
+        audiences = ["https://api.example.com/foo"]
+        request_uri = "https://api.example.com/foo/../admin"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertFalse(result)
+
+    def test_dot_segment_resolved_match(self):
+        """Path with '..' that resolves to a valid prefix still matches"""
+        audiences = ["https://api.example.com/foo"]
+        request_uri = "https://api.example.com/foo/bar/../baz"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertTrue(result)
+
     def test_trailing_slash_normalization(self):
         """Token with audience 'https://api.example.com/foo/' matches 'https://api.example.com/foo/bar'"""
         audiences = ["https://api.example.com/foo/"]

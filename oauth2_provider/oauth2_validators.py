@@ -5,6 +5,7 @@ import http.client
 import inspect
 import json
 import logging
+import posixpath
 import urllib.parse
 import uuid
 from collections import OrderedDict
@@ -43,13 +44,18 @@ from .utils import get_timezone
 
 
 def _parse_and_validate_uri(uri):
-    """Parse a URI and return (scheme, hostname, port, path) or None if invalid."""
+    """Parse a URI and return (scheme, hostname, port, path) or None if invalid.
+
+    Paths are normalized to resolve dot segments (RFC 3986 Section 5.2.4).
+    URIs with userinfo components are rejected.
+    """
     parsed = urllib.parse.urlsplit(uri)
     if parsed.username or parsed.password:
         return None
     if not parsed.scheme or not parsed.hostname:
         return None
-    return (parsed.scheme.lower(), parsed.hostname.lower(), parsed.port, parsed.path)
+    path = posixpath.normpath(parsed.path or "/")
+    return (parsed.scheme.lower(), parsed.hostname.lower(), parsed.port, path)
 
 
 def validate_resource_as_url_prefix(request_uri, audiences):
