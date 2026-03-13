@@ -47,10 +47,12 @@ def _parse_and_validate_uri(uri):
     """Parse a URI and return (scheme, hostname, port, path) or None if invalid.
 
     Paths are normalized to resolve dot segments (RFC 3986 Section 5.2.4).
-    URIs with userinfo components are rejected.
+    URIs with userinfo or fragment components are rejected.
     """
     parsed = urllib.parse.urlsplit(uri)
     if parsed.username or parsed.password:
+        return None
+    if parsed.fragment:
         return None
     if not parsed.scheme or not parsed.hostname:
         return None

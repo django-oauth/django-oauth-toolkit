@@ -116,6 +116,24 @@ class TestResourceValidatorPrefixMatch(TestCase):
 
         self.assertFalse(result)
 
+    def test_rejects_fragment_in_audience(self):
+        """Audience URIs with fragments are rejected (RFC 3986 absolute-URI)"""
+        audiences = ["https://api.example.com/v1#section"]
+        request_uri = "https://api.example.com/v1/foo"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertFalse(result)
+
+    def test_rejects_fragment_in_request(self):
+        """Request URIs with fragments are rejected"""
+        audiences = ["https://api.example.com"]
+        request_uri = "https://api.example.com/foo#bar"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertFalse(result)
+
     def test_port_mismatch(self):
         """Different ports are treated as different origins"""
         audiences = ["https://api.example.com:8443"]
