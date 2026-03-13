@@ -118,7 +118,7 @@ DEFAULTS = {
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
         "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
     ),
-    # Authentication Server Exp Timezone: the time zone used by Auth Server for generate EXP
+    # Authentication Server Exp Timezone: the time zone used by the Auth Server to generate EXP
     "AUTHENTICATION_SERVER_EXP_TIME_ZONE": "UTC",
     # Whether or not PKCE is required
     "PKCE_REQUIRED": True,
