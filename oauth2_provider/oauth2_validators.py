@@ -5,6 +5,7 @@ import http.client
 import inspect
 import json
 import logging
+import urllib.parse
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -41,6 +42,16 @@ from .settings import oauth2_settings
 from .utils import get_timezone
 
 
+def _parse_and_validate_uri(uri):
+    """Parse a URI and return (scheme, hostname, port, path) or None if invalid."""
+    parsed = urllib.parse.urlsplit(uri)
+    if parsed.username or parsed.password:
+        return None
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    return (parsed.scheme.lower(), parsed.hostname.lower(), parsed.port, parsed.path)
+
+
 def validate_resource_as_url_prefix(request_uri, audiences):
     """
     Default resource validator using URL prefix matching (RFC 8707).
@@ -48,6 +59,9 @@ def validate_resource_as_url_prefix(request_uri, audiences):
     Validates that the request URI matches one of the token's audience claims
     using prefix matching. The audience URI acts as a base URI that the request
     must start with.
+
+    URIs are parsed and compared component-by-component to prevent bypasses
+    via userinfo injection or authority confusion.
 
     Examples:
         - Token audience: "https://api.example.com/foo"
@@ -57,22 +71,33 @@ def validate_resource_as_url_prefix(request_uri, audiences):
         - Rejects: "https://other.example.com/foo/bar"
         - Rejects: "https://api.example.com/bar"
         - Rejects: "https://api.example.com/food-blog"
+        - Rejects: "https://api.example.com@evil.com/foo"
 
     :param request_uri: String URI of the current request (without query string)
     :param audiences: List of audience URI strings from token
     :return: True if token is valid for this request, False otherwise
     """
-    # No audiences = unrestricted token
     if not audiences:
         return True
 
-    request_normalized = request_uri.rstrip("/") + "/"
+    request_parts = _parse_and_validate_uri(request_uri)
+    if request_parts is None:
+        return False
 
-    # Check if request URI starts with any of the audience URIs
+    req_scheme, req_host, req_port, req_path = request_parts
+    req_path_normalized = req_path.rstrip("/") + "/"
+
     for audience in audiences:
-        audience_normalized = audience.rstrip("/") + "/"
+        aud_parts = _parse_and_validate_uri(audience)
+        if aud_parts is None:
+            continue
 
-        if request_normalized.startswith(audience_normalized):
+        aud_scheme, aud_host, aud_port, aud_path = aud_parts
+        if (req_scheme, req_host, req_port) != (aud_scheme, aud_host, aud_port):
+            continue
+
+        aud_path_normalized = aud_path.rstrip("/") + "/"
+        if req_path_normalized.startswith(aud_path_normalized):
             return True
 
     return False
