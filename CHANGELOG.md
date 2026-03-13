@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Support for Django 5.2
 * Support for Python 3.14 (Django >= 5.2.8)
 * #1539 Add device authorization grant support
+* RFC 8707 "Resource Indicators" support
+  - clients can optionally specify `resource` parameter during authorization or access token requests
+  - Resource binding stored in Grant, AccessToken and RefreshToken models
+  - Token introspection endpoint returns `aud` claim for tokens with resource indicators
 
 ### Fixed
 * #1252 Fix crash  when 'client' is in token request body
