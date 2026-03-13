@@ -798,6 +798,7 @@ class OAuth2Validator(RequestValidator):
                 access_token.expires = expires
                 access_token.token = token["access_token"]
                 access_token.application = request.client
+                access_token.resource = getattr(request, "resource", [])  # RFC 8707
                 access_token.save()
 
             # else create fresh with access & refresh tokens
