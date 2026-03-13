@@ -516,6 +516,11 @@ class OAuth2Validator(RequestValidator):
                     expires, timezone=get_timezone(oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE)
                 )
 
+            # RFC 8707: Map introspection 'aud' claim to resource field
+            aud = content.get("aud", [])
+            if isinstance(aud, str):
+                aud = [aud]
+
             token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
             access_token, _created = AccessToken.objects.update_or_create(
                 token_checksum=token_checksum,
@@ -525,6 +530,7 @@ class OAuth2Validator(RequestValidator):
                     "application": None,
                     "scope": scope,
                     "expires": expires,
+                    "resource": aud,
                 },
             )
 
