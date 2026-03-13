@@ -98,6 +98,42 @@ class TestResourceValidatorPrefixMatch(TestCase):
 
         self.assertFalse(result)
 
+    def test_rejects_userinfo_injection(self):
+        """Userinfo in request URI must not bypass audience check"""
+        audiences = ["https://api.example.com"]
+        request_uri = "https://api.example.com@evil.com/"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertFalse(result)
+
+    def test_rejects_userinfo_in_audience(self):
+        """Audience URIs containing userinfo are rejected"""
+        audiences = ["https://user:pass@api.example.com"]
+        request_uri = "https://api.example.com/"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertFalse(result)
+
+    def test_port_mismatch(self):
+        """Different ports are treated as different origins"""
+        audiences = ["https://api.example.com:8443"]
+        request_uri = "https://api.example.com:9443/foo"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertFalse(result)
+
+    def test_port_match(self):
+        """Matching explicit ports are accepted"""
+        audiences = ["https://api.example.com:8443"]
+        request_uri = "https://api.example.com:8443/foo"
+
+        result = validate_resource_as_url_prefix(request_uri, audiences)
+
+        self.assertTrue(result)
+
     def test_trailing_slash_normalization(self):
         """Token with audience 'https://api.example.com/foo/' matches 'https://api.example.com/foo/bar'"""
         audiences = ["https://api.example.com/foo/"]
