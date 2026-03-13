@@ -18,7 +18,7 @@ class TestResourceValidatorPrefixMatch(TestCase):
     """
 
     def test_prefix_match_exact_uri(self):
-        """Token with audience 'https://api.example.com' matches request to 'https://api.example.com'"""
+        """Token with audience 'https://api.example.com' matches request to 'https://api.example.com/'"""
         audiences = ["https://api.example.com"]
         request_uri = "https://api.example.com/"
 
