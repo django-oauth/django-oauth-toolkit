@@ -561,8 +561,9 @@ class RefreshToken(AbstractRefreshToken):
 
 class AbstractIDToken(models.Model):
     """
-    An IDToken instance represents the actual token to
-    access user's resources, as defined in the OpenID Connect specification.
+    An IDToken instance represents the token used to authenticate the user and
+    convey claims to the client, as in
+    `OpenID Connect Core 1.0 Section 2 <https://openid.net/specs/openid-connect-core-1_0.html#IDToken>`_.
 
     Fields:
 
