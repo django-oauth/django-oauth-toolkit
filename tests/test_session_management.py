@@ -1,9 +1,13 @@
+import hashlib
 from copy import deepcopy
 from http.cookies import SimpleCookie
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import RequestFactory
 from django.test.utils import modify_settings
+
+from oauth2_provider.utils import session_management_state_key
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -49,3 +53,29 @@ class TestOIDCSessionManagementMiddleware(TestCase):
         self.assertTrue(isinstance(response.cookies, SimpleCookie))
         self.assertTrue("oidc-session-test" in response.cookies.keys())
         self.assertEqual(response.cookies["oidc-session-test"].value, "")
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(PRESET_OIDC_MIDDLEWARE)
+class TestSessionManagementStateKey(TestCase):
+    def test_session_management_state_key_uses_session_key_when_no_cookie(self):
+        session_key = "test-session"
+        session_hash = hashlib.sha256(session_key.encode("utf-8")).hexdigest()
+
+        request = RequestFactory().get("/")
+        request.COOKIES = {}
+        request.session = type("Session", (), {"session_key": session_key})()
+
+        result = session_management_state_key(request)
+        self.assertEqual(result, session_hash)
+
+    def test_session_management_state_key_uses_default_when_no_session(self):
+        request = RequestFactory().get("/")
+        request.COOKIES = {}
+        request.session = None
+
+        default_key = PRESET_OIDC_MIDDLEWARE["OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY"]
+
+        result = session_management_state_key(request)
+        default_key_hash = hashlib.sha256(default_key.encode("utf-8")).hexdigest()
+        self.assertEqual(result, default_key_hash)
