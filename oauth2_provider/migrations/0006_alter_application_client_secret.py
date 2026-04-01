@@ -6,7 +6,6 @@ import oauth2_provider.generators
 import oauth2_provider.models
 from oauth2_provider import settings
 
-
 logger = logging.getLogger()
 
 
@@ -14,10 +13,11 @@ def forwards_func(apps, schema_editor):
     """
     Forward migration touches every application.client_secret which will cause it to be hashed if not already the case.
     """
+    db_alias = schema_editor.connection.alias
     Application = apps.get_model(settings.APPLICATION_MODEL)
-    applications = Application._default_manager.all()
+    applications = Application._default_manager.using(db_alias).all()
     for application in applications:
-        application.save(update_fields=['client_secret'])
+        application.save(using=db_alias, update_fields=['client_secret'])
 
 
 def reverse_func(apps, schema_editor):
