@@ -14,6 +14,8 @@ User = get_user_model()
 
 
 class TestOAuth2ExtraTokenMiddleware(TestCase):
+    databases = "__all__"
+
     def setUp(self):
         self.factory = RequestFactory()
         self.middleware = OAuth2ExtraTokenMiddleware(lambda r: None)

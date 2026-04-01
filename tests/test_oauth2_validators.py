@@ -648,7 +648,7 @@ def test_validate_id_token_bad_token_no_aud(oauth2_settings, mocker, oidc_key):
     assert status is False
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_invalidate_authorization_token_returns_invalid_grant_error_when_grant_does_not_exist():
     client_id = "123"
     code = "12345"
