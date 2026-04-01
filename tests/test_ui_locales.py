@@ -19,6 +19,8 @@ Application = get_application_model()
     }
 )
 class TestUILocalesParam(TestCase):
+    databases = "__all__"
+
     @classmethod
     def setUpTestData(cls):
         cls.application = Application.objects.create(
