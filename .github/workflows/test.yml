@@ -229,9 +229,7 @@ jobs:
       - sphinxlint
       - migrations
       - migrate_swapped
-      # nees to fix multidb tests, not blocking success for now 
-      # so we can get the lint and migrations checks in place. 
-      # - multi-db
+      - multi-db
     runs-on: ubuntu-latest
     name: Test successful
     steps:
