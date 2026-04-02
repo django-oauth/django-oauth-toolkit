@@ -1,5 +1,5 @@
 Mixins for Class Based Views
 ============================
 
-.. automodule:: oauth2_provider.views.mixins
-   :members:
+The mixins documentation has moved to the :ref:`mixins` section in
+:doc:`details`.
