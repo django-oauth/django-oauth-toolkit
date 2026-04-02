@@ -288,6 +288,33 @@ The number of seconds an authorization token received from the introspection end
 If the expire time of the received token is less than ``RESOURCE_SERVER_TOKEN_CACHING_SECONDS`` the expire time
 will be used.
 
+RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"``
+
+A callable that validates whether an access token's audience (RFC 8707 resource indicators) matches
+a request URI. The callable receives ``(request_uri, audiences)`` where ``request_uri`` is a string
+and ``audiences`` is a list of audience URIs from the token. Returns ``True`` if the token
+is authorized for the request, ``False`` otherwise.
+
+The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
+will accept requests to ``https://api.example.com/v1/users`` but reject ``https://api.example.com/v2``.
+
+To use exact matching instead:
+
+.. code-block:: python
+
+    def exact_match_validator(request_uri, audiences):
+        if not audiences:
+            return True  # Unrestricted token
+        return request_uri in audiences
+
+    OAUTH2_PROVIDER = {
+        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': 'myapp.validators.exact_match_validator',
+    }
+
+Set to ``None`` to disable automatic audience validation entirely.
+
 AUTHENTICATION_SERVER_EXP_TIME_ZONE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The exp (expiration date) of Access Tokens must be defined in UTC (Unix Timestamp). Although its wrong, sometimes

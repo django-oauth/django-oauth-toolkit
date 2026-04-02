@@ -5,6 +5,8 @@ import http.client
 import inspect
 import json
 import logging
+import posixpath
+import urllib.parse
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -39,6 +41,74 @@ from .models import (
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
 from .utils import get_timezone
+
+
+def _parse_and_validate_uri(uri):
+    """Parse a URI and return (scheme, hostname, port, path) or None if invalid.
+
+    Paths are normalized to resolve dot segments (RFC 3986 Section 5.2.4).
+    URIs with userinfo or fragment components are rejected.
+    """
+    parsed = urllib.parse.urlsplit(uri)
+    if parsed.username or parsed.password:
+        return None
+    if parsed.fragment:
+        return None
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    path = posixpath.normpath(parsed.path or "/")
+    return (parsed.scheme.lower(), parsed.hostname.lower(), parsed.port, path)
+
+
+def validate_resource_as_url_prefix(request_uri, audiences):
+    """
+    Default resource validator using URL prefix matching (RFC 8707).
+
+    Validates that the request URI matches one of the token's audience claims
+    using prefix matching. The audience URI acts as a base URI that the request
+    must start with.
+
+    URIs are parsed and compared component-by-component to prevent bypasses
+    via userinfo injection or authority confusion.
+
+    Examples:
+        - Token audience: "https://api.example.com/foo"
+        - Matches: "https://api.example.com/foo"
+        - Matches: "https://api.example.com/foo/"
+        - Matches: "https://api.example.com/foo/bar"
+        - Rejects: "https://other.example.com/foo/bar"
+        - Rejects: "https://api.example.com/bar"
+        - Rejects: "https://api.example.com/food-blog"
+        - Rejects: "https://api.example.com@evil.com/foo"
+
+    :param request_uri: String URI of the current request (without query string)
+    :param audiences: List of audience URI strings from token
+    :return: True if token is valid for this request, False otherwise
+    """
+    if not audiences:
+        return True
+
+    request_parts = _parse_and_validate_uri(request_uri)
+    if request_parts is None:
+        return False
+
+    req_scheme, req_host, req_port, req_path = request_parts
+    req_path_normalized = req_path.rstrip("/") + "/"
+
+    for audience in audiences:
+        aud_parts = _parse_and_validate_uri(audience)
+        if aud_parts is None:
+            continue
+
+        aud_scheme, aud_host, aud_port, aud_path = aud_parts
+        if (req_scheme, req_host, req_port) != (aud_scheme, aud_host, aud_port):
+            continue
+
+        aud_path_normalized = aud_path.rstrip("/") + "/"
+        if req_path_normalized.startswith(aud_path_normalized):
+            return True
+
+    return False
 
 
 log = logging.getLogger("oauth2_provider")
@@ -448,6 +518,11 @@ class OAuth2Validator(RequestValidator):
                     expires, timezone=get_timezone(oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE)
                 )
 
+            # RFC 8707: Map introspection 'aud' claim to resource field
+            aud = content.get("aud", [])
+            if isinstance(aud, str):
+                aud = [aud]
+
             token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
             access_token, _created = AccessToken.objects.update_or_create(
                 token_checksum=token_checksum,
@@ -457,6 +532,7 @@ class OAuth2Validator(RequestValidator):
                     "application": None,
                     "scope": scope,
                     "expires": expires,
+                    "resource": aud,
                 },
             )
 
@@ -483,6 +559,18 @@ class OAuth2Validator(RequestValidator):
                 )
 
         if access_token and access_token.is_valid(scopes):
+            # RFC 8707: Validate token audience against request resource
+            # Use request.uri which is the full URI from the oauthlib Request object
+            request_uri = request.uri.split("?")[0]
+            if not access_token.allows_audience(request_uri):
+                request.oauth2_error = OrderedDict(
+                    [
+                        ("error", "invalid_token"),
+                        ("error_description", _("The access token is not valid for this resource.")),
+                    ]
+                )
+                return False
+
             request.client = access_token.application
             request.user = access_token.user
             request.scopes = list(access_token.scopes)
@@ -607,6 +695,80 @@ class OAuth2Validator(RequestValidator):
         with transaction.atomic(using=router.db_for_write(AccessToken)):
             return self._save_bearer_token(token, request, *args, **kwargs)
 
+    def _check_and_set_request_resource(self, request):
+        """
+        Handle 'resource' parameter from token requests (RFC 8707).
+        Normalizes request.resource to a list of URIs.
+
+        request.resource will be set to one of:
+        - None (no resources)
+        - List of URIs: ["https://api.example.com"] or ["https://a.com", "https://b.com"]
+        """
+        resource = getattr(request, "resource", None)
+
+        if isinstance(resource, list):
+            # Already a list, use as-is
+            request.resource = resource or []
+        elif resource and isinstance(resource, str) and resource.strip():
+            # Single URI string from token endpoint POST
+            request.resource = [resource]
+        else:
+            request.resource = []
+
+        # RFC 8707: Validate that each resource is an absolute URI without userinfo
+        for res in request.resource:
+            if _parse_and_validate_uri(res) is None:
+                raise errors.CustomOAuth2Error(
+                    error="invalid_target",
+                    description=f"The resource '{res}' is not a valid absolute URI.",
+                    request=request,
+                )
+
+        if request.grant_type == "authorization_code":
+            # Handle grant resource narrowing
+            grant = Grant.objects.filter(code=request.code, application=request.client).first()
+            grant_resource = (grant.resource or []) if grant else []
+
+            if request.resource and grant_resource:
+                # Token request is narrowing the resource scope
+                # Validate that requested resources are a subset of granted resources
+                for res in request.resource:
+                    if res not in grant_resource:
+                        raise errors.CustomOAuth2Error(
+                            error="invalid_target",
+                            description=(
+                                f"The requested resource '{res}' is not allowed. "
+                                "Token request cannot escalate resource permissions beyond the "
+                                "original authorization grant"
+                            ),
+                            request=request,
+                        )
+            elif grant_resource:
+                request.resource = grant_resource
+
+        elif request.grant_type == "refresh_token":
+            # Preserve resource from the refresh token
+            refresh_token_instance = getattr(request, "refresh_token_instance", None)
+            if refresh_token_instance and refresh_token_instance.resource:
+                # If no resource specified in request, inherit from refresh token
+                if not request.resource:
+                    request.resource = refresh_token_instance.resource
+                # If resource specified, validate it's a subset of refresh token's resources
+                elif request.resource != refresh_token_instance.resource:
+                    refresh_list = refresh_token_instance.resource
+
+                    for res in request.resource:
+                        if res not in refresh_list:
+                            raise errors.CustomOAuth2Error(
+                                error="invalid_target",
+                                description=(
+                                    f"The requested resource '{res}' is not allowed. "
+                                    "Token refresh cannot request resources beyond the "
+                                    "original refresh token scope"
+                                ),
+                                request=request,
+                            )
+
     def _save_bearer_token(self, token, request, *args, **kwargs):
         """
         Save access and refresh token.
@@ -618,6 +780,8 @@ class OAuth2Validator(RequestValidator):
 
         if "scope" not in token:
             raise FatalClientError("Failed to renew access token: missing scope")
+
+        self._check_and_set_request_resource(request)
 
         # expires_in is passed to Server on initialization
         # custom server class can have logic to override this
@@ -657,6 +821,7 @@ class OAuth2Validator(RequestValidator):
                 access_token.expires = expires
                 access_token.token = token["access_token"]
                 access_token.application = request.client
+                access_token.resource = getattr(request, "resource", [])  # RFC 8707
                 access_token.save()
 
             # else create fresh with access & refresh tokens
@@ -722,11 +887,16 @@ class OAuth2Validator(RequestValidator):
             id_token=id_token,
             application=request.client,
             source_refresh_token=source_refresh_token,
+            resource=getattr(request, "resource", []),  # RFC 8707
         )
 
     def _create_authorization_code(self, request, code, expires=None):
         if not expires:
             expires = timezone.now() + timedelta(seconds=oauth2_settings.AUTHORIZATION_CODE_EXPIRE_SECONDS)
+
+        # RFC 8707: Extract resource parameter
+        resource = getattr(request, "resource", [])
+
         return Grant.objects.create(
             application=request.client,
             user=request.user,
@@ -738,6 +908,7 @@ class OAuth2Validator(RequestValidator):
             code_challenge_method=request.code_challenge_method or "",
             nonce=request.nonce or "",
             claims=json.dumps(request.claims or {}),
+            resource=resource,
         )
 
     def _create_refresh_token(self, request, refresh_token_code, access_token, previous_refresh_token):
@@ -751,6 +922,7 @@ class OAuth2Validator(RequestValidator):
             application=request.client,
             access_token=access_token,
             token_family=token_family,
+            resource=getattr(request, "resource", []),  # RFC 8707
         )
 
     def revoke_token(self, token, token_type_hint, request, *args, **kwargs):
