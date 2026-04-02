@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * #1637 Support for Django 6.0
+* #1546 Support for RP-Initiated Registration
+<!--
+### Changed
+### Deprecated
+-->
 
 ### Removed
 * #1636 Remove support for Python 3.8 and 3.9
