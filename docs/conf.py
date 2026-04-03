@@ -45,6 +45,9 @@ extensions = [
     "sphinx_rtd_theme",
 ]
 
+# Optional integrations that may not be installed in the docs build environment
+autodoc_mock_imports = ["ninja"]
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 
