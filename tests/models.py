@@ -3,6 +3,7 @@ from django.db import models
 from oauth2_provider.models import (
     AbstractAccessToken,
     AbstractApplication,
+    AbstractDeviceGrant,
     AbstractGrant,
     AbstractIDToken,
     AbstractRefreshToken,
@@ -55,6 +56,13 @@ class SampleRefreshToken(AbstractRefreshToken):
 
 class SampleGrant(AbstractGrant):
     custom_field = models.CharField(max_length=255)
+
+
+class SampleDeviceGrant(AbstractDeviceGrant):
+    custom_field = models.CharField(blank=True, default="", max_length=255)
+
+    class Meta(AbstractDeviceGrant.Meta):
+        swappable = "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL"
 
 
 class LocalIDToken(AbstractIDToken):

@@ -476,6 +476,12 @@ The import string of the class (model) representing your OAuth2 grants.
 Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.Grant``).
 
+OAUTH2_PROVIDER_DEVICE_GRANT_MODEL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your OAuth2 device grants.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.models.AbstractDeviceGrant``).
+
 OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your refresh tokens.
