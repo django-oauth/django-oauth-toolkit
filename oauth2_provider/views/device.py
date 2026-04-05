@@ -12,8 +12,8 @@ from oauthlib.oauth2 import DeviceApplicationServer
 
 from oauth2_provider.compat import login_not_required
 from oauth2_provider.models import (
+    AbstractDeviceGrant,
     DeviceCodeResponse,
-    DeviceGrant,
     DeviceRequest,
     create_device_grant,
     get_device_grant_model,
@@ -57,9 +57,10 @@ class DeviceGrantForm(forms.Form):
         """
         cleaned_data = super().clean()
         user_code: str = cleaned_data["user_code"]
+        device_grant_model = get_device_grant_model()
         try:
-            device_grant: DeviceGrant = get_device_grant_model().objects.get(user_code=user_code)
-        except DeviceGrant.DoesNotExist:
+            device_grant: AbstractDeviceGrant = device_grant_model.objects.get(user_code=user_code)
+        except device_grant_model.DoesNotExist:
             raise ValidationError("Incorrect user code", code="incorrect_user_code")
 
         if device_grant.is_expired():
@@ -106,7 +107,7 @@ class DeviceUserCodeView(LoginRequiredMixin, FormView):
         get_success_url, redirecting to the URL with the URL params pointing
         to the current device.
         """
-        device_grant: DeviceGrant = form.cleaned_data["device_grant"]
+        device_grant: AbstractDeviceGrant = form.cleaned_data["device_grant"]
 
         device_grant.user = self.request.user
         device_grant.save(update_fields=["user"])
@@ -138,11 +139,12 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         by the slugs client_id and user_code. Raises Http404 if not found.
         """
         client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
+        device_grant_model = get_device_grant_model()
         return get_object_or_404(
-            DeviceGrant,
+            device_grant_model,
             client_id=client_id,
             user_code=user_code,
-            status=DeviceGrant.AUTHORIZATION_PENDING,
+            status=device_grant_model.AUTHORIZATION_PENDING,
         )
 
     def get_success_url(self):
@@ -188,9 +190,11 @@ class DeviceGrantStatusView(LoginRequiredMixin, DetailView):
     The view to display the status of a DeviceGrant.
     """
 
-    model = DeviceGrant
     template_name = "oauth2_provider/device/device_grant_status.html"
+
+    def get_queryset(self):
+        return get_device_grant_model().objects.all()
 
     def get_object(self):
         client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
-        return get_object_or_404(DeviceGrant, client_id=client_id, user_code=user_code)
+        return get_object_or_404(self.get_queryset(), client_id=client_id, user_code=user_code)

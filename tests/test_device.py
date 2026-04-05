@@ -767,3 +767,106 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
 
         assert is_expired
         assert device.status == device.EXPIRED
+
+
+class TestDeviceFlowWithSwappedDeviceGrantModel(DeviceFlowBaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.oauth2_settings.DEVICE_GRANT_MODEL = "tests.SampleDeviceGrant"
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "abc",
+    )
+    def test_full_device_flow_uses_swapped_device_grant_model(self):
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "xyz"
+        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [set_oauthlib_user_to_device_request_user]
+
+        device_model = get_device_grant_model()
+        assert device_model._meta.label == "tests.SampleDeviceGrant"
+
+        device_authorization_response: http.response.JsonResponse = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=urlencode({"client_id": self.application.client_id}),
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        assert device_authorization_response.status_code == 200
+        assert device_model.objects.get(device_code="abc").status == device_model.AUTHORIZATION_PENDING
+        if not oauth2_provider.models.DeviceGrant._meta.swapped:
+            assert not oauth2_provider.models.DeviceGrant.objects.filter(device_code="abc").exists()
+
+        token_payload = {
+            "device_code": "abc",
+            "client_id": self.application.client_id,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+        pending_response = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        self.assertJSONEqual(
+            raw=pending_response.content,
+            expected_data={"error": "authorization_pending"},
+        )
+
+        UserModel.objects.create_user(
+            username="test_user_swapped_device_flow",
+            email="test_swapped_device@example.com",
+            password="password123",
+        )
+        self.client.login(username="test_user_swapped_device_flow", password="password123")
+
+        device_confirm_url = reverse(
+            "oauth2_provider:device-confirm",
+            kwargs={"user_code": "xyz", "client_id": self.application.client_id},
+        )
+        device_grant_status_url = reverse(
+            "oauth2_provider:device-grant-status",
+            kwargs={"user_code": "xyz", "client_id": self.application.client_id},
+        )
+
+        self.assertRedirects(
+            response=self.client.post(reverse("oauth2_provider:device"), data={"user_code": "xyz"}),
+            expected_url=device_confirm_url,
+        )
+        self.assertRedirects(
+            response=self.client.post(device_confirm_url, data={"action": "accept"}),
+            expected_url=device_grant_status_url,
+        )
+        self.assertContains(
+            response=self.client.get(device_grant_status_url),
+            text="Device Authorized",
+            count=1,
+        )
+
+        token_response = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert token_response.status_code == 200
+        assert token_response.json() == {
+            "access_token": mock.ANY,
+            "expires_in": 36000,
+            "token_type": "Bearer",
+            "scope": "read write",
+            "refresh_token": mock.ANY,
+        }
+
+    def test_invalid_user_code_returns_form_error_with_swapped_device_model(self):
+        UserModel.objects.create_user(
+            username="test_user_swapped_invalid_code",
+            email="test_swapped_invalid_code@example.com",
+            password="password123",
+        )
+        self.client.login(username="test_user_swapped_invalid_code", password="password123")
+
+        self.assertContains(
+            response=self.client.post(reverse("oauth2_provider:device"), data={"user_code": "invalid_code"}),
+            status_code=200,
+            text="Incorrect user code",
+            count=1,
+        )

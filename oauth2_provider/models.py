@@ -736,10 +736,12 @@ class DeviceCodeResponse:
     verification_uri_complete: Optional[Union[str, Callable]] = None
 
 
-def create_device_grant(device_request: DeviceRequest, device_response: DeviceCodeResponse) -> DeviceGrant:
+def create_device_grant(
+    device_request: DeviceRequest, device_response: DeviceCodeResponse
+) -> AbstractDeviceGrant:
     now = datetime.now(tz=dt_timezone.utc)
 
-    return DeviceGrant.objects.create(
+    return get_device_grant_model().objects.create(
         client_id=device_request.client_id,
         device_code=device_response.device_code,
         user_code=device_response.user_code,

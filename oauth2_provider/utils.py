@@ -96,7 +96,9 @@ def set_oauthlib_user_to_device_request_user(request: Request) -> None:
     """
     # Since this function is used in the settings module, it will lead to circular imports
     # since django isn't fully initialised yet when settings run
-    from oauth2_provider.models import DeviceGrant, get_device_grant_model
+    from oauth2_provider.models import AbstractDeviceGrant, get_device_grant_model
 
-    device: DeviceGrant = get_device_grant_model().objects.get(device_code=request._params["device_code"])
+    device: AbstractDeviceGrant = get_device_grant_model().objects.get(
+        device_code=request._params["device_code"]
+    )
     request.user = device.user
