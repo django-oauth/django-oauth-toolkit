@@ -15,7 +15,7 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
-from oauth2_provider.models import DeviceGrant
+from oauth2_provider.models import get_device_grant_model
 
 from ..compat import login_not_required
 from ..exceptions import OAuthToolkitError
@@ -317,9 +317,10 @@ class TokenView(OAuthLibMixin, View):
     def device_flow_token_response(
         self, request: http.HttpRequest, device_code: str, *args, **kwargs
     ) -> http.HttpResponse:
+        device_grant_model = get_device_grant_model()
         try:
-            device = DeviceGrant.objects.get(device_code=device_code)
-        except DeviceGrant.DoesNotExist:
+            device = device_grant_model.objects.get(device_code=device_code)
+        except device_grant_model.DoesNotExist:
             # The RFC does not mention what to return when the device is not found,
             # but to keep it consistent with the other errors, we return the error
             # in json format with an "error" key and the value formatted in the same
