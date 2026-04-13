@@ -48,7 +48,7 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             "introspection_endpoint": self._get_endpoint_url(request, "introspect"),
             "response_types_supported": oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED,
             "grant_types_supported": oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED,
-            "scopes_supported": list(scopes.get_available_scopes()),
+            "scopes_supported": sorted(scopes.get_available_scopes()),
             "token_endpoint_auth_methods_supported": oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
             "code_challenge_methods_supported": [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS],
         }
