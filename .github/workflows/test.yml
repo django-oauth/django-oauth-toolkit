@@ -80,6 +80,95 @@ jobs:
         name: Python ${{ matrix.python-version }}
         use_oidc: true
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Run ruff checks
+        run: tox -e lint
+
+  sphinxlint:
+    name: Sphinx Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Run sphinx-lint
+        run: tox -e sphinxlint
+
+  migrations:
+    name: Check Migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Check no missing migrations
+        run: tox -e migrations
+        env:
+          DJANGO: '5.2'
+
+  migrate_swapped:
+    name: Migrate Swapped Models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Run swapped model migrations
+        run: tox -e migrate_swapped
+        env:
+          DJANGO: '5.2'
+
+  multi-db:
+    name: Multi-DB Tests (Python 3.14, Django 4.2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Run multi-db tests
+        run: tox -e py314-dj42-multi-db
+
   test-demo-rp:
     name: Test Demo Relying Party
     runs-on: ubuntu-latest
@@ -136,6 +225,13 @@ jobs:
       - test-package
       - test-demo-rp
       - codecov-notify
+      - lint
+      - sphinxlint
+      - migrations
+      - migrate_swapped
+      # nees to fix multidb tests, not blocking success for now 
+      # so we can get the lint and migrations checks in place. 
+      # - multi-db
     runs-on: ubuntu-latest
     name: Test successful
     steps:

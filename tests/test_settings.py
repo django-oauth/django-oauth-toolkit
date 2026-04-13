@@ -172,3 +172,44 @@ def test_generating_iss_endpoint_type_error(oauth2_settings):
 def test_pkce_required_is_default():
     settings = OAuth2ProviderSettings()
     assert settings.PKCE_REQUIRED is True
+
+
+class TestRefreshTokenAdminSelectRelated(TestCase):
+    def test_changelist_queryset_select_related_is_bounded(self):
+        """
+        RefreshTokenAdmin changelist must not use unbounded select_related.
+
+        The default (list_select_related = False) causes Django to call qs.select_related()
+        with no arguments when list_display contains FK fields, recursively following every
+        FK in the model graph. On MySQL, this can produce a query with so many columns that
+        it exceeds the server's column limit and raises an error.
+
+        list_select_related = ("application", "user") makes Django call
+        qs.select_related("application", "user") instead, bounding the JOIN.
+        """
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.auth import get_user_model
+        from django.test import RequestFactory
+
+        from oauth2_provider.admin import RefreshTokenAdmin
+        from oauth2_provider.models import get_refresh_token_model
+
+        UserModel = get_user_model()
+        RefreshToken = get_refresh_token_model()
+
+        admin_user = UserModel.objects.create_superuser("admin", "admin@example.com", "password")
+        request = RequestFactory().get("/")
+        request.user = admin_user
+        ma = RefreshTokenAdmin(RefreshToken, AdminSite())
+        qs = ma.get_queryset(request)
+
+        # Replicate what ChangeList.apply_select_related does with list_select_related.
+        if ma.list_select_related is True:
+            qs = qs.select_related()
+        elif ma.list_select_related:
+            qs = qs.select_related(*ma.list_select_related)
+
+        # qs.query.select_related is True when called with no arguments (unbounded).
+        # It must be a dict so the JOIN is scoped to only the declared fields.
+        self.assertIsInstance(qs.query.select_related, dict)
+        self.assertEqual(set(qs.query.select_related.keys()), {"application", "user"})

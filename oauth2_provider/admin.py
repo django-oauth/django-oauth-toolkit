@@ -53,6 +53,7 @@ class IDTokenAdmin(admin.ModelAdmin):
 
 class RefreshTokenAdmin(admin.ModelAdmin):
     list_display = ("token", "user", "application")
+    list_select_related = ("application", "user")
     raw_id_fields = ("user", "access_token")
     search_fields = ("token",) + (("user__email",) if has_email else ())
     list_filter = ("application",)
