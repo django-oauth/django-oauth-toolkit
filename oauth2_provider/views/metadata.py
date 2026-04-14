@@ -52,7 +52,7 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             "token_endpoint_auth_methods_supported": oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
             "code_challenge_methods_supported": [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS],
         }
-        if oauth2_settings.OIDC_RSA_PRIVATE_KEY:
+        if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY:
             data["jwks_uri"] = self._get_endpoint_url(request, "jwks-info")
 
         response = JsonResponse(data)
