@@ -5,9 +5,12 @@ RFC 7591 — POST /register/
 RFC 7592 — GET/PUT/DELETE /register/{client_id}/
 """
 
+import hashlib
 import json
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
@@ -19,6 +22,7 @@ from django.views.decorators.csrf import csrf_exempt
 from ..compat import login_not_required
 from ..models import get_access_token_model, get_application_model
 from ..settings import oauth2_settings
+
 
 # RFC 7591 grant type name → DOT AbstractApplication constant
 GRANT_TYPE_MAP = {
@@ -121,6 +125,8 @@ def _build_application_kwargs(data):
     grant_types = data.get("grant_types", ["authorization_code"])
     if not isinstance(grant_types, list):
         return None, _error_response("invalid_client_metadata", "grant_types must be an array")
+    if not all(isinstance(g, str) for g in grant_types):
+        return None, _error_response("invalid_client_metadata", "Each grant_type must be a string")
 
     dot_grant, err = _resolve_grant_type(grant_types)
     if err:
@@ -243,7 +249,7 @@ class DynamicClientRegistrationView(View):
 
         try:
             application.full_clean()
-        except Exception as exc:
+        except ValidationError as exc:
             return _error_response("invalid_client_metadata", str(exc))
 
         with transaction.atomic():
@@ -285,15 +291,24 @@ class DynamicClientRegistrationManagementView(View):
                 status=401,
             )
 
-        raw_token = auth_header[len("Bearer "):]
+        raw_token = auth_header[len("Bearer ") :]
+        token_checksum = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         AccessToken = get_access_token_model()
         try:
-            token = AccessToken.objects.get(token=raw_token)
+            token = AccessToken.objects.get(token_checksum=token_checksum)
         except AccessToken.DoesNotExist:
-            return None, _error_response("invalid_token", "Invalid registration access token", status=401)
+            return None, _error_response(
+                "invalid_token",
+                "Invalid registration access token",
+                status=401,
+            )
 
         if not token.is_valid([oauth2_settings.DCR_REGISTRATION_SCOPE]):
-            return None, _error_response("invalid_token", "Registration access token is expired or invalid", status=401)
+            return None, _error_response(
+                "invalid_token",
+                "Registration access token is expired or invalid",
+                status=401,
+            )
 
         application = token.application
         if application is None or application.client_id != client_id:
@@ -329,7 +344,7 @@ class DynamicClientRegistrationManagementView(View):
 
         try:
             application.full_clean()
-        except Exception as exc:
+        except ValidationError as exc:
             return _error_response("invalid_client_metadata", str(exc))
 
         with transaction.atomic():
