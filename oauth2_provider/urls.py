@@ -58,7 +58,7 @@ oidc_urlpatterns = [
 ]
 
 dcr_urlpatterns = [
-        path("register/", views.DynamicClientRegistrationView.as_view(), name="dcr-register"),
+    path("register/", views.DynamicClientRegistrationView.as_view(), name="dcr-register"),
     path(
         "register/<str:client_id>/",
         views.DynamicClientRegistrationManagementView.as_view(),

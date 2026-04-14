@@ -6,10 +6,10 @@ RFC 7592 — GET/PUT/DELETE /register/{client_id}/
 """
 
 import json
-import logging
 from datetime import datetime, timedelta, timezone as dt_timezone
 
-from django.http import JsonResponse
+from django.db import transaction
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -19,9 +19,6 @@ from django.views.decorators.csrf import csrf_exempt
 from ..compat import login_not_required
 from ..models import get_access_token_model, get_application_model
 from ..settings import oauth2_settings
-
-
-logger = logging.getLogger(__name__)
 
 # RFC 7591 grant type name → DOT AbstractApplication constant
 GRANT_TYPE_MAP = {
@@ -112,6 +109,8 @@ def _build_application_kwargs(data):
     redirect_uris = data.get("redirect_uris", [])
     if not isinstance(redirect_uris, list):
         return None, _error_response("invalid_client_metadata", "redirect_uris must be an array")
+    if not all(isinstance(uri, str) for uri in redirect_uris):
+        return None, _error_response("invalid_client_metadata", "Each redirect_uri must be a string")
     kwargs["redirect_uris"] = " ".join(redirect_uris)
 
     # client_name
@@ -129,7 +128,14 @@ def _build_application_kwargs(data):
     kwargs["authorization_grant_type"] = dot_grant
 
     # token_endpoint_auth_method → client_type
+    SUPPORTED_AUTH_METHODS = ("none", "client_secret_basic", "client_secret_post")
     auth_method = data.get("token_endpoint_auth_method", "client_secret_basic")
+    if auth_method not in SUPPORTED_AUTH_METHODS:
+        return None, _error_response(
+            "invalid_client_metadata",
+            f"Unsupported token_endpoint_auth_method: {auth_method!r}. "
+            f"Supported values: {', '.join(SUPPORTED_AUTH_METHODS)}",
+        )
     if auth_method == "none":
         kwargs["client_type"] = "public"
     else:
@@ -196,7 +202,6 @@ def _dot_grant_to_rfc_grant_types(dot_grant):
     return result
 
 
-@method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
 class DynamicClientRegistrationView(View):
     """
@@ -208,6 +213,8 @@ class DynamicClientRegistrationView(View):
     def dispatch(self, request, *args, **kwargs):
         if not oauth2_settings.DCR_ENABLED:
             return JsonResponse({"error": "not_found"}, status=404)
+        if not request.user.is_authenticated or request.META.get("HTTP_AUTHORIZATION"):
+            request._dont_enforce_csrf_checks = True
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -239,9 +246,10 @@ class DynamicClientRegistrationView(View):
         except Exception as exc:
             return _error_response("invalid_client_metadata", str(exc))
 
-        application.save()
+        with transaction.atomic():
+            application.save()
+            registration_token = _issue_registration_token(application, user)
 
-        registration_token = _issue_registration_token(application, user)
         response_data = _application_to_response(application, registration_token, request)
         if raw_secret:
             response_data["client_secret"] = raw_secret
@@ -324,12 +332,14 @@ class DynamicClientRegistrationManagementView(View):
         except Exception as exc:
             return _error_response("invalid_client_metadata", str(exc))
 
-        application.save()
+        with transaction.atomic():
+            application.save()
 
-        if oauth2_settings.DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE:
-            registration_token.delete()
-            user = application.user
-            registration_token = _issue_registration_token(application, user)
+            if oauth2_settings.DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE:
+                user = application.user
+                new_token = _issue_registration_token(application, user)
+                registration_token.delete()
+                registration_token = new_token
 
         return JsonResponse(_application_to_response(application, registration_token, request))
 
@@ -339,4 +349,4 @@ class DynamicClientRegistrationManagementView(View):
             return result
 
         application.delete()
-        return JsonResponse({}, status=204)
+        return HttpResponse(status=204)
