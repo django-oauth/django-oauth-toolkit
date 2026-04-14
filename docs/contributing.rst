@@ -258,7 +258,7 @@ For test writers this means any test must either:
 - when using pytest's `django_db` mark, define it like this:
   `@pytest.mark.django_db(databases=retrieve_current_databases())`
 
-In test code, anywhere the database is referenced the Django router needs to be used exactly like the package's code.
+In test code, anywhere the database is referenced the Django router needs to be used exactly like the package's code:
 
 .. code-block:: python
 
