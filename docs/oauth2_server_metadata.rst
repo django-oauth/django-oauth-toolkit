@@ -40,8 +40,9 @@ Example response::
       "code_challenge_methods_supported": ["plain", "S256"]
     }
 
-``jwks_uri`` is only included when an RSA private key is configured (see
-:ref:`OIDC_RSA_PRIVATE_KEY <oidc-rsa-private-key>`).
+``jwks_uri`` is only included when OIDC is enabled and an RSA private key is
+configured (see :ref:`OIDC_RSA_PRIVATE_KEY <oidc-rsa-private-key>`). When OIDC
+is disabled, ``jwks_uri`` is omitted since the JWKS endpoint is not reachable.
 
 The issuer URL is derived from the incoming request by default. To set it
 explicitly, configure ``OIDC_ISS_ENDPOINT`` in your ``OAUTH2_PROVIDER`` settings
