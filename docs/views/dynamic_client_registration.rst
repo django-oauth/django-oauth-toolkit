@@ -5,7 +5,7 @@ Django OAuth Toolkit includes support for the OAuth 2.0 Dynamic Client Registrat
 (`RFC 7591 <https://datatracker.ietf.org/doc/html/rfc7591>`_) and the OAuth 2.0 Dynamic Client
 Registration Management Protocol (`RFC 7592 <https://datatracker.ietf.org/doc/html/rfc7592>`_).
 
-These views are automatically included in ``base_urlpatterns`` when you use
+These views are automatically available when you use
 ``include("oauth2_provider.urls")``.
 
 
