@@ -9,7 +9,6 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from oauth2_provider.models import get_access_token_model, get_application_model
-from oauth2_provider.settings import oauth2_settings
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -23,6 +22,7 @@ AccessToken = get_access_token_model()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _register_url():
     return reverse("oauth2_provider:dcr-register")
@@ -203,9 +203,7 @@ class TestDynamicClientRegistration(TestCase):
     def test_register_invalid_json_is_400(self):
         """Non-JSON body → 400."""
         self.client.force_login(self.user)
-        response = self.client.post(
-            _register_url(), data="not-json", content_type="application/json"
-        )
+        response = self.client.post(_register_url(), data="not-json", content_type="application/json")
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
@@ -447,7 +445,12 @@ class TestDCRDisabled(TestCase):
     def test_register_returns_404_when_disabled(self):
         response = self.client.post(
             _register_url(),
-            data=json.dumps({"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}),
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                }
+            ),
             content_type="application/json",
         )
         assert response.status_code == 404
