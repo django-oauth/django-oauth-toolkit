@@ -57,5 +57,13 @@ oidc_urlpatterns = [
     path("logout/", views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
 ]
 
+dcr_urlpatterns = [
+    path("register/", views.DynamicClientRegistrationView.as_view(), name="dcr-register"),
+    path(
+        "register/<str:client_id>/",
+        views.DynamicClientRegistrationManagementView.as_view(),
+        name="dcr-register-management",
+    ),
+]
 
-urlpatterns = base_urlpatterns + management_urlpatterns + oidc_urlpatterns
+urlpatterns = base_urlpatterns + management_urlpatterns + oidc_urlpatterns + dcr_urlpatterns

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * #1637 Support for Django 6.0
+* #670 Dynamic Client Registration Protocol (RFC 7591 / RFC 7592) — `DynamicClientRegistrationView` and `DynamicClientRegistrationManagementView` with configurable permission classes and registration access tokens
 
 ### Removed
 * #1636 Remove support for Python 3.8 and 3.9
