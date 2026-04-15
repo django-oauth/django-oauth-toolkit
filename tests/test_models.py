@@ -484,6 +484,121 @@ class TestClearExpired(BaseTestModels):
         assert remaining_gt_count == initial_gt_count // 2, "half the remaining grants should still exist."
 
 
+@pytest.mark.usefixtures("oauth2_settings")
+class TestClearRevoked(BaseTestModels):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.num_tokens = 9
+        cls.grace_secs = 1000
+        cls.now = timezone.now()
+        cls.grace_time = cls.now - timedelta(seconds=cls.grace_secs)
+        cls.within_grace = cls.now - timedelta(seconds=cls.grace_secs // 2)
+        cls.outside_grace = cls.now - timedelta(seconds=cls.grace_secs * 2)
+
+        app = Application.objects.create(
+            name="test_app",
+            redirect_uris="http://localhost http://example.com http://example.org",
+            user=cls.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+        # make refresh tokens, one third current, one third revoked within
+        # grace period and one third revoked outside grace period.
+        for i in range(0, cls.num_tokens, 3):
+            RefreshToken(
+                token=f"revoked refresh token {i}",
+                application=app,
+                user=cls.user,
+                revoked=cls.outside_grace,
+            ).save()
+
+        for i in range(1, cls.num_tokens, 3):
+            RefreshToken(
+                token=f"revoked within grace period refresh token {i}",
+                application=app,
+                user=cls.user,
+                revoked=cls.within_grace,
+            ).save()
+
+        for i in range(2, cls.num_tokens, 3):
+            RefreshToken(
+                token=f"current refresh token {i}",
+                application=app,
+                user=cls.user,
+            ).save()
+
+        cls.initial_rt_count = RefreshToken.objects.count()
+        assert cls.initial_rt_count == cls.num_tokens, f"{cls.num_tokens} refresh tokens should exist."
+        initial_revoked_rt_outside_grace_count = RefreshToken.objects.filter(
+            revoked__lte=cls.grace_time
+        ).count()
+        assert initial_revoked_rt_outside_grace_count == cls.initial_rt_count // 3, (
+            "one third of the refresh tokens should be revoked and outside grace period."
+        )
+        cls.initial_revoked_rt_inside_grace_count = RefreshToken.objects.filter(
+            revoked__gt=cls.grace_time
+        ).count()
+        assert cls.initial_revoked_rt_inside_grace_count == cls.initial_rt_count // 3, (
+            "one third of the refresh tokens should be revoked and inside grace period."
+        )
+        initial_revoked_rt_count = RefreshToken.objects.filter(revoked__lte=cls.now).count()
+        assert initial_revoked_rt_count == cls.initial_rt_count // 3 * 2, (
+            "two thirds of the refresh tokens should be revoked."
+        )
+        cls.initial_current_rt_count = RefreshToken.objects.filter(revoked__isnull=True).count()
+        assert cls.initial_current_rt_count == cls.initial_rt_count // 3, (
+            "one third of the refresh tokens should be current."
+        )
+
+    def test_clear_expired_tokens_incorrect_timetype(self):
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = "A"
+        with pytest.raises(ImproperlyConfigured) as excinfo:
+            clear_expired()
+        result = excinfo.value.__class__.__name__
+        assert result == "ImproperlyConfigured"
+
+    def test_clear_revoked_tokens_with_grace_period(self):
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = self.grace_secs
+
+        clear_expired()
+
+        remaining_rt_count = RefreshToken.objects.count()
+        assert remaining_rt_count == self.initial_rt_count // 3 * 2, (
+            "two thirds of the the refresh tokens should still exist."
+        )
+        remaining_rt_revoked_count = RefreshToken.objects.filter(revoked__lte=self.grace_time).count()
+        assert remaining_rt_revoked_count == 0, (
+            "no revoked refresh tokens outside grace period should still exist."
+        )
+        remaining_revoked_rt_inside_grace_count = RefreshToken.objects.filter(
+            revoked__gt=self.grace_time
+        ).count()
+        assert remaining_revoked_rt_inside_grace_count == self.initial_revoked_rt_inside_grace_count, (
+            "all revoked refresh tokens inside grace period should still exist."
+        )
+        remaining_current_rt_count = RefreshToken.objects.filter(revoked__isnull=True).count()
+        assert remaining_current_rt_count == self.initial_current_rt_count, (
+            "all the current refresh tokens should still exist."
+        )
+
+    def test_clear_revoked_tokens_without_grace_period(self):
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = None
+
+        clear_expired()
+
+        remaining_rt_count = RefreshToken.objects.count()
+        assert remaining_rt_count == self.initial_rt_count // 3, (
+            "one third of the the refresh tokens should still exist."
+        )
+        remaining_revoked_rt_count = RefreshToken.objects.filter(revoked__lte=self.now).count()
+        assert remaining_revoked_rt_count == 0, "no revoked refresh tokens should still exist."
+        remaining_current_rt_count = RefreshToken.objects.filter(revoked__isnull=True).count()
+        assert remaining_current_rt_count == self.initial_current_rt_count, (
+            "all the current refresh tokens should still exist."
+        )
+
+
 @pytest.mark.django_db(databases=retrieve_current_databases())
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_id_token_methods(oidc_tokens, rf):
