@@ -16,8 +16,10 @@ from oauth2_provider.models import (
     DeviceGrant,
     DeviceRequest,
     create_device_grant,
+    get_application_model,
     get_device_grant_model,
 )
+from oauth2_provider.scopes import get_scopes_backend
 from oauth2_provider.views.mixins import OAuthLibMixin
 
 
@@ -181,6 +183,18 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
             return super().form_valid(form)
         else:
             return http.HttpResponseBadRequest()
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        client_id = self.kwargs.get("client_id")
+        context["application"] = get_object_or_404(get_application_model(), client_id=client_id)
+
+        device = self.get_object()
+        all_scopes = get_scopes_backend().get_all_scopes()
+        scopes = device.scope.split() if device.scope is not None else []
+        context["scopes_descriptions"] = [all_scopes.get(scope, scope) for scope in scopes]
+
+        return context
 
 
 class DeviceGrantStatusView(LoginRequiredMixin, DetailView):
