@@ -6,9 +6,31 @@ Django OAuth Toolkit provides an authorization server metadata endpoint based on
 to discover the server's capabilities and endpoint locations automatically, without
 requiring OIDC to be enabled.
 
-The endpoint is available at ``/.well-known/oauth-authorization-server`` (e.g.
-``/o/.well-known/oauth-authorization-server`` if you have mounted
-``django-oauth-toolkit`` at ``/o/``).
+URL Configuration
+-----------------
+
+RFC 8414 requires the metadata endpoint to be at
+``{issuer}/.well-known/oauth-authorization-server``. Since the issuer is typically the
+server's root URL (e.g., ``https://example.com``), the metadata endpoint **must be
+mounted at the root**, not under a prefix like ``/o/``.
+
+The metadata view is provided in a separate ``metadata_urlpatterns`` list for this
+reason. If you mount the rest of the toolkit at a prefix, mount the metadata view at
+the root separately:
+
+.. code-block:: python
+
+    from oauth2_provider.urls import metadata_urlpatterns, base_urlpatterns
+
+    urlpatterns = [
+        # Metadata at root (RFC 8414 requirement)
+        path("", include(metadata_urlpatterns)),
+        # Other toolkit endpoints at a prefix
+        path("o/", include((base_urlpatterns, "oauth2_provider"))),
+    ]
+
+If you use ``include("oauth2_provider.urls")`` without a prefix, everything works
+out of the box — ``metadata_urlpatterns`` is included in the default ``urlpatterns``.
 
 Example response::
 
@@ -17,7 +39,7 @@ Example response::
     Access-Control-Allow-Origin: *
 
     {
-      "issuer": "https://example.com/o",
+      "issuer": "https://example.com",
       "authorization_endpoint": "https://example.com/o/authorize/",
       "token_endpoint": "https://example.com/o/token/",
       "revocation_endpoint": "https://example.com/o/revoke_token/",
