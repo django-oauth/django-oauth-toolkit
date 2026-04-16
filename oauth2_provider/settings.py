@@ -314,9 +314,7 @@ class OAuth2ProviderSettings:
         """
         if self.OIDC_ISS_ENDPOINT:
             return self.OIDC_ISS_ENDPOINT
-        metadata_path = reverse("oauth2_provider:oauth-server-metadata")
-        abs_url = request.build_absolute_uri(metadata_path)
-        return abs_url.split("/.well-known/")[0]
+        return request.build_absolute_uri("/").rstrip("/")
 
     def oidc_issuer(self, request):
         """
