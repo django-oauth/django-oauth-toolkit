@@ -64,6 +64,12 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             if url:
                 data[key] = url
 
+        auth_methods = oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+        if "revocation_endpoint" in data:
+            data["revocation_endpoint_auth_methods_supported"] = auth_methods
+        if "introspection_endpoint" in data:
+            data["introspection_endpoint_auth_methods_supported"] = auth_methods
+
         if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY:
             jwks_url = self._get_endpoint_url(request, "jwks-info")
             if jwks_url:
