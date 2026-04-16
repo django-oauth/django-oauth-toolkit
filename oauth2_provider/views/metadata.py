@@ -1,7 +1,7 @@
 from urllib.parse import urlparse
 
 from django.http import JsonResponse
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import View
 
@@ -17,13 +17,17 @@ class ServerMetadataViewMixin:
     """
 
     def _get_endpoint_url(self, request, view_name):
-        """Build an absolute endpoint URL using the configured issuer or request."""
+        """Build an absolute endpoint URL, or None if the URL name is not registered."""
+        try:
+            path = reverse(f"oauth2_provider:{view_name}")
+        except NoReverseMatch:
+            return None
         issuer = oauth2_settings.OIDC_ISS_ENDPOINT
         if not issuer:
-            return request.build_absolute_uri(reverse(f"oauth2_provider:{view_name}"))
+            return request.build_absolute_uri(path)
         parsed = urlparse(issuer)
         host = parsed.scheme + "://" + parsed.netloc
-        return "{}{}".format(host, reverse(f"oauth2_provider:{view_name}"))
+        return f"{host}{path}"
 
 
 @method_decorator(login_not_required, name="dispatch")
@@ -42,18 +46,28 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
 
         data = {
             "issuer": issuer_url,
-            "authorization_endpoint": self._get_endpoint_url(request, "authorize"),
-            "token_endpoint": self._get_endpoint_url(request, "token"),
-            "revocation_endpoint": self._get_endpoint_url(request, "revoke-token"),
-            "introspection_endpoint": self._get_endpoint_url(request, "introspect"),
             "response_types_supported": oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED,
             "grant_types_supported": oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED,
             "scopes_supported": sorted(scopes.get_available_scopes()),
             "token_endpoint_auth_methods_supported": oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
             "code_challenge_methods_supported": [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS],
         }
+
+        # Endpoint URLs are resolved via reverse() and omitted if not registered
+        for key, view_name in [
+            ("authorization_endpoint", "authorize"),
+            ("token_endpoint", "token"),
+            ("revocation_endpoint", "revoke-token"),
+            ("introspection_endpoint", "introspect"),
+        ]:
+            url = self._get_endpoint_url(request, view_name)
+            if url:
+                data[key] = url
+
         if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY:
-            data["jwks_uri"] = self._get_endpoint_url(request, "jwks-info")
+            jwks_url = self._get_endpoint_url(request, "jwks-info")
+            if jwks_url:
+                data["jwks_uri"] = jwks_url
 
         response = JsonResponse(data)
         response["Access-Control-Allow-Origin"] = "*"
