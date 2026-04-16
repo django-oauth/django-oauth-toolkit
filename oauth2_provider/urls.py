@@ -6,6 +6,16 @@ from . import views
 app_name = "oauth2_provider"
 
 
+metadata_urlpatterns = [
+    # RFC 8414 requires this endpoint at {issuer}/.well-known/oauth-authorization-server.
+    # Mount this at the server root, not under a prefix — see docs/oauth2_server_metadata.rst.
+    path(
+        ".well-known/oauth-authorization-server",
+        views.OAuthServerMetadataView.as_view(),
+        name="oauth-server-metadata",
+    ),
+]
+
 base_urlpatterns = [
     path("authorize/", views.AuthorizationView.as_view(), name="authorize"),
     path("token/", views.TokenView.as_view(), name="token"),
@@ -58,4 +68,4 @@ oidc_urlpatterns = [
 ]
 
 
-urlpatterns = base_urlpatterns + management_urlpatterns + oidc_urlpatterns
+urlpatterns = metadata_urlpatterns + base_urlpatterns + management_urlpatterns + oidc_urlpatterns
