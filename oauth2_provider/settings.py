@@ -263,6 +263,7 @@ DEFAULTS = {
     "OIDC_BACKCHANNEL_LOGOUT_HANDLER": (
         "oauth2_provider.authorization_server.oidc.handlers.send_backchannel_logout_request"
     ),
+    "OIDC_BACKCHANNEL_LOGOUT_TIMEOUT": 5,
     # RP-Initiated Logout (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
     "OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT": True,
