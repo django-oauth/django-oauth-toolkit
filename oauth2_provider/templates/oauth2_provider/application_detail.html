@@ -47,7 +47,7 @@
             </li>
             <li>
                 <p><b>{% trans "Backchannel Logout URI" %}</b></p>
-                <input class="input-block-level" type="text" value="{{ application.backchannel_logout_uri }}" readonly>
+                <input class="input-block-level" type="text" value="{{ application.backchannel_logout_uri|default_if_none:"" }}" readonly>
             </li>
         </ul>
 
