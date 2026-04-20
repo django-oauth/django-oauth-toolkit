@@ -17,8 +17,6 @@ IDToken = get_id_token_model()
 
 logger = logging.getLogger(__name__)
 
-BACKCHANNEL_LOGOUT_TIMEOUT = getattr(oauth2_settings, "OIDC_BACKCHANNEL_LOGOUT_TIMEOUT", 5)
-
 
 def send_backchannel_logout_request(id_token, *args, **kwargs):
     """
@@ -26,6 +24,8 @@ def send_backchannel_logout_request(id_token, *args, **kwargs):
     """
 
     ttl = kwargs.get("ttl") or timedelta(minutes=10)
+
+    BACKCHANNEL_LOGOUT_TIMEOUT = getattr(oauth2_settings, "OIDC_BACKCHANNEL_LOGOUT_TIMEOUT", 5)
 
     if not oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
         raise BackchannelLogoutRequestError("Backchannel logout not enabled")
@@ -77,7 +77,7 @@ def send_backchannel_logout_request(id_token, *args, **kwargs):
         )
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise BackchannelLogoutRequestError(str(exc))
+        raise BackchannelLogoutRequestError(str(exc)) from exc
 
 
 @receiver(user_logged_out)

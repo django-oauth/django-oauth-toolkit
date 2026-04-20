@@ -3,19 +3,19 @@ from unittest.mock import patch
 
 import pytest
 import requests
-from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.urls import reverse
+from django.utils import timezone
 
 from oauth2_provider.exceptions import BackchannelLogoutRequestError
-from oauth2_provider.models import (
-    get_application_model,
-    get_id_token_model,
-)
 from oauth2_provider.handlers import (
     on_user_logged_out_maybe_send_backchannel_logout,
     send_backchannel_logout_request,
+)
+from oauth2_provider.models import (
+    get_application_model,
+    get_id_token_model,
 )
 from oauth2_provider.views import ApplicationRegistration
 
@@ -182,7 +182,7 @@ class TestBackchannelLogout(TestCase):
             self.assertIn("Backchannel logout not enabled", str(context.exception))
 
     def test_raises_exception_when_backchannel_logout_uri_not_provided(self):
-        """Test that BackchannelLogoutRequestError is raised when application has no backchannel_logout_uri."""
+        """BackchannelLogoutRequestError is raised when application has no backchannel_logout_uri."""
         self.application.backchannel_logout_uri = None
         self.application.save()
         with self.assertRaises(BackchannelLogoutRequestError) as context:
