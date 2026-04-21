@@ -1,0 +1,70 @@
+{% extends "oauth2_provider/base.html" %}
+
+{% block title %}Check Session IFrame{% endblock %}
+
+{% block js %}
+{{ allowed_origins_by_client_id|default:"{}"|json_script:"allowed-origins-by-client-id" }}
+<script language="JavaScript" type="text/javascript">
+ async function sha256(message) {
+   // Encode the message as UTF-8
+   const msgBuffer = new TextEncoder().encode(message)
+
+   // Generate the hash
+   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
+   const hashArray = Array.from(new Uint8Array(hashBuffer))
+   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+ }
+
+ window.addEventListener("message", receiveMessage)
+
+ async function receiveMessage(e) {
+   // e.data has client_id and session_state
+   if (!e.data || typeof e.data != 'string' || e.data == 'error') {
+     return
+   }
+
+   try {
+     const [clientId, sessionStateImage] = e.data.split(' ')
+     const [sessionState, salt] = sessionStateImage.split('.')
+
+     const allowedOriginsByClientId = JSON.parse(document.getElementById('allowed-origins-by-client-id').textContent)
+     const allowedOrigins = allowedOriginsByClientId[clientId]
+     if (!Array.isArray(allowedOrigins) || allowedOrigins.length === 0 || !allowedOrigins.includes(e.origin)) {
+       return
+     }
+
+     let userAgentState
+     try {
+       userAgentState = getUserAgentState()
+     }
+     catch (err) {
+       userAgentState = ''
+     }
+     const knownImage = await sha256(`${clientId} ${e.origin} ${userAgentState} ${salt}`)
+
+     const status = sessionState == knownImage ? 'unchanged' : 'changed'
+     e.source.postMessage(status, e.origin)
+   } catch(err) {
+     e.source.postMessage(`error: ${err}`, e.origin)
+   }
+ }
+
+
+ function getUserAgentState() {
+   const cookieName = "{{ cookie_name|escapejs }}"
+   if (document.cookie && document.cookie !== '') {
+     const cookies = document.cookie.split(';')
+     for (var i = 0; i < cookies.length; i++) {
+       const cookie = cookies[i].trim()
+       // Does this cookie string begin with the name we want?
+       if (cookie.substring(0, cookieName.length + 1) === (cookieName + '=')) {
+         return decodeURIComponent(cookie.substring(cookieName.length + 1))
+       }
+     }
+   }
+   throw new Error('OIDC Session Cookie not set')
+ }
+</script>
+{% endblock %}
+
+{% block content %}OIDC Session Management OP Iframe{% endblock content %}
