@@ -34,5 +34,5 @@ urlpatterns = [
 # just for local gunicorn
 if not settings.DEBUG:
     urlpatterns += [
-        path(f"{settings.STATIC_URL.strip('/')}<path:path>", serve, {"document_root": settings.STATIC_ROOT}),
+        path(f"{settings.STATIC_URL.lstrip('/')}<path:path>", serve, {"document_root": settings.STATIC_ROOT}),
     ]
