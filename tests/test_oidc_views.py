@@ -174,6 +174,14 @@ class TestJwksInfoView(TestCase):
         self.assertEqual(response.status_code, 200)
         assert response.json() == expected_response
 
+    def test_get_jwks_info_cache_control_header(self):
+        response = self.client.get(reverse("oauth2_provider:jwks-info"))
+
+        self.assertEqual(response.status_code, 200)
+        assert response["Cache-Control"] == (
+            "public, max-age=3600, stale-while-revalidate=3600, stale-if-error=3600"
+        )
+
     def test_get_jwks_info_no_rsa_key(self):
         self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = None
         response = self.client.get(reverse("oauth2_provider:jwks-info"))
