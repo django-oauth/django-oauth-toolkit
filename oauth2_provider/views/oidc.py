@@ -128,7 +128,7 @@ class JwksInfoView(OIDCOnlyMixin, View):
         response = JsonResponse({"keys": keys})
         response["Access-Control-Allow-Origin"] = "*"
         response["Cache-Control"] = (
-            "Cache-Control: public, "
+            "public, "
             + f"max-age={oauth2_settings.OIDC_JWKS_MAX_AGE_SECONDS}, "
             + f"stale-while-revalidate={oauth2_settings.OIDC_JWKS_MAX_AGE_SECONDS}, "
             + f"stale-if-error={oauth2_settings.OIDC_JWKS_MAX_AGE_SECONDS}"
