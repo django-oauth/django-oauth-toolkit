@@ -779,9 +779,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         """
         self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
         self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
-        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [
-            set_oauthlib_user_to_device_request_user
-        ]
+        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [set_oauthlib_user_to_device_request_user]
 
         device_authorization_response = self.client.post(
             reverse("oauth2_provider:device-authorization"),
