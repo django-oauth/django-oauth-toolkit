@@ -138,14 +138,19 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         """
         Returns the DeviceGrant object in the AUTHORIZATION_PENDING state identified
         by the slugs client_id and user_code. Raises Http404 if not found.
+
+        The result is cached on the instance to avoid redundant queries within the
+        same request (e.g. get() validates and get_context_data() reads scopes).
         """
-        client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
-        return get_object_or_404(
-            DeviceGrant,
-            client_id=client_id,
-            user_code=user_code,
-            status=DeviceGrant.AUTHORIZATION_PENDING,
-        )
+        if not hasattr(self, "_device_grant"):
+            client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
+            self._device_grant = get_object_or_404(
+                DeviceGrant,
+                client_id=client_id,
+                user_code=user_code,
+                status=DeviceGrant.AUTHORIZATION_PENDING,
+            )
+        return self._device_grant
 
     def get_success_url(self):
         return reverse(
