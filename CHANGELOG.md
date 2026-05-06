@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * #1628 Fix inaccurate help_text on client_secret field of Application model
 * #1674 Add `list_select_related` to `RefreshTokenAdmin` to avoid unbounded `JOIN` queries on the changelist
+* #1621 Fix device code tokens getting the wrong scope.
 
 ## [3.2.0] - 2025-11-13
 ### Added
