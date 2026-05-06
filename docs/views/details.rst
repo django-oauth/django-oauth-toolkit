@@ -10,6 +10,8 @@ Scopes handling.
 .. automodule:: oauth2_provider.views.generic
     :members:
 
+.. _mixins:
+
 Mixins
 ------
 These views are mainly for internal use, but advanced users may use them as basic components to customize OAuth2 logic
@@ -17,7 +19,6 @@ inside their Django applications.
 
 .. automodule:: oauth2_provider.views.mixins
     :members:
-    :noindex:
 
 Base
 ----
