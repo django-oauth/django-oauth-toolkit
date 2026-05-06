@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import DetailView, FormView, View
+from oauthlib.common import Request as OAuthlibRequest
 from oauthlib.oauth2 import DeviceApplicationServer
 
 from oauth2_provider.compat import login_not_required
@@ -16,6 +17,7 @@ from oauth2_provider.models import (
     DeviceGrant,
     DeviceRequest,
     create_device_grant,
+    get_application_model,
     get_device_grant_model,
 )
 from oauth2_provider.views.mixins import OAuthLibMixin
@@ -32,7 +34,24 @@ class DeviceAuthorizationView(OAuthLibMixin, View):
         if status != 200:
             return http.JsonResponse(data=json.loads(response), status=status, headers=headers)
 
-        device_request = DeviceRequest(client_id=request.POST["client_id"], scope=request.POST.get("scope"))
+        client_id = request.POST["client_id"]
+        requested_scope = request.POST.get("scope")
+        if requested_scope:
+            scope = requested_scope
+        else:
+            try:
+                application = get_application_model().objects.get(client_id=client_id)
+            except get_application_model().DoesNotExist:
+                return http.JsonResponse(
+                    {"error": "invalid_client", "error_description": "No application found for client_id."},
+                    status=401,
+                )
+            oauthlib_request = OAuthlibRequest(request.build_absolute_uri())
+            oauthlib_request.client_id = client_id
+            oauthlib_request.client = application
+            validator = self.get_server().request_validator
+            scope = " ".join(validator.get_default_scopes(client_id, oauthlib_request))
+        device_request = DeviceRequest(client_id=client_id, scope=scope)
         device_response = DeviceCodeResponse(**response)
         create_device_grant(device_request, device_response)
 

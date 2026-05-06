@@ -872,8 +872,18 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             data={"action": "accept"},
         )
 
-        # Admin changes DEFAULT_SCOPES after consent but before the device polls
+        # Admin changes DEFAULT_SCOPES after consent but before the device polls.
+        # "admin" must also be in SCOPES or oauth2_settings raises ImproperlyConfigured
+        # when _DEFAULT_SCOPES is re-evaluated after reload().
+        self.oauth2_settings.SCOPES = {
+            "read": "Reading scope",
+            "write": "Writing scope",
+            "admin": "Admin scope",
+        }
         self.oauth2_settings.DEFAULT_SCOPES = ["read", "write", "admin"]
+        # reload() clears the _DEFAULT_SCOPES cache so the new value is actually
+        # re-evaluated at token time, making the test a true regression guard.
+        self.oauth2_settings.reload()
 
         token_response = self.client.post(
             "/o/token/",
