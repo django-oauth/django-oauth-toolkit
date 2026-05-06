@@ -232,6 +232,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         assert get_response.context["application"] == self.application
         assert "scopes_descriptions" in get_response.context
         assert "Reading scope" in get_response.context["scopes_descriptions"]
+        self.assertContains(get_response, self.application.name)
 
         # --------------------------------------------------------------------------------
         # 2: We redirect to the accept/deny form (the user is still in their browser)
