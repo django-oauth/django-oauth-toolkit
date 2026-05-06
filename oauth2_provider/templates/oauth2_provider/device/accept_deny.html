@@ -5,7 +5,7 @@
     <title>Accept or Deny</title>
 </head>
 <body>
-    <h1>The device requests access to the following scopes:</h1>
+    <h1>{{ application.name }} requests access to the following scopes:</h1>
     <ul>
         {% for scope in scopes_descriptions %}
             <li>{{ scope }}</li>
