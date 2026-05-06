@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * #1637 Support for Django 6.0
-* #1643 Provide App Name and Scope in Device Confirmation View
+* #1642 Provide App Name and Scope in Device Confirmation View
 
 ### Removed
 * #1636 Remove support for Python 3.8 and 3.9
@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1628 Fix inaccurate help_text on client_secret field of Application model
 * #1674 Add `list_select_related` to `RefreshTokenAdmin` to avoid unbounded `JOIN` queries on the changelist
 * #1621 Fix device code tokens getting the wrong scope.
+* #1643 Fix DEFAULT_SCOPES not stored on grant at authorization time
 
 ## [3.2.0] - 2025-11-13
 ### Added

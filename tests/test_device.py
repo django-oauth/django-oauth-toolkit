@@ -115,20 +115,21 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "interval": 5,
         }
 
-    @mock.patch(
-        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
-        lambda: "abc",
-    )
-    def test_device_flow_authorization_user_code_confirm_and_access_token(self):
+    def _run_full_device_flow_journey(
+        self,
+        *,
+        scope: str | None,
+        expected_confirm_scopes: list[str],
+        expected_token_scope: str,
+    ) -> None:
         """
-        This is a full user journey test.
+        Runs the full device flow user journey from device authorization through token issuance.
 
         The device initiates the flow by calling the /device-authorization endpoint and starts
-        polling the /authorize endpoint getting back error until the user approves in the
-        browser.
+        polling the /token endpoint getting back errors until the user approves in the browser.
 
         In the meantime, the user visits the /device endpoint in their browsers to submit the
-        user code and approve, after which the /authorize returns the tokens to the device.
+        user code and approve, after which the /token returns the tokens to the device.
         """
 
         # -----------------------
@@ -139,15 +140,13 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "xyz"
         self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [set_oauthlib_user_to_device_request_user]
 
-        request_data: dict[str, str] = {
-            "client_id": self.application.client_id,
-            "scope": "read",
-        }
-        request_as_x_www_form_urlencoded: str = urlencode(request_data)
+        request_data: dict[str, str] = {"client_id": self.application.client_id}
+        if scope is not None:
+            request_data["scope"] = scope
 
         device_authorization_response: http.response.JsonResponse = self.client.post(
             reverse("oauth2_provider:device-authorization"),
-            data=request_as_x_www_form_urlencoded,
+            data=urlencode(request_data),
             content_type="application/x-www-form-urlencoded",
         )
 
@@ -231,9 +230,10 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         assert "application" in get_response.context
         assert get_response.context["application"] == self.application
         assert "scopes_descriptions" in get_response.context
-        assert "Reading scope" in get_response.context["scopes_descriptions"]
+        for expected_scope in expected_confirm_scopes:
+            assert expected_scope in get_response.context["scopes_descriptions"]
+            self.assertContains(get_response, expected_scope)
         self.assertContains(get_response, self.application.name)
-        self.assertContains(get_response, "Reading scope")
 
         # --------------------------------------------------------------------------------
         # 2: We redirect to the accept/deny form (the user is still in their browser)
@@ -285,7 +285,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "access_token": mock.ANY,
             "expires_in": 36000,
             "token_type": "Bearer",
-            "scope": "read",
+            "scope": expected_token_scope,
             "refresh_token": mock.ANY,
         }
 
@@ -299,6 +299,36 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             token=token_data["refresh_token"]
         )
         assert refresh_token.user == device.user
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "abc",
+    )
+    def test_device_flow_authorization_user_code_confirm_and_access_token(self):
+        """
+        Full user journey with an explicit scope. The confirm page shows the requested
+        scope and the issued token contains only that scope.
+        """
+        self._run_full_device_flow_journey(
+            scope="read",
+            expected_confirm_scopes=["Reading scope"],
+            expected_token_scope="read",
+        )
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "abc",
+    )
+    def test_device_flow_authorization_user_code_confirm_and_access_token_default_scopes(self):
+        """
+        Full user journey without an explicit scope. The server falls back to DEFAULT_SCOPES,
+        the confirm page shows all default scopes, and the issued token reflects them.
+        """
+        self._run_full_device_flow_journey(
+            scope=None,
+            expected_confirm_scopes=["Reading scope", "Writing scope"],
+            expected_token_scope="read write",
+        )
 
     def test_user_denies_access(self):
         """
