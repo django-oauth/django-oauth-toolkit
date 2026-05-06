@@ -233,6 +233,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         assert "scopes_descriptions" in get_response.context
         assert "Reading scope" in get_response.context["scopes_descriptions"]
         self.assertContains(get_response, self.application.name)
+        self.assertContains(get_response, "Reading scope")
 
         # --------------------------------------------------------------------------------
         # 2: We redirect to the accept/deny form (the user is still in their browser)
@@ -284,7 +285,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "access_token": mock.ANY,
             "expires_in": 36000,
             "token_type": "Bearer",
-            "scope": "read write",
+            "scope": "read",
             "refresh_token": mock.ANY,
         }
 
