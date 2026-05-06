@@ -123,6 +123,19 @@ DEFAULTS = {
     "ALWAYS_RELOAD_OAUTHLIB_CORE": False,
     "CLEAR_EXPIRED_TOKENS_BATCH_SIZE": 10000,
     "CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL": 0,
+    "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code", "token"],
+    "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+        "client_secret_post",
+        "client_secret_basic",
+    ],
+    "OAUTH2_GRANT_TYPES_SUPPORTED": [
+        "authorization_code",
+        "implicit",
+        "password",
+        "client_credentials",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    ],
 }
 
 # List of settings that cannot be empty
@@ -293,6 +306,15 @@ class OAuth2ProviderSettings:
         self._cached_attrs.clear()
         if hasattr(self, "_user_settings"):
             delattr(self, "_user_settings")
+
+    def oauth2_metadata_issuer(self, request):
+        """
+        Helper function to get the OAuth2 server metadata issuer URL, either from
+        the OIDC_ISS_ENDPOINT setting or constructing it from the passed request.
+        """
+        if self.OIDC_ISS_ENDPOINT:
+            return self.OIDC_ISS_ENDPOINT
+        return request.build_absolute_uri("/").rstrip("/")
 
     def oidc_issuer(self, request):
         """

@@ -780,3 +780,80 @@ def test_userinfo_endpoint_custom_claims_email_scopeplain(oidc_email_scope_token
 
     assert "email" in data
     assert data["email"] == EXAMPLE_EMAIL
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestOAuthServerMetadataView(TestCase):
+    def test_get_oauth_server_metadata(self):
+        expected_response = {
+            "issuer": "http://localhost/o",
+            "authorization_endpoint": "http://localhost/o/authorize/",
+            "token_endpoint": "http://localhost/o/token/",
+            "revocation_endpoint": "http://localhost/o/revoke_token/",
+            "introspection_endpoint": "http://localhost/o/introspect/",
+            "response_types_supported": ["code", "token"],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ],
+            "scopes_supported": ["openid", "read", "write"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "code_challenge_methods_supported": ["plain", "S256"],
+            "jwks_uri": "http://localhost/o/.well-known/jwks.json",
+        }
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response.json() == expected_response
+
+    def test_get_oauth_server_metadata_without_issuer_url(self):
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        expected_response = {
+            "issuer": "http://testserver/o",
+            "authorization_endpoint": "http://testserver/o/authorize/",
+            "token_endpoint": "http://testserver/o/token/",
+            "revocation_endpoint": "http://testserver/o/revoke_token/",
+            "introspection_endpoint": "http://testserver/o/introspect/",
+            "response_types_supported": ["code", "token"],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ],
+            "scopes_supported": ["openid", "read", "write"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "code_challenge_methods_supported": ["plain", "S256"],
+            "jwks_uri": "http://testserver/o/.well-known/jwks.json",
+        }
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response.json() == expected_response
+
+    def test_get_oauth_server_metadata_no_rsa_key(self):
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = None
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert "jwks_uri" not in response.json()
+
+    def test_get_oauth_server_metadata_cors_header(self):
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response["Access-Control-Allow-Origin"] == "*"
+
+    def test_get_oauth_server_metadata_oidc_disabled(self):
+        """RFC 8414 metadata endpoint is available even when OIDC is disabled."""
+        self.oauth2_settings.OIDC_ENABLED = False
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        assert "issuer" in data
+        assert "authorization_endpoint" in data
+        assert "token_endpoint" in data
+        assert "jwks_uri" not in data
