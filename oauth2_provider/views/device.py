@@ -144,11 +144,12 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         """
         if not hasattr(self, "_device_grant"):
             client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
+            model = get_device_grant_model()
             self._device_grant = get_object_or_404(
-                DeviceGrant,
+                model,
                 client_id=client_id,
                 user_code=user_code,
-                status=DeviceGrant.AUTHORIZATION_PENDING,
+                status=model.AUTHORIZATION_PENDING,
             )
         return self._device_grant
 
