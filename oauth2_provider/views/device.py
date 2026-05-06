@@ -192,6 +192,7 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         device = self.get_object()
         all_scopes = get_scopes_backend().get_all_scopes()
         scopes = device.scope.split() if device.scope is not None else []
+        context["scopes"] = scopes
         context["scopes_descriptions"] = [all_scopes.get(scope, scope) for scope in scopes]
 
         return context
