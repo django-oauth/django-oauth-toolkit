@@ -20,7 +20,6 @@ from oauth2_provider.models import (
     get_device_grant_model,
 )
 from oauth2_provider.scopes import get_scopes_backend
-from oauth2_provider.settings import oauth2_settings
 from oauth2_provider.views.mixins import OAuthLibMixin
 
 
@@ -35,10 +34,7 @@ class DeviceAuthorizationView(OAuthLibMixin, View):
         if status != 200:
             return http.JsonResponse(data=json.loads(response), status=status, headers=headers)
 
-        device_request = DeviceRequest(
-            client_id=request.POST["client_id"],
-            scope=request.POST.get("scope") or " ".join(oauth2_settings.DEFAULT_SCOPES),
-        )
+        device_request = DeviceRequest(client_id=request.POST["client_id"], scope=request.POST.get("scope"))
         device_response = DeviceCodeResponse(**response)
         create_device_grant(device_request, device_response)
 
