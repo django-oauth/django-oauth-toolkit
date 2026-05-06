@@ -16,8 +16,10 @@ from oauth2_provider.models import (
     DeviceGrant,
     DeviceRequest,
     create_device_grant,
+    get_application_model,
     get_device_grant_model,
 )
+from oauth2_provider.scopes import get_scopes_backend
 from oauth2_provider.views.mixins import OAuthLibMixin
 
 
@@ -136,14 +138,20 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         """
         Returns the DeviceGrant object in the AUTHORIZATION_PENDING state identified
         by the slugs client_id and user_code. Raises Http404 if not found.
+
+        The result is cached on the instance to avoid redundant queries within the
+        same request (e.g. get() validates and get_context_data() reads scopes).
         """
-        client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
-        return get_object_or_404(
-            DeviceGrant,
-            client_id=client_id,
-            user_code=user_code,
-            status=DeviceGrant.AUTHORIZATION_PENDING,
-        )
+        if not hasattr(self, "_device_grant"):
+            client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
+            model = get_device_grant_model()
+            self._device_grant = get_object_or_404(
+                model,
+                client_id=client_id,
+                user_code=user_code,
+                status=model.AUTHORIZATION_PENDING,
+            )
+        return self._device_grant
 
     def get_success_url(self):
         return reverse(
@@ -181,6 +189,19 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
             return super().form_valid(form)
         else:
             return http.HttpResponseBadRequest()
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        client_id = self.kwargs.get("client_id")
+        context["application"] = get_object_or_404(get_application_model(), client_id=client_id)
+
+        device = self.get_object()
+        all_scopes = get_scopes_backend().get_all_scopes()
+        scopes = device.scope.split() if device.scope is not None else []
+        context["scopes"] = scopes
+        context["scopes_descriptions"] = [all_scopes.get(scope, scope) for scope in scopes]
+
+        return context
 
 
 class DeviceGrantStatusView(LoginRequiredMixin, DetailView):
