@@ -951,6 +951,7 @@ def redirect_to_uri_allowed(uri, allowed_uris):
         allowed_uri_is_loopback = parsed_allowed_uri.scheme == "http" and parsed_allowed_uri.hostname in [
             "127.0.0.1",
             "::1",
+            "localhost"
         ]
         """ check port """
         if not allowed_uri_is_loopback and parsed_allowed_uri.port != parsed_uri.port:
