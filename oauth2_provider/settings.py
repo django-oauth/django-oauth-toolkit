@@ -123,6 +123,12 @@ DEFAULTS = {
     "ALWAYS_RELOAD_OAUTHLIB_CORE": False,
     "CLEAR_EXPIRED_TOKENS_BATCH_SIZE": 10000,
     "CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL": 0,
+    # Dynamic Client Registration (RFC 7591/7592)
+    "DCR_ENABLED": False,
+    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.IsAuthenticatedDCRPermission",),
+    "DCR_REGISTRATION_SCOPE": "oauth2_provider:registration",
+    "DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS": None,  # None = year 9999 (no expiry)
+    "DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE": True,
 }
 
 # List of settings that cannot be empty
@@ -154,6 +160,7 @@ IMPORT_STRINGS = (
     "GRANT_ADMIN_CLASS",
     "ID_TOKEN_ADMIN_CLASS",
     "REFRESH_TOKEN_ADMIN_CLASS",
+    "DCR_REGISTRATION_PERMISSION_CLASSES",
 )
 
 
