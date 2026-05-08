@@ -161,7 +161,26 @@ class SessionIFrameView(OIDCOnlyMixin, OAuthLibMixin, TemplateView):
 
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
-        context.update({"cookie_name": oauth2_settings.OIDC_SESSION_MANAGEMENT_COOKIE_NAME})
+        # Build a mapping of client_id -> list of allowed origins for the session iframe JS check.
+        # Origins are derived from each application's redirect_uris (scheme + host) and any
+        # explicitly registered allowed_origins so that postMessage origin validation is enforced.
+        allowed_origins_by_client_id = {}
+        for app in Application.objects.only("client_id", "redirect_uris", "allowed_origins"):
+            origins = set()
+            for uri in app.redirect_uris.split():
+                parsed = urlparse(uri)
+                if parsed.scheme and parsed.netloc:
+                    origins.add(f"{parsed.scheme}://{parsed.netloc}")
+            for origin in app.allowed_origins.split():
+                origins.add(origin)
+            if origins:
+                allowed_origins_by_client_id[app.client_id] = sorted(origins)
+        context.update(
+            {
+                "cookie_name": oauth2_settings.OIDC_SESSION_MANAGEMENT_COOKIE_NAME,
+                "allowed_origins_by_client_id": json.dumps(allowed_origins_by_client_id),
+            }
+        )
         return context
 
 

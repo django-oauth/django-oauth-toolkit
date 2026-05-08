@@ -337,6 +337,24 @@ class TestSessionManagement(TestCase):
         self.assertIn("cookie_name", context)
         self.assertEqual(context["cookie_name"], "oidc_ua_agent_state")
 
+    def test_allowed_origins_by_client_id_is_included_in_iframe_endpoint(self):
+        import json
+
+        request = RequestFactory().get(reverse("oauth2_provider:session-iframe"))
+        request.user = self.user
+        view = SessionIFrameView()
+        view.setup(request)
+        context = view.get_context_data()
+        self.assertIn("allowed_origins_by_client_id", context)
+        allowed_origins = json.loads(context["allowed_origins_by_client_id"])
+        self.assertIn(self.application.client_id, allowed_origins)
+        origins = allowed_origins[self.application.client_id]
+        # Origins are derived from redirect_uris; scheme+netloc extracted from each URI.
+        self.assertIn("http://example.com", origins)
+        self.assertIn("http://example.org", origins)
+        self.assertIn("http://localhost", origins)
+        self.assertIn("custom-scheme://example.com", origins)
+
 
 def mock_request():
     """
