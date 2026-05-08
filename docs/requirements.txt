@@ -1,7 +1,3 @@
-Django
-oauthlib>=3.2.2
-m2r>=0.2.1
-mistune<2
-sphinx==7.2.6
-sphinx-rtd-theme==1.3.0
--e .
+# Doc build dependencies are declared in pyproject.toml [project.optional-dependencies] docs.
+# Install with: pip install .[docs]
+.[docs]
