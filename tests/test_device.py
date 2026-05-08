@@ -1008,7 +1008,13 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
 class TestDeviceFlowWithSwappedDeviceGrantModel(DeviceFlowBaseTestCase):
     def setUp(self):
         super().setUp()
+        self._original_device_grant_model = self.oauth2_settings.DEVICE_GRANT_MODEL
         self.oauth2_settings.DEVICE_GRANT_MODEL = "tests.SampleDeviceGrant"
+
+    def tearDown(self):
+        get_device_grant_model().objects.all().delete()
+        self.oauth2_settings.DEVICE_GRANT_MODEL = self._original_device_grant_model
+        super().tearDown()
 
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
