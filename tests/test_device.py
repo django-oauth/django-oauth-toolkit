@@ -812,3 +812,154 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
 
         assert token_response.status_code == 200
         assert token_response.json()["scope"] == "read"
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "def",
+    )
+    def test_device_flow_default_scopes_stored_on_grant_when_no_scope_requested(self):
+        """
+        When the device omits `scope`, DEFAULT_SCOPES must be stored on the DeviceGrant
+        at authorization time so the consent screen shows the correct scopes and the
+        issued token matches what the user approved.
+        """
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
+        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [set_oauthlib_user_to_device_request_user]
+
+        # Device sends authorization request with no scope
+        device_authorization_response = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=urlencode({"client_id": self.application.client_id}),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert device_authorization_response.status_code == 200
+
+        # DEFAULT_SCOPES ("read write") must be persisted on the grant immediately
+        DeviceGrantModel = get_device_grant_model()
+        grant = DeviceGrantModel.objects.get(device_code="def")
+        assert grant.scope == "read write"
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "def",
+    )
+    def test_device_flow_whitespace_only_scope_falls_back_to_default_scopes(self):
+        """
+        When the device sends scope consisting only of whitespace (e.g. scope="   "),
+        it must be treated as if scope was omitted and DEFAULT_SCOPES must be stored
+        on the DeviceGrant, not the raw whitespace string.
+        """
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
+
+        device_authorization_response = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=urlencode({"client_id": self.application.client_id, "scope": "   "}),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert device_authorization_response.status_code == 200
+
+        DeviceGrantModel = get_device_grant_model()
+        grant = DeviceGrantModel.objects.get(device_code="def")
+        assert grant.scope == "read write"
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "def",
+    )
+    def test_device_flow_default_scopes_not_re_evaluated_at_token_time(self):
+        """
+        If DEFAULT_SCOPES changes between user consent and device polling, the token
+        must reflect the scopes that were shown on the consent screen (locked in at
+        authorization time), not the new DEFAULT_SCOPES.
+        """
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
+        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = [set_oauthlib_user_to_device_request_user]
+
+        # Device sends authorization request with no scope; DEFAULT_SCOPES = ["read", "write"]
+        device_authorization_response = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=urlencode({"client_id": self.application.client_id}),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert device_authorization_response.status_code == 200
+
+        self.client.login(username="test_user", password="123456")
+        self.client.post(reverse("oauth2_provider:device"), data={"user_code": "XYZ"})
+        self.client.post(
+            reverse(
+                "oauth2_provider:device-confirm",
+                kwargs={"user_code": "XYZ", "client_id": self.application.client_id},
+            ),
+            data={"action": "accept"},
+        )
+
+        # Admin changes DEFAULT_SCOPES after consent but before the device polls.
+        # "admin" must also be in SCOPES or oauth2_settings raises ImproperlyConfigured
+        # when _DEFAULT_SCOPES is re-evaluated after reload().
+        self.oauth2_settings.SCOPES = {
+            "read": "Reading scope",
+            "write": "Writing scope",
+            "admin": "Admin scope",
+        }
+        self.oauth2_settings.DEFAULT_SCOPES = ["read", "write", "admin"]
+        # Clear only the computed scope caches so the new SCOPES/DEFAULT_SCOPES
+        # values take effect without wiping the overrides we just set above.
+        # Calling reload() would delete those overrides and fall back to Django settings.
+        for _attr in ("_SCOPES", "_DEFAULT_SCOPES"):
+            try:
+                delattr(self.oauth2_settings, _attr)
+            except AttributeError:
+                pass
+            self.oauth2_settings._cached_attrs.discard(_attr)
+
+        token_response = self.client.post(
+            "/o/token/",
+            data=urlencode(
+                {
+                    "device_code": "def",
+                    "client_id": self.application.client_id,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                }
+            ),
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        assert token_response.status_code == 200
+        # Token must reflect the scopes from consent time, not the expanded DEFAULT_SCOPES
+        assert token_response.json()["scope"] == "read write"
+
+    def test_device_authorization_returns_invalid_client_when_application_deleted_before_scope_resolution(
+        self,
+    ):
+        """
+        If the Application is deleted between oauthlib validating the client and DOT
+        resolving default scopes, the view must return an invalid_client error rather
+        than silently proceeding with application=None.
+
+        This covers the DoesNotExist branch in DeviceAuthorizationView.post() that is
+        only reached when scope is omitted (so default-scope resolution is attempted).
+        """
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
+
+        Application = get_application_model()
+
+        # Patch get_application_model as imported in the view to simulate a race where
+        # the Application row is deleted between oauthlib validation and scope resolution.
+        # We use a spec'd mock so that DoesNotExist is accessible as an attribute.
+        mock_model = mock.MagicMock(spec=Application)
+        mock_model.DoesNotExist = Application.DoesNotExist
+        mock_model.objects.get.side_effect = Application.DoesNotExist
+
+        with mock.patch("oauth2_provider.views.device.get_application_model", return_value=mock_model):
+            response = self.client.post(
+                reverse("oauth2_provider:device-authorization"),
+                data=urlencode({"client_id": self.application.client_id}),
+                content_type="application/x-www-form-urlencoded",
+            )
+
+        assert response.status_code == 401
+        assert response.json()["error"] == "invalid_client"
