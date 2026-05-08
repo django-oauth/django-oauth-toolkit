@@ -176,10 +176,11 @@ class TestJwksInfoView(TestCase):
 
     def test_get_jwks_info_cache_control_header(self):
         response = self.client.get(reverse("oauth2_provider:jwks-info"))
+        max_age = self.oauth2_settings.OIDC_JWKS_MAX_AGE_SECONDS
 
         self.assertEqual(response.status_code, 200)
         assert response["Cache-Control"] == (
-            "public, max-age=3600, stale-while-revalidate=3600, stale-if-error=3600"
+            f"public, max-age={max_age}, stale-while-revalidate={max_age}, stale-if-error={max_age}"
         )
 
     def test_get_jwks_info_no_rsa_key(self):
