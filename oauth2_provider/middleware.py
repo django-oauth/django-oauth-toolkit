@@ -77,8 +77,10 @@ class OIDCSessionManagementMiddleware:
             return response
 
         cookie_name = oauth2_settings.OIDC_SESSION_MANAGEMENT_COOKIE_NAME
-        is_authenticated = request.user.is_authenticated
-        session_key = request.session.session_key if is_authenticated else None
+        user = getattr(request, "user", None)
+        is_authenticated = getattr(user, "is_authenticated", False)
+        session = getattr(request, "session", None)
+        session_key = getattr(session, "session_key", None)
         if is_authenticated and session_key is not None:
             session_key_bytes = session_key.encode("utf-8")
             hashed_key = hashlib.sha256(session_key_bytes).hexdigest()
