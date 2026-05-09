@@ -1,3 +1,17 @@
+# This docker compose file is provided for the case you want to run
+# the test app on a real https endpoint. If you have a domain that is
+# managed by cloudflare, you can set up a tunnel with cloudflared
+# (https://developers.cloudflare.com/tunnel/)
+
+# Basic instructions:
+# - create the tunnel on cloudflare dashboard
+# - get the tunnel id and set APP_CLOUDFLARE_TUNNEL_ID environment variable
+# - get the tunnel service token and set APP_CLOUDLARE_TUNNEL_TOKEN variable
+# - in the tunnel route, set a route from your domain to the "http://frontend:5173" endpoint
+
+# If everything is set up correctly, you should be able to run
+# `docker compose up -d` and access the test app via https://yourdomain
+
 services:
   cloudflared:
     image: cloudflare/cloudflared
