@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from importlib import import_module
 from unittest import mock
 from urllib.parse import urlencode
 
@@ -1151,3 +1152,54 @@ class TestDeviceFlowWithSwappedDeviceGrantModel(DeviceFlowBaseTestCase):
             text="Incorrect user code",
             count=1,
         )
+
+
+class TestDeviceGrantUniqueConstraint(DeviceFlowBaseTestCase):
+    def test_device_code_unique_at_db_level(self):
+        # Regression for #1656: field-level unique=True must enforce uniqueness
+        # even without a Meta.constraints UniqueConstraint.
+        from django.db import IntegrityError, transaction
+
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        DeviceModel.objects.create(
+            client_id=self.application.client_id,
+            device_code="duplicate_code",
+            user_code="AAAA-1111",
+            expires=expires,
+        )
+        # Wrap in a savepoint so the IntegrityError doesn't break the outer test transaction.
+        with transaction.atomic():
+            with pytest.raises(IntegrityError):
+                DeviceModel.objects.create(
+                    client_id=self.application.client_id,
+                    device_code="duplicate_code",
+                    user_code="BBBB-2222",
+                    expires=expires,
+                )
+
+    def test_no_duplicate_uniqueness_definition_in_meta(self):
+        # Regression for #1656: Meta.constraints must be empty so a duplicate
+        # UniqueConstraint on device_code cannot be silently re-introduced (breaks Oracle).
+        constraints = DeviceModel._meta.constraints
+        assert constraints == [], (
+            f"DeviceGrant has unexpected Meta.constraints: {constraints}. "
+            "Remove any UniqueConstraint on device_code to avoid a duplicate constraint on Oracle."
+        )
+
+    def test_migration_defines_only_field_level_uniqueness_for_device_code(self):
+        # Regression for #1656: migration 0013 must not define a second uniqueness
+        # rule for device_code in CreateModel.options.
+        migration_module = import_module(
+            "oauth2_provider.migrations.0013_alter_application_authorization_grant_type_device"
+        )
+        create_model_operation = next(
+            operation
+            for operation in migration_module.Migration.operations
+            if operation.__class__.__name__ == "CreateModel" and operation.name == "DeviceGrant"
+        )
+        device_code_field = next(
+            field for name, field in create_model_operation.fields if name == "device_code"
+        )
+
+        assert device_code_field.unique is True
+        assert create_model_operation.options.get("constraints", []) == []
