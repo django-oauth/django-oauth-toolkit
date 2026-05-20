@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1683 Fix swapped `DeviceGrant` model usage across the device authorization flow
 * #1689 Fix invalid `Cache-Control` header value on the OIDC JWKS endpoint
 * #1692 Fix consent violation and scope escalation.
+* Fix `auth_time` in oauth2 validator when user has never logged in.
 
 ## [3.2.0] - 2025-11-13
 ### Added
