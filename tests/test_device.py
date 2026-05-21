@@ -300,6 +300,45 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         )
         assert refresh_token.user == device.user
 
+    def test_device_user_code_view_get_prefills_form_from_query_param(self):
+        """
+        A GET to the device user-code view with ?user_code=... should render a form
+        whose initial value for user_code is pre-populated from the query parameter.
+        """
+        UserModel.objects.create_user(
+            username="test_user_device_flow",
+            email="test_device@example.com",
+            password="password123",
+        )
+        self.client.login(username="test_user_device_flow", password="password123")
+
+        response = self.client.get(reverse("oauth2_provider:device"), data={"user_code": "WDJB-MJHT"})
+
+        assert response.status_code == 200
+        assert "form" in response.context
+        assert response.context["form"].initial.get("user_code") == "WDJB-MJHT"
+        assert b'value="WDJB-MJHT"' in response.content
+
+    def test_device_user_code_view_get_without_query_param_has_empty_initial(self):
+        """
+        A GET to the device user-code view without a user_code query parameter should
+        render a form with an empty initial value for user_code.
+        """
+        UserModel.objects.create_user(
+            username="test_user_device_flow",
+            email="test_device@example.com",
+            password="password123",
+        )
+        self.client.login(username="test_user_device_flow", password="password123")
+
+        response = self.client.get(reverse("oauth2_provider:device"))
+
+        assert response.status_code == 200
+        assert "form" in response.context
+        assert response.context["form"].initial.get("user_code", "") == ""
+        assert b'name="user_code"' in response.content
+        assert b'value="WDJB-MJHT"' not in response.content
+
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
         lambda: "abc",
