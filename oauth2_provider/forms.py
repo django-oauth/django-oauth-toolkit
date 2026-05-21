@@ -1,4 +1,6 @@
 from django import forms
+from django.forms.models import modelform_factory
+from .models import get_application_model
 
 
 class AllowForm(forms.Form):
@@ -26,3 +28,18 @@ class ConfirmLogoutForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.request = kwargs.pop("request", None)
         super(ConfirmLogoutForm, self).__init__(*args, **kwargs)
+
+
+class ApplicationForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields["client_secret"].help_text = (
+                "⚠️ The client secret has been hashed and can no longer be viewed. "
+                "If you need the original value, you must regenerate it and save it immediately."
+            )
+        else:
+            self.fields["client_secret"].help_text = (
+                "⚠️ Copy and store this secret now. "
+                "Once saved, it will be hashed and cannot be recovered."
+            )

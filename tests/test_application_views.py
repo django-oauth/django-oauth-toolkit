@@ -281,3 +281,15 @@ class TestApplicationViews(BaseTest):
         self.assertEqual(self.app_foo_1.post_logout_redirect_uris, form_data["post_logout_redirect_uris"])
         self.assertEqual(self.app_foo_1.client_type, form_data["client_type"])
         self.assertEqual(self.app_foo_1.authorization_grant_type, form_data["authorization_grant_type"])
+    
+    def test_client_secret_help_text_new_application(self):
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:register"))
+        form = response.context["form"]
+        self.assertIn("Copy and store this secret now", form.fields["client_secret"].help_text)
+
+    def test_client_secret_help_text_existing_application(self):
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)))
+        form = response.context["form"]
+        self.assertIn("has been hashed", form.fields["client_secret"].help_text)
