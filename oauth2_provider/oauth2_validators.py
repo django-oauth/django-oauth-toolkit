@@ -8,6 +8,7 @@ import logging
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta
+from datetime import timezone as datetime_timezone
 from urllib.parse import unquote_plus
 
 import requests
@@ -430,12 +431,16 @@ class OAuth2Validator(RequestValidator):
             else:
                 user = None
 
-            max_caching_time = datetime.now() + timedelta(
+            expiration_timezone = get_timezone(oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE)
+            max_caching_time = datetime.now(tz=expiration_timezone) + timedelta(
                 seconds=oauth2_settings.RESOURCE_SERVER_TOKEN_CACHING_SECONDS
             )
 
             if "exp" in content:
-                expires = datetime.utcfromtimestamp(content["exp"])
+                expires = make_aware(
+                    datetime.fromtimestamp(content["exp"], tz=datetime_timezone.utc).replace(tzinfo=None),
+                    timezone=expiration_timezone,
+                )
                 if expires > max_caching_time:
                     expires = max_caching_time
             else:
@@ -443,10 +448,8 @@ class OAuth2Validator(RequestValidator):
 
             scope = content.get("scope", "")
 
-            if settings.USE_TZ:
-                expires = make_aware(
-                    expires, timezone=get_timezone(oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE)
-                )
+            if not settings.USE_TZ:
+                expires = timezone.make_naive(expires, expiration_timezone)
 
             token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
             access_token, _created = AccessToken.objects.update_or_create(
