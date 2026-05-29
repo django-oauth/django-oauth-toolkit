@@ -19,10 +19,12 @@ def retrieve_current_databases():
 
 
 class OAuth2ProviderBase:
-    @classmethod
-    def setUpClass(cls):
-        cls.databases = retrieve_current_databases()
-        super().setUpClass()
+    # ``databases`` must be a class attribute: pytest-django reads it when it sets up
+    # database access for the test, which happens before ``setUpClass`` runs. Setting it
+    # inside ``setUpClass`` is too late and the test would only be granted access to the
+    # ``default`` database, causing ``DatabaseOperationForbidden`` for ``alpha``/``beta``.
+    # ``settings.DATABASES`` is already configured at import time, so this is safe.
+    databases = retrieve_current_databases()
 
 
 class OAuth2ProviderTestCase(OAuth2ProviderBase, DjangoTestCase):
