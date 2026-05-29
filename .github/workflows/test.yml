@@ -153,21 +153,21 @@ jobs:
           DJANGO: '5.2'
 
   multi-db:
-    name: Multi-DB Tests (Python 3.14, Django 4.2)
+    name: Multi-DB Tests (Python 3.12, Django 4.2)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.14
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.14'
+          python-version: '3.12'
 
       - name: Install tox
         run: python -m pip install --upgrade tox
 
       - name: Run multi-db tests
-        run: tox -e py314-dj42-multi-db
+        run: tox -e py312-dj42-multi-db
 
   test-demo-rp:
     name: Test Demo Relying Party
