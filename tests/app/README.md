@@ -79,3 +79,37 @@ This is an example RP. It is a SPA built with Svelte.
   npm run dev
   # open http://localhost:5173
   ```
+
+## Running with Docker Compose
+
+The repository root ships a `Dockerfile` and `docker-compose.yml` that build the
+IDP into a self-contained image suitable both for local end-to-end testing and
+for distribution as an easy-to-deploy IDP.
+
+```bash
+docker compose up --build
+# open http://localhost:8000
+```
+
+### Static files
+
+Static assets (Django admin, `oauth2_provider`) are collected into the image at
+build time and served by [WhiteNoise](https://whitenoise.readthedocs.io/) from
+gunicorn, so no reverse proxy or extra container is required. Because static
+lives inside the image, it is always rebuilt fresh and never goes stale when a
+named `/data` volume is reused across upgrades.
+
+### Overriding templates
+
+The image bundles default templates and also searches an optional override
+directory mounted at `/templates` *before* the bundled defaults. To customise a
+page in the distributable image, mount a host directory (read-only) at
+`/templates` containing files that mirror the template paths you want to shadow:
+
+```bash
+docker run -p 8000:80 -v "$PWD/my-templates:/templates:ro" django-oauth-toolkit/idp
+```
+
+For example, `my-templates/registration/login.html` overrides the login page.
+With nothing mounted, the bundled defaults are used. See the commented `volumes`
+block on the `idp` service in `docker-compose.yml` for the Compose equivalent.

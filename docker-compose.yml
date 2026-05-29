@@ -22,10 +22,19 @@ services:
 
   idp:
     <<: *idp
-    command: gunicorn idp.wsgi:application -w 4 -b 0.0.0.0:80 --chdir=/code --timeout 120  --error-logfile '-' --log-level debug --access-logfile '-'
+    # Uses the image's default CMD (gunicorn idp.wsgi:application from
+    # WORKDIR /code/tests/app/idp). Do not add --chdir=/code: the idp package
+    # lives under /code/tests/app/idp, so changing to /code breaks the import.
     ports:
       # map to dev port.
       - "8000:80"
+    # To override templates in the distributable image, mount a host directory
+    # (read-only) at /templates. Files there shadow the bundled defaults, e.g.
+    # ./my-templates/registration/login.html overrides the login page. Static
+    # files are served by WhiteNoise from inside the image; no mount required.
+    # volumes:
+    #   - idp-data:/data
+    #   - ./my-templates:/templates:ro
     depends_on:
       idp-loaddata:
         condition: service_completed_successfully

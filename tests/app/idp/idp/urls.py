@@ -15,11 +15,9 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import TemplateView
-from django.views.static import serve
 
 
 urlpatterns = [
@@ -30,9 +28,3 @@ urlpatterns = [
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     path("accounts/", include("django.contrib.auth.urls")),
 ]
-
-# just for local gunicorn
-if not settings.DEBUG:
-    urlpatterns += [
-        path(f"{settings.STATIC_URL.lstrip('/')}<path:path>", serve, {"document_root": settings.STATIC_ROOT}),
-    ]

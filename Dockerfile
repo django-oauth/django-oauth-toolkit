@@ -9,6 +9,11 @@ FROM python:3.11.6-slim as builder
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
+ENV DEBUG=False
+ENV ALLOWED_HOSTS="*"
+ENV TEMPLATES_DIRS="/templates"
+ENV DATABASE_URL="sqlite:////data/db.sqlite3"
+
 RUN apt-get update
 # Build Deps
 RUN apt-get install -y --no-install-recommends gcc libc-dev python3-dev git openssh-client libpq-dev file libev-dev
@@ -22,7 +27,7 @@ COPY . /code
 WORKDIR /code/tests/app/idp
 RUN pip install -r requirements.txt
 RUN pip install gunicorn
-RUN STATIC_ROOT="static" python manage.py collectstatic --noinput
+RUN python manage.py collectstatic --noinput
 
 
 
@@ -37,20 +42,22 @@ LABEL org.opencontainers.image.revision=${GIT_SHA1}
 
 
 ENV SENTRY_RELEASE=${GIT_SHA1}
-
 # disable debug mode, but allow all hosts by default when running in docker
 ENV DEBUG=False
 ENV ALLOWED_HOSTS="*"
-ENV TEMPLATES_DIRS="/code/tests/app/idp/templates"
-ENV STATIC_ROOT="/code/tests/app/idp/static"
+ENV TEMPLATES_DIRS="/templates"
 ENV DATABASE_URL="sqlite:////data/db.sqlite3"
-
-
 
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+# Static files are collected into the source tree (STATIC_ROOT defaults to
+# BASE_DIR/static) during the build and ride along in /code, so they are baked
+# into the image and served by WhiteNoise from gunicorn. /templates is an
+# optional, empty override dir (searched before the bundled defaults);
+# /data holds the SQLite DB.
 COPY --from=builder /code /code
+RUN mkdir -p /templates /data
 
 WORKDIR /code/tests/app/idp
 RUN apt-get update && apt-get install -y \
@@ -58,4 +65,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 EXPOSE 80
 VOLUME ["/data" ]
-CMD ["gunicorn",  "idp.wsgi:application",  "-w 4 -b 0.0.0.0:80 --chdir=/code --worker-tmp-dir /dev/shm --timeout 120  --error-logfile '-' --log-level debug --access-logfile '-'"]
+CMD ["gunicorn", "idp.wsgi:application", \
+    "-w", "4", \
+    "-b", "0.0.0.0:80", \
+    "--worker-tmp-dir", "/dev/shm", \
+    "--timeout", "120", \
+    "--error-logfile", "-", \
+    "--log-level", "debug", \
+    "--access-logfile", "-"]
