@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Fixed -->
 <!-- ### Security -->
 
+## [unreleased]
+
+### Deprecated
+* Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
+  Unix timestamps and are always interpreted as UTC per RFC 7662/RFC 7519. The setting still works
+  for backwards compatibility but now emits a `DeprecationWarning` and will be removed in a future
+  release.
+
+### Fixed
+* #1594 Fix introspection token expiry handling to consistently use UTC and avoid the deprecated
+  `datetime.utcfromtimestamp`.
+
 ## [3.3.0] - 2025-05-21
 
 ### Added

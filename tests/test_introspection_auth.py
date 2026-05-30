@@ -79,7 +79,7 @@ def mocked_requests_post(url, data, *args, **kwargs):
 
 
 def mocked_introspect_request_short_living_token(url, data, *args, **kwargs):
-    exp = datetime.datetime.now() + datetime.timedelta(minutes=30)
+    exp = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(minutes=30)
 
     return MockResponse(
         {
@@ -87,7 +87,34 @@ def mocked_introspect_request_short_living_token(url, data, *args, **kwargs):
             "scope": "read write dolphin",
             "client_id": "client_id_{}".format(data["token"]),
             "username": "{}_user".format(data["token"]),
-            "exp": int(calendar.timegm(exp.timetuple())),
+            "exp": int(exp.timestamp()),
+        },
+        200,
+    )
+
+
+def mocked_introspect_request_without_exp(url, data, *args, **kwargs):
+    return MockResponse(
+        {
+            "active": True,
+            "scope": "read write dolphin",
+            "client_id": "client_id_{}".format(data["token"]),
+            "username": "{}_user".format(data["token"]),
+        },
+        200,
+    )
+
+
+def mocked_introspect_request_long_living_token(url, data, *args, **kwargs):
+    exp = datetime.datetime(2025, 9, 4, 20, 6, tzinfo=datetime.timezone.utc)
+
+    return MockResponse(
+        {
+            "active": True,
+            "scope": "read write dolphin",
+            "client_id": "client_id_{}".format(data["token"]),
+            "username": "{}_user".format(data["token"]),
+            "exp": int(exp.timestamp()),
         },
         200,
     )
@@ -142,6 +169,31 @@ class TestTokenIntrospectionAuth(TestCase):
     def setUp(self):
         self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN = self.resource_server_token.token
 
+    def _assert_token_expires_from_utc_now(self, request_mock):
+        utc_now = datetime.datetime(2025, 9, 2, 20, 6, tzinfo=datetime.timezone.utc)
+        local_naive_now = datetime.datetime(2025, 9, 2, 16, 6)
+
+        def mocked_now(tz=None):
+            if tz is None:
+                return local_naive_now
+            return utc_now.astimezone(tz)
+
+        with mock.patch("oauth2_provider.oauth2_validators.datetime") as mocked_datetime:
+            mocked_datetime.now.side_effect = mocked_now
+            mocked_datetime.fromtimestamp.side_effect = datetime.datetime.fromtimestamp
+            access_token = self.validator._get_token_from_authentication_server(
+                "foo",
+                oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+                oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+                oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+            )
+
+        request_mock.assert_called_once()
+        self.assertEqual(
+            access_token.expires,
+            utc_now + datetime.timedelta(seconds=oauth2_settings.RESOURCE_SERVER_TOKEN_CACHING_SECONDS),
+        )
+
     @mock.patch("requests.post", side_effect=mocked_requests_post)
     def test_get_token_from_authentication_server_not_existing_token(self, mock_get):
         """
@@ -190,6 +242,37 @@ class TestTokenIntrospectionAuth(TestCase):
             self.fail(str(exception))
         finally:
             settings.USE_TZ = settings_use_tz_backup
+
+    @mock.patch("requests.post", side_effect=mocked_introspect_request_without_exp)
+    def test_get_token_from_authentication_server_without_exp_uses_utc_cache_expiry(self, mock_get):
+        self._assert_token_expires_from_utc_now(mock_get)
+
+    @mock.patch("requests.post", side_effect=mocked_introspect_request_long_living_token)
+    def test_get_token_from_authentication_server_max_cache_expiry_uses_utc(self, mock_get):
+        self._assert_token_expires_from_utc_now(mock_get)
+
+    @mock.patch("requests.post", side_effect=mocked_introspect_request_long_living_token)
+    def test_get_token_from_authentication_server_non_utc_exp_time_zone_is_deprecated(self, mock_get):
+        """
+        The deprecated AUTHENTICATION_SERVER_EXP_TIME_ZONE workaround reinterprets the exp
+        wall-clock time as being in the configured (non-UTC) time zone.
+        """
+        from django.utils.timezone import make_aware
+
+        from oauth2_provider.utils import get_timezone
+
+        self.oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE = "Europe/Amsterdam"
+
+        access_token = self.validator._get_token_from_authentication_server(
+            "foo",
+            oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+
+        # exp wall-clock from mocked_introspect_request_long_living_token is 2025-09-04 20:06.
+        expected = make_aware(datetime.datetime(2025, 9, 4, 20, 6), timezone=get_timezone("Europe/Amsterdam"))
+        self.assertEqual(access_token.expires, expected)
 
     @mock.patch("requests.post", side_effect=mocked_introspect_request_short_living_token)
     def test_get_token_from_authentication_server_expires_utc_timezone(self, mock_get):

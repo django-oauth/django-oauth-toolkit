@@ -290,10 +290,13 @@ will be used.
 
 AUTHENTICATION_SERVER_EXP_TIME_ZONE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The exp (expiration date) of Access Tokens must be defined in UTC (Unix Timestamp). Although its wrong, sometimes
-a remote Authentication Server does not use UTC (eg. no timezone support and configured in local time other than UTC).
-Prior to fix #1292 this could be fixed by changing your own time zone. With the introduction of this fix, this workaround
-would not be possible anymore. This setting re-enables this workaround.
+.. deprecated:: 3.3.1
+    This setting is deprecated and will be removed in a future release.
+
+Token introspection ``exp`` (expiration) values are Unix timestamps and are interpreted as UTC per
+:rfc:`7662` and :rfc:`7519`. For backwards compatibility, setting this to a non-UTC time zone keeps
+the previous workaround behavior of reinterpreting the ``exp`` wall-clock time as being in the
+configured time zone, but configuring it now emits a ``DeprecationWarning``.
 
 PKCE_REQUIRED
 ~~~~~~~~~~~~~
