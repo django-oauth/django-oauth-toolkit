@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 
 from oauth2_provider.models import (
@@ -69,3 +71,31 @@ class LocalIDToken(AbstractIDToken):
     """Exists to be improperly configured for multiple databases."""
 
     # The other token types will be in 'alpha' database.
+
+
+class CustomPkAccessToken(AbstractAccessToken):
+    """AccessToken with a custom (non-``id``) primary key.
+
+    Used to verify that ``clear_expired()`` and ``RefreshToken.revoke()`` do
+    not assume the primary key field is named ``id``.
+    See https://github.com/django-oauth/django-oauth-toolkit/pull/1593
+    """
+
+    id = None
+    source_refresh_token = None
+    id_token = None
+    custom_pk = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+
+class CustomPkRefreshToken(AbstractRefreshToken):
+    """RefreshToken with a custom (non-``id``) primary key."""
+
+    id = None
+    custom_pk = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    access_token = models.OneToOneField(
+        CustomPkAccessToken,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="refresh_token",
+    )
