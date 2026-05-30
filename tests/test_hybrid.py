@@ -22,7 +22,6 @@ from oauth2_provider.views import ProtectedResourceView, ScopedProtectedResource
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .common_testing import retrieve_current_databases
 from .utils import get_basic_auth_header, spy_on
 
 
@@ -1320,7 +1319,7 @@ class TestDefaultScopesHybrid(BaseTest):
         self.assertEqual(form["client_id"].value(), self.application.client_id)
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_id_token_nonce_in_token_response(oauth2_settings, test_user, hybrid_application, client, oidc_key):
     client.force_login(test_user)
@@ -1369,7 +1368,7 @@ def test_id_token_nonce_in_token_response(oauth2_settings, test_user, hybrid_app
     assert claims["nonce"] == "random_nonce_string"
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_claims_passed_to_code_generation(
     oauth2_settings, test_user, hybrid_application, client, mocker, oidc_key

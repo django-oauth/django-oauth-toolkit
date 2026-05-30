@@ -268,6 +268,18 @@ Run PostgreSQL standalone checks locally::
   tox -e migrations-dj60-pg16
   docker compose -f docker-compose.postgres.yml down -v
 
+Run PostgreSQL primary/replica topology checks locally::
+
+  docker compose -f docker-compose.postgres-pr.yml up -d --wait
+  docker compose -f docker-compose.postgres-pr.yml exec -T postgres-replica psql -U dot -d dot -tAc "SELECT pg_is_in_recovery()"
+  tox -e py310-dj42-pg16-pr
+  tox -e migrations-dj42-pg16-pr
+  tox -e py312-dj52-pg16-pr
+  tox -e migrations-dj52-pg16-pr
+  tox -e py314-dj60-pg16-pr
+  tox -e migrations-dj60-pg16-pr
+  docker compose -f docker-compose.postgres-pr.yml down -v
+
 Run MySQL standalone checks locally::
 
   docker compose -f docker-compose.mysql.yml up -d --wait
