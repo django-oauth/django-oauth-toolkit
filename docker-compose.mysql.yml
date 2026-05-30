@@ -1,0 +1,21 @@
+volumes:
+  mysql-data:
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: dot
+      MYSQL_USER: dot
+      MYSQL_PASSWORD: dot
+      MYSQL_ROOT_PASSWORD: dot
+    ports:
+      - "${MYSQL_BIND_PORT:-53306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -udot -pdot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

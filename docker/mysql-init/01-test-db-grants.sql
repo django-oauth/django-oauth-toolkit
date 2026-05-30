@@ -1,0 +1,5 @@
+CREATE USER IF NOT EXISTS 'dot'@'%' IDENTIFIED BY 'dot';
+GRANT ALL PRIVILEGES ON `dot`.* TO 'dot'@'%';
+GRANT ALL PRIVILEGES ON `test\_%`.* TO 'dot'@'%';
+GRANT CREATE, DROP ON *.* TO 'dot'@'%';
+FLUSH PRIVILEGES;

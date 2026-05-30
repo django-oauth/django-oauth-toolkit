@@ -95,7 +95,7 @@ Migrations
 If you alter any models, a new migration will need to be generated. This step is frequently missed
 by new contributors. You can check if a new migration is needed with::
 
-    tox -e migrations
+  tox -e migrations-sqlite
 
 And, if a new migration is needed, use::
 
@@ -244,6 +244,39 @@ testsuite via::
 
 The first thing the core committers will do is run this command. Any pull request that fails this test suite will be
 **immediately rejected**.
+
+Standalone backend DB checks
+----------------------------
+
+In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL and MySQL.
+To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release in each supported
+major line: 4.2, 5.2, and 6.0.
+
+The ``-djXX`` suffix in migration and backend env names (for example ``migrations-postgres-dj52``) is intentional:
+it pins the Django major/minor line being exercised. The brace-expanded section syntax used in ``tox.ini`` is an
+implementation detail; user-facing docs list only concrete env names.
+
+Run PostgreSQL standalone checks locally::
+
+  docker compose -f docker-compose.postgres.yml up -d --wait
+  tox -e py310-dj42-postgres
+  tox -e migrations-postgres-dj42
+  tox -e py312-dj52-postgres
+  tox -e migrations-postgres-dj52
+  tox -e py314-dj60-postgres
+  tox -e migrations-postgres-dj60
+  docker compose -f docker-compose.postgres.yml down -v
+
+Run MySQL standalone checks locally::
+
+  docker compose -f docker-compose.mysql.yml up -d --wait
+  tox -e py310-dj42-mysql
+  tox -e migrations-mysql-dj42
+  tox -e py312-dj52-mysql
+  tox -e migrations-mysql-dj52
+  tox -e py314-dj60-mysql
+  tox -e migrations-mysql-dj60
+  docker compose -f docker-compose.mysql.yml down -v
 
 Add the tests!
 --------------

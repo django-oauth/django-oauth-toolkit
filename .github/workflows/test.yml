@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test-package:
-    name: Test Package (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    name: DOT SQLite (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for Codecov OIDC token
@@ -122,7 +122,7 @@ jobs:
         run: tox -e sphinxlint
 
   migrations:
-    name: Check Migrations
+    name: DOT Check Migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,12 +136,12 @@ jobs:
         run: python -m pip install --upgrade tox
 
       - name: Check no missing migrations
-        run: tox -e migrations
+        run: tox -e migrations-sqlite
         env:
           DJANGO: '5.2'
 
   migrate_swapped:
-    name: Migrate Swapped Models
+    name: DOT Migrate Swapped Models
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -160,7 +160,7 @@ jobs:
           DJANGO: '5.2'
 
   multi-db:
-    name: Multi-DB Tests (Python 3.12, Django 4.2)
+    name: DOT Multi-DB Tests (Python 3.12, Django 4.2)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -176,8 +176,110 @@ jobs:
       - name: Run multi-db tests
         run: tox -e py312-dj42-multi-db
 
+  postgres-standalone:
+    name: DOT PostgreSQL (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: '3.10'
+            py-factor: '310'
+            django-version: '4.2'
+            dj-factor: '42'
+          - python-version: '3.12'
+            py-factor: '312'
+            django-version: '5.2'
+            dj-factor: '52'
+          - python-version: '3.14'
+            py-factor: '314'
+            django-version: '6.0'
+            dj-factor: '60'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Start postgres DB layer
+        run: docker compose -f docker-compose.postgres.yml up -d --wait
+        env:
+          POSTGRES_BIND_PORT: '5432'
+
+      - name: Run postgres standalone tests
+        run: tox -e py${{ matrix.py-factor }}-dj${{ matrix.dj-factor }}-postgres
+        env:
+          POSTGRES_PORT: '5432'
+
+      - name: Run postgres migration checks
+        run: tox -e migrations-postgres-dj${{ matrix.dj-factor }}
+        env:
+          POSTGRES_PORT: '5432'
+
+      - name: Stop postgres DB layer
+        if: always()
+        run: docker compose -f docker-compose.postgres.yml down -v
+        env:
+          POSTGRES_BIND_PORT: '5432'
+
+  mysql-standalone:
+    name: DOT MySQL (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: '3.10'
+            py-factor: '310'
+            django-version: '4.2'
+            dj-factor: '42'
+          - python-version: '3.12'
+            py-factor: '312'
+            django-version: '5.2'
+            dj-factor: '52'
+          - python-version: '3.14'
+            py-factor: '314'
+            django-version: '6.0'
+            dj-factor: '60'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Start mysql DB layer
+        run: docker compose -f docker-compose.mysql.yml up -d --wait
+        env:
+          MYSQL_BIND_PORT: '3306'
+
+      - name: Run mysql standalone tests
+        run: tox -e py${{ matrix.py-factor }}-dj${{ matrix.dj-factor }}-mysql
+        env:
+          MYSQL_PORT: '3306'
+
+      - name: Run mysql migration checks
+        run: tox -e migrations-mysql-dj${{ matrix.dj-factor }}
+        env:
+          MYSQL_PORT: '3306'
+
+      - name: Stop mysql DB layer
+        if: always()
+        run: docker compose -f docker-compose.mysql.yml down -v
+        env:
+          MYSQL_BIND_PORT: '3306'
+
   test-demo-rp:
-    name: Test Demo Relying Party
+    name: Demo Relying Party
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -236,9 +338,9 @@ jobs:
       - sphinxlint
       - migrations
       - migrate_swapped
-      # nees to fix multidb tests, not blocking success for now 
-      # so we can get the lint and migrations checks in place. 
-      # - multi-db
+      - multi-db
+      - postgres-standalone
+      - mysql-standalone
     runs-on: ubuntu-latest
     name: Test successful
     steps:
