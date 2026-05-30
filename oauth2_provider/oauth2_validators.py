@@ -431,16 +431,17 @@ class OAuth2Validator(RequestValidator):
             else:
                 user = None
 
-            expiration_timezone = get_timezone(oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE)
-            max_caching_time = datetime.now(tz=expiration_timezone) + timedelta(
+            max_caching_time = datetime.now(tz=datetime_timezone.utc) + timedelta(
                 seconds=oauth2_settings.RESOURCE_SERVER_TOKEN_CACHING_SECONDS
             )
 
             if "exp" in content:
-                expires = make_aware(
-                    datetime.fromtimestamp(content["exp"], tz=datetime_timezone.utc).replace(tzinfo=None),
-                    timezone=expiration_timezone,
-                )
+                expires = datetime.fromtimestamp(content["exp"], tz=datetime_timezone.utc)
+                exp_time_zone = oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE
+                if exp_time_zone != "UTC":
+                    # Deprecated AUTHENTICATION_SERVER_EXP_TIME_ZONE workaround: reinterpret the
+                    # exp wall-clock time as being in the configured (non-UTC) time zone.
+                    expires = make_aware(expires.replace(tzinfo=None), timezone=get_timezone(exp_time_zone))
                 if expires > max_caching_time:
                     expires = max_caching_time
             else:
@@ -449,7 +450,7 @@ class OAuth2Validator(RequestValidator):
             scope = content.get("scope", "")
 
             if not settings.USE_TZ:
-                expires = timezone.make_naive(expires, expiration_timezone)
+                expires = timezone.make_naive(expires, expires.tzinfo)
 
             token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
             access_token, _created = AccessToken.objects.update_or_create(

@@ -16,6 +16,8 @@ OAuth2 Provider settings, checking for user settings first, then falling
 back to the defaults.
 """
 
+import warnings
+
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.signals import setting_changed
@@ -114,7 +116,10 @@ DEFAULTS = {
     "RESOURCE_SERVER_AUTH_TOKEN": None,
     "RESOURCE_SERVER_INTROSPECTION_CREDENTIALS": None,
     "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
-    # Authentication Server Exp Timezone: the time zone use dby Auth Server for generate EXP
+    # Deprecated: introspection ``exp`` values are Unix timestamps interpreted as UTC per RFC 7662/
+    # RFC 7519. Setting a non-UTC time zone re-enables the legacy workaround of reinterpreting the
+    # ``exp`` wall-clock time in the configured time zone. Configuring it emits a DeprecationWarning
+    # and the workaround will be removed in a future release.
     "AUTHENTICATION_SERVER_EXP_TIME_ZONE": "UTC",
     # Whether or not PKCE is required
     "PKCE_REQUIRED": True,
@@ -155,6 +160,18 @@ IMPORT_STRINGS = (
     "ID_TOKEN_ADMIN_CLASS",
     "REFRESH_TOKEN_ADMIN_CLASS",
 )
+
+
+# Mapping of deprecated setting name to the warning message shown when a user configures it.
+DEPRECATED_SETTINGS = {
+    "AUTHENTICATION_SERVER_EXP_TIME_ZONE": (
+        "The OAUTH2_PROVIDER setting 'AUTHENTICATION_SERVER_EXP_TIME_ZONE' is deprecated. Token "
+        "introspection 'exp' values are Unix timestamps and are always interpreted as UTC per RFC "
+        "7662 and RFC 7519. Setting a non-UTC time zone re-enables the legacy workaround of "
+        "reinterpreting the 'exp' wall-clock time in the configured time zone, but this behavior "
+        "will be removed in a future release."
+    ),
+}
 
 
 def perform_import(val, setting_name):
@@ -203,6 +220,12 @@ class OAuth2ProviderSettings:
         self.import_strings = import_strings or IMPORT_STRINGS
         self.mandatory = mandatory or ()
         self._cached_attrs = set()
+        self._warn_deprecated_settings()
+
+    def _warn_deprecated_settings(self):
+        for attr, message in DEPRECATED_SETTINGS.items():
+            if attr in self.user_settings:
+                warnings.warn(message, DeprecationWarning, stacklevel=2)
 
     @property
     def user_settings(self):
@@ -293,6 +316,7 @@ class OAuth2ProviderSettings:
         self._cached_attrs.clear()
         if hasattr(self, "_user_settings"):
             delattr(self, "_user_settings")
+        self._warn_deprecated_settings()
 
     def oidc_issuer(self, request):
         """

@@ -174,6 +174,16 @@ def test_pkce_required_is_default():
     assert settings.PKCE_REQUIRED is True
 
 
+def test_authentication_server_exp_time_zone_warns_when_configured():
+    with pytest.warns(DeprecationWarning, match="AUTHENTICATION_SERVER_EXP_TIME_ZONE"):
+        OAuth2ProviderSettings({"AUTHENTICATION_SERVER_EXP_TIME_ZONE": "Europe/Berlin"})
+
+
+def test_authentication_server_exp_time_zone_no_warning_when_not_configured(recwarn):
+    OAuth2ProviderSettings({})
+    assert not [w for w in recwarn.list if issubclass(w.category, DeprecationWarning)]
+
+
 class TestRefreshTokenAdminSelectRelated(TestCase):
     def test_changelist_queryset_select_related_is_bounded(self):
         """

@@ -15,12 +15,9 @@ def jwk_from_pem(pem_string):
     return jwk.JWK.from_pem(pem_string.encode("utf-8"))
 
 
-# @functools.lru_cache
 def get_timezone(time_zone):
     """
-    Return the default time zone as a tzinfo instance.
-
-    This is the time zone defined by settings.TIME_ZONE.
+    Return the given time zone name as a tzinfo instance.
     """
     try:
         import zoneinfo

@@ -79,7 +79,7 @@ def mocked_requests_post(url, data, *args, **kwargs):
 
 
 def mocked_introspect_request_short_living_token(url, data, *args, **kwargs):
-    exp = datetime.datetime.now() + datetime.timedelta(minutes=30)
+    exp = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(minutes=30)
 
     return MockResponse(
         {
@@ -87,7 +87,7 @@ def mocked_introspect_request_short_living_token(url, data, *args, **kwargs):
             "scope": "read write dolphin",
             "client_id": "client_id_{}".format(data["token"]),
             "username": "{}_user".format(data["token"]),
-            "exp": int(calendar.timegm(exp.timetuple())),
+            "exp": int(exp.timestamp()),
         },
         200,
     )
@@ -250,6 +250,29 @@ class TestTokenIntrospectionAuth(TestCase):
     @mock.patch("requests.post", side_effect=mocked_introspect_request_long_living_token)
     def test_get_token_from_authentication_server_max_cache_expiry_uses_utc(self, mock_get):
         self._assert_token_expires_from_utc_now(mock_get)
+
+    @mock.patch("requests.post", side_effect=mocked_introspect_request_long_living_token)
+    def test_get_token_from_authentication_server_non_utc_exp_time_zone_is_deprecated(self, mock_get):
+        """
+        The deprecated AUTHENTICATION_SERVER_EXP_TIME_ZONE workaround reinterprets the exp
+        wall-clock time as being in the configured (non-UTC) time zone.
+        """
+        from django.utils.timezone import make_aware
+
+        from oauth2_provider.utils import get_timezone
+
+        self.oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE = "Europe/Amsterdam"
+
+        access_token = self.validator._get_token_from_authentication_server(
+            "foo",
+            oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+
+        # exp wall-clock from mocked_introspect_request_long_living_token is 2025-09-04 20:06.
+        expected = make_aware(datetime.datetime(2025, 9, 4, 20, 6), timezone=get_timezone("Europe/Amsterdam"))
+        self.assertEqual(access_token.expires, expected)
 
     @mock.patch("requests.post", side_effect=mocked_introspect_request_short_living_token)
     def test_get_token_from_authentication_server_expires_utc_timezone(self, mock_get):
