@@ -71,11 +71,11 @@ jobs:
           postgres_migrations = {}
           mysql_migrations = {}
 
-          core_pat = re.compile(r"^py(\d+)-dj(\d+|main)-lite\d+(?:-ha)?$")
-          pg_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-pg(\d+)(?:-(ha))?$")
-          my_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-my(\d+)(?:-(ha))?$")
-          pg_mig_pat = re.compile(r"^migrations-dj(\d+|main)-pg(\d+)(?:-(ha))?$")
-          my_mig_pat = re.compile(r"^migrations-dj(\d+|main)-my(\d+)(?:-(ha))?$")
+          core_pat = re.compile(r"^py(\d+)-dj(\d+|main)-lite\d+(?:-([a-z0-9]+))?$")
+          pg_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
+          my_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-my(\d+)(?:-([a-z0-9]+))?$")
+          pg_mig_pat = re.compile(r"^migrations-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
+          my_mig_pat = re.compile(r"^migrations-dj(\d+|main)-my(\d+)(?:-([a-z0-9]+))?$")
 
           for env in core_envs:
             m = core_pat.match(env)
