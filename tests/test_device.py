@@ -1203,3 +1203,45 @@ class TestDeviceGrantUniqueConstraint(DeviceFlowBaseTestCase):
 
         assert device_code_field.unique is True
         assert create_model_operation.options.get("constraints", []) == []
+
+
+class TestDeviceGrantConstraintCleanupMigration:
+    def test_cleanup_migration_removes_legacy_constraint_when_present(self):
+        migration_module = import_module(
+            "oauth2_provider.migrations.0015_remove_duplicate_devicegrant_constraint"
+        )
+        apps = mock.Mock()
+        schema_editor = mock.Mock()
+        device_grant_model = mock.Mock()
+        device_grant_model._meta.swapped = None
+        device_grant_model._meta.db_table = "oauth2_provider_devicegrant"
+        apps.get_model.return_value = device_grant_model
+        schema_editor.connection.cursor.return_value = mock.MagicMock()
+        schema_editor.connection.introspection.get_constraints.return_value = {
+            migration_module.DUPLICATE_DEVICE_CODE_CONSTRAINT: {"unique": True}
+        }
+
+        migration_module.remove_duplicate_device_code_constraint(apps, schema_editor)
+
+        schema_editor.remove_constraint.assert_called_once()
+        model, constraint = schema_editor.remove_constraint.call_args.args
+        assert model is device_grant_model
+        assert constraint.name == migration_module.DUPLICATE_DEVICE_CODE_CONSTRAINT
+        assert constraint.fields == ("device_code",)
+
+    def test_cleanup_migration_skips_when_legacy_constraint_is_absent(self):
+        migration_module = import_module(
+            "oauth2_provider.migrations.0015_remove_duplicate_devicegrant_constraint"
+        )
+        apps = mock.Mock()
+        schema_editor = mock.Mock()
+        device_grant_model = mock.Mock()
+        device_grant_model._meta.swapped = None
+        device_grant_model._meta.db_table = "oauth2_provider_devicegrant"
+        apps.get_model.return_value = device_grant_model
+        schema_editor.connection.cursor.return_value = mock.MagicMock()
+        schema_editor.connection.introspection.get_constraints.return_value = {}
+
+        migration_module.remove_duplicate_device_code_constraint(apps, schema_editor)
+
+        schema_editor.remove_constraint.assert_not_called()
