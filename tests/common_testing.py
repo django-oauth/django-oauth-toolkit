@@ -1,30 +1,11 @@
-from django.conf import settings
 from django.test import TestCase as DjangoTestCase
 from django.test import TransactionTestCase as DjangoTransactionTestCase
 
 
-# The multiple database scenario setup for these tests purposefully defines 'default' as
-# an empty database in order to catch any assumptions in this package about database names
-# and in particular to ensure there is no assumption that 'default' is a valid database.
-#
-# When there are multiple databases defined, Django tests will not work unless they are
-# told which database(s) to work with.
-
-
-def retrieve_current_databases():
-    if len(settings.DATABASES) > 1:
-        return [name for name in settings.DATABASES if name != "default"]
-    else:
-        return ["default"]
-
-
 class OAuth2ProviderBase:
-    # ``databases`` must be a class attribute: pytest-django reads it when it sets up
-    # database access for the test, which happens before ``setUpClass`` runs. Setting it
-    # inside ``setUpClass`` is too late and the test would only be granted access to the
-    # ``default`` database, causing ``DatabaseOperationForbidden`` for ``alpha``/``beta``.
-    # ``settings.DATABASES`` is already configured at import time, so this is safe.
-    databases = retrieve_current_databases()
+    # ``databases`` must be a class attribute so pytest-django can grant access during
+    # database setup, before class setup hooks run.
+    databases = "__all__"
 
 
 class OAuth2ProviderTestCase(OAuth2ProviderBase, DjangoTestCase):

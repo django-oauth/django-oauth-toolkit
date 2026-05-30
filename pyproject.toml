@@ -44,9 +44,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+	"m2r",
 	"pytest",
 	"pytest-cov",
-	"m2r",
+	"ruff",
 	"sphinx-rtd-theme",
 ]
 

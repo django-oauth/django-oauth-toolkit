@@ -24,7 +24,6 @@ from oauth2_provider.oauth2_validators import OAuth2Validator
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
 from .common_testing import OAuth2ProviderTransactionTestCase as TransactionTestCase
-from .common_testing import retrieve_current_databases
 from .utils import get_basic_auth_header
 
 
@@ -613,7 +612,7 @@ def test_get_jwt_bearer_token(oauth2_settings, mocker):
     assert mock_get_id_token.call_args[1] == {}
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_validate_id_token_expired_jwt(oauth2_settings, mocker, oidc_tokens):
     mocker.patch("oauth2_provider.oauth2_validators.jwt.JWT", side_effect=jwt.JWTExpired)
@@ -629,7 +628,7 @@ def test_validate_id_token_no_token(oauth2_settings, mocker):
     assert status is False
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_validate_id_token_app_removed(oauth2_settings, mocker, oidc_tokens):
     oidc_tokens.application.delete()
@@ -638,7 +637,7 @@ def test_validate_id_token_app_removed(oauth2_settings, mocker, oidc_tokens):
     assert status is False
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_validate_id_token_bad_token_no_aud(oauth2_settings, mocker, oidc_key):
     token = jwt.JWT(header=json.dumps({"alg": "RS256"}), claims=json.dumps({"bad": "token"}))
@@ -708,7 +707,7 @@ def test_get_id_token_dictionary_auth_time_naive_last_login_use_tz_false_uses_de
     assert claims["auth_time"] == expected_auth_time
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 def test_invalidate_authorization_token_returns_invalid_grant_error_when_grant_does_not_exist():
     client_id = "123"
     code = "12345"

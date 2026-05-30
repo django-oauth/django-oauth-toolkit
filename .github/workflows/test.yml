@@ -20,6 +20,8 @@ jobs:
     outputs:
       core-matrix: ${{ steps.discover.outputs.core-matrix }}
       postgres-matrix: ${{ steps.discover.outputs.postgres-matrix }}
+      postgres-standalone-matrix: ${{ steps.discover.outputs.postgres-standalone-matrix }}
+      postgres-pr-matrix: ${{ steps.discover.outputs.postgres-pr-matrix }}
       mysql-matrix: ${{ steps.discover.outputs.mysql-matrix }}
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +73,7 @@ jobs:
           postgres_migrations = {}
           mysql_migrations = {}
 
-          core_pat = re.compile(r"^py(\d+)-dj(\d+|main)-lite\d+(?:-([a-z0-9]+))?$")
+          core_pat = re.compile(r"^py(\d+)-dj(\d+|main)-lite\d+(?:-[a-z0-9]+)?$")
           pg_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
           my_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-my(\d+)(?:-([a-z0-9]+))?$")
           pg_mig_pat = re.compile(r"^migrations-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
@@ -96,6 +98,7 @@ jobs:
                 "toxenv": env,
                 "python-version": py_factor_to_version(py_factor),
                 "django-version": dj_factor_to_version(dj_factor),
+                "db-topology": topology or "standalone",
               }
               continue
 
@@ -113,6 +116,7 @@ jobs:
                 "toxenv": env,
                 "python-version": py_factor_to_version(py_factor),
                 "django-version": dj_factor_to_version(dj_factor),
+                "db-topology": topology or "standalone",
               }
               continue
 
@@ -137,10 +141,14 @@ jobs:
           core.sort(key=lambda x: x["toxenv"])
           postgres = build_backend_matrix(postgres_tests, postgres_migrations, "pg")
           mysql = build_backend_matrix(mysql_tests, mysql_migrations, "my")
+          postgres_standalone = [row for row in postgres if row["db-topology"] == "standalone"]
+          postgres_pr = [row for row in postgres if row["db-topology"] == "pr"]
 
           outputs = {
             "core-matrix": {"include": core},
             "postgres-matrix": {"include": postgres},
+            "postgres-standalone-matrix": {"include": postgres_standalone},
+            "postgres-pr-matrix": {"include": postgres_pr},
             "mysql-matrix": {"include": mysql},
           }
 
@@ -282,11 +290,11 @@ jobs:
 
   postgres-standalone:
     needs: discover-matrices
-    name: DOT PostgreSQL (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    name: DOT PostgreSQL Standalone (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.discover-matrices.outputs.postgres-matrix) }}
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.postgres-standalone-matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -298,7 +306,7 @@ jobs:
       - name: Install tox
         run: python -m pip install --upgrade tox
 
-      - name: Start postgres DB layer
+      - name: Start postgres standalone DB layer
         run: docker compose -f docker-compose.postgres.yml up -d --wait
         env:
           POSTGRES_BIND_PORT: '5432'
@@ -308,16 +316,70 @@ jobs:
         env:
           POSTGRES_PORT: '5432'
 
-      - name: Run postgres migration checks
+      - name: Run postgres standalone migration checks
         run: tox -e ${{ matrix.migration_toxenv }}
         env:
           POSTGRES_PORT: '5432'
 
-      - name: Stop postgres DB layer
+      - name: Stop postgres standalone DB layer
         if: always()
         run: docker compose -f docker-compose.postgres.yml down -v
         env:
           POSTGRES_BIND_PORT: '5432'
+
+  postgres-pr:
+    needs: discover-matrices
+    name: DOT PostgreSQL Primary/Replica (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.postgres-pr-matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Start postgres primary/replica DB layer
+        run: docker compose -f docker-compose.postgres-pr.yml up -d --wait
+        env:
+          POSTGRES_PRIMARY_BIND_PORT: '5432'
+          POSTGRES_REPLICA_BIND_PORT: '5433'
+
+      - name: Verify postgres primary/replica state
+        run: |
+          docker compose -f docker-compose.postgres-pr.yml exec -T postgres-replica \
+            psql -U dot -d dot -tAc "SELECT pg_is_in_recovery()" | grep -q t
+          docker compose -f docker-compose.postgres-pr.yml exec -T postgres-primary \
+            psql -U dot -d dot -tAc "SELECT count(*) FROM pg_stat_replication" | grep -Eq '^[1-9][0-9]*$'
+
+      - name: Run postgres primary/replica tests
+        run: tox -e ${{ matrix.toxenv }}
+        env:
+          POSTGRES_PRIMARY_HOST: '127.0.0.1'
+          POSTGRES_PRIMARY_PORT: '5432'
+          POSTGRES_REPLICA_HOST: '127.0.0.1'
+          POSTGRES_REPLICA_PORT: '5433'
+
+      - name: Run postgres primary/replica migration checks
+        run: tox -e ${{ matrix.migration_toxenv }}
+        env:
+          POSTGRES_PRIMARY_HOST: '127.0.0.1'
+          POSTGRES_PRIMARY_PORT: '5432'
+          POSTGRES_REPLICA_HOST: '127.0.0.1'
+          POSTGRES_REPLICA_PORT: '5433'
+
+      - name: Stop postgres primary/replica DB layer
+        if: always()
+        run: docker compose -f docker-compose.postgres-pr.yml down -v
+        env:
+          POSTGRES_PRIMARY_BIND_PORT: '5432'
+          POSTGRES_REPLICA_BIND_PORT: '5433'
 
   mysql-standalone:
     needs: discover-matrices
@@ -420,6 +482,7 @@ jobs:
       - scenario-migrate-swapped
       - multi-db
       - postgres-standalone
+      - postgres-pr
       - mysql-standalone
     runs-on: ubuntu-latest
     name: Test successful

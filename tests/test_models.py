@@ -21,7 +21,6 @@ from oauth2_provider.models import (
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .common_testing import retrieve_current_databases
 
 
 CLEARTEXT_SECRET = "1234567890abcdefghijklmnopqrstuvwxyz"
@@ -484,7 +483,7 @@ class TestClearExpired(BaseTestModels):
         assert remaining_gt_count == initial_gt_count // 2, "half the remaining grants should still exist."
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_id_token_methods(oidc_tokens, rf):
     id_token = IDToken.objects.get()
@@ -519,7 +518,7 @@ def test_id_token_methods(oidc_tokens, rf):
     assert IDToken.objects.filter(jti=id_token.jti).count() == 0
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_clear_expired_id_tokens(oauth2_settings, oidc_tokens, rf):
     id_token = IDToken.objects.get()
@@ -558,7 +557,7 @@ def test_clear_expired_id_tokens(oauth2_settings, oidc_tokens, rf):
     assert not IDToken.objects.filter(jti=id_token.jti).exists()
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_key(oauth2_settings, application):
     # RS256 key
@@ -583,7 +582,7 @@ def test_application_key(oauth2_settings, application):
     assert "This application does not support signed tokens" == str(exc.value)
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean(oauth2_settings, application):
     # RS256, RSA key is configured
@@ -636,19 +635,19 @@ def _test_wildcard_redirect_uris_invalid(oauth2_settings, application, uris):
         application.clean()
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_valid_3ld(oauth2_settings, application):
     _test_wildcard_redirect_uris_valid(oauth2_settings, application, "https://*.example.com/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_valid_partial_3ld(oauth2_settings, application):
     _test_wildcard_redirect_uris_valid(oauth2_settings, application, "https://*-partial.example.com/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_invalid_3ld_not_starting_with_wildcard(
     oauth2_settings, application
@@ -656,19 +655,19 @@ def test_application_clean_wildcard_redirect_uris_invalid_3ld_not_starting_with_
     _test_wildcard_redirect_uris_invalid(oauth2_settings, application, "https://invalid-*.example.com/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_invalid_2ld(oauth2_settings, application):
     _test_wildcard_redirect_uris_invalid(oauth2_settings, application, "https://*.com/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_invalid_partial_2ld(oauth2_settings, application):
     _test_wildcard_redirect_uris_invalid(oauth2_settings, application, "https://*-partial.com/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_invalid_2ld_not_starting_with_wildcard(
     oauth2_settings, application
@@ -676,19 +675,19 @@ def test_application_clean_wildcard_redirect_uris_invalid_2ld_not_starting_with_
     _test_wildcard_redirect_uris_invalid(oauth2_settings, application, "https://invalid-*.com/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_invalid_tld(oauth2_settings, application):
     _test_wildcard_redirect_uris_invalid(oauth2_settings, application, "https://*/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_invalid_tld_partial(oauth2_settings, application):
     _test_wildcard_redirect_uris_invalid(oauth2_settings, application, "https://*-partial/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_wildcard_redirect_uris_invalid_tld_not_starting_with_wildcard(
     oauth2_settings, application
@@ -696,7 +695,7 @@ def test_application_clean_wildcard_redirect_uris_invalid_tld_not_starting_with_
     _test_wildcard_redirect_uris_invalid(oauth2_settings, application, "https://invalid-*/path")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.ALLOWED_SCHEMES_DEFAULT)
 def test_application_origin_allowed_default_https(oauth2_settings, cors_application):
     """Test that http schemes are not allowed because ALLOWED_SCHEMES allows only https"""
@@ -704,7 +703,7 @@ def test_application_origin_allowed_default_https(oauth2_settings, cors_applicat
     assert not cors_application.origin_allowed("http://example.com")
 
 
-@pytest.mark.django_db(databases=retrieve_current_databases())
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.ALLOWED_SCHEMES_HTTP)
 def test_application_origin_allowed_http(oauth2_settings, cors_application):
     """Test that http schemes are allowed because http was added to ALLOWED_SCHEMES"""

@@ -1,0 +1,65 @@
+volumes:
+  postgres-primary-data:
+  postgres-replica-data:
+
+services:
+  postgres-primary:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: dot
+      POSTGRES_USER: dot
+      POSTGRES_PASSWORD: dot
+      POSTGRES_REPLICA_USER: replica
+      POSTGRES_REPLICA_PASSWORD: replica
+    ports:
+      - "${POSTGRES_PRIMARY_BIND_PORT:-55432}:5432"
+    volumes:
+      - postgres-primary-data:/var/lib/postgresql/data
+      - ./docker/postgres-pr-init:/docker-entrypoint-initdb.d:ro
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dot -d dot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-replica:
+    image: postgres:16
+    user: postgres
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_REPLICA_USER: replica
+      POSTGRES_REPLICA_PASSWORD: replica
+    ports:
+      - "${POSTGRES_REPLICA_BIND_PORT:-55433}:5432"
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+    command:
+      - bash
+      - -ec
+      - |
+        if [[ ! -s "$${PGDATA}/PG_VERSION" ]]; then
+          rm -rf "$${PGDATA}"/*
+          until pg_isready -h postgres-primary -p 5432 -U dot -d dot; do sleep 1; done
+          export PGPASSWORD="$${POSTGRES_REPLICA_PASSWORD}"
+          pg_basebackup -h postgres-primary -p 5432 -D "$${PGDATA}" -U "$${POSTGRES_REPLICA_USER}" -Fp -Xs -P -R
+          chmod 700 "$${PGDATA}"
+        fi
+        exec postgres -c hot_standby=on
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=dot psql -h 127.0.0.1 -U dot -d dot -tAc \"SELECT pg_is_in_recovery()\" | grep -q t"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
