@@ -1,6 +1,13 @@
 name: Test
 
-on: [push, pull_request]
+# Avoid duplicate CI runs on feature branches:
+# - run on push only for master
+# - run on pull_request for all PRs
+on:
+  push:
+    branches:
+      - master
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
