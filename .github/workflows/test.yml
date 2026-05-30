@@ -23,6 +23,8 @@ jobs:
       postgres-standalone-matrix: ${{ steps.discover.outputs.postgres-standalone-matrix }}
       postgres-pr-matrix: ${{ steps.discover.outputs.postgres-pr-matrix }}
       mysql-matrix: ${{ steps.discover.outputs.mysql-matrix }}
+      mysql-standalone-matrix: ${{ steps.discover.outputs.mysql-standalone-matrix }}
+      mysql-pr-matrix: ${{ steps.discover.outputs.mysql-pr-matrix }}
     steps:
       - uses: actions/checkout@v4
 
@@ -143,6 +145,8 @@ jobs:
           mysql = build_backend_matrix(mysql_tests, mysql_migrations, "my")
           postgres_standalone = [row for row in postgres if row["db-topology"] == "standalone"]
           postgres_pr = [row for row in postgres if row["db-topology"] == "pr"]
+          mysql_standalone = [row for row in mysql if row["db-topology"] == "standalone"]
+          mysql_pr = [row for row in mysql if row["db-topology"] == "pr"]
 
           outputs = {
             "core-matrix": {"include": core},
@@ -150,6 +154,8 @@ jobs:
             "postgres-standalone-matrix": {"include": postgres_standalone},
             "postgres-pr-matrix": {"include": postgres_pr},
             "mysql-matrix": {"include": mysql},
+            "mysql-standalone-matrix": {"include": mysql_standalone},
+            "mysql-pr-matrix": {"include": mysql_pr},
           }
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
@@ -383,11 +389,11 @@ jobs:
 
   mysql-standalone:
     needs: discover-matrices
-    name: DOT MySQL (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    name: DOT MySQL Standalone (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.discover-matrices.outputs.mysql-matrix) }}
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.mysql-standalone-matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -419,6 +425,64 @@ jobs:
         run: docker compose -f docker-compose.mysql.yml down -v
         env:
           MYSQL_BIND_PORT: '3306'
+
+  mysql-pr:
+    needs: discover-matrices
+    name: DOT MySQL Primary/Replica (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.mysql-pr-matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Start mysql primary/replica DB layer
+        run: docker compose -f docker-compose.mysql-pr.yml up -d --wait
+        env:
+          MYSQL_PRIMARY_BIND_PORT: '3306'
+          MYSQL_REPLICA_BIND_PORT: '3307'
+
+      - name: Verify mysql primary/replica state
+        run: |
+          docker compose -f docker-compose.mysql-pr.yml exec -T mysql-primary \
+            mysql -udot -pdot -e "SELECT @@server_id" | grep -q 1
+          docker compose -f docker-compose.mysql-pr.yml exec -T mysql-replica \
+            mysql -udot -pdot -e "SELECT @@server_id" | grep -q 2
+          docker compose -f docker-compose.mysql-pr.yml exec -T mysql-replica \
+            mysql -uroot -pdot -e "SHOW REPLICA STATUS\\G" | grep -q "Replica_IO_Running: Yes"
+          docker compose -f docker-compose.mysql-pr.yml exec -T mysql-replica \
+            mysql -uroot -pdot -e "SHOW REPLICA STATUS\\G" | grep -q "Replica_SQL_Running: Yes"
+
+      - name: Run mysql primary/replica tests
+        run: tox -e ${{ matrix.toxenv }}
+        env:
+          MYSQL_PRIMARY_HOST: '127.0.0.1'
+          MYSQL_PRIMARY_PORT: '3306'
+          MYSQL_REPLICA_HOST: '127.0.0.1'
+          MYSQL_REPLICA_PORT: '3307'
+
+      - name: Run mysql primary/replica migration checks
+        run: tox -e ${{ matrix.migration_toxenv }}
+        env:
+          MYSQL_PRIMARY_HOST: '127.0.0.1'
+          MYSQL_PRIMARY_PORT: '3306'
+          MYSQL_REPLICA_HOST: '127.0.0.1'
+          MYSQL_REPLICA_PORT: '3307'
+
+      - name: Stop mysql primary/replica DB layer
+        if: always()
+        run: docker compose -f docker-compose.mysql-pr.yml down -v
+        env:
+          MYSQL_PRIMARY_BIND_PORT: '3306'
+          MYSQL_REPLICA_BIND_PORT: '3307'
 
   test-demo-rp:
     name: Demo Relying Party
@@ -484,6 +548,7 @@ jobs:
       - postgres-standalone
       - postgres-pr
       - mysql-standalone
+      - mysql-pr
     runs-on: ubuntu-latest
     name: Test successful
     steps:

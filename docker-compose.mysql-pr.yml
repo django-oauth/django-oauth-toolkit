@@ -1,0 +1,88 @@
+volumes:
+  mysql-primary-data:
+  mysql-replica-data:
+
+services:
+  mysql-primary:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: dot
+      MYSQL_USER: dot
+      MYSQL_PASSWORD: dot
+      MYSQL_ROOT_PASSWORD: dot
+    command:
+      - mysqld
+      - --server-id=1
+      - --log-bin=mysql-bin
+    ports:
+      - "${MYSQL_PRIMARY_BIND_PORT:-53306}:3306"
+    volumes:
+      - mysql-primary-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -udot -pdot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mysql-replica:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: dot
+      MYSQL_USER: dot
+      MYSQL_PASSWORD: dot
+      MYSQL_ROOT_PASSWORD: dot
+    command:
+      - mysqld
+      - --server-id=2
+      - --relay-log=replica-relay-bin
+    ports:
+      - "${MYSQL_REPLICA_BIND_PORT:-53307}:3306"
+    volumes:
+      - mysql-replica-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    depends_on:
+      mysql-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -udot -pdot && mysql -uroot -pdot -e \"SHOW REPLICA STATUS\\G\" | grep -q \"Replica_IO_Running: Yes\" && mysql -uroot -pdot -e \"SHOW REPLICA STATUS\\G\" | grep -q \"Replica_SQL_Running: Yes\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mysql-replica-setup:
+    image: mysql:8.4
+    entrypoint:
+      - bash
+      - -ec
+      - |
+        until mysql -hmysql-primary -uroot -pdot -e "SELECT 1" >/dev/null 2>&1; do sleep 1; done
+        until mysql -hmysql-replica -uroot -pdot -e "SELECT 1" >/dev/null 2>&1; do sleep 1; done
+
+        mysql -hmysql-primary -uroot -pdot -e "CREATE USER IF NOT EXISTS 'replica'@'%' IDENTIFIED BY 'replica';"
+        mysql -hmysql-primary -uroot -pdot -e "GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'replica'@'%';"
+        mysql -hmysql-primary -uroot -pdot -e "FLUSH PRIVILEGES;"
+
+        if mysql -hmysql-replica -uroot -pdot -e "SHOW REPLICA STATUS\\G" | grep -q "Replica_IO_Running: Yes"; then
+          exit 0
+        fi
+
+        MASTER_STATUS=$$(mysql -N -B -hmysql-primary -uroot -pdot -e "SHOW BINARY LOG STATUS")
+        LOG_FILE=$$(echo "$$MASTER_STATUS" | awk '{print $$1}')
+        LOG_POS=$$(echo "$$MASTER_STATUS" | awk '{print $$2}')
+
+        mysql -hmysql-replica -uroot -pdot -e "STOP REPLICA;"
+        mysql -hmysql-replica -uroot -pdot -e "RESET REPLICA ALL;"
+        mysql -hmysql-replica -uroot -pdot -e "CHANGE REPLICATION SOURCE TO SOURCE_HOST='mysql-primary', SOURCE_PORT=3306, SOURCE_USER='replica', SOURCE_PASSWORD='replica', SOURCE_LOG_FILE='$$LOG_FILE', SOURCE_LOG_POS=$$LOG_POS, GET_SOURCE_PUBLIC_KEY=1;"
+        mysql -hmysql-replica -uroot -pdot -e "START REPLICA;"
+        mysql -hmysql-replica -uroot -pdot -e "SET GLOBAL read_only = ON;"
+        mysql -hmysql-replica -uroot -pdot -e "SET GLOBAL super_read_only = ON;"
+
+        mysql -hmysql-replica -uroot -pdot -e "SHOW REPLICA STATUS\\G" | grep -q "Replica_IO_Running: Yes"
+        mysql -hmysql-replica -uroot -pdot -e "SHOW REPLICA STATUS\\G" | grep -q "Replica_SQL_Running: Yes"
+    depends_on:
+      mysql-primary:
+        condition: service_healthy
+      mysql-replica:
+        condition: service_started
+    restart: "no"
