@@ -648,6 +648,66 @@ def test_validate_id_token_bad_token_no_aud(oauth2_settings, mocker, oidc_key):
     assert status is False
 
 
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_get_id_token_dictionary_auth_time_naive_last_login_is_utc(oauth2_settings, rf):
+    validator = OAuth2Validator()
+    django_request = rf.get("/")
+    request = Request("/", headers=django_request.META)
+    request.scopes = ["openid"]
+    request.client = mock.MagicMock()
+
+    naive_last_login = datetime.datetime(2026, 1, 1, 12, 0, 0)
+    request.user = mock.MagicMock(pk=1, last_login=naive_last_login)
+
+    with timezone.override("Europe/Rome"):
+        claims, _ = validator.get_id_token_dictionary(None, None, request)
+
+    expected_auth_time = int(naive_last_login.replace(tzinfo=datetime.timezone.utc).timestamp())
+    assert claims["auth_time"] == expected_auth_time
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_get_id_token_dictionary_auth_time_last_login_none_falls_back_to_now(oauth2_settings, rf):
+    validator = OAuth2Validator()
+    django_request = rf.get("/")
+    request = Request("/", headers=django_request.META)
+    request.scopes = ["openid"]
+    request.client = mock.MagicMock()
+    request.user = mock.MagicMock(pk=1, last_login=None)
+
+    frozen_now = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    with mock.patch("oauth2_provider.oauth2_validators.timezone.now", return_value=frozen_now):
+        claims, _ = validator.get_id_token_dictionary(None, None, request)
+
+    assert claims["auth_time"] == int(frozen_now.timestamp())
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_get_id_token_dictionary_auth_time_naive_last_login_use_tz_false_uses_default_timezone(
+    oauth2_settings, rf, settings
+):
+    settings.USE_TZ = False
+    settings.TIME_ZONE = "Europe/Rome"
+
+    validator = OAuth2Validator()
+    django_request = rf.get("/")
+    request = Request("/", headers=django_request.META)
+    request.scopes = ["openid"]
+    request.client = mock.MagicMock()
+
+    naive_last_login = datetime.datetime(2026, 1, 1, 12, 0, 0)
+    request.user = mock.MagicMock(pk=1, last_login=naive_last_login)
+
+    claims, _ = validator.get_id_token_dictionary(None, None, request)
+
+    expected_auth_time = int(
+        timezone.make_aware(naive_last_login, timezone=timezone.get_default_timezone())
+        .astimezone(datetime.timezone.utc)
+        .timestamp()
+    )
+    assert claims["auth_time"] == expected_auth_time
+
+
 @pytest.mark.django_db(databases=retrieve_current_databases())
 def test_invalidate_authorization_token_returns_invalid_grant_error_when_grant_does_not_exist():
     client_id = "123"

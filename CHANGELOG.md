@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * #1594 Fix introspection token expiry handling to consistently use UTC and avoid the deprecated
   `datetime.utcfromtimestamp`.
+* #1696 Fix `auth_time` in oauth2 validator when user has never logged in.
+
 
 ## [3.3.0] - 2025-05-21
 
