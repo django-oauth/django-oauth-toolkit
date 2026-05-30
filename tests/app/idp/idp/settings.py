@@ -88,8 +88,12 @@ ipUMvb4Se0LDJnmFuv8v6gM6V4vyXkP855mNOiRHUOHOSKdQ3SeKrLlnR6I=
     OAUTH2_PROVIDER_ALLOWED_SCHEMES=(list, ["https", "http"]),
     OAUTHLIB_INSECURE_TRANSPORT=(bool, "1"),
     STATIC_ROOT=(str, BASE_DIR / "static"),
-    STATIC_URL=(str, "static/"),
-    TEMPLATES_DIRS=(list, [BASE_DIR / "templates"]),
+    STATIC_URL=(str, "/static/"),
+    # Operator-supplied template override directories, searched before the
+    # bundled defaults. Empty by default so local dev and e2e use the
+    # bundled templates; set TEMPLATES_DIRS (e.g. a mounted /templates) to
+    # override individual templates in the distributable image.
+    TEMPLATES_DIRS=(list, []),
 )
 
 # Quick-start development settings - unsuitable for production
@@ -120,6 +124,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -134,7 +139,9 @@ ROOT_URLCONF = "idp.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": env("TEMPLATES_DIRS"),
+        # Override dirs first so operators can shadow individual templates,
+        # then the bundled defaults shipped with this app.
+        "DIRS": [*env("TEMPLATES_DIRS"), BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
