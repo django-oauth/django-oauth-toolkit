@@ -172,25 +172,38 @@ response to a reviewer's comments.  If a reviewer asks for changes, you do not n
 after making changes. Just make the changes locally, push them to GitHub, then add a comment to the discussion section
 of the pull request.
 
-Pull upstream changes into your fork regularly
-==============================================
+Using LLM tools
+===============
 
-It's a good practice to pull upstream changes from master into your fork on a regular basis, in fact if you work on
-outdated code and your changes diverge too far from master, the pull request has to be rejected.
+You are strongly encouraged to use LLM tools to provide initial feedback on your PRs before requesting a review from a maintainer.
+This can help you catch and fix issues early, and make the review process smoother for everyone involved.
 
-To pull in upstream changes::
+As maintainers, we will also use LLM tools to provide feedback on PRs as well. Treat the LLM feedback as you would feedback from
+a human reviewer, and respond to it in the same way. In particular, when you receive LLM feedback on your PR, you should verify
+the feedback against the relevant specs, tests, best practices, and the actual behavior of the codebase. If the feedback is valid,
+address the issue and push the changes. If the feedback is not valid, you can push back with a short rationale explaining why you
+disagree with the suggestion.
+
+
+Rebase pull request branches regularly
+======================================
+
+It's a good practice to rebase your pull request branches regularly. To do this, first fetch the latest changes from the upstream
+repository, then rebase your branch on top of the latest master. This helps to keep your branch up to date with the latest changes
+and reduces the chances of merge conflicts when you submit your pull request.
+
+To fetch upstream changes::
 
     git remote add upstream https://github.com/django-oauth/django-oauth-toolkit.git
     git fetch upstream
 
-Then merge the changes that you fetched::
+Then rebase your branch on top of the latest master::
 
-    git merge upstream/master
+    git rebase --autostash upstream/master
 
 For more information, see the `GitHub Docs on forking the repository <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo>`_.
 
-.. note:: Please be sure to rebase your commits on the master when possible, so your commits can be fast-forwarded: we
-    try to avoid *merge commits* when they are not necessary.
+.. note:: we use rebasing, so your pull requests can be fast-forwarded: we avoid *merge commits* in feature branches.
 
 How to get your pull request accepted
 =====================================
