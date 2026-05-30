@@ -244,7 +244,7 @@ class OAuth2ProviderSettings:
             # Special case OAUTH2_SERVER_CLASS - if not specified, and OIDC is
             # enabled, use the OIDC_SERVER_CLASS setting instead
             if attr == "OAUTH2_SERVER_CLASS" and self.OIDC_ENABLED:
-                val = self.defaults["OIDC_SERVER_CLASS"]
+                val = self.user_settings.get("OIDC_SERVER_CLASS", self.defaults["OIDC_SERVER_CLASS"])
             else:
                 val = self.defaults[attr]
 

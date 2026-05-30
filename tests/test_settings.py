@@ -184,6 +184,29 @@ def test_authentication_server_exp_time_zone_no_warning_when_not_configured(recw
     assert not [w for w in recwarn.list if issubclass(w.category, DeprecationWarning)]
 
 
+def test_oidc_server_class_user_override_used_when_oidc_enabled():
+    """
+    When OIDC is enabled and OAUTH2_SERVER_CLASS is not user overridden,
+    the user-overridden OIDC_SERVER_CLASS must be returned (not the default).
+    """
+    custom = "tests.admin.CustomApplicationAdmin"  # any importable class works for the test
+    settings = OAuth2ProviderSettings(
+        user_settings={
+            "OIDC_ENABLED": True,
+            "OIDC_SERVER_CLASS": custom,
+        }
+    )
+    assert settings.OAUTH2_SERVER_CLASS is CustomApplicationAdmin
+
+
+def test_oidc_server_class_default_used_when_neither_overridden():
+    """When OIDC is enabled and neither *_SERVER_CLASS is overridden, fall back to OIDC default."""
+    from oauthlib.openid import Server as OIDCServer
+
+    settings = OAuth2ProviderSettings(user_settings={"OIDC_ENABLED": True})
+    assert settings.OAUTH2_SERVER_CLASS is OIDCServer
+
+
 class TestRefreshTokenAdminSelectRelated(TestCase):
     def test_changelist_queryset_select_related_is_bounded(self):
         """
