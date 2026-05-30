@@ -165,6 +165,9 @@ used in the ``OAuthLibMixin`` that implements OAuth2 grant types. It defaults
 to ``oauthlib.oauth2.Server``, except when :doc:`oidc` is enabled, when the
 default is ``oauthlib.openid.Server``.
 
+When ``OIDC_ENABLED`` is ``True`` and ``OAUTH2_SERVER_CLASS`` is not explicitly
+configured, ``OIDC_SERVER_CLASS`` is used as the fallback.
+
 OAUTH2_VALIDATOR_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~
 The import string of the ``oauthlib.oauth2.RequestValidator`` subclass that
@@ -317,6 +320,13 @@ OIDC_ENABLED
 Default: ``False``
 
 Whether or not :doc:`oidc` support is enabled.
+
+OIDC_SERVER_CLASS
+~~~~~~~~~~~~~~~~~
+Default: ``"oauthlib.openid.Server"``
+
+The import string for the OIDC ``server_class`` used when ``OIDC_ENABLED`` is
+``True`` and ``OAUTH2_SERVER_CLASS`` is not explicitly configured.
 
 OIDC_RSA_PRIVATE_KEY
 ~~~~~~~~~~~~~~~~~~~~

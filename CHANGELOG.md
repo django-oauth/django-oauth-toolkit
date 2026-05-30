@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1594 Fix introspection token expiry handling to consistently use UTC and avoid the deprecated
   `datetime.utcfromtimestamp`.
 * #1696 Fix `auth_time` in oauth2 validator when user has never logged in.
+* #1603 Honor user-overridden `OIDC_SERVER_CLASS` when `OIDC_ENABLED` is `True` and `OAUTH2_SERVER_CLASS` is not explicitly set; previously only the default was used in this fallback path.
 
 
 ## [3.3.0] - 2025-05-21
