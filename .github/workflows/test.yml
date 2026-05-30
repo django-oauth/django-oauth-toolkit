@@ -14,39 +14,150 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  discover-matrices:
+    name: Discover tox matrices
+    runs-on: ubuntu-latest
+    outputs:
+      core-matrix: ${{ steps.discover.outputs.core-matrix }}
+      postgres-matrix: ${{ steps.discover.outputs.postgres-matrix }}
+      mysql-matrix: ${{ steps.discover.outputs.mysql-matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Discover tox environments
+        id: discover
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          def py_factor_to_version(py_factor: str) -> str:
+            return f"{int(py_factor[0])}.{int(py_factor[1:])}"
+
+          def dj_factor_to_version(dj_factor: str) -> str:
+            if dj_factor == "main":
+              return "main"
+            return f"{int(dj_factor[0])}.{int(dj_factor[1:])}"
+
+          def list_envs(*args: str) -> list[str]:
+            result = subprocess.run(
+              ["tox", "list", "--no-desc", *args],
+              check=False,
+              capture_output=True,
+              text=True,
+            )
+            if result.returncode != 0:
+              raise RuntimeError(result.stderr.strip() or f"tox list failed: {' '.join(args)}")
+            return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+          core_envs = list_envs("-f", "lite3")
+          postgres_envs = list_envs("-f", "pg16")
+          mysql_envs = list_envs("-f", "my84")
+
+          core = []
+          postgres_tests = {}
+          mysql_tests = {}
+          postgres_migrations = {}
+          mysql_migrations = {}
+
+          core_pat = re.compile(r"^py(\d+)-dj(\d+|main)-lite\d+(?:-ha)?$")
+          pg_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-pg(\d+)(?:-(ha))?$")
+          my_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-my(\d+)(?:-(ha))?$")
+          pg_mig_pat = re.compile(r"^migrations-dj(\d+|main)-pg(\d+)(?:-(ha))?$")
+          my_mig_pat = re.compile(r"^migrations-dj(\d+|main)-my(\d+)(?:-(ha))?$")
+
+          for env in core_envs:
+            m = core_pat.match(env)
+            if m:
+              py_factor, dj_factor = m.groups()
+              core.append(
+                {
+                  "toxenv": env,
+                  "python-version": py_factor_to_version(py_factor),
+                  "django-version": dj_factor_to_version(dj_factor),
+                }
+              )
+          for env in postgres_envs:
+            m = pg_test_pat.match(env)
+            if m:
+              py_factor, dj_factor, db_version, topology = m.groups()
+              postgres_tests[(dj_factor, db_version, topology or "standalone")] = {
+                "toxenv": env,
+                "python-version": py_factor_to_version(py_factor),
+                "django-version": dj_factor_to_version(dj_factor),
+              }
+              continue
+
+            m = pg_mig_pat.match(env)
+            if m:
+              dj_factor, db_version, topology = m.groups()
+              postgres_migrations[(dj_factor, db_version, topology or "standalone")] = env
+              continue
+
+          for env in mysql_envs:
+            m = my_test_pat.match(env)
+            if m:
+              py_factor, dj_factor, db_version, topology = m.groups()
+              mysql_tests[(dj_factor, db_version, topology or "standalone")] = {
+                "toxenv": env,
+                "python-version": py_factor_to_version(py_factor),
+                "django-version": dj_factor_to_version(dj_factor),
+              }
+              continue
+
+            m = my_mig_pat.match(env)
+            if m:
+              dj_factor, db_version, topology = m.groups()
+              mysql_migrations[(dj_factor, db_version, topology or "standalone")] = env
+
+          def build_backend_matrix(tests: dict[tuple[str, str, str], dict[str, str]], migrations: dict[tuple[str, str, str], str], engine: str) -> list[dict[str, str]]:
+            rows = []
+            for key, test_entry in tests.items():
+              migration_toxenv = migrations.get(key)
+              if not migration_toxenv:
+                dj_factor, db_version, topology = key
+                raise RuntimeError(
+                  f"missing migrations-dj{dj_factor}-{engine}{db_version}{'-' + topology if topology != 'standalone' else ''} for {test_entry['toxenv']}"
+                )
+              rows.append({**test_entry, "migration_toxenv": migration_toxenv})
+            rows.sort(key=lambda x: x["toxenv"])
+            return rows
+
+          core.sort(key=lambda x: x["toxenv"])
+          postgres = build_backend_matrix(postgres_tests, postgres_migrations, "pg")
+          mysql = build_backend_matrix(mysql_tests, mysql_migrations, "my")
+
+          outputs = {
+            "core-matrix": {"include": core},
+            "postgres-matrix": {"include": postgres},
+            "mysql-matrix": {"include": mysql},
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+            for name, value in outputs.items():
+              out.write(f"{name}={json.dumps(value, separators=(',', ':'))}\n")
+          PY
+
   test-package:
+    needs: discover-matrices
     name: DOT SQLite (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for Codecov OIDC token
     strategy:
       fail-fast: false
-      matrix:
-        python-version:
-        - '3.10'
-        - '3.11'
-        - '3.12'
-        - '3.13'
-        django-version:
-        - '4.2'
-        - '5.0'
-        - '5.1'
-        - '5.2'
-        - 'main'
-        ## include/exclude version combinations, typically for the newest and oldest django/python versions.
-        ## python-version and django-version should be selected such that they minimize the number of include
-        ## and exclude entries.
-        include:
-          - { django-version: '5.2', python-version: '3.14' }
-          - { django-version: '6.0', python-version: '3.12' }
-          - { django-version: '6.0', python-version: '3.13' }
-          - { django-version: '6.0', python-version: '3.14' }
-          - { django-version: 'main', python-version: '3.14' }
-        exclude:
-          - { django-version: '4.2', python-version: '3.13' }
-          - { django-version: '5.0', python-version: '3.13' }
-          - { django-version: 'main', python-version: '3.10' }
-          - { django-version: 'main', python-version: '3.11' }
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.core-matrix) }}
 
     steps:
     - uses: actions/checkout@v4
@@ -73,13 +184,10 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install --upgrade tox tox-gh-actions
+        python -m pip install --upgrade tox
 
     - name: Tox tests
-      run: |
-        tox -v
-      env:
-        DJANGO: ${{ matrix.django-version }}
+      run: tox -v -e ${{ matrix.toxenv }}
 
     - name: Upload coverage
       uses: codecov/codecov-action@v5
@@ -136,11 +244,9 @@ jobs:
         run: python -m pip install --upgrade tox
 
       - name: Check no missing migrations
-        run: tox -e migrations-sqlite
-        env:
-          DJANGO: '5.2'
+        run: tox -e migrations-dj52-lite3
 
-  migrate_swapped:
+  scenario-migrate-swapped:
     name: DOT Migrate Swapped Models
     runs-on: ubuntu-latest
     steps:
@@ -155,9 +261,7 @@ jobs:
         run: python -m pip install --upgrade tox
 
       - name: Run swapped model migrations
-        run: tox -e migrate_swapped
-        env:
-          DJANGO: '5.2'
+        run: tox -e scenario-migrate-swapped-dj52-lite3
 
   multi-db:
     name: DOT Multi-DB Tests (Python 3.12, Django 4.2)
@@ -177,24 +281,12 @@ jobs:
         run: tox -e py312-dj42-multi-db
 
   postgres-standalone:
+    needs: discover-matrices
     name: DOT PostgreSQL (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - python-version: '3.10'
-            py-factor: '310'
-            django-version: '4.2'
-            dj-factor: '42'
-          - python-version: '3.12'
-            py-factor: '312'
-            django-version: '5.2'
-            dj-factor: '52'
-          - python-version: '3.14'
-            py-factor: '314'
-            django-version: '6.0'
-            dj-factor: '60'
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.postgres-matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -212,12 +304,12 @@ jobs:
           POSTGRES_BIND_PORT: '5432'
 
       - name: Run postgres standalone tests
-        run: tox -e py${{ matrix.py-factor }}-dj${{ matrix.dj-factor }}-postgres
+        run: tox -e ${{ matrix.toxenv }}
         env:
           POSTGRES_PORT: '5432'
 
       - name: Run postgres migration checks
-        run: tox -e migrations-postgres-dj${{ matrix.dj-factor }}
+        run: tox -e ${{ matrix.migration_toxenv }}
         env:
           POSTGRES_PORT: '5432'
 
@@ -228,24 +320,12 @@ jobs:
           POSTGRES_BIND_PORT: '5432'
 
   mysql-standalone:
+    needs: discover-matrices
     name: DOT MySQL (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - python-version: '3.10'
-            py-factor: '310'
-            django-version: '4.2'
-            dj-factor: '42'
-          - python-version: '3.12'
-            py-factor: '312'
-            django-version: '5.2'
-            dj-factor: '52'
-          - python-version: '3.14'
-            py-factor: '314'
-            django-version: '6.0'
-            dj-factor: '60'
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.mysql-matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -263,12 +343,12 @@ jobs:
           MYSQL_BIND_PORT: '3306'
 
       - name: Run mysql standalone tests
-        run: tox -e py${{ matrix.py-factor }}-dj${{ matrix.dj-factor }}-mysql
+        run: tox -e ${{ matrix.toxenv }}
         env:
           MYSQL_PORT: '3306'
 
       - name: Run mysql migration checks
-        run: tox -e migrations-mysql-dj${{ matrix.dj-factor }}
+        run: tox -e ${{ matrix.migration_toxenv }}
         env:
           MYSQL_PORT: '3306'
 
@@ -337,7 +417,7 @@ jobs:
       - lint
       - sphinxlint
       - migrations
-      - migrate_swapped
+      - scenario-migrate-swapped
       - multi-db
       - postgres-standalone
       - mysql-standalone
