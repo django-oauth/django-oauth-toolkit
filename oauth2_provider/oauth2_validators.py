@@ -902,16 +902,27 @@ class OAuth2Validator(RequestValidator):
 
         expiration_time = timezone.now() + timedelta(seconds=oauth2_settings.ID_TOKEN_EXPIRE_SECONDS)
 
-        last_login = request.user.last_login
-        if last_login is None:
-            last_login = timezone.now()
+        auth_time = request.user.last_login
+        if auth_time is None:
+            auth_time = timezone.now()
+
+        # RFC 7519 numeric dates are seconds since epoch in UTC.
+        # For USE_TZ=False, naive datetimes represent local wall-clock time.
+        # For USE_TZ=True, legacy naive values are interpreted as UTC.
+        if timezone.is_naive(auth_time):
+            if settings.USE_TZ:
+                auth_time = auth_time.replace(tzinfo=datetime_timezone.utc)
+            else:
+                auth_time = make_aware(auth_time, timezone=timezone.get_default_timezone())
+
+        auth_time = auth_time.astimezone(datetime_timezone.utc)
 
         # Required ID Token claims
         claims.update(
             **{
                 "iss": self.get_oidc_issuer_endpoint(request),
                 "exp": int(dateformat.format(expiration_time, "U")),
-                "auth_time": int(dateformat.format(last_login, "U")),
+                "auth_time": int(auth_time.timestamp()),
                 "jti": str(uuid.uuid4()),
             }
         )
