@@ -51,6 +51,12 @@ Documentation
 You can edit the documentation by editing files in :file:`docs/`. This project
 uses sphinx to turn ``ReStructuredText`` into the HTML docs you are reading.
 
+To install the documentation dependencies directly (outside of tox)::
+
+    pip install .[docs]
+    # or with uv:
+    uv sync --extra docs
+
 In order to build the docs in to HTML, you can run::
 
     tox -e docs
@@ -342,7 +348,7 @@ following these steps:
 
 .. code-block:: bash
 
-    pip install .[dev]
+    pip install .[test]
     # open the project in VS Code
     # click Testing (erlenmeyer flask) on the Activity Bar
     # select the test you want to run or debug
@@ -443,14 +449,14 @@ virtual environments and dependencies in a more efficient way. The ``uv run`` co
 syncs dependencies and python version before running the command, saving multiple steps when
 working on multiple branches with different dependencies.
 
-You can use uv sync to set up your environment and install dependencies and run python::
+You can use uv sync to set up your environment and install dependencies and run python:
 
 .. code-block:: bash
 
-    uv sync    # checks deps, installs virtualenv and dependencies as necessary
-    uv run ... # runs command in the uv environment, syncs deps and python version first if necessary
+    uv sync --extra test    # checks deps, installs virtualenv and test dependencies as necessary
+    uv run --extra test ... # runs command in the uv environment, syncs deps and python version first if necessary
 
-To run tox uv use `tox uv <https://github.com/tox-dev/tox-uv>`__::
+To run tox uv use `tox uv <https://github.com/tox-dev/tox-uv>`__:
 
 .. code-block:: bash
 
