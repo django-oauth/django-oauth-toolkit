@@ -1891,7 +1891,7 @@ class TestOIDCAuthorizationCodeHSAlgorithm(BaseAuthorizationCodeTokenView):
         assert key.kty == "oct"
         jwt_token = jwt.JWT(key=key, jwt=content["id_token"])
         claims = json.loads(jwt_token.claims)
-        assert claims["sub"] == "1"
+        assert claims["sub"] == str(self.test_user.pk)
 
 
 @pytest.mark.oauth2_settings(presets.DEFAULT_SCOPES_RW)
