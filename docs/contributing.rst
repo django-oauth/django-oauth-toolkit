@@ -261,7 +261,7 @@ major line: 4.2, 5.2, and 6.0.
 Backend env names follow ``py{python}-dj{django}-{db}``, and migration env names mirror that
 with ``migrations-dj{django}-{db}``. For example, ``py312-dj52-pg16`` and
 ``migrations-dj52-pg16``. This naming is intentional: it keeps DB engine/version explicit and
-ready for future topology variants like ``-ha``.
+ready for topology variants like ``-pr``.
 
 Run PostgreSQL standalone checks locally::
 
@@ -297,6 +297,19 @@ Run MySQL standalone checks locally::
   tox -e migrations-dj60-my84
   docker compose -f docker-compose.mysql.yml down -v
 
+Run MySQL primary/replica topology checks locally::
+
+  docker compose -f docker-compose.mysql-pr.yml up -d --wait
+  docker compose -f docker-compose.mysql-pr.yml exec -T mysql-primary mysql -udot -pdot -e "SELECT @@server_id"
+  docker compose -f docker-compose.mysql-pr.yml exec -T mysql-replica mysql -udot -pdot -e "SELECT @@server_id"
+  tox -e py310-dj42-my84-pr
+  tox -e migrations-dj42-my84-pr
+  tox -e py312-dj52-my84-pr
+  tox -e migrations-dj52-my84-pr
+  tox -e py314-dj60-my84-pr
+  tox -e migrations-dj60-my84-pr
+  docker compose -f docker-compose.mysql-pr.yml down -v
+
 Add the tests!
 --------------
 
@@ -322,7 +335,7 @@ For test writers this means any test must either:
 - instead of Django's TestCase or TransactionTestCase use the versions of those
   classes defined in tests/common_testing.py
 - when using pytest's `django_db` mark, define it like this:
-  `@pytest.mark.django_db(databases=retrieve_current_databases())`
+  `@pytest.mark.django_db(databases="__all__")`
 
 In test code, anywhere the database is referenced the Django router needs to be used exactly like the package's code:
 
