@@ -12,14 +12,13 @@ def forwards_func(apps, schema_editor):
     
     # Arbitrary value
     THRESHOLD = 50000
-    count = AccessToken.objects.count()
+    is_over_threshold = AccessToken._default_manager.all()[THRESHOLD:THRESHOLD+1].exists()
 
-    if count > THRESHOLD:
-        raise CommandError(
+    if is_over_threshold:
+        raise RuntimeError(
             f"Migration aborted: {count} AccessTokens found. "
             f"Updating more than {THRESHOLD} rows via RunPython is too slow. "
-            "Please run the data update via a background task/management command "
-            "before applying this migration."
+            "Please delete stale AccessToken objects manually before applying this migration."
         )
 
     # If under threshold, proceed with the update
