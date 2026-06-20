@@ -16,7 +16,7 @@ def forwards_func(apps, schema_editor):
 
     if is_over_threshold:
         raise RuntimeError(
-            f"Migration aborted: {count} AccessTokens found. "
+            f"Migration aborted: found too many AccessTokens. "
             f"Updating more than {THRESHOLD} rows via RunPython is too slow. "
             "Please delete stale AccessToken objects manually before applying this migration."
         )
