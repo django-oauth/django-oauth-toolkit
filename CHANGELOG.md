@@ -63,7 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the migration transaction's own locks. This also makes both migrations backfill the correct
   database when migrating a non-default alias (`migrate --database=...`). Thanks to Igor Petrik for
   the diagnosis and fix.
-
+* #1718 Remove the redundant `unique=True` on `DeviceGrant.device_code`, which duplicated the
+  `unique_device_code` `UniqueConstraint` and created two identical unique indexes on the same
+  column. On MySQL this triggers `ER_DUP_INDEX` (1831, "duplicate index ... deprecated and will
+  be disallowed in a future release") during migration.
 
 ## [3.3.0] - 2025-05-21
 

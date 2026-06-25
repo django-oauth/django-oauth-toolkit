@@ -690,7 +690,9 @@ class AbstractDeviceGrant(models.Model):
         blank=True,
         on_delete=models.CASCADE,
     )
-    device_code = models.CharField(max_length=100, unique=True)
+    # Uniqueness is enforced by the unique_device_code UniqueConstraint (Meta.constraints);
+    # adding unique=True here would create a redundant duplicate index (MySQL warns ER_DUP_INDEX 1831).
+    device_code = models.CharField(max_length=100)
     user_code = models.CharField(max_length=100)
     scope = models.CharField(max_length=64, null=True)
     interval = models.IntegerField(default=5)
