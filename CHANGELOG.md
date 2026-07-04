@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `datetime.utcfromtimestamp`.
 * #1696 Fix `auth_time` in oauth2 validator when user has never logged in.
 * #1603 Honor user-overridden `OIDC_SERVER_CLASS` when `OIDC_ENABLED` is `True` and `OAUTH2_SERVER_CLASS` is not explicitly set; previously only the default was used in this fallback path.
+* #1591 Fix `migrate` hanging on `0012_add_token_checksum` when a database router or
+  multi-database configuration is in use. The `RunPython` data migrations in `0006` and `0012` now
+  pin their queries to `schema_editor.connection.alias`, so the backfill runs on the connection
+  performing the migration instead of being routed to a second connection that deadlocks against
+  the migration transaction's own locks. This also makes both migrations backfill the correct
+  database when migrating a non-default alias (`migrate --database=...`). Thanks to Igor Petrik for
+  the diagnosis and fix.
 
 
 ## [3.3.0] - 2025-05-21
