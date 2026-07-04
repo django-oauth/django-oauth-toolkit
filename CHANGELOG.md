@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pin their queries to `schema_editor.connection.alias`, so the backfill runs on the connection
   performing the migration instead of being routed to a second connection that deadlocks against
   the migration transaction's own locks. This also makes both migrations backfill the correct
-  database when migrating a non-default alias (`migrate --database=...`). Thanks Igor Petrik for
+  database when migrating a non-default alias (`migrate --database=...`). Thanks to Igor Petrik for
   the diagnosis and fix.
 
 

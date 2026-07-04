@@ -58,16 +58,18 @@ def secondary_alias(db, settings, tmp_path):
         "PORT": "",
         "TEST": {"CHARSET": None, "COLLATION": None, "MIGRATE": True, "MIRROR": None, "NAME": None},
     }
+    connection = None
     try:
         # Instantiate (and cache) the connection wrapper while the settings entry
         # exists, then drop the entry so the alias counts as dynamically created.
-        connections[SECONDARY_ALIAS]
+        connection = connections[SECONDARY_ALIAS]
         del connections.databases[SECONDARY_ALIAS]
         yield SECONDARY_ALIAS
     finally:
         connections.databases.pop(SECONDARY_ALIAS, None)
-        connections[SECONDARY_ALIAS].close()
-        del connections[SECONDARY_ALIAS]
+        if connection is not None:
+            connection.close()
+            del connections[SECONDARY_ALIAS]
 
 
 def _migrate_to(alias, target):

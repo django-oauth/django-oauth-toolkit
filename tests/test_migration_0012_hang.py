@@ -73,8 +73,10 @@ def _migrate(alias, target):
 
 
 def _set_statement_timeout(alias, value):
+    # SET does not support bind parameters; restrict input to DEFAULT or an integer.
+    sql = "SET statement_timeout = %s" % ("DEFAULT" if value == "DEFAULT" else int(value))
     with connections[alias].cursor() as cursor:
-        cursor.execute(f"SET statement_timeout = {value}")
+        cursor.execute(sql)
 
 
 @skipUnless(
