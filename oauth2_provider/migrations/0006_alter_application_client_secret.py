@@ -16,7 +16,7 @@ def forwards_func(apps, schema_editor):
     """
     db_alias = schema_editor.connection.alias
     Application = apps.get_model(settings.APPLICATION_MODEL)
-    applications = Application._default_manager.using(db_alias).all()
+    applications = Application._default_manager.using(db_alias).iterator()
     for application in applications:
         application.save(using=db_alias, update_fields=['client_secret'])
 
