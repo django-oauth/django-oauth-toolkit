@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+### Security
+* Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
+  an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
+  *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's
+  browser to an arbitrary origin. The request is now validated against a registered client before any
+  redirect, per [OpenID Connect Core 1.0 section 3.1.2.6](https://openid.net/specs/openid-connect-core-1_0.html#AuthError).
+  Reported by Brian Lee (SSLab, Georgia Tech).
+
 ### Deprecated
 * Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
   Unix timestamps and are always interpreted as UTC per RFC 7662/RFC 7519. The setting still works

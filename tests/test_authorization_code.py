@@ -700,6 +700,52 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertIn("login_required", parsed_query["error"])
         self.assertIn("random_state_string", parsed_query["state"])
 
+    def test_prompt_none_open_redirect_no_client(self):
+        """
+        Regression test for the prompt=none open redirect.
+
+        An unauthenticated request with prompt=none, an attacker-controlled
+        redirect_uri and *no* client_id must not redirect at all: the missing
+        client_id is a fatal error, so the error page is rendered instead of
+        any Location header being emitted.
+        """
+        query_data = {
+            "prompt": "none",
+            # http is in ALLOWED_REDIRECT_URI_SCHEMES (see BaseTest.setUp), so
+            # pre-fix this request was 302'd to the attacker origin rather than
+            # being rejected by scheme validation.
+            "redirect_uri": "http://attacker.example/cb",
+            "state": "phish-123",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
+    def test_prompt_none_open_redirect_unregistered_redirect_uri(self):
+        """
+        Regression test for the prompt=none open redirect.
+
+        Even with a valid client_id, an unauthenticated prompt=none request
+        with a redirect_uri that is not registered for that client must not
+        redirect at all: the mismatching redirect_uri is a fatal error, so the
+        error page is rendered instead of any Location header being emitted.
+        """
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "scope": "openid",
+            "prompt": "none",
+            "redirect_uri": "http://attacker.example/cb",
+            "state": "phish-123",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
 
 class BaseAuthorizationCodeTokenView(BaseTest):
     def get_auth(self, scope="read write"):

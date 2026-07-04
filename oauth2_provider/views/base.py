@@ -258,28 +258,49 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         """
         Generate response for unauthorized users.
 
-        If prompt is set to none, then we redirect with an error code
-        as defined by OIDC 3.1.2.6
+        If prompt is set to none, then we redirect with an error code as defined
+        by OpenID Connect Core 1.0 section 3.1.2.6 (Authentication Error Response)
+        <https://openid.net/specs/openid-connect-core-1_0.html#AuthError>.
 
         Some code copied from OAuthLibMixin.error_response, but that is designed
-        to operated on OAuth1Error from oauthlib wrapped in a OAuthToolkitError
+        to operate on OAuth2Error from oauthlib wrapped in a OAuthToolkitError
         """
         prompt = self.request.GET.get("prompt")
-        redirect_uri = self.request.GET.get("redirect_uri")
-        if prompt == "none" and redirect_uri:
+        if prompt == "none":
+            # Per OpenID Connect Core 1.0 section 3.1.2.6 (Authentication Error
+            # Response) an unauthenticated prompt=none request returns a
+            # login_required error to the client's redirect_uri. The request
+            # MUST be validated against a registered client *before* redirecting,
+            # otherwise this endpoint becomes an open redirector: an
+            # unauthenticated attacker could supply an arbitrary, unregistered
+            # redirect_uri (and no client_id) and have the victim's browser 302'd
+            # to an attacker-controlled origin.
+            # https://openid.net/specs/openid-connect-core-1_0.html#AuthError
+            try:
+                _scopes, credentials = self.validate_authorization_request(self.request)
+            except OAuthToolkitError as error:
+                # Invalid client_id / redirect_uri (etc). error_response only
+                # redirects for non-fatal errors, and never to an unregistered
+                # redirect_uri, so this is safe.
+                return self.error_response(error, application=None)
+
+            # oauthlib has confirmed redirect_uri is registered for the client.
+            redirect_uri = credentials["redirect_uri"]
+            application = get_application_model().objects.get(client_id=credentials["client_id"])
+
             response_parameters = {"error": "login_required"}
 
             # REQUIRED if the Authorization Request included the state parameter.
             # Set to the value received from the Client
-            state = self.request.GET.get("state")
+            state = credentials.get("state")
             if state:
                 response_parameters["state"] = state
 
             separator = "&" if "?" in redirect_uri else "?"
             redirect_to = redirect_uri + separator + urlencode(response_parameters)
-            return self.redirect(redirect_to, application=None)
-        else:
-            return super().handle_no_permission()
+            return self.redirect(redirect_to, application)
+
+        return super().handle_no_permission()
 
 
 @method_decorator(csrf_exempt, name="dispatch")
