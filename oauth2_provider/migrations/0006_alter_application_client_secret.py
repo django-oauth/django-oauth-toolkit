@@ -6,6 +6,7 @@ import oauth2_provider.generators
 import oauth2_provider.models
 from oauth2_provider import settings
 
+
 logger = logging.getLogger()
 
 
