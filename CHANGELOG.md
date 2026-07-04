@@ -60,8 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tokens. If you use a swapped access token model (`OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`) the
   backfill now skips the swapped model — consistent with the schema operations in that migration,
   which never applied to swapped models. If your swapped table already contains access tokens and
-  you have not yet applied `0012`, backfill `token_checksum` in your own data migration (copy
-  `forwards_func` from `oauth2_provider/migrations/0012_add_token_checksum.py`).
+  you have not yet applied `0012`, backfill `token_checksum` in your own data migration: adapt the
+  batched backfill loop from `forwards_func` in
+  `oauth2_provider/migrations/0012_add_token_checksum.py`, but drop its swapped-model guard (the
+  early return) and resolve your own model instead.
 
 ### Deprecated
 * Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
