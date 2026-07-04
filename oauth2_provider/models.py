@@ -506,7 +506,11 @@ class AbstractRefreshToken(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="%(app_label)s_%(class)s"
     )
-    token = models.CharField(max_length=255)
+    token = models.TextField()
+    token_checksum = TokenChecksumField(
+        max_length=64,
+        blank=False,
+    )
     application = models.ForeignKey(oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE)
     access_token = models.OneToOneField(
         oauth2_settings.ACCESS_TOKEN_MODEL,
@@ -549,7 +553,7 @@ class AbstractRefreshToken(models.Model):
     class Meta:
         abstract = True
         unique_together = (
-            "token",
+            "token_checksum",
             "revoked",
         )
 

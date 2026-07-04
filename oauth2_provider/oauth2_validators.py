@@ -773,13 +773,14 @@ class OAuth2Validator(RequestValidator):
             "refresh_token": RefreshToken,
         }
 
+        token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
         token_type = token_types.get(token_type_hint, AccessToken)
         try:
-            token_type.objects.get(token=token).revoke()
+            token_type.objects.get(token_checksum=token_checksum).revoke()
         except ObjectDoesNotExist:
             for other_type in [_t for _t in token_types.values() if _t != token_type]:
                 # slightly inefficient on Python2, but the queryset contains only one instance
-                list(map(lambda t: t.revoke(), other_type.objects.filter(token=token)))
+                list(map(lambda t: t.revoke(), other_type.objects.filter(token_checksum=token_checksum)))
 
     def validate_user(self, username, password, client, request, *args, **kwargs):
         """
@@ -816,7 +817,8 @@ class OAuth2Validator(RequestValidator):
         Also attach User instance to the request object
         """
 
-        rt = RefreshToken.objects.filter(token=refresh_token).select_related("access_token").first()
+        token_checksum = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+        rt = RefreshToken.objects.filter(token_checksum=token_checksum).select_related("access_token").first()
 
         if not rt:
             return False
