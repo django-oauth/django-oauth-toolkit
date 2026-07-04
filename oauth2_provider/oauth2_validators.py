@@ -15,8 +15,8 @@ import requests
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.hashers import check_password, identify_hasher
-from django.core.exceptions import ObjectDoesNotExist
 from django.db import router, transaction
+from django.db.models import F
 from django.http import HttpRequest
 from django.utils import dateformat, timezone
 from django.utils.crypto import constant_time_compare
@@ -775,12 +775,14 @@ class OAuth2Validator(RequestValidator):
 
         token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
         token_type = token_types.get(token_type_hint, AccessToken)
-        try:
-            token_type.objects.get(token_checksum=token_checksum).revoke()
-        except ObjectDoesNotExist:
+        # RefreshToken uniqueness is (token_checksum, revoked), so several rows may share a
+        # checksum; revoke every match instead of get() to avoid MultipleObjectsReturned.
+        tokens = list(token_type.objects.filter(token_checksum=token_checksum))
+        if not tokens:
             for other_type in [_t for _t in token_types.values() if _t != token_type]:
-                # slightly inefficient on Python2, but the queryset contains only one instance
-                list(map(lambda t: t.revoke(), other_type.objects.filter(token_checksum=token_checksum)))
+                tokens.extend(other_type.objects.filter(token_checksum=token_checksum))
+        for t in tokens:
+            t.revoke()
 
     def validate_user(self, username, password, client, request, *args, **kwargs):
         """
@@ -818,7 +820,14 @@ class OAuth2Validator(RequestValidator):
         """
 
         token_checksum = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
-        rt = RefreshToken.objects.filter(token_checksum=token_checksum).select_related("access_token").first()
+        # Several rows may share a checksum (uniqueness is (token_checksum, revoked)):
+        # prefer the unrevoked row, otherwise the most recently revoked one.
+        rt = (
+            RefreshToken.objects.filter(token_checksum=token_checksum)
+            .select_related("access_token")
+            .order_by(F("revoked").desc(nulls_first=True))
+            .first()
+        )
 
         if not rt:
             return False

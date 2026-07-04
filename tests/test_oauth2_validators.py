@@ -302,6 +302,45 @@ class TestOAuth2Validator(TransactionTestCase):
         refresh_token.refresh_from_db()
         self.assertIsNotNone(refresh_token.revoked)
 
+    def test_validate_refresh_token_prefers_unrevoked_row_over_revoked_duplicate(self):
+        # (token_checksum, revoked) uniqueness allows the same token value to exist
+        # as both a revoked row and an active row; validation must pick the active one.
+        token = "duplicate-refresh-token"
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            revoked=timezone.now() - datetime.timedelta(days=1),
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+        )
+        request = mock.MagicMock(wraps=Request)
+
+        self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
+        self.assertIsNone(request.refresh_token_instance.revoked)
+
+    def test_revoke_token_with_duplicate_refresh_token_checksums(self):
+        token = "duplicate-refresh-token"
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            revoked=timezone.now() - datetime.timedelta(days=1),
+        )
+        active_token = RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+        )
+
+        self.validator.revoke_token(token, "refresh_token", mock.MagicMock(wraps=Request))
+
+        active_token.refresh_from_db()
+        self.assertIsNotNone(active_token.revoked)
+
     def test_save_bearer_token__without_user__raises_fatal_client(self):
         token = {}
 
