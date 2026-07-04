@@ -53,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tokens) are supported. This mirrors the `AccessToken.token_checksum` approach introduced in 3.0.0
   (#1447). The revocation endpoint also looks up access tokens by checksum now, restoring an indexed
   lookup there.
+* #1652 The `0012_add_token_checksum` backfill now computes checksums in batched `bulk_update`
+  calls (1000 rows per statement) instead of saving each access token individually, sharply
+  reducing how long the migration locks the access token table on large installations. Running
+  `cleartokens` before upgrading is still the best preparation for tables with many expired
+  tokens. If you use a swapped access token model (`OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`) the
+  backfill now skips the swapped model — consistent with the schema operations in that migration,
+  which never applied to swapped models. If your swapped table already contains access tokens and
+  you have not yet applied `0012`, backfill `token_checksum` in your own data migration (copy
+  `forwards_func` from `oauth2_provider/migrations/0012_add_token_checksum.py`).
 
 ### Deprecated
 * Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are

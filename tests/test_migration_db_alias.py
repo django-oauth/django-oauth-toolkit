@@ -129,3 +129,39 @@ def test_migration_0012_backfills_token_checksum_on_non_default_alias(secondary_
 
     expected_checksum = hashlib.sha256(token_value.encode("utf-8")).hexdigest()
     assert migrated_access_token.token_checksum == expected_checksum
+
+
+def test_migration_0012_backfills_more_rows_than_one_batch(secondary_alias):
+    """The batched backfill must cover full batches and the trailing partial batch."""
+    apps_before = _migrate_to(secondary_alias, ("oauth2_provider", "0011_refreshtoken_token_family"))
+
+    Application = apps_before.get_model("oauth2_provider", "Application")
+    AccessTokenBefore = apps_before.get_model("oauth2_provider", "AccessToken")
+
+    application = Application.objects.using(secondary_alias).create(
+        name="migration-test-client",
+        client_type="confidential",
+        authorization_grant_type="client-credentials",
+        client_secret="plain-secret",
+    )
+
+    expires = timezone.now() + timedelta(days=1)
+    token_count = 1050  # one full batch of 1000 plus a partial batch
+    AccessTokenBefore.objects.using(secondary_alias).bulk_create(
+        AccessTokenBefore(
+            application=application,
+            token="batch-token-%d" % i,
+            expires=expires,
+            scope="read",
+        )
+        for i in range(token_count)
+    )
+
+    apps_after = _migrate_to(secondary_alias, ("oauth2_provider", "0012_add_token_checksum"))
+    AccessTokenAfter = apps_after.get_model("oauth2_provider", "AccessToken")
+    migrated = AccessTokenAfter.objects.using(secondary_alias)
+
+    assert migrated.count() == token_count
+    assert not migrated.filter(token_checksum__isnull=True).exists()
+    spot_check = migrated.get(token="batch-token-1049")
+    assert spot_check.token_checksum == hashlib.sha256(b"batch-token-1049").hexdigest()
