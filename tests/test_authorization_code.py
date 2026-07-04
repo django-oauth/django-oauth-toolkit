@@ -866,6 +866,88 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         content = json.loads(response.content.decode("utf-8"))
         self.assertTrue("invalid_grant" in content.values())
 
+    def test_refresh_with_long_token(self):
+        """
+        Request an access token using a refresh token longer than 255 characters,
+        as issued by e.g. Microsoft. Long tokens are looked up via their SHA-256
+        checksum, see issue #1601.
+        """
+        self.oauth2_settings.REFRESH_TOKEN_GENERATOR = lambda request: "x" * 300 + get_random_string(32)
+        self.client.login(username="test_user", password="123456")
+        authorization_code = self.get_auth()
+
+        token_request_data = {
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "http://example.org",
+        }
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        content = json.loads(response.content.decode("utf-8"))
+        self.assertTrue("refresh_token" in content)
+        self.assertGreater(len(content["refresh_token"]), 255)
+
+        token_request_data = {
+            "grant_type": "refresh_token",
+            "refresh_token": content["refresh_token"],
+            "scope": content["scope"],
+        }
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        content = json.loads(response.content.decode("utf-8"))
+        self.assertTrue("access_token" in content)
+        self.assertGreater(len(content["refresh_token"]), 255)
+
+        # check refresh token cannot be used twice
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        self.assertEqual(response.status_code, 400)
+        content = json.loads(response.content.decode("utf-8"))
+        self.assertTrue("invalid_grant" in content.values())
+
+    def test_refresh_with_grace_period_long_token(self):
+        """
+        The grace period returns the previously issued (plaintext) refresh token,
+        which must survive the round trip for tokens longer than 255 characters.
+        """
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 120
+        self.oauth2_settings.REFRESH_TOKEN_GENERATOR = lambda request: "x" * 300 + get_random_string(32)
+        self.client.login(username="test_user", password="123456")
+        authorization_code = self.get_auth()
+
+        token_request_data = {
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "http://example.org",
+        }
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        content = json.loads(response.content.decode("utf-8"))
+        self.assertTrue("refresh_token" in content)
+        self.assertGreater(len(content["refresh_token"]), 255)
+
+        token_request_data = {
+            "grant_type": "refresh_token",
+            "refresh_token": content["refresh_token"],
+            "scope": content["scope"],
+        }
+
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        content = json.loads(response.content.decode("utf-8"))
+        first_access_token = content["access_token"]
+        first_refresh_token = content["refresh_token"]
+
+        # within the grace period the same tokens are returned
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        self.assertEqual(response.status_code, 200)
+        content = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(content["access_token"], first_access_token)
+        self.assertEqual(content["refresh_token"], first_refresh_token)
+
     def test_refresh_with_grace_period(self):
         """
         Request an access token using a refresh token

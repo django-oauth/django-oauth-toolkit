@@ -345,9 +345,65 @@ class TestAccessTokenModel(BaseTestModels):
 
 
 class TestRefreshTokenModel(BaseTestModels):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.app = Application.objects.create(
+            name="test_app",
+            redirect_uris="http://localhost http://example.com http://example.org",
+            user=cls.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+
     def test_str(self):
         refresh_token = RefreshToken(token="test_token")
         self.assertEqual("%s" % refresh_token, refresh_token.token)
+
+    def test_token_checksum_field(self):
+        token = secrets.token_urlsafe(32)
+        refresh_token = RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.app,
+        )
+        expected_checksum = hashlib.sha256(token.encode()).hexdigest()
+
+        self.assertEqual(refresh_token.token_checksum, expected_checksum)
+
+    def test_token_longer_than_255_characters(self):
+        # e.g. Microsoft issues JWT refresh tokens well over 255 characters
+        token = secrets.token_urlsafe(600)
+        self.assertGreater(len(token), 255)
+        refresh_token = RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.app,
+        )
+        refresh_token.refresh_from_db()
+
+        self.assertEqual(refresh_token.token, token)
+        self.assertEqual(
+            refresh_token.token_checksum,
+            hashlib.sha256(token.encode()).hexdigest(),
+        )
+
+    def test_same_token_allowed_with_different_revoked_timestamps(self):
+        token = secrets.token_urlsafe(32)
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.app,
+            revoked=timezone.now(),
+        )
+        active = RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.app,
+        )
+
+        self.assertIsNone(active.revoked)
+        self.assertEqual(RefreshToken.objects.filter(token_checksum=active.token_checksum).count(), 2)
 
 
 @pytest.mark.usefixtures("oauth2_settings")

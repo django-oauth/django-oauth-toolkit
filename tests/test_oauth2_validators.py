@@ -265,6 +265,43 @@ class TestOAuth2Validator(TransactionTestCase):
     def test_rotate_refresh_token__is_true(self):
         self.assertTrue(self.validator.rotate_refresh_token(mock.MagicMock()))
 
+    def test_validate_refresh_token_with_long_token(self):
+        long_token = "x" * 500
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="12345678901",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            token=long_token,
+            application=self.application,
+            access_token=access_token,
+        )
+        request = mock.MagicMock(wraps=Request)
+
+        self.assertTrue(self.validator.validate_refresh_token(long_token, self.application, request))
+        self.assertEqual(request.user, self.user)
+        self.assertEqual(request.refresh_token, long_token)
+
+    def test_validate_refresh_token_with_unknown_token(self):
+        request = mock.MagicMock(wraps=Request)
+        self.assertFalse(self.validator.validate_refresh_token("unknown", self.application, request))
+
+    def test_revoke_token_with_long_refresh_token(self):
+        long_token = "x" * 500
+        refresh_token = RefreshToken.objects.create(
+            user=self.user,
+            token=long_token,
+            application=self.application,
+        )
+
+        self.validator.revoke_token(long_token, "refresh_token", mock.MagicMock(wraps=Request))
+
+        refresh_token.refresh_from_db()
+        self.assertIsNotNone(refresh_token.revoked)
+
     def test_save_bearer_token__without_user__raises_fatal_client(self):
         token = {}
 

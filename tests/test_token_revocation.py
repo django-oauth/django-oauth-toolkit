@@ -152,6 +152,66 @@ class TestRevocationView(BaseTest):
         self.assertIsNotNone(refresh_token.revoked)
         self.assertFalse(AccessToken.objects.filter(pk=rtok.access_token.pk).exists())
 
+    def test_revoke_long_refresh_token(self):
+        """
+        Refresh tokens longer than 255 characters (e.g. issued by Microsoft)
+        are looked up via their SHA-256 checksum, see issue #1601.
+        """
+        tok = AccessToken.objects.create(
+            user=self.test_user,
+            token="1234567890",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+        rtok = RefreshToken.objects.create(
+            user=self.test_user, token="9" * 500, application=self.application, access_token=tok
+        )
+
+        data = {
+            "client_id": self.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+            "token": rtok.token,
+            "token_type_hint": "refresh_token",
+        }
+
+        url = reverse("oauth2_provider:revoke-token")
+        response = self.client.post(url, data=data)
+        self.assertEqual(response.status_code, 200)
+        refresh_token = RefreshToken.objects.filter(pk=rtok.pk).first()
+        self.assertIsNotNone(refresh_token.revoked)
+        self.assertFalse(AccessToken.objects.filter(pk=tok.pk).exists())
+
+    def test_revoke_long_refresh_token_with_wrong_hint(self):
+        """
+        A wrong hint (access_token) must fall back to searching refresh tokens,
+        also via the checksum lookup.
+        """
+        tok = AccessToken.objects.create(
+            user=self.test_user,
+            token="1234567890",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+        rtok = RefreshToken.objects.create(
+            user=self.test_user, token="9" * 500, application=self.application, access_token=tok
+        )
+
+        data = {
+            "client_id": self.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+            "token": rtok.token,
+            "token_type_hint": "access_token",
+        }
+
+        url = reverse("oauth2_provider:revoke-token")
+        response = self.client.post(url, data=data)
+        self.assertEqual(response.status_code, 200)
+        refresh_token = RefreshToken.objects.filter(pk=rtok.pk).first()
+        self.assertIsNotNone(refresh_token.revoked)
+        self.assertFalse(AccessToken.objects.filter(pk=tok.pk).exists())
+
     def test_revoke_refresh_token_with_revoked_access_token(self):
         tok = AccessToken.objects.create(
             user=self.test_user,
