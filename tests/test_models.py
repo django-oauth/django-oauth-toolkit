@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 from datetime import timedelta
+from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -9,6 +10,7 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.test.utils import override_settings
 from django.utils import timezone
 
+from oauth2_provider import models as oauth2_models
 from oauth2_provider.models import (
     clear_expired,
     get_access_token_model,
@@ -21,6 +23,7 @@ from oauth2_provider.models import (
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .models import CustomPkAccessToken, CustomPkRefreshToken
 
 
 CLEARTEXT_SECRET = "1234567890abcdefghijklmnopqrstuvwxyz"
@@ -481,6 +484,74 @@ class TestClearExpired(BaseTestModels):
         )
         remaining_gt_count = Grant.objects.count()
         assert remaining_gt_count == initial_gt_count // 2, "half the remaining grants should still exist."
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class TestCustomPrimaryKeyTokens(BaseTestModels):
+    """
+    Regression tests for token models that use a custom primary key field
+    (i.e. not named ``id``).
+
+    ``tests.CustomPkAccessToken`` and ``tests.CustomPkRefreshToken`` use a
+    ``UUIDField`` primary key named ``custom_pk``. The model getters are patched
+    so that ``clear_expired()`` and ``RefreshToken.revoke()`` operate on these
+    models, exercising the code paths that previously hard-coded ``id``.
+
+    See https://github.com/django-oauth/django-oauth-toolkit/pull/1593
+    """
+
+    def test_clear_expired_with_custom_pk(self):
+        """clear_expired() must work when the access token uses a custom pk."""
+        now = timezone.now()
+        expired = now - timedelta(seconds=3600)
+        later = now + timedelta(seconds=3600)
+        for i in range(3):
+            CustomPkAccessToken.objects.create(token=f"expired {i}", expires=expired)
+        for i in range(2):
+            CustomPkAccessToken.objects.create(token=f"current {i}", expires=later)
+
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = None
+        with (
+            mock.patch.object(oauth2_models, "get_access_token_model", return_value=CustomPkAccessToken),
+            mock.patch.object(oauth2_models, "get_refresh_token_model", return_value=CustomPkRefreshToken),
+        ):
+            clear_expired()
+
+        assert CustomPkAccessToken.objects.count() == 2, "expired access tokens should be deleted."
+        assert not CustomPkAccessToken.objects.filter(expires__lt=now).exists()
+
+    def test_refresh_token_revoke_with_custom_pk(self):
+        """RefreshToken.revoke() must work when tokens use a custom pk."""
+        application = Application.objects.create(
+            name="test_app",
+            redirect_uris="http://localhost",
+            user=self.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+        access_token = CustomPkAccessToken.objects.create(
+            token="test_token",
+            expires=timezone.now() + timedelta(hours=1),
+        )
+        refresh_token = CustomPkRefreshToken.objects.create(
+            token="test_refresh_token",
+            user=self.user,
+            application=application,
+            access_token=access_token,
+        )
+
+        with (
+            mock.patch.object(oauth2_models, "get_access_token_model", return_value=CustomPkAccessToken),
+            mock.patch.object(oauth2_models, "get_refresh_token_model", return_value=CustomPkRefreshToken),
+        ):
+            refresh_token.revoke()
+
+        refresh_token.refresh_from_db()
+        assert refresh_token.revoked is not None
+        assert refresh_token.access_token_id is None
+        assert not CustomPkAccessToken.objects.filter(pk=access_token.pk).exists(), (
+            "the related access token should have been revoked."
+        )
 
 
 @pytest.mark.django_db(databases="__all__")

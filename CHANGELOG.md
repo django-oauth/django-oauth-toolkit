@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release.
 
 ### Fixed
+* #1593 Use `pk` instead of `id` in `clear_expired()` and `RefreshToken.revoke()` so token models with a custom primary key field are supported.
 * #1594 Fix introspection token expiry handling to consistently use UTC and avoid the deprecated
   `datetime.utcfromtimestamp`.
 * #1696 Fix `auth_time` in oauth2 validator when user has never logged in.
