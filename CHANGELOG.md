@@ -23,6 +23,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redirect, per [OpenID Connect Core 1.0 section 3.1.2.6](https://openid.net/specs/openid-connect-core-1_0.html#AuthError).
   Reported by Brian Lee (SSLab, Georgia Tech).
 
+### WARNING - POTENTIAL BREAKING CHANGES
+* Changes to the `AbstractRefreshToken` model require doing a `manage.py migrate` after upgrading.
+* If you use a swapped refresh token model (`OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL`) you will need to
+  update your custom model with `manage.py makemigrations`. If your table already contains refresh
+  tokens you must also backfill `token_checksum` with a data migration — copy `forwards_func` from
+  `oauth2_provider/migrations/0015_refreshtoken_token_checksum.py` and keep the same operation order:
+  add nullable checksum → drop the old `("token", "revoked")` unique constraint → widen `token` to
+  `TextField` → backfill → make checksum non-nullable → add the `("token_checksum", "revoked")`
+  unique constraint.
+
+### Changed
+* #1601 `RefreshToken.token` is now a `TextField` and lookups use a new SHA-256 `token_checksum`
+  field, removing the 255 character limit so long refresh tokens (e.g. Microsoft's JWT refresh
+  tokens) are supported. This mirrors the `AccessToken.token_checksum` approach introduced in 3.0.0
+  (#1447). The revocation endpoint also looks up access tokens by checksum now, restoring an indexed
+  lookup there.
+
 ### Deprecated
 * Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
   Unix timestamps and are always interpreted as UTC per RFC 7662/RFC 7519. The setting still works
