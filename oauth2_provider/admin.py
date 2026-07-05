@@ -56,6 +56,7 @@ class AuthorizationAdmin(admin.ModelAdmin):
     readonly_fields = (
         "user",
         "application",
+        "session",
         "grant_type",
         "scope",
         "created",
@@ -81,11 +82,44 @@ class AuthorizationAdmin(admin.ModelAdmin):
 
 
 class SessionAdmin(admin.ModelAdmin):
+    """
+    Sessions are system-created records of a user agent's authentication at
+    the OP: the admin can inspect and *terminate* them, but not create, edit
+    or delete them. Termination is the domain action; row deletion is
+    reserved for ``cleartokens`` once nothing references the session.
+    """
+
     list_display = ("sid", "user", "authenticated_at", "expires", "terminated_at", "termination_reason")
     list_select_related = ("user",)
-    raw_id_fields = ("user",)
     search_fields = ("sid",) + (("user__email",) if has_email else ())
     list_filter = ("termination_reason",)
+    readonly_fields = (
+        "sid",
+        "user",
+        "session_key",
+        "authenticated_at",
+        "expires",
+        "created",
+        "updated",
+        "terminated_at",
+        "termination_reason",
+    )
+    actions = ["terminate"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Terminate selected sessions")
+    def terminate(self, request, queryset):
+        terminated = 0
+        for session in queryset:
+            if session.terminated_at is None:
+                session.terminate(reason=session.TERMINATION_ADMIN)
+                terminated += 1
+        self.message_user(request, f"{terminated} session(s) terminated.")
 
 
 class GrantAdmin(admin.ModelAdmin):

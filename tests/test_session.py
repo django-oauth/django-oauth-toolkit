@@ -3,12 +3,17 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
+from django.contrib.messages.storage.fallback import FallbackStorage
+from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 from jwcrypto import jwt
 
+from oauth2_provider.admin import SessionAdmin
 from oauth2_provider.models import (
+    clear_expired,
     get_access_token_model,
     get_application_model,
     get_authorization_model,
@@ -239,3 +244,88 @@ class TestSessionIDTokenClaims(BaseSessionTest):
         claims = self.get_id_token_claims(authorization_code)
 
         self.assertEqual(claims["auth_time"], int(session.authenticated_at.timestamp()))
+
+
+@pytest.mark.oauth2_settings(presets.DEFAULT_SCOPES_RW)
+class TestSessionAdmin(BaseSessionTest):
+    def get_model_admin(self):
+        return SessionAdmin(Session, AdminSite())
+
+    def get_admin_request(self):
+        request = RequestFactory().post("/")
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        return request
+
+    def test_add_and_delete_are_not_available(self):
+        model_admin = self.get_model_admin()
+        request = self.get_admin_request()
+        self.assertFalse(model_admin.has_add_permission(request))
+        self.assertFalse(model_admin.has_delete_permission(request))
+
+    def test_every_editable_field_is_read_only(self):
+        model_admin = self.get_model_admin()
+        editable_fields = {
+            field.name for field in Session._meta.concrete_fields if field.editable and not field.primary_key
+        }
+        self.assertTrue(editable_fields.issubset(set(model_admin.readonly_fields)))
+
+    def test_terminate_action(self):
+        self.client.login(username="test_user", password="123456")
+        self.authorize()
+
+        model_admin = self.get_model_admin()
+        model_admin.terminate(self.get_admin_request(), Session.objects.all())
+
+        session = Session.objects.get()
+        self.assertIsNotNone(session.terminated_at)
+        self.assertEqual(session.termination_reason, Session.TERMINATION_ADMIN)
+
+
+@pytest.mark.oauth2_settings(presets.DEFAULT_SCOPES_RW)
+class TestClearExpiredSessions(BaseSessionTest):
+    def create_session(self, **kwargs):
+        defaults = {
+            "user": self.test_user,
+            "authenticated_at": timezone.now(),
+            "expires": timezone.now() + datetime.timedelta(hours=1),
+        }
+        defaults.update(kwargs)
+        return Session.objects.create(**defaults)
+
+    def test_terminated_session_without_authorizations_is_purged(self):
+        session = self.create_session(terminated_at=timezone.now())
+
+        clear_expired()
+
+        self.assertFalse(Session.objects.filter(pk=session.pk).exists())
+
+    def test_expired_session_without_authorizations_is_purged(self):
+        session = self.create_session(expires=timezone.now() - datetime.timedelta(hours=1))
+
+        clear_expired()
+
+        self.assertFalse(Session.objects.filter(pk=session.pk).exists())
+
+    def test_active_session_is_kept(self):
+        session = self.create_session()
+
+        clear_expired()
+
+        self.assertTrue(Session.objects.filter(pk=session.pk).exists())
+
+    def test_ended_session_with_authorizations_is_kept(self):
+        # The sid linkage survives as long as the authorizations granted
+        # during the session do (e.g. offline refresh chains).
+        session = self.create_session(terminated_at=timezone.now())
+        Authorization.objects.create(
+            user=self.test_user,
+            application=self.application,
+            session=session,
+            grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            scope="read",
+        )
+
+        clear_expired()
+
+        self.assertTrue(Session.objects.filter(pk=session.pk).exists())

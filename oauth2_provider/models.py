@@ -1276,6 +1276,19 @@ def clear_expired():
     authorizations_deleted_no = batch_delete(authorizations, authorizations_query)
     logger.info("%s Revoked authorizations deleted", authorizations_deleted_no)
 
+    # Ended (terminated or expired) sessions are purged once no authorization
+    # references them, so the sid linkage survives for as long as the
+    # authorizations granted during the session do.
+    session_model = get_session_model()
+    has_no_authorizations = ~models.Exists(authorization_model.objects.filter(session=models.OuterRef("pk")))
+    sessions_query = (models.Q(terminated_at__isnull=False) | models.Q(expires__lt=now)) & models.Q(
+        has_no_authorizations
+    )
+    sessions = session_model.objects.filter(sessions_query)
+
+    sessions_deleted_no = batch_delete(sessions, sessions_query)
+    logger.info("%s Ended sessions deleted", sessions_deleted_no)
+
 
 def redirect_to_uri_allowed(uri, allowed_uris):
     """
