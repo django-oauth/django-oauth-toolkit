@@ -49,7 +49,8 @@ jobs:
 
       - name: Extract changelog for ${{ github.ref_name }}
         run: |
-          awk -v ver="$GITHUB_REF_NAME" '
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
             /^## \[/ {
               if (found) exit
               if (substr($0, 1, length("## [" ver "]")) == "## [" ver "]") { found = 1; next }
@@ -57,8 +58,8 @@ jobs:
             found { print }
           ' CHANGELOG.md > release-notes.md
           if ! grep -q '[^[:space:]]' release-notes.md; then
-            echo "::error::No '## [$GITHUB_REF_NAME]' section found in CHANGELOG.md." >&2
-            echo "Add the section and re-run this job to create the GitHub release." >&2
+            echo "::error::No release notes for $version in CHANGELOG.md: the '## [$version]' section is missing or empty." >&2
+            echo "Add the release notes and re-run this job to create the GitHub release." >&2
             exit 1
           fi
           echo "Release notes for $GITHUB_REF_NAME:"
@@ -72,8 +73,9 @@ jobs:
             echo "Release $GITHUB_REF_NAME already exists; skipping."
             exit 0
           fi
+          # PEP 440 pre-release/dev markers, e.g. 4.0.0a1, 4.0.0b2, 4.0.0rc1, 4.0.0.dev1
           prerelease=""
-          if [[ "$GITHUB_REF_NAME" == *[a-zA-Z]* ]]; then
+          if [[ "${GITHUB_REF_NAME#v}" =~ (a|b|rc|dev)[0-9] ]]; then
             prerelease="--prerelease"
           fi
           gh release create "$GITHUB_REF_NAME" \
