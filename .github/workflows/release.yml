@@ -35,3 +35,51 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.PYPI_PUBLISH_TOKEN }}
+
+  github-release:
+    name: Create GitHub release
+    if: github.repository == 'django-oauth/django-oauth-toolkit'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog for ${{ github.ref_name }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            /^## \[/ {
+              if (found) exit
+              if (substr($0, 1, length("## [" ver "]")) == "## [" ver "]") { found = 1; next }
+            }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::No release notes for $version in CHANGELOG.md: the '## [$version]' section is missing or empty." >&2
+            echo "Add the release notes and re-run this job to create the GitHub release." >&2
+            exit 1
+          fi
+          echo "Release notes for $GITHUB_REF_NAME:"
+          cat release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; skipping."
+            exit 0
+          fi
+          # PEP 440 pre-release/dev markers, e.g. 4.0.0a1, 4.0.0b2, 4.0.0rc1, 4.0.0.dev1
+          prerelease=""
+          if [[ "${GITHUB_REF_NAME#v}" =~ (a|b|rc|dev)[0-9] ]]; then
+            prerelease="--prerelease"
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            $prerelease

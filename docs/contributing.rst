@@ -443,6 +443,11 @@ and rtfd.io. This checklist is a reminder of the required steps.
 - Once the final PR is merged, create and push a tag for the release. You'll shortly
   get a notification of the availability of two pypi packages (source tgz
   and wheel). Download these locally before releasing them.
+- After the packages are published to pypi.org, the release workflow automatically
+  creates a `GitHub release <https://github.com/django-oauth/django-oauth-toolkit/releases>`_
+  for the tag, using that version's section of :file:`CHANGELOG.md` as the release
+  notes. If the workflow fails because the CHANGELOG is missing a
+  ``## [<version>]`` section, add the section and re-run the failed job.
 - Do a ``tox -e build`` and extract the downloaded and built wheel zip and tgz files into
   temp directories and do a ``diff -r`` to make sure they have the same content.
   (Unfortunately the checksums do not match due to timestamps in the metadata
