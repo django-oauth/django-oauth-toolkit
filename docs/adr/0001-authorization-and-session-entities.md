@@ -5,6 +5,53 @@
 - **Date:** 2026-07-05
 - **Related:** #1545 (OIDC Back-Channel Logout, milestone 3.4.0)
 
+## Motivation
+
+DOT is increasingly deployed as an identity provider, and a cluster of
+long-standing problems blocks it from doing that job correctly. Each has
+been reported or worked around individually; this ADR argues they share a
+root cause and should be fixed structurally rather than symptom by symptom.
+
+**Logout is wrong, and modern logout is impossible.**
+
+- RP-initiated logout cannot scope revocation to the session being ended:
+  logging out of one website in one browser deletes the user's tokens for
+  *every* application on *every* device, while the user's login in other
+  browsers survives untouched.
+- OIDC Back-Channel Logout (#1545) and Front-Channel Logout cannot be
+  implemented: both require a `sid` claim identifying the authentication
+  session, and DOT has no session to identify.
+
+**Security-relevant spec gaps.**
+
+- RFC 6749 §4.1.2 and RFC 9700 (OAuth Security BCP) call for revoking all
+  tokens issued on a replayed authorization code. DOT deletes the code at
+  exchange, so a replayed code is indistinguishable from a random one and
+  the tokens it minted cannot be found.
+- Refresh-token reuse detection leans on `token_family`, a bookkeeping
+  field that approximates lineage for one flow only.
+- `auth_time` is asserted from `user.last_login`, which is user-global:
+  logging in on a phone silently refreshes the authentication freshness
+  claimed to RPs in a laptop's session, undermining `max_age`.
+
+**Consent is not a first-class fact.**
+
+- Whether a user has authorized an application is inferred from whether an
+  unexpired access token happens to exist. Consent is forgotten when tokens
+  expire and remembered only as long as tokens live.
+- There is no way to show a user which applications they have authorized,
+  revoke one application's access as a unit, or audit which tokens resulted
+  from which act of consent.
+
+**Root cause.** The token tables are the only durable state, so every
+feature that needs a longer-lived concept ends up anchored to whichever
+token lives longest — in practice the refresh token acting as a stand-in
+for both "the user's consent" and "the user's session." Both stand-ins are
+wrong: consent spans token chains, and sessions span applications while
+legitimately *not* spanning `offline_access` tokens. The fix is to model
+the two missing concepts — the granted authorization and the
+authentication session — and hang the existing token chain off them.
+
 ## Summary
 
 Introduce two new swappable models that reify concepts DOT currently leaves
