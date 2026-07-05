@@ -2,10 +2,15 @@ import datetime
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
+from django.contrib.messages.storage.fallback import FallbackStorage
+from django.db.models import RestrictedError
+from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
+from oauth2_provider.admin import AuthorizationAdmin
 from oauth2_provider.models import (
     clear_expired,
     get_access_token_model,
@@ -380,3 +385,139 @@ class TestClearExpiredAuthorizations(BaseAuthorizationTest):
         clear_expired()
 
         self.assertTrue(Authorization.objects.filter(pk=authorization.pk).exists())
+
+
+class TestAuthorizationDeleteSemantics(BaseAuthorizationTest):
+    """
+    Deletion is not a domain action: revoke() is. The ORM enforces the model
+    semantics via on_delete choices.
+    """
+
+    def test_delete_with_tokens_is_restricted(self):
+        authorization_code = self.get_authorization_code()
+        grant = Grant.objects.get(code=authorization_code)
+        self.exchange_authorization_code(authorization_code)
+
+        with self.assertRaises(RestrictedError):
+            grant.authorization.delete()
+
+    def test_delete_with_tokens_is_restricted_even_after_revoke(self):
+        # Revoked refresh tokens are retained (for rotation-reuse detection),
+        # so the authorization remains undeletable until cleanup removes them.
+        authorization_code = self.get_authorization_code()
+        grant = Grant.objects.get(code=authorization_code)
+        self.exchange_authorization_code(authorization_code)
+
+        grant.authorization.revoke()
+
+        with self.assertRaises(RestrictedError):
+            grant.authorization.delete()
+
+    def test_user_delete_cascades_through_restrict(self):
+        # RESTRICT permits deletion when the referencing tokens are deleted
+        # through the same cascade (here: user deletion).
+        authorization_code = self.get_authorization_code()
+        token_data = self.exchange_authorization_code(authorization_code).json()
+
+        self.test_user.delete()
+
+        self.assertFalse(Authorization.objects.exists())
+        self.assertFalse(AccessToken.objects.filter(token=token_data["access_token"]).exists())
+        self.assertFalse(RefreshToken.objects.filter(token=token_data["refresh_token"]).exists())
+
+    def test_delete_cascades_to_unexchanged_code(self):
+        # A code is only a claim ticket on its authorization: deleting the
+        # (token-less) authorization must delete the code with it.
+        authorization_code = self.get_authorization_code()
+        grant = Grant.objects.get(code=authorization_code)
+
+        grant.authorization.delete()
+
+        self.assertFalse(Grant.objects.filter(code=authorization_code).exists())
+
+    def test_revoke_invalidates_unexchanged_code(self):
+        authorization_code = self.get_authorization_code()
+        grant = Grant.objects.get(code=authorization_code)
+
+        grant.authorization.revoke()
+
+        response = self.exchange_authorization_code(authorization_code)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Grant.objects.filter(code=authorization_code).exists())
+
+    def test_revoke_denies_approved_but_unredeemed_device(self):
+        self.application.authorization_grant_type = Application.GRANT_DEVICE_CODE
+        self.application.client_type = Application.CLIENT_PUBLIC
+        self.application.save()
+
+        authorization = Authorization.objects.create(
+            user=self.test_user,
+            application=self.application,
+            grant_type=Application.GRANT_DEVICE_CODE,
+            scope="read",
+        )
+        device_grant = DeviceGrant.objects.create(
+            client_id=self.application.client_id,
+            device_code="device-code-abc",
+            user_code="USERCODE",
+            scope="read",
+            expires=timezone.now() + datetime.timedelta(minutes=10),
+            status=DeviceGrant.AUTHORIZED,
+            user=self.test_user,
+            authorization=authorization,
+        )
+
+        authorization.revoke()
+
+        device_grant.refresh_from_db()
+        self.assertEqual(device_grant.status, DeviceGrant.DENIED)
+
+        token_response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": "device-code-abc",
+                "client_id": self.application.client_id,
+            },
+        )
+        self.assertEqual(token_response.status_code, 400)
+        self.assertEqual(token_response.json()["error"], "access_denied")
+
+
+class TestAuthorizationAdmin(BaseAuthorizationTest):
+    def get_model_admin(self):
+        return AuthorizationAdmin(Authorization, AdminSite())
+
+    def get_admin_request(self):
+        request = RequestFactory().post("/")
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        return request
+
+    def test_add_and_delete_are_not_available(self):
+        model_admin = self.get_model_admin()
+        request = self.get_admin_request()
+        self.assertFalse(model_admin.has_add_permission(request))
+        self.assertFalse(model_admin.has_delete_permission(request))
+
+    def test_every_editable_field_is_read_only(self):
+        model_admin = self.get_model_admin()
+        editable_fields = {
+            field.name
+            for field in Authorization._meta.concrete_fields
+            if field.editable and not field.primary_key
+        }
+        self.assertTrue(editable_fields.issubset(set(model_admin.readonly_fields)))
+
+    def test_revoke_action_revokes_token_chains(self):
+        authorization_code = self.get_authorization_code()
+        token_data = self.exchange_authorization_code(authorization_code).json()
+
+        model_admin = self.get_model_admin()
+        model_admin.revoke(self.get_admin_request(), Authorization.objects.all())
+
+        authorization = Authorization.objects.get()
+        self.assertIsNotNone(authorization.revoked_at)
+        self.assertFalse(AccessToken.objects.filter(token=token_data["access_token"]).exists())
+        refresh_token = RefreshToken.objects.get(token=token_data["refresh_token"])
+        self.assertIsNotNone(refresh_token.revoked)

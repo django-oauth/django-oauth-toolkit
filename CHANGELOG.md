@@ -21,9 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * New swappable `Authorization` model recording granted authorizations (the durable fact that a
   user — or a confidential client acting alone — authorized an application for a set of scopes via
   a particular grant type). Every token-issuing flow creates or reuses one, and access, refresh and
-  ID tokens carry a nullable `authorization` foreign key tracing them back to it. Revoking an
-  authorization revokes every token issued under it. Configurable via
+  ID tokens carry a nullable `authorization` foreign key tracing them back to it. Configurable via
   `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` / `AUTHORIZATION_ADMIN_CLASS`.
+* Revocation — not deletion — is the authorization's domain action. `Authorization.revoke()`
+  revokes every token issued under it and closes outstanding credentials (unexchanged codes are
+  deleted, approved-but-unredeemed device grants are denied). The token foreign keys use
+  `on_delete=RESTRICT`, so an authorization cannot be deleted while tokens issued under it exist
+  except through a cascade (user or application deletion) that removes those tokens too. The admin
+  exposes a "Revoke selected authorizations" action instead of delete, with all fields read-only.
 * Authorization codes are now retained (with an `exchanged_at` timestamp) instead of deleted when
   exchanged, and a replayed authorization code revokes the tokens issued on its first exchange, per
   RFC 6749 §4.1.2 and RFC 9700 §4.5. `cleartokens` purges exchanged codes once expired, and purges

@@ -64,7 +64,7 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 blank=True,
                 null=True,
-                on_delete=django.db.models.deletion.SET_NULL,
+                on_delete=django.db.models.deletion.CASCADE,
                 related_name="%(app_label)s_%(class)s",
                 to=oauth2_settings.AUTHORIZATION_MODEL,
             ),
@@ -80,7 +80,7 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 blank=True,
                 null=True,
-                on_delete=django.db.models.deletion.SET_NULL,
+                on_delete=django.db.models.deletion.RESTRICT,
                 related_name="%(app_label)s_%(class)s",
                 to=oauth2_settings.AUTHORIZATION_MODEL,
             ),
@@ -91,7 +91,7 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 blank=True,
                 null=True,
-                on_delete=django.db.models.deletion.SET_NULL,
+                on_delete=django.db.models.deletion.RESTRICT,
                 related_name="%(app_label)s_%(class)s",
                 to=oauth2_settings.AUTHORIZATION_MODEL,
             ),
@@ -102,7 +102,7 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 blank=True,
                 null=True,
-                on_delete=django.db.models.deletion.SET_NULL,
+                on_delete=django.db.models.deletion.RESTRICT,
                 related_name="%(app_label)s_%(class)s",
                 to=oauth2_settings.AUTHORIZATION_MODEL,
             ),

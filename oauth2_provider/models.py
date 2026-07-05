@@ -322,6 +322,12 @@ class AbstractAuthorization(models.Model):
     Tokens issued under an authorization reference it; revoking an
     authorization revokes every token issued under it, on every device.
 
+    Deletion is not a domain action — :meth:`revoke` is. The token foreign
+    keys are ``RESTRICT``, so an authorization cannot be deleted while tokens
+    issued under it exist (except through a cascade that is deleting those
+    tokens too, e.g. deleting the user or the application). Row deletion is
+    reserved for cleanup (``cleartokens``) once every token is gone.
+
     Fields:
 
     * :attr:`user` The Django user who granted the authorization. NULL for
@@ -369,7 +375,9 @@ class AbstractAuthorization(models.Model):
 
     def revoke(self):
         """
-        Revoke this authorization and every token issued under it.
+        Revoke this authorization: every token issued under it, and every
+        outstanding credential (unexchanged authorization code, approved but
+        not yet redeemed device grant) that could still mint tokens under it.
 
         This is the consent axis: it kills the authorization's token chains
         everywhere, but it does not log anyone out.
@@ -377,12 +385,22 @@ class AbstractAuthorization(models.Model):
         access_token_model = get_access_token_model()
         refresh_token_model = get_refresh_token_model()
         id_token_model = get_id_token_model()
+        grant_model = get_grant_model()
+        device_grant_model = get_device_grant_model()
 
         # Use the AccessToken's database instead of making the assumption it is in 'default'.
         with transaction.atomic(using=router.db_for_write(access_token_model)):
             if self.revoked_at is None:
                 self.revoked_at = timezone.now()
                 self.save(update_fields=["revoked_at", "updated"])
+
+            # Close the paths that could still issue tokens under this
+            # authorization: codes not yet exchanged and devices approved but
+            # not yet redeemed. Exchanged codes are kept as replay evidence.
+            grant_model.objects.filter(authorization=self, exchanged_at__isnull=True).delete()
+            device_grant_model.objects.filter(
+                authorization=self, status=device_grant_model.AUTHORIZED
+            ).update(status=device_grant_model.DENIED)
 
             for refresh_token in refresh_token_model.objects.filter(authorization=self, revoked__isnull=True):
                 refresh_token.revoke()
@@ -455,7 +473,9 @@ class AbstractGrant(models.Model):
 
     authorization = models.ForeignKey(
         oauth2_settings.AUTHORIZATION_MODEL,
-        on_delete=models.SET_NULL,
+        # A code is only a claim ticket on its authorization: if the
+        # authorization is deleted the code must not remain exchangeable.
+        on_delete=models.CASCADE,
         blank=True,
         null=True,
         related_name="%(app_label)s_%(class)s",
@@ -539,7 +559,11 @@ class AbstractAccessToken(models.Model):
     )
     authorization = models.ForeignKey(
         oauth2_settings.AUTHORIZATION_MODEL,
-        on_delete=models.SET_NULL,
+        # RESTRICT preserves token lineage: an authorization cannot be
+        # deleted while tokens issued under it exist, except through a
+        # cascade (user/application deletion) that deletes the tokens too.
+        # Revocation, not deletion, is the domain action.
+        on_delete=models.RESTRICT,
         blank=True,
         null=True,
         related_name="%(app_label)s_%(class)s",
@@ -643,7 +667,11 @@ class AbstractRefreshToken(models.Model):
     )
     authorization = models.ForeignKey(
         oauth2_settings.AUTHORIZATION_MODEL,
-        on_delete=models.SET_NULL,
+        # RESTRICT preserves token lineage: an authorization cannot be
+        # deleted while tokens issued under it exist, except through a
+        # cascade (user/application deletion) that deletes the tokens too.
+        # Revocation, not deletion, is the domain action.
+        on_delete=models.RESTRICT,
         blank=True,
         null=True,
         related_name="%(app_label)s_%(class)s",
@@ -726,7 +754,11 @@ class AbstractIDToken(models.Model):
     )
     authorization = models.ForeignKey(
         oauth2_settings.AUTHORIZATION_MODEL,
-        on_delete=models.SET_NULL,
+        # RESTRICT preserves token lineage: an authorization cannot be
+        # deleted while tokens issued under it exist, except through a
+        # cascade (user/application deletion) that deletes the tokens too.
+        # Revocation, not deletion, is the domain action.
+        on_delete=models.RESTRICT,
         blank=True,
         null=True,
         related_name="%(app_label)s_%(class)s",

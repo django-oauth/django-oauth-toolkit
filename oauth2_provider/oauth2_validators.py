@@ -533,6 +533,12 @@ class OAuth2Validator(RequestValidator):
         if grant.is_expired():
             return False
 
+        if grant.authorization_id is not None and not grant.authorization.is_active():
+            # The authorization this code was issued under has been revoked.
+            # revoke() deletes unexchanged codes, so this only guards the
+            # race between revocation and an in-flight exchange.
+            return False
+
         request.scopes = grant.scope.split(" ")
         request.user = grant.user
         # Keep the grant at hand so the tokens issued on this exchange can be

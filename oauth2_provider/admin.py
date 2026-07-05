@@ -40,11 +40,42 @@ class AccessTokenAdmin(admin.ModelAdmin):
 
 
 class AuthorizationAdmin(admin.ModelAdmin):
+    """
+    Authorizations are system-created audit records: the admin can inspect
+    and *revoke* them, but not create, edit or delete them. Revocation is the
+    domain action (it revokes every token issued under the authorization);
+    row deletion is reserved for ``cleartokens`` once the tokens are gone.
+    """
+
     list_display = ("pk", "application", "user", "grant_type", "created", "revoked_at")
     list_select_related = ("application", "user")
-    raw_id_fields = ("user",)
     search_fields = ("user__email",) if has_email else ()
     list_filter = ("application", "grant_type")
+    readonly_fields = (
+        "user",
+        "application",
+        "grant_type",
+        "scope",
+        "created",
+        "updated",
+        "revoked_at",
+    )
+    actions = ["revoke"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Revoke selected authorizations")
+    def revoke(self, request, queryset):
+        revoked = 0
+        for authorization in queryset:
+            if authorization.is_active():
+                authorization.revoke()
+                revoked += 1
+        self.message_user(request, f"{revoked} authorization(s) revoked.")
 
 
 class GrantAdmin(admin.ModelAdmin):
