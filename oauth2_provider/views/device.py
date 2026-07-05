@@ -22,6 +22,7 @@ from oauth2_provider.models import (
     get_application_model,
     get_authorization_model,
     get_device_grant_model,
+    get_or_create_oauth2_session,
 )
 from oauth2_provider.scopes import get_scopes_backend
 from oauth2_provider.views.mixins import OAuthLibMixin
@@ -229,11 +230,15 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         """
         Record the user's approval of the device as an Authorization. The
         tokens issued when the device polls the token endpoint inherit it.
+
+        The session is the one of the browser the user approved the device
+        in (the verification page), not the device's own.
         """
         application = get_object_or_404(get_application_model(), client_id=device.client_id)
         return get_authorization_model().objects.create(
             user=self.request.user,
             application=application,
+            session=get_or_create_oauth2_session(self.request),
             grant_type=AbstractApplication.GRANT_DEVICE_CODE,
             scope=device.scope or "",
         )

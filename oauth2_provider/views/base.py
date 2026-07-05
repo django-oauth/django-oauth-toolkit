@@ -21,7 +21,12 @@ from ..compat import login_not_required
 from ..exceptions import OAuthToolkitError
 from ..forms import AllowForm
 from ..http import OAuth2ResponseRedirect
-from ..models import get_access_token_model, get_application_model, get_device_grant_model
+from ..models import (
+    get_access_token_model,
+    get_application_model,
+    get_device_grant_model,
+    get_or_create_oauth2_session,
+)
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
 from ..signals import app_authorized
@@ -60,6 +65,18 @@ class BaseAuthorizationView(LoginRequiredMixin, OAuthLibMixin, View):
 
         status = error_response["error"].status_code
         return self.render_to_response(error_response, status=status)
+
+    def create_authorization_response(self, request, scopes, credentials, allow):
+        """
+        Attach the OP authentication session to the authorization so the
+        artifacts issued for it (grant, tokens, ID token) can be tied to the
+        user agent's session. The session is minted lazily on the first
+        authorization after login and reused afterwards.
+        """
+        session = get_or_create_oauth2_session(request)
+        if session is not None:
+            credentials = {**credentials, "oauth2_session_sid": str(session.sid)}
+        return super().create_authorization_response(request, scopes, credentials, allow)
 
     def redirect(self, redirect_to, application):
         if application is None:

@@ -14,6 +14,8 @@ from oauth2_provider.models import (
     get_id_token_model,
     get_refresh_token_admin_class,
     get_refresh_token_model,
+    get_session_admin_class,
+    get_session_model,
 )
 
 
@@ -78,6 +80,14 @@ class AuthorizationAdmin(admin.ModelAdmin):
         self.message_user(request, f"{revoked} authorization(s) revoked.")
 
 
+class SessionAdmin(admin.ModelAdmin):
+    list_display = ("sid", "user", "authenticated_at", "expires", "terminated_at", "termination_reason")
+    list_select_related = ("user",)
+    raw_id_fields = ("user",)
+    search_fields = ("sid",) + (("user__email",) if has_email else ())
+    list_filter = ("termination_reason",)
+
+
 class GrantAdmin(admin.ModelAdmin):
     list_display = ("code", "application", "user", "expires")
     raw_id_fields = ("user", "authorization")
@@ -106,6 +116,7 @@ access_token_model = get_access_token_model()
 grant_model = get_grant_model()
 id_token_model = get_id_token_model()
 refresh_token_model = get_refresh_token_model()
+session_model = get_session_model()
 
 application_admin_class = get_application_admin_class()
 authorization_admin_class = get_authorization_admin_class()
@@ -113,6 +124,7 @@ access_token_admin_class = get_access_token_admin_class()
 grant_admin_class = get_grant_admin_class()
 id_token_admin_class = get_id_token_admin_class()
 refresh_token_admin_class = get_refresh_token_admin_class()
+session_admin_class = get_session_admin_class()
 
 admin.site.register(application_model, application_admin_class)
 admin.site.register(authorization_model, authorization_admin_class)
@@ -120,3 +132,4 @@ admin.site.register(access_token_model, access_token_admin_class)
 admin.site.register(grant_model, grant_admin_class)
 admin.site.register(id_token_model, id_token_admin_class)
 admin.site.register(refresh_token_model, refresh_token_admin_class)
+admin.site.register(session_model, session_admin_class)

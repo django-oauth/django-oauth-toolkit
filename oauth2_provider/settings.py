@@ -40,6 +40,7 @@ ACCESS_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL", "oa
 ID_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ID_TOKEN_MODEL", "oauth2_provider.IDToken")
 GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_GRANT_MODEL", "oauth2_provider.Grant")
 REFRESH_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL", "oauth2_provider.RefreshToken")
+SESSION_MODEL = getattr(settings, "OAUTH2_PROVIDER_SESSION_MODEL", "oauth2_provider.Session")
 
 DEFAULTS = {
     "CLIENT_ID_GENERATOR_CLASS": "oauth2_provider.generators.ClientIdGenerator",
@@ -78,12 +79,14 @@ DEFAULTS = {
     "DEVICE_FLOW_INTERVAL": 5,
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
+    "SESSION_MODEL": SESSION_MODEL,
     "APPLICATION_ADMIN_CLASS": "oauth2_provider.admin.ApplicationAdmin",
     "AUTHORIZATION_ADMIN_CLASS": "oauth2_provider.admin.AuthorizationAdmin",
     "ACCESS_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.AccessTokenAdmin",
     "GRANT_ADMIN_CLASS": "oauth2_provider.admin.GrantAdmin",
     "ID_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.IDTokenAdmin",
     "REFRESH_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.RefreshTokenAdmin",
+    "SESSION_ADMIN_CLASS": "oauth2_provider.admin.SessionAdmin",
     "REQUEST_APPROVAL_PROMPT": "force",
     "ALLOWED_REDIRECT_URI_SCHEMES": ["http", "https"],
     "ALLOWED_SCHEMES": ["https"],
@@ -167,6 +170,7 @@ IMPORT_STRINGS = (
     "GRANT_ADMIN_CLASS",
     "ID_TOKEN_ADMIN_CLASS",
     "REFRESH_TOKEN_ADMIN_CLASS",
+    "SESSION_ADMIN_CLASS",
 )
 
 

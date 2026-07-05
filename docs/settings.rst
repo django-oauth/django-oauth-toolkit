@@ -141,6 +141,13 @@ The import string of the class (model) representing granted authorizations
 under it). Overwrite this value if you wrote your own implementation
 (subclass of ``oauth2_provider.models.Authorization``).
 
+SESSION_MODEL
+~~~~~~~~~~~~~
+The import string of the class (model) representing OP authentication
+sessions (the per-user-agent session identified by the ``sid`` claim in ID
+tokens). Overwrite this value if you wrote your own implementation
+(subclass of ``oauth2_provider.models.Session``).
+
 APPLICATION_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your application admin class.
@@ -164,6 +171,12 @@ AUTHORIZATION_ADMIN_CLASS
 The import string of the class (model) representing your authorization admin
 class. Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.admin.AuthorizationAdmin``).
+
+SESSION_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your session admin
+class. Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.SessionAdmin``).
 
 REFRESH_TOKEN_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -555,6 +568,12 @@ OAUTH2_PROVIDER_AUTHORIZATION_MODEL
 The import string of the class (model) representing granted authorizations.
 Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.Authorization``).
+
+OAUTH2_PROVIDER_SESSION_MODEL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing OP authentication
+sessions. Overwrite this value if you wrote your own implementation
+(subclass of ``oauth2_provider.models.Session``).
 
 OAUTH2_PROVIDER_DEVICE_GRANT_MODEL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

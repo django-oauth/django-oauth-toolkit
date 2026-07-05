@@ -33,6 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exchanged, and a replayed authorization code revokes the tokens issued on its first exchange, per
   RFC 6749 §4.1.2 and RFC 9700 §4.5. `cleartokens` purges exchanged codes once expired, and purges
   revoked authorizations once every token issued under them is gone.
+* New swappable `Session` model representing the OP authentication session (the continuous period
+  a user is authenticated via a particular user agent, per OpenID Connect Back-Channel Logout 1.0).
+  Sessions are minted lazily at the first authorization after login, reused for subsequent
+  authorizations from the same user agent, and referenced by the `Authorization`s granted during
+  them. ID tokens issued for session-bound authorizations now carry the `sid` claim, the
+  prerequisite for front-/back-channel logout. Configurable via `OAUTH2_PROVIDER_SESSION_MODEL` /
+  `SESSION_ADMIN_CLASS`.
+
+### Changed
+* The `auth_time` ID token claim is now sourced from the OP session's authentication time when a
+  session is known, instead of the user-global `last_login`, which is refreshed by logins on other
+  devices and therefore over-reported authentication freshness to RPs using `max_age`. Flows with
+  no session (e.g. ROPC) fall back to `last_login` as before.
 
 ### Security
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from

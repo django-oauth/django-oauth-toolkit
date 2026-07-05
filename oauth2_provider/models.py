@@ -12,8 +12,10 @@ from urllib.parse import parse_qsl, urlparse
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.hashers import identify_hasher, make_password
+from django.contrib.auth.signals import user_logged_in
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models, router, transaction
+from django.dispatch import receiver
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -304,6 +306,100 @@ class Application(AbstractApplication):
         return (self.client_id,)
 
 
+class AbstractSession(models.Model):
+    """
+    A Session instance represents an OpenID Connect authentication session:
+    the continuous period during which an End-User is authenticated at this
+    authorization server via a particular user agent, as defined by
+    `OpenID Connect Back-Channel Logout 1.0
+    <https://openid.net/specs/openid-connect-backchannel-1_0.html>`_.
+
+    It is identified by :attr:`sid`, which is issued as the ``sid`` claim in
+    ID Tokens. It is correlated with — but distinct from — the Django
+    session: the Django session key is the (secret) authentication cookie
+    value, while ``sid`` is a public identifier that is safe to hand to
+    relying parties.
+
+    Sessions are minted lazily at the first authorization request after
+    login and reused for subsequent authorizations from the same user agent,
+    so one session spans every application the user signs into during it.
+
+    Fields:
+
+    * :attr:`sid` Public session identifier, issued as the ``sid`` claim
+    * :attr:`user` The Django user the session belongs to
+    * :attr:`session_key` The Django session key this session was minted
+                          under, kept only as a correlation aid
+    * :attr:`authenticated_at` When the user authenticated for this session;
+                               the source of the ``auth_time`` claim
+    * :attr:`expires` When the session expires
+    * :attr:`terminated_at` Timestamp of when this session was terminated
+    * :attr:`termination_reason` Why the session was terminated
+    """
+
+    TERMINATION_LOGOUT = "logout"
+    TERMINATION_RP_LOGOUT = "rp_logout"
+    TERMINATION_EXPIRED = "expired"
+    TERMINATION_ADMIN = "admin"
+    TERMINATION_REASONS = (
+        (TERMINATION_LOGOUT, _("Logout")),
+        (TERMINATION_RP_LOGOUT, _("RP-Initiated Logout")),
+        (TERMINATION_EXPIRED, _("Expired")),
+        (TERMINATION_ADMIN, _("Terminated by admin")),
+    )
+
+    id = models.BigAutoField(primary_key=True)
+    sid = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="%(app_label)s_%(class)s",
+    )
+    session_key = models.CharField(max_length=40, blank=True, default="", db_index=True)
+    authenticated_at = models.DateTimeField()
+    expires = models.DateTimeField()
+
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+    terminated_at = models.DateTimeField(null=True, blank=True)
+    termination_reason = models.CharField(max_length=32, blank=True, default="", choices=TERMINATION_REASONS)
+
+    def is_expired(self):
+        """
+        Check session expiration with timezone awareness
+        """
+        if not self.expires:
+            return True
+
+        return timezone.now() >= self.expires
+
+    def is_active(self):
+        return self.terminated_at is None and not self.is_expired()
+
+    def terminate(self, reason=""):
+        """
+        Mark this session terminated. Termination is the session axis: it
+        records that this user agent's authentication ended. It does not, by
+        itself, revoke authorizations or tokens.
+        """
+        if self.terminated_at is not None:
+            return
+        self.terminated_at = timezone.now()
+        self.termination_reason = reason
+        self.save(update_fields=["terminated_at", "termination_reason", "updated"])
+
+    def __str__(self):
+        return "SID: {self.sid} User: {self.user_id}".format(self=self)
+
+    class Meta:
+        abstract = True
+
+
+class Session(AbstractSession):
+    class Meta(AbstractSession.Meta):
+        swappable = "OAUTH2_PROVIDER_SESSION_MODEL"
+
+
 class AbstractAuthorization(models.Model):
     """
     An Authorization instance is a durable record of an authorization grant:
@@ -334,6 +430,10 @@ class AbstractAuthorization(models.Model):
                    ``client_credentials``, where the "consent" is the client
                    registration itself.
     * :attr:`application` Application instance the authorization was granted to
+    * :attr:`session` The authentication session the authorization was
+                      granted during. NULL for non-interactive flows (ROPC,
+                      ``client_credentials``) and for offline artifacts that
+                      predate session tracking.
     * :attr:`grant_type` How the authorization was expressed (one of
                          :attr:`AbstractApplication.GRANT_TYPES`)
     * :attr:`scope` Scopes granted, space separated
@@ -349,6 +449,13 @@ class AbstractAuthorization(models.Model):
         related_name="%(app_label)s_%(class)s",
     )
     application = models.ForeignKey(oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE)
+    session = models.ForeignKey(
+        oauth2_settings.SESSION_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+    )
     grant_type = models.CharField(max_length=44, choices=AbstractApplication.GRANT_TYPES)
     scope = models.TextField(blank=True)
 
@@ -942,6 +1049,61 @@ def get_authorization_model():
     return apps.get_model(oauth2_settings.AUTHORIZATION_MODEL)
 
 
+def get_session_model():
+    """Return the Session model that is active in this project."""
+    return apps.get_model(oauth2_settings.SESSION_MODEL)
+
+
+SESSION_SID_KEY = "_oauth2_provider_session_sid"
+SESSION_AUTH_TIME_KEY = "_oauth2_provider_auth_time"
+
+
+@receiver(user_logged_in)
+def _remember_auth_time(sender, request, user, **kwargs):
+    """
+    Record the moment of authentication in the Django session so sessions
+    minted later assert an accurate, per-user-agent ``auth_time`` (the
+    user-global ``last_login`` is refreshed by logins on *other* devices).
+    """
+    request.session[SESSION_AUTH_TIME_KEY] = timezone.now().isoformat()
+
+
+def get_or_create_oauth2_session(request):
+    """
+    Return the active OP authentication Session for this user agent, minting
+    one lazily on the first authorization request after login. The public
+    ``sid`` is stored in the Django session so subsequent authorizations from
+    the same user agent reuse the same Session.
+
+    Returns None when there is no authenticated user.
+    """
+    if not getattr(request, "user", None) or not request.user.is_authenticated:
+        return None
+
+    session_model = get_session_model()
+
+    sid = request.session.get(SESSION_SID_KEY)
+    if sid:
+        session = session_model.objects.filter(sid=sid, user=request.user, terminated_at__isnull=True).first()
+        if session is not None and not session.is_expired():
+            return session
+
+    stored_auth_time = request.session.get(SESSION_AUTH_TIME_KEY)
+    if stored_auth_time:
+        authenticated_at = datetime.fromisoformat(stored_auth_time)
+    else:
+        authenticated_at = request.user.last_login or timezone.now()
+
+    session = session_model.objects.create(
+        user=request.user,
+        session_key=request.session.session_key or "",
+        authenticated_at=authenticated_at,
+        expires=request.session.get_expiry_date(),
+    )
+    request.session[SESSION_SID_KEY] = str(session.sid)
+    return session
+
+
 def get_device_grant_model():
     """Return the DeviceGrant model that is active in this project."""
     return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
@@ -977,6 +1139,12 @@ def get_authorization_admin_class():
     """Return the Authorization admin class that is active in this project."""
     authorization_admin_class = oauth2_settings.AUTHORIZATION_ADMIN_CLASS
     return authorization_admin_class
+
+
+def get_session_admin_class():
+    """Return the Session admin class that is active in this project."""
+    session_admin_class = oauth2_settings.SESSION_ADMIN_CLASS
+    return session_admin_class
 
 
 def get_access_token_admin_class():

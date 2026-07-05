@@ -38,6 +38,7 @@ from .models import (
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
+    get_session_model,
 )
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
@@ -772,11 +773,24 @@ class OAuth2Validator(RequestValidator):
         authorization = Authorization.objects.create(
             user=request.user,
             application=request.client,
+            session=self._resolve_session(request),
             grant_type=grant_type,
             scope=" ".join(request.scopes or []),
         )
         request._dot_authorization = authorization
         return authorization
+
+    def _resolve_session(self, request):
+        """
+        Return the OP authentication Session this request was made under, if
+        the authorization endpoint attached one (via the ``oauth2_session_sid``
+        credential). Non-interactive flows have no session.
+        """
+        sid = getattr(request, "oauth2_session_sid", None)
+        if not sid:
+            return None
+        session_model = get_session_model()
+        return session_model.objects.filter(sid=sid).first()
 
     def _resolve_authorization(self, request):
         """
@@ -1057,7 +1071,15 @@ class OAuth2Validator(RequestValidator):
 
         expiration_time = timezone.now() + timedelta(seconds=oauth2_settings.ID_TOKEN_EXPIRE_SECONDS)
 
-        auth_time = request.user.last_login
+        authorization = self._resolve_authorization(request)
+        session = authorization.session if authorization is not None else None
+
+        if session is not None:
+            # Per-session auth_time: the user-global last_login is refreshed
+            # by logins on other user agents, which would break max_age.
+            auth_time = session.authenticated_at
+        else:
+            auth_time = request.user.last_login
         if auth_time is None:
             auth_time = timezone.now()
 
@@ -1081,6 +1103,11 @@ class OAuth2Validator(RequestValidator):
                 "jti": str(uuid.uuid4()),
             }
         )
+
+        # The sid claim ties the ID token to the OP authentication session,
+        # enabling session-scoped (front-/back-channel) logout.
+        if session is not None:
+            claims["sid"] = str(session.sid)
 
         return claims, expiration_time
 
