@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 * #1373 Integration and docs for Django Ninja authentication
 * #1546 Support for RP-Initiated Registration
+* New swappable `Authorization` model recording granted authorizations (the durable fact that a
+  user — or a confidential client acting alone — authorized an application for a set of scopes via
+  a particular grant type). Every token-issuing flow creates or reuses one, and access, refresh and
+  ID tokens carry a nullable `authorization` foreign key tracing them back to it. Revoking an
+  authorization revokes every token issued under it. Configurable via
+  `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` / `AUTHORIZATION_ADMIN_CLASS`.
+* Authorization codes are now retained (with an `exchanged_at` timestamp) instead of deleted when
+  exchanged, and a replayed authorization code revokes the tokens issued on its first exchange, per
+  RFC 6749 §4.1.2 and RFC 9700 §4.5. `cleartokens` purges exchanged codes once expired, and purges
+  revoked authorizations once every token issued under them is gone.
 
 ### Security
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from

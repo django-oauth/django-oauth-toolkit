@@ -161,6 +161,7 @@ wfGZQ+qAAThGg3OInQNMqItypEEo3oZhKKvjD1N/iTw=
 
 OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "oauth2_provider.AccessToken"
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
+OAUTH2_PROVIDER_AUTHORIZATION_MODEL = "oauth2_provider.Authorization"
 OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "oauth2_provider.RefreshToken"
 OAUTH2_PROVIDER_ID_TOKEN_MODEL = "oauth2_provider.IDToken"
 

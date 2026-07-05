@@ -32,6 +32,9 @@ from oauth2_provider.utils import set_oauthlib_user_to_device_request_user, user
 USER_SETTINGS = getattr(settings, "OAUTH2_PROVIDER", None)
 
 APPLICATION_MODEL = getattr(settings, "OAUTH2_PROVIDER_APPLICATION_MODEL", "oauth2_provider.Application")
+AUTHORIZATION_MODEL = getattr(
+    settings, "OAUTH2_PROVIDER_AUTHORIZATION_MODEL", "oauth2_provider.Authorization"
+)
 DEVICE_GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL", "oauth2_provider.DeviceGrant")
 ACCESS_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL", "oauth2_provider.AccessToken")
 ID_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ID_TOKEN_MODEL", "oauth2_provider.IDToken")
@@ -68,6 +71,7 @@ DEFAULTS = {
     "ROTATE_REFRESH_TOKEN": True,
     "ERROR_RESPONSE_WITH_SCOPES": False,
     "APPLICATION_MODEL": APPLICATION_MODEL,
+    "AUTHORIZATION_MODEL": AUTHORIZATION_MODEL,
     "ACCESS_TOKEN_MODEL": ACCESS_TOKEN_MODEL,
     "ID_TOKEN_MODEL": ID_TOKEN_MODEL,
     "DEVICE_GRANT_MODEL": DEVICE_GRANT_MODEL,
@@ -75,6 +79,7 @@ DEFAULTS = {
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
     "APPLICATION_ADMIN_CLASS": "oauth2_provider.admin.ApplicationAdmin",
+    "AUTHORIZATION_ADMIN_CLASS": "oauth2_provider.admin.AuthorizationAdmin",
     "ACCESS_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.AccessTokenAdmin",
     "GRANT_ADMIN_CLASS": "oauth2_provider.admin.GrantAdmin",
     "ID_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.IDTokenAdmin",
@@ -157,6 +162,7 @@ IMPORT_STRINGS = (
     "OAUTH2_BACKEND_CLASS",
     "SCOPES_BACKEND_CLASS",
     "APPLICATION_ADMIN_CLASS",
+    "AUTHORIZATION_ADMIN_CLASS",
     "ACCESS_TOKEN_ADMIN_CLASS",
     "GRANT_ADMIN_CLASS",
     "ID_TOKEN_ADMIN_CLASS",

@@ -304,6 +304,107 @@ class Application(AbstractApplication):
         return (self.client_id,)
 
 
+class AbstractAuthorization(models.Model):
+    """
+    An Authorization instance is a durable record of an authorization grant:
+    the fact that a user (or a confidential client acting on its own behalf)
+    authorized an Application for a set of scopes at a point in time, via a
+    particular grant type.
+
+    :rfc:`6749 <1.3>` defines an authorization grant as the *credential*
+    representing the resource owner's authorization (the authorization code,
+    the resource owner's password, the client's own credentials, the device
+    code, ...). Those credentials are transient and flow-specific; this model
+    records the durable fact they all represent, so that every token can be
+    traced back to the act of consent that produced it, whichever flow issued
+    it.
+
+    Tokens issued under an authorization reference it; revoking an
+    authorization revokes every token issued under it, on every device.
+
+    Fields:
+
+    * :attr:`user` The Django user who granted the authorization. NULL for
+                   ``client_credentials``, where the "consent" is the client
+                   registration itself.
+    * :attr:`application` Application instance the authorization was granted to
+    * :attr:`grant_type` How the authorization was expressed (one of
+                         :attr:`AbstractApplication.GRANT_TYPES`)
+    * :attr:`scope` Scopes granted, space separated
+    * :attr:`revoked_at` Timestamp of when this authorization was revoked
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+    )
+    application = models.ForeignKey(oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE)
+    grant_type = models.CharField(max_length=44, choices=AbstractApplication.GRANT_TYPES)
+    scope = models.TextField(blank=True)
+
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    def is_active(self):
+        return self.revoked_at is None
+
+    def allow_scopes(self, scopes):
+        """
+        Check if the authorization covers the provided scopes
+
+        :param scopes: An iterable containing the scopes to check
+        """
+        if not scopes:
+            return True
+
+        provided_scopes = set(self.scope.split())
+        resource_scopes = set(scopes)
+
+        return resource_scopes.issubset(provided_scopes)
+
+    def revoke(self):
+        """
+        Revoke this authorization and every token issued under it.
+
+        This is the consent axis: it kills the authorization's token chains
+        everywhere, but it does not log anyone out.
+        """
+        access_token_model = get_access_token_model()
+        refresh_token_model = get_refresh_token_model()
+        id_token_model = get_id_token_model()
+
+        # Use the AccessToken's database instead of making the assumption it is in 'default'.
+        with transaction.atomic(using=router.db_for_write(access_token_model)):
+            if self.revoked_at is None:
+                self.revoked_at = timezone.now()
+                self.save(update_fields=["revoked_at", "updated"])
+
+            for refresh_token in refresh_token_model.objects.filter(authorization=self, revoked__isnull=True):
+                refresh_token.revoke()
+            for access_token in access_token_model.objects.filter(authorization=self):
+                access_token.revoke()
+            for id_token in id_token_model.objects.filter(authorization=self):
+                id_token.revoke()
+
+    def __str__(self):
+        return "Application: {self.application_id} User: {self.user_id} Grant type: {self.grant_type}".format(
+            self=self
+        )
+
+    class Meta:
+        abstract = True
+
+
+class Authorization(AbstractAuthorization):
+    class Meta(AbstractAuthorization.Meta):
+        swappable = "OAUTH2_PROVIDER_AUTHORIZATION_MODEL"
+
+
 class AbstractGrant(models.Model):
     """
     A Grant instance represents a token with a short lifetime that can
@@ -320,6 +421,11 @@ class AbstractGrant(models.Model):
     * :attr:`scope` Required scopes, optional
     * :attr:`code_challenge` PKCE code challenge
     * :attr:`code_challenge_method` PKCE code challenge transform algorithm
+    * :attr:`authorization` The Authorization this code was issued under
+    * :attr:`exchanged_at` Timestamp of when this code was exchanged for
+                           tokens. A code presented again after this is set is
+                           a replay: :rfc:`6749 <4.1.2>` calls for revoking the
+                           tokens previously issued on it.
     """
 
     CODE_CHALLENGE_PLAIN = "plain"
@@ -346,6 +452,15 @@ class AbstractGrant(models.Model):
 
     nonce = models.CharField(max_length=255, blank=True, default="")
     claims = models.TextField(blank=True)
+
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+    )
+    exchanged_at = models.DateTimeField(null=True, blank=True)
 
     def is_expired(self):
         """
@@ -421,6 +536,13 @@ class AbstractAccessToken(models.Model):
         on_delete=models.CASCADE,
         blank=True,
         null=True,
+    )
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
     )
     expires = models.DateTimeField()
     scope = models.TextField(blank=True)
@@ -519,6 +641,13 @@ class AbstractRefreshToken(models.Model):
         null=True,
         related_name="refresh_token",
     )
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+    )
     token_family = models.UUIDField(null=True, blank=True, editable=False)
 
     created = models.DateTimeField(auto_now_add=True)
@@ -594,6 +723,13 @@ class AbstractIDToken(models.Model):
         on_delete=models.CASCADE,
         blank=True,
         null=True,
+    )
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
     )
     expires = models.DateTimeField()
     scope = models.TextField(blank=True)
@@ -701,6 +837,13 @@ class AbstractDeviceGrant(models.Model):
         max_length=64, blank=True, choices=DEVICE_FLOW_STATUS, default=AUTHORIZATION_PENDING
     )
     client_id = models.CharField(max_length=100, db_index=True)
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+    )
     last_checked = models.DateTimeField(auto_now=True)
 
     def is_expired(self):
@@ -762,6 +905,11 @@ def get_application_model():
     return apps.get_model(oauth2_settings.APPLICATION_MODEL)
 
 
+def get_authorization_model():
+    """Return the Authorization model that is active in this project."""
+    return apps.get_model(oauth2_settings.AUTHORIZATION_MODEL)
+
+
 def get_device_grant_model():
     """Return the DeviceGrant model that is active in this project."""
     return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
@@ -791,6 +939,12 @@ def get_application_admin_class():
     """Return the Application admin class that is active in this project."""
     application_admin_class = oauth2_settings.APPLICATION_ADMIN_CLASS
     return application_admin_class
+
+
+def get_authorization_admin_class():
+    """Return the Authorization admin class that is active in this project."""
+    authorization_admin_class = oauth2_settings.AUTHORIZATION_ADMIN_CLASS
+    return authorization_admin_class
 
 
 def get_access_token_admin_class():
@@ -907,6 +1061,20 @@ def clear_expired():
 
     grants_deleted_no = batch_delete(grants, grants_query)
     logger.info("%s Expired grant tokens deleted", grants_deleted_no)
+
+    # Revoked authorizations are only purged once every token issued under
+    # them is gone, so token lineage survives for as long as the tokens do.
+    authorization_model = get_authorization_model()
+    has_no_tokens = (
+        ~models.Exists(access_token_model.objects.filter(authorization=models.OuterRef("pk")))
+        & ~models.Exists(refresh_token_model.objects.filter(authorization=models.OuterRef("pk")))
+        & ~models.Exists(id_token_model.objects.filter(authorization=models.OuterRef("pk")))
+    )
+    authorizations_query = models.Q(revoked_at__isnull=False) & models.Q(has_no_tokens)
+    authorizations = authorization_model.objects.filter(authorizations_query)
+
+    authorizations_deleted_no = batch_delete(authorizations, authorizations_query)
+    logger.info("%s Revoked authorizations deleted", authorizations_deleted_no)
 
 
 def redirect_to_uri_allowed(uri, allowed_uris):

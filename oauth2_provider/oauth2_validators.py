@@ -33,6 +33,8 @@ from .models import (
     AbstractApplication,
     get_access_token_model,
     get_application_model,
+    get_authorization_model,
+    get_device_grant_model,
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
@@ -63,6 +65,7 @@ GRANT_TYPE_MAPPING = {
 
 Application = get_application_model()
 AccessToken = get_access_token_model()
+Authorization = get_authorization_model()
 IDToken = get_id_token_model()
 Grant = get_grant_model()
 RefreshToken = get_refresh_token_model()
@@ -347,12 +350,19 @@ class OAuth2Validator(RequestValidator):
 
     def invalidate_authorization_code(self, client_id, code, request, *args, **kwargs):
         """
-        Remove the temporary grant used to swap the authorization token.
+        Mark the temporary grant used to swap the authorization token as exchanged.
 
-        :raises: InvalidGrantError if the grant does not exist.
+        The grant row is kept (until ``cleartokens`` purges it) so that a
+        replayed code can be recognized and the tokens issued on the first
+        exchange revoked, per :rfc:`6749 <4.1.2>` and :rfc:`9700 <4.5>`.
+
+        :raises: InvalidGrantError if the grant does not exist or was already
+                 exchanged.
         """
-        deleted_grant_count, _ = Grant.objects.filter(code=code, application=request.client).delete()
-        if not deleted_grant_count:
+        exchanged_grant_count = Grant.objects.filter(
+            code=code, application=request.client, exchanged_at__isnull=True
+        ).update(exchanged_at=timezone.now())
+        if not exchanged_grant_count:
             raise errors.InvalidGrantError(request=request)
 
     def validate_client_id(self, client_id, request, *args, **kwargs):
@@ -509,18 +519,30 @@ class OAuth2Validator(RequestValidator):
     def validate_code(self, client_id, code, client, request, *args, **kwargs):
         try:
             grant = Grant.objects.get(code=code, application=client)
-            if not grant.is_expired():
-                request.scopes = grant.scope.split(" ")
-                request.user = grant.user
-                if grant.nonce:
-                    request.nonce = grant.nonce
-                if grant.claims:
-                    request.claims = json.loads(grant.claims)
-                return True
-            return False
-
         except Grant.DoesNotExist:
             return False
+
+        if grant.exchanged_at is not None:
+            # The code was already exchanged for tokens: this is a replay.
+            # Per RFC 6749 §4.1.2 and RFC 9700 §4.5, revoke the tokens that
+            # were issued on the first exchange.
+            if grant.authorization_id is not None:
+                grant.authorization.revoke()
+            return False
+
+        if grant.is_expired():
+            return False
+
+        request.scopes = grant.scope.split(" ")
+        request.user = grant.user
+        # Keep the grant at hand so the tokens issued on this exchange can be
+        # tied to the authorization the code was issued under.
+        request.grant_instance = grant
+        if grant.nonce:
+            request.nonce = grant.nonce
+        if grant.claims:
+            request.claims = json.loads(grant.claims)
+        return True
 
     def validate_grant_type(self, client_id, grant_type, client, request, *args, **kwargs):
         """
@@ -661,6 +683,8 @@ class OAuth2Validator(RequestValidator):
                 access_token.expires = expires
                 access_token.token = token["access_token"]
                 access_token.application = request.client
+                if access_token.authorization_id is None:
+                    access_token.authorization = self._resolve_authorization(request)
                 access_token.save()
 
             # else create fresh with access & refresh tokens
@@ -674,6 +698,10 @@ class OAuth2Validator(RequestValidator):
                         pk=refresh_token_instance.pk
                     )
                     request.refresh_token_instance = refresh_token_instance
+                    # Resolve the authorization the refreshed tokens inherit
+                    # now, before the consumed refresh token is detached from
+                    # the request below.
+                    self._resolve_authorization(request)
 
                     previous_access_token = AccessToken.objects.filter(
                         source_refresh_token=refresh_token_instance
@@ -725,12 +753,119 @@ class OAuth2Validator(RequestValidator):
             token=token["access_token"],
             id_token=id_token,
             application=request.client,
+            authorization=self._resolve_authorization(request),
             source_refresh_token=source_refresh_token,
         )
+
+    def _create_authorization(self, request, grant_type):
+        """
+        Create the Authorization recording this authorization event and cache
+        it on the request so every artifact created while processing it (code,
+        access/refresh token, ID token) is tied to the same Authorization.
+        """
+        authorization = Authorization.objects.create(
+            user=request.user,
+            application=request.client,
+            grant_type=grant_type,
+            scope=" ".join(request.scopes or []),
+        )
+        request._dot_authorization = authorization
+        return authorization
+
+    def _resolve_authorization(self, request):
+        """
+        Return the Authorization under which the tokens for this request are
+        issued.
+
+        Flows that re-present an earlier authorization (authorization code
+        exchange, refresh, device code) inherit it; flows that constitute a
+        new authorization event (ROPC, implicit) create one; client
+        credentials reuses a single per-application Authorization, since the
+        "consent" is the client registration itself. Returns None when no
+        authorization is resolvable (e.g. a custom grant type).
+        """
+        authorization = getattr(request, "_dot_authorization", None)
+        if authorization is not None:
+            return authorization
+
+        grant_type = getattr(request, "grant_type", None)
+        grant_instance = getattr(request, "grant_instance", None)
+
+        if grant_instance is not None:
+            # Authorization code exchange: inherit from the code's grant.
+            authorization = grant_instance.authorization
+        elif grant_type == "refresh_token":
+            refresh_token_instance = getattr(request, "refresh_token_instance", None)
+            if isinstance(refresh_token_instance, RefreshToken):
+                authorization = refresh_token_instance.authorization
+        elif grant_type == "urn:ietf:params:oauth:grant-type:device_code":
+            authorization = self._resolve_device_authorization(request)
+        elif grant_type == "client_credentials":
+            authorization = self._resolve_client_credentials_authorization(request)
+        elif grant_type == "password":
+            # Each password login is a distinct authorization event.
+            authorization = self._create_authorization(request, AbstractApplication.GRANT_PASSWORD)
+        elif grant_type is None and getattr(request, "response_type", None):
+            # Implicit flow: tokens are issued straight from the authorization
+            # endpoint, so there is no code (and no code grant) to inherit from.
+            authorization = self._create_authorization(request, AbstractApplication.GRANT_IMPLICIT)
+
+        if authorization is not None:
+            request._dot_authorization = authorization
+        return authorization
+
+    def _resolve_device_authorization(self, request):
+        """
+        Inherit the Authorization created when the user approved the device on
+        the verification page. Devices approved before the Authorization model
+        was introduced get one created at token issuance instead.
+        """
+        device_grant_model = get_device_grant_model()
+        device_code = getattr(request, "device_code", None)
+        if not device_code:
+            return None
+        try:
+            device_grant = device_grant_model.objects.get(device_code=device_code)
+        except device_grant_model.DoesNotExist:
+            return None
+        if device_grant.authorization_id is not None:
+            return device_grant.authorization
+        authorization = Authorization.objects.create(
+            user=request.user,
+            application=request.client,
+            grant_type=AbstractApplication.GRANT_DEVICE_CODE,
+            scope=device_grant.scope or "",
+        )
+        device_grant.authorization = authorization
+        device_grant.save(update_fields=["authorization"])
+        return authorization
+
+    def _resolve_client_credentials_authorization(self, request):
+        scopes = set(request.scopes or [])
+        authorization, created = Authorization.objects.get_or_create(
+            user=None,
+            application=request.client,
+            grant_type=AbstractApplication.GRANT_CLIENT_CREDENTIALS,
+            revoked_at=None,
+            defaults={"scope": " ".join(sorted(scopes))},
+        )
+        if not created:
+            # Keep the recorded scope a superset of everything granted so far.
+            recorded_scopes = set(authorization.scope.split())
+            if not scopes.issubset(recorded_scopes):
+                authorization.scope = " ".join(sorted(recorded_scopes | scopes))
+                authorization.save(update_fields=["scope", "updated"])
+        return authorization
 
     def _create_authorization_code(self, request, code, expires=None):
         if not expires:
             expires = timezone.now() + timedelta(seconds=oauth2_settings.AUTHORIZATION_CODE_EXPIRE_SECONDS)
+        response_type = getattr(request, "response_type", None) or "code"
+        grant_type = (
+            AbstractApplication.GRANT_OPENID_HYBRID
+            if response_type != "code"
+            else AbstractApplication.GRANT_AUTHORIZATION_CODE
+        )
         return Grant.objects.create(
             application=request.client,
             user=request.user,
@@ -742,6 +877,7 @@ class OAuth2Validator(RequestValidator):
             code_challenge_method=request.code_challenge_method or "",
             nonce=request.nonce or "",
             claims=json.dumps(request.claims or {}),
+            authorization=self._create_authorization(request, grant_type),
         )
 
     def _create_refresh_token(self, request, refresh_token_code, access_token, previous_refresh_token):
@@ -754,6 +890,7 @@ class OAuth2Validator(RequestValidator):
             token=refresh_token_code,
             application=request.client,
             access_token=access_token,
+            authorization_id=access_token.authorization_id,
             token_family=token_family,
         )
 
@@ -857,6 +994,7 @@ class OAuth2Validator(RequestValidator):
             expires=expires,
             jti=jti,
             application=request.client,
+            authorization=self._resolve_authorization(request),
         )
         return id_token
 
