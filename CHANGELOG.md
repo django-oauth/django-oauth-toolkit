@@ -74,11 +74,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   safe because claims are still only released to a caller holding a valid one, and
   `Access-Control-Allow-Credentials` is never sent. Set the new `OIDC_USERINFO_CORS_ENABLED` setting
   to `False` to opt out.
+* #1723 A new swappable `Authorization` model recording granted authorizations: the durable fact
+  that a user — or a client acting on its own behalf — authorized a client for a set of scopes via
+  a particular grant type. Every token-issuing flow records one (refreshing inherits the original
+  rather than creating a new one), and access, refresh and ID tokens carry a nullable
+  `authorization` foreign key tracing them back to it. The client is recorded durably as a
+  `client_id` value, with the `Application` foreign key an optional `SET_NULL` pointer to the
+  registration backing it, so deleting a registration does not destroy the record of the consent.
+  Configurable via `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` and `AUTHORIZATION_ADMIN_CLASS`; see
+  `docs/authorizations.rst`. Deployments with swapped/custom token models must run
+  `makemigrations` for the new foreign key.
+* #1723 `Authorization.revoke()` revokes every token issued under an authorization, on every
+  device, and closes the credentials that could still mint tokens under it (an unexchanged
+  authorization code is deleted, an approved but unredeemed device grant is denied). Revocation,
+  not deletion, is the domain action: the token foreign keys are `on_delete=RESTRICT`, and the
+  admin exposes a "Revoke selected authorizations" action instead of add/change/delete.
 ### Changed
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
   being applied inconsistently: `0` previously meant "expire immediately" for the stored token while
   oauthlib reported `3600` to the client, and a negative value issued an already-expired token.
+* #1723 An authorization code is no longer deleted when it is exchanged. The row is retained and
+  stamped with a new `exchanged_at` timestamp, and `cleartokens` purges it once it expires.
+  Retaining it makes a replay recognisable: a code presented after it was exchanged now revokes the
+  tokens issued on the first exchange, per RFC 6749 §4.1.2 and RFC 9700 §4.5. Deployments that
+  override `invalidate_authorization_code()` to delete the row keep working, but lose replay
+  detection. `cleartokens` also purges revoked authorizations, but only once every token issued
+  under them is gone.
 * #1287 RP-Initiated Logout no longer rejects an `id_token_hint` whose ID Token is no longer stored.
   Such a request previously returned HTTP 400; it now takes the prompt-or-logout path, so deployments
   relying on the 400 will see 200 (prompt) or 302 (redirect) instead. "No longer stored" covers an ID

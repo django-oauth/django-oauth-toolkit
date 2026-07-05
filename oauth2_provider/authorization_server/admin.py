@@ -8,6 +8,8 @@ from oauth2_provider.models import (
     get_access_token_model,
     get_application_admin_class,
     get_application_model,
+    get_authorization_admin_class,
+    get_authorization_model,
     get_grant_admin_class,
     get_grant_model,
     get_id_token_admin_class,
@@ -90,7 +92,7 @@ class ApplicationAdmin(admin.ModelAdmin):
 class AccessTokenAdmin(admin.ModelAdmin):
     list_display = ("pk", "masked_token", "user", "application", "expires")
     list_select_related = ("application", "user")
-    raw_id_fields = ("user", "source_refresh_token")
+    raw_id_fields = ("user", "source_refresh_token", "authorization")
     # Search by non-secret identifiers only; never by the token itself.
     search_fields = ("application__client_id", "application__name") + USER_SEARCH_FIELDS
     list_filter = ("application",)
@@ -145,9 +147,55 @@ class AccessTokenAdmin(admin.ModelAdmin):
         return mask_credential(obj.token) if obj is not None else ""
 
 
+class AuthorizationAdmin(admin.ModelAdmin):
+    """
+    Authorizations are system-created records of granted consent: the admin can
+    inspect and *revoke* them, but not create, edit or delete them. Revocation
+    is the domain action -- it revokes every token issued under the
+    authorization -- while row deletion is reserved for :ref:`cleartokens` once
+    those tokens are gone, so the lineage is never discarded early.
+    """
+
+    list_display = ("pk", "client_id", "user", "grant_type", "created", "revoked_at")
+    list_select_related = ("application", "user")
+    raw_id_fields = ("user", "application")
+    search_fields = ("client_id", "application__name") + USER_SEARCH_FIELDS
+    list_filter = ("grant_type", "application")
+    actions = ("revoke_authorizations",)
+
+    def has_add_permission(self, request):
+        # Authorizations are recorded by the OAuth flows, not hand-created in the admin.
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # An authorization is a record of what a user consented to at a point in
+        # time; editing it after the fact would falsify the lineage the tokens
+        # issued under it point at.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Invalidate authorizations with the "Revoke selected authorizations"
+        # action, not a raw delete: deleting is blocked while tokens reference
+        # the row (the foreign keys are RESTRICT) and would discard the record
+        # of the consent those tokens rest on.
+        return False
+
+    @admin.action(description="Revoke selected authorizations")
+    def revoke_authorizations(self, request, queryset):
+        revoked = 0
+        for authorization in queryset:
+            if authorization.is_active():
+                authorization.revoke()
+                revoked += 1
+        self.message_user(
+            request,
+            ngettext("Revoked %d authorization.", "Revoked %d authorizations.", revoked) % revoked,
+        )
+
+
 class GrantAdmin(admin.ModelAdmin):
     list_display = ("pk", "masked_code", "application", "user", "expires")
-    raw_id_fields = ("user",)
+    raw_id_fields = ("user", "authorization")
     # Search by non-secret identifiers only; never by the authorization code itself.
     search_fields = ("application__client_id", "application__name") + USER_SEARCH_FIELDS
 
@@ -178,7 +226,7 @@ class GrantAdmin(admin.ModelAdmin):
 
 class IDTokenAdmin(admin.ModelAdmin):
     list_display = ("jti", "user", "application", "expires")
-    raw_id_fields = ("user",)
+    raw_id_fields = ("user", "authorization")
     # Search by non-secret identifiers only, consistent with the other credential admins and
     # resilient to custom user models without an ``email`` field (see USER_SEARCH_FIELDS).
     search_fields = ("application__client_id", "application__name") + USER_SEARCH_FIELDS
@@ -193,7 +241,7 @@ class IDTokenAdmin(admin.ModelAdmin):
 class RefreshTokenAdmin(admin.ModelAdmin):
     list_display = ("pk", "masked_token", "user", "application")
     list_select_related = ("application", "user")
-    raw_id_fields = ("user", "access_token")
+    raw_id_fields = ("user", "access_token", "authorization")
     # Search by non-secret identifiers only; never by the token itself.
     search_fields = ("application__client_id", "application__name") + USER_SEARCH_FIELDS
     list_filter = ("application",)
@@ -273,6 +321,7 @@ class PushedAuthorizationRequestAdmin(admin.ModelAdmin):
 
 
 application_model = get_application_model()
+authorization_model = get_authorization_model()
 access_token_model = get_access_token_model()
 grant_model = get_grant_model()
 id_token_model = get_id_token_model()
@@ -280,12 +329,14 @@ refresh_token_model = get_refresh_token_model()
 par_request_model = get_par_request_model()
 
 application_admin_class = get_application_admin_class()
+authorization_admin_class = get_authorization_admin_class()
 access_token_admin_class = get_access_token_admin_class()
 grant_admin_class = get_grant_admin_class()
 id_token_admin_class = get_id_token_admin_class()
 refresh_token_admin_class = get_refresh_token_admin_class()
 
 admin.site.register(application_model, application_admin_class)
+admin.site.register(authorization_model, authorization_admin_class)
 admin.site.register(access_token_model, access_token_admin_class)
 admin.site.register(grant_model, grant_admin_class)
 admin.site.register(id_token_model, id_token_admin_class)

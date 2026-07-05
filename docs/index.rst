@@ -63,6 +63,7 @@ Index
    views/details
    templates
    models
+   authorizations
    signals
    management_commands
    advanced_topics
