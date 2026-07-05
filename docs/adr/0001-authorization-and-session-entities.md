@@ -147,34 +147,34 @@ the same operation as ending the other.
 
 ```mermaid
 erDiagram
-    User ||--o{ Session : ""
-    User |o--o{ Authorization : "NULL for client_credentials"
-    Application ||--o{ Authorization : ""
-    Session |o--o{ Authorization : "NULL for non-interactive flows"
+    User ||--o{ Session : "authenticates via"
+    User |o--o{ Authorization : "grants (NULL for client_credentials)"
+    Application ||--o{ Authorization : "is granted"
+    Session |o--o{ Authorization : "hosts (NULL for non-interactive flows)"
     Authorization |o--o| Grant : "code credential"
     Authorization |o--o| DeviceGrant : "device credential"
-    Authorization |o--o{ AccessToken : ""
-    Authorization |o--o{ RefreshToken : ""
-    Authorization |o--o{ IDToken : ""
+    Authorization |o--o{ AccessToken : "issues"
+    Authorization |o--o{ RefreshToken : "issues"
+    Authorization |o--o{ IDToken : "issues"
     RefreshToken |o--|| AccessToken : "existing 1:1"
     AccessToken |o--|| IDToken : "existing 1:1"
 
     Session {
         uuid sid UK "issued as the sid claim"
-        fk user ""
-        string session_key "nullable; Django session correlation"
+        User user FK
+        string session_key "nullable, Django session correlation"
         datetime authenticated_at "per-session auth_time"
-        datetime expires ""
+        datetime expires
         datetime terminated_at "nullable"
-        string termination_reason "logout / rp_logout / expired / admin"
+        string termination_reason "logout, rp_logout, expired, admin"
     }
     Authorization {
-        fk user "nullable"
-        fk application ""
-        fk session "nullable"
+        User user FK "nullable"
+        Application application FK
+        Session session FK "nullable"
         string grant_type "how consent was expressed"
-        text scope ""
-        datetime created ""
+        text scope
+        datetime created
         datetime revoked_at "nullable"
     }
 ```
