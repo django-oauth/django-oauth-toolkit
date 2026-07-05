@@ -28,14 +28,18 @@ the same operation as ending the other.
 
 ### What DOT records today
 
-- **`Grant` is the authorization code, not a grant.** It is created only in
-  `_create_authorization_code()` (auth-code and hybrid flows) and **deleted**
-  at token exchange by `invalidate_authorization_code()`. Nothing can
-  reference it after the ~60 seconds it lives.
+- **`Grant` models one kind of authorization grant — the code — and nothing
+  durable.** The name is spec-accurate for the code flow (RFC 6749 §1.3.1:
+  the authorization code *is* the grant credential), but the other flows'
+  grant credentials, and the granted consent they all represent, are not
+  modeled. The row is created only in `_create_authorization_code()`
+  (auth-code and hybrid flows) and **deleted** at token exchange by
+  `invalidate_authorization_code()`. Nothing can reference it after the
+  ~60 seconds it lives.
 - **`DeviceGrant` is a second flow-specific credential table** (the
   `device_code`), not unified with `Grant`.
-- **Implicit, ROPC, and client_credentials leave no record** of the
-  authorization at all.
+- **Implicit, Resource Owner Password Credentials (ROPC), and
+  client_credentials leave no record** of the authorization at all.
 - **No token carries lineage.** DOT cannot answer "which tokens were issued
   under which authorization." Consequences:
   - RFC 6749 §4.1.2 (and RFC 9700 §4.5) say a replayed authorization code
@@ -70,8 +74,9 @@ the same operation as ending the other.
   password (ROPC), the client's own credentials, the device code (RFC 8628
   is titled "Device Authorization Grant"), assertions (RFC 7521/7523), and
   the refresh token acting as the grant at the token endpoint. DOT's `Grant`
-  model reifies exactly one of these credentials and names it after the
-  abstraction.
+  and `DeviceGrant` models reify two of these credentials, correctly named;
+  the remaining flows' grants — and the durable consent that every grant
+  credential represents — have no model.
 - **No OAuth RFC defines a durable consent record.** It is deliberately out
   of scope, and every mature implementation invented it independently:
   Keycloak `UserConsent`, Ory Hydra consent sessions, Okta's Grants API.
