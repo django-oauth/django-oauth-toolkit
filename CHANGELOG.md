@@ -27,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Changes to the `AbstractRefreshToken` model require doing a `manage.py migrate` after upgrading.
 * If you use a swapped refresh token model (`OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL`) you will need to
   update your custom model with `manage.py makemigrations`. If your table already contains refresh
-  tokens you must also backfill `token_checksum` with a data migration — copy `forwards_func` from
-  `oauth2_provider/migrations/0015_refreshtoken_token_checksum.py` and keep the same operation order:
+  tokens you must also backfill `token_checksum` with a data migration — adapt the batched backfill
+  loop from `forwards_func` in
+  `oauth2_provider/migrations/0015_refreshtoken_token_checksum.py` (dropping its swapped-model
+  guard, the early return, and resolving your own model instead) and keep the same operation order:
   add nullable checksum → drop the old `("token", "revoked")` unique constraint → widen `token` to
   `TextField` → backfill → make checksum non-nullable → add the `("token_checksum", "revoked")`
   unique constraint.
