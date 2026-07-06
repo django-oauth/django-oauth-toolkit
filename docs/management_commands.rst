@@ -16,8 +16,9 @@ setting. It is important that this command is run regularly (eg: via cron) to av
 database with expired refresh tokens.
 
 If ``cleartokens`` runs daily the maximum delay before a refresh token is
-removed is ``REFRESH_TOKEN_EXPIRE_SECONDS`` + 1 day. This is normally not a
-problem since refresh tokens are long lived.
+removed is its retention period (``REFRESH_TOKEN_EXPIRE_SECONDS`` for expired
+tokens, ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` for revoked ones) + 1 day. This
+is normally not a problem since refresh tokens are long lived.
 
 To prevent the CPU and RAM high peaks during deletion process use ``CLEAR_EXPIRED_TOKENS_BATCH_SIZE`` and
 ``CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL`` settings to adjust the process speed.

@@ -679,14 +679,16 @@ class TestClearRevoked(BaseTestModels):
 
     def test_clear_expired_tokens_incorrect_timetype(self):
         self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = "A"
-        with pytest.raises(ImproperlyConfigured) as excinfo:
+        with pytest.raises(
+            ImproperlyConfigured, match="REFRESH_TOKEN_GRACE_PERIOD_SECONDS must be in seconds"
+        ):
             clear_expired()
-        result = excinfo.value.__class__.__name__
-        assert result == "ImproperlyConfigured"
 
     def test_clear_expired_tokens_negative_grace_period(self):
         self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = -self.grace_secs
-        with pytest.raises(ImproperlyConfigured):
+        with pytest.raises(
+            ImproperlyConfigured, match="REFRESH_TOKEN_GRACE_PERIOD_SECONDS must not be negative"
+        ):
             clear_expired()
 
     def test_clear_revoked_tokens_with_grace_period(self):
