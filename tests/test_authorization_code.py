@@ -2261,6 +2261,27 @@ class TestResourceIndicators(BaseTest):
         grant = Grant.objects.get(code=code)
         self.assertEqual(grant.resource, ["https://api.example.com/resource"])
 
+    def test_authorization_form_rejects_invalid_resource(self):
+        """A tampered hidden resource form field is rejected with invalid_target"""
+        self.client.login(username="test_user", password="123456")
+
+        auth_params = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "redirect_uri": "http://example.org",
+            "scope": "read write",
+            "resource": "/not/absolute",
+            "allow": True,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=auth_params)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=invalid_target", response["Location"])
+        # RFC 6749: the error redirect must echo the client's state
+        self.assertIn("state=random_state_string", response["Location"])
+        self.assertEqual(Grant.objects.count(), 0)
+
     def test_token_exchange_propagates_resource(self):
         """Test that token exchange propagates resource from Grant to AccessToken"""
         self.client.login(username="test_user", password="123456")

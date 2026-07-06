@@ -44,21 +44,49 @@ from .settings import oauth2_settings
 from .utils import get_timezone
 
 
+# Default ports used to normalize URIs before comparison, so that e.g.
+# "https://api.example.com:443/foo" and "https://api.example.com/foo" match.
+_SCHEME_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
 def _parse_and_validate_uri(uri):
     """Parse a URI and return (scheme, hostname, port, path) or None if invalid.
 
     Paths are normalized to resolve dot segments (RFC 3986 Section 5.2.4).
-    URIs with userinfo or fragment components are rejected.
+    For http and https URIs, an omitted port is normalized to the scheme default
+    (RFC 3986 Section 6.2.3); for other schemes it remains None.
+    URIs with userinfo or fragment components are rejected. A query component is
+    accepted (RFC 8707 allows one on resource indicators) but is not part of the
+    returned tuple, so it plays no role in matching.
     """
     parsed = urllib.parse.urlsplit(uri)
-    if parsed.username or parsed.password:
+    # "is not None" catches empty-but-present components ("https://@example.com",
+    # "https://example.com/#") that truthiness checks would let through.
+    if parsed.username is not None or parsed.password is not None:
         return None
-    if parsed.fragment:
+    if parsed.fragment or "#" in uri:
         return None
     if not parsed.scheme or not parsed.hostname:
         return None
+    scheme = parsed.scheme.lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        # Non-numeric or out-of-range port
+        return None
+    if port is None:
+        port = _SCHEME_DEFAULT_PORTS.get(scheme)
     path = posixpath.normpath(parsed.path or "/")
-    return (parsed.scheme.lower(), parsed.hostname.lower(), parsed.port, path)
+    return (scheme, parsed.hostname.lower(), port, path)
+
+
+def is_valid_resource_uri(uri):
+    """Return True if ``uri`` is acceptable as an RFC 8707 resource indicator.
+
+    Accepted values are absolute URIs with a scheme and host, without userinfo
+    or fragment components (e.g. ``https://api.example.com/path``).
+    """
+    return _parse_and_validate_uri(uri) is not None
 
 
 def validate_resource_as_url_prefix(request_uri, audiences):
@@ -81,6 +109,9 @@ def validate_resource_as_url_prefix(request_uri, audiences):
         - Rejects: "https://api.example.com/bar"
         - Rejects: "https://api.example.com/food-blog"
         - Rejects: "https://api.example.com@evil.com/foo"
+
+    Both ``request_uri`` and the audience values must be absolute URIs with a
+    scheme and host; other absolute-URI forms (e.g. URNs) never match.
 
     :param request_uri: String URI of the current request (without query string)
     :param audiences: List of audience URI strings from token
@@ -524,10 +555,16 @@ class OAuth2Validator(RequestValidator):
             if not settings.USE_TZ:
                 expires = timezone.make_naive(expires, expires.tzinfo)
 
-            # RFC 8707: Map introspection 'aud' claim to resource field
+            # RFC 8707: Map introspection 'aud' claim to resource field.
+            # RFC 7662 defines 'aud' as a string or array of strings. 'aud' is a
+            # security restriction, so a malformed value must fail closed: treating
+            # it as unrestricted would let the token through on any resource.
             aud = content.get("aud", [])
             if isinstance(aud, str):
                 aud = [aud]
+            elif not isinstance(aud, list) or not all(isinstance(entry, str) for entry in aud):
+                log.warning("Rejecting token: malformed 'aud' claim in introspection response: %r", aud)
+                return None
 
             token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
             access_token, _created = AccessToken.objects.update_or_create(
@@ -565,17 +602,23 @@ class OAuth2Validator(RequestValidator):
                 )
 
         if access_token and access_token.is_valid(scopes):
-            # RFC 8707: Validate token audience against request resource
-            # Use request.uri which is the full URI from the oauthlib Request object
-            request_uri = request.uri.split("?")[0]
-            if not access_token.allows_audience(request_uri):
-                request.oauth2_error = OrderedDict(
-                    [
-                        ("error", "invalid_token"),
-                        ("error_description", _("The access token is not valid for this resource.")),
-                    ]
-                )
-                return False
+            # RFC 8707: Only resource-restricted tokens are audience-checked, so
+            # unrestricted tokens keep working with minimal request objects that
+            # carry no uri. Restricted tokens fail closed when the uri is absent.
+            if access_token.resource:
+                # request.uri is the full URI from the oauthlib Request object
+                request_uri = (getattr(request, "uri", None) or "").split("?")[0]
+                if not access_token.allows_audience(request_uri):
+                    request.oauth2_error = OrderedDict(
+                        [
+                            ("error", "invalid_token"),
+                            (
+                                "error_description",
+                                _("The access token is not valid for this resource."),
+                            ),
+                        ]
+                    )
+                    return False
 
             request.client = access_token.application
             request.user = access_token.user
@@ -701,16 +744,44 @@ class OAuth2Validator(RequestValidator):
         with transaction.atomic(using=router.db_for_write(AccessToken)):
             return self._save_bearer_token(token, request, *args, **kwargs)
 
+    def _validate_resource_uris(self, request, resources):
+        """
+        RFC 8707: Reject any resource that is not an absolute URI with a scheme
+        and host (no userinfo or fragment). Note this is stricter than RFC 3986
+        absolute-URI: authority-less forms such as URNs are rejected because the
+        default prefix validator matches on (scheme, host, port, path).
+        """
+        for res in resources:
+            if _parse_and_validate_uri(res) is None:
+                raise errors.CustomOAuth2Error(
+                    error="invalid_target",
+                    description=(
+                        f"The resource '{res}' is not a valid resource indicator: "
+                        "it must be an absolute URI with a scheme and host."
+                    ),
+                    request=request,
+                )
+
     def _check_and_set_request_resource(self, request):
         """
         Handle 'resource' parameter from token requests (RFC 8707).
         Normalizes request.resource to a list of URIs.
 
         request.resource will be set to one of:
-        - None (no resources)
+        - [] (no resources)
         - List of URIs: ["https://api.example.com"] or ["https://a.com", "https://b.com"]
         """
         resource = getattr(request, "resource", None)
+
+        # RFC 8707 allows repeating the ``resource`` parameter, but oauthlib
+        # keeps only the last value when body parameters repeat. Recover the
+        # full list from the decoded body.
+        if isinstance(resource, str):
+            body_values = [
+                value for key, value in (getattr(request, "decoded_body", None) or []) if key == "resource"
+            ]
+            if len(body_values) > 1:
+                resource = body_values
 
         if isinstance(resource, list):
             # Already a list, use as-is
@@ -721,14 +792,8 @@ class OAuth2Validator(RequestValidator):
         else:
             request.resource = []
 
-        # RFC 8707: Validate that each resource is an absolute URI without userinfo
-        for res in request.resource:
-            if _parse_and_validate_uri(res) is None:
-                raise errors.CustomOAuth2Error(
-                    error="invalid_target",
-                    description=f"The resource '{res}' is not a valid absolute URI.",
-                    request=request,
-                )
+        # RFC 8707: Validate that each resource is an absolute URI with scheme and host
+        self._validate_resource_uris(request, request.resource)
 
         if request.grant_type == "authorization_code":
             # Handle grant resource narrowing
@@ -750,6 +815,10 @@ class OAuth2Validator(RequestValidator):
                             request=request,
                         )
             elif grant_resource:
+                # Inherited values may predate validation at the authorization
+                # endpoint (e.g. rows written before upgrading) - validate them
+                # before they end up on the issued token.
+                self._validate_resource_uris(request, grant_resource)
                 request.resource = grant_resource
 
         elif request.grant_type == "refresh_token":
@@ -758,6 +827,8 @@ class OAuth2Validator(RequestValidator):
             if refresh_token_instance and refresh_token_instance.resource:
                 # If no resource specified in request, inherit from refresh token
                 if not request.resource:
+                    # Validate inherited values the same way as client-supplied ones.
+                    self._validate_resource_uris(request, refresh_token_instance.resource)
                     request.resource = refresh_token_instance.resource
                 # If resource specified, validate it's a subset of refresh token's resources
                 elif request.resource != refresh_token_instance.resource:

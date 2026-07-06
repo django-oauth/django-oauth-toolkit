@@ -331,6 +331,15 @@ is authorized for the request, ``False`` otherwise.
 The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
 will accept requests to ``https://api.example.com/v1/users`` but reject ``https://api.example.com/v2``.
 
+The default validator expects both the request URI and the audience values to be **absolute URIs
+with a scheme and host**, without userinfo or fragment components, because it compares
+``(scheme, host, port)`` and then the path. A query component is permitted on resource indicators
+(RFC 8707 allows one) but plays no part in matching: the request URI is compared with its query
+string stripped. Other absolute-URI forms, such as URNs, never match. Supporting them requires
+both a custom validator here (for matching on the resource server) and a custom
+``OAUTH2_VALIDATOR_CLASS`` overriding ``_validate_resource_uris()`` (the authorization server
+rejects authority-less URIs at issuance).
+
 To use exact matching instead:
 
 .. code-block:: python

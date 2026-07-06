@@ -123,6 +123,35 @@ The default validator uses **prefix matching**: a token with audience ``https://
 will be accepted for requests to ``https://api.example.com/v1/users`` but rejected for
 ``https://api.example.com/v2/users``.
 
+Resource indicators must be absolute URIs with a scheme and host, without userinfo or fragment
+components (a query component is allowed per RFC 8707 but is ignored when matching). Other
+absolute-URI forms, such as URNs, are rejected at issuance and never match the default
+validator. Supporting them requires customization on both sides: a custom
+``OAUTH2_VALIDATOR_CLASS`` overriding ``_validate_resource_uris()`` so the authorization server
+accepts them at issuance, and a custom ``RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR`` so the
+resource server can match them.
+
+Deployments Behind a Reverse Proxy
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Audience validation compares the token's resource indicators against the request URI as
+reconstructed by Django (``request.build_absolute_uri()``). If your resource server runs
+behind a TLS-terminating reverse proxy or load balancer, Django must be configured so the
+reconstructed scheme and host match the externally visible URI that clients put in the
+``resource`` parameter. Otherwise resource-restricted tokens will be rejected with a
+scheme (``http`` vs ``https``) or host mismatch.
+
+Configure the standard Django settings for proxied deployments:
+
+.. code-block:: python
+
+    # settings.py
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True  # if the proxy rewrites the Host header
+
+and ensure your proxy sets the corresponding headers. See the `Django deployment docs
+<https://docs.djangoproject.com/en/stable/ref/settings/#secure-proxy-ssl-header>`_ for
+the security implications of these settings.
+
 Custom Validation Logic
 ~~~~~~~~~~~~~~~~~~~~~~~~
 You can customize the validation logic by providing your own validator function:

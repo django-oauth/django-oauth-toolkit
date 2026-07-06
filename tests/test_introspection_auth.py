@@ -108,6 +108,21 @@ def mocked_introspect_with_aud_string(url, data, *args, **kwargs):
     )
 
 
+def mocked_introspect_with_malformed_aud(url, data, *args, **kwargs):
+    """Mock response with aud that is neither a string nor a list of strings."""
+    return MockResponse(
+        {
+            "active": True,
+            "scope": "read write dolphin",
+            "client_id": "client_id_bad_aud",
+            "username": "bad_aud_user",
+            "exp": int(calendar.timegm(default_exp.timetuple())),
+            "aud": {"uri": "https://api.example.com/v1"},
+        },
+        200,
+    )
+
+
 def mocked_introspect_request_short_living_token(url, data, *args, **kwargs):
     exp = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(minutes=30)
 
@@ -438,3 +453,15 @@ class TestTokenIntrospectionAuth(TestCase):
         )
         self.assertIsInstance(token, AccessToken)
         self.assertEqual(token.resource, [])
+
+    @mock.patch("requests.post", side_effect=mocked_introspect_with_malformed_aud)
+    def test_introspection_rejects_malformed_aud(self, mock_get):
+        """A malformed aud claim fails closed: the token is rejected, not treated as unrestricted"""
+        token = self.validator._get_token_from_authentication_server(
+            "bad_aud_token",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsNone(token)
+        self.assertFalse(AccessToken.objects.filter(token="bad_aud_token").exists())

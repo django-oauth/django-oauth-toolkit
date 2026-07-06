@@ -310,8 +310,14 @@ This identifies your application, the user is asked to authorize your applicatio
 
        &resource=https://api.example.com
 
-   This prevents the token from being used at other resource servers.
-   See :doc:`resource_server` for details on validating token audiences.
+   Repeat the parameter to request a token for multiple resources::
+
+       &resource=https://api.example.com&resource=https://data.example.com
+
+   The parameter is accepted on both the authorization and token endpoints; a token
+   request may repeat ``resource`` to narrow the token to a subset of the resources
+   authorized in the grant. This prevents the token from being used at other resource
+   servers. See :doc:`resource_server` for details on validating token audiences.
 
 Go ahead and authorize the ``web-app``
 

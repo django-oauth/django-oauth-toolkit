@@ -6,7 +6,7 @@ import oauth2_provider.models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("oauth2_provider", "0014_alter_help_text"),
+        ("oauth2_provider", "0017_application_dcr_created"),
     ]
 
     operations = [

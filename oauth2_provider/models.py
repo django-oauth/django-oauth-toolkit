@@ -38,10 +38,19 @@ class ResourceJSONField(models.JSONField):
     Empty list means not restricted to specific resource servers (unrestricted access).
     """
 
+    def pre_save(self, model_instance, add):
+        """The field is not nullable; treat None as "no resource restriction"."""
+        value = super().pre_save(model_instance, add)
+        if value is None:
+            value = []
+            setattr(model_instance, self.attname, value)
+        return value
+
     def get_db_prep_value(self, value, connection, prepared=False):
         """Validate before saving to database."""
-        if value is not None and not isinstance(value, list):
-            raise ValidationError("Resource must be a list of URIs")
+        if value is not None:
+            if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
+                raise ValidationError("Resource must be a list of URI strings")
         return super().get_db_prep_value(value, connection, prepared)
 
 
@@ -528,9 +537,12 @@ class AbstractAccessToken(models.Model):
         :param audience_uri: The URI of the resource server to check
         :return: True if the token is authorized for this audience, False otherwise
         """
-        from .settings import oauth2_settings
-
         audiences = self.resource
+        if not audiences:
+            # No resource indicators - unrestricted token allows any audience,
+            # regardless of how a custom validator treats an empty list.
+            return True
+
         resource_validator = oauth2_settings.RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
 
         if resource_validator:
