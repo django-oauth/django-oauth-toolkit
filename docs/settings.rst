@@ -196,7 +196,11 @@ that run into issues of network connectivity during the refresh cycle and are
 unable to complete the full request/response life cycle. Without a grace
 period the application, the app then has only a consumed refresh token and the
 only recourse is to have the user re-authenticate. A suggested value, if this
-is enabled, is 2 minutes.
+is enabled, is 2 minutes. The value must not be negative.
+
+The ``cleartokens`` management command removes revoked refresh tokens once the
+grace period has passed, unless ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled.
+Check :ref:`cleartokens` management command for further info.
 
 REFRESH_TOKEN_REUSE_PROTECTION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

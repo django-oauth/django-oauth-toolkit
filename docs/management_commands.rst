@@ -22,6 +22,12 @@ To prevent the CPU and RAM high peaks during deletion process use ``CLEAR_EXPIRE
 
 The ``cleartokens`` management command will also delete expired access and ID tokens alongside expired refresh tokens.
 
+Refresh tokens that have already been revoked (for example by refresh token rotation) are removed as
+soon as their ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` grace period has passed, without waiting for
+``REFRESH_TOKEN_EXPIRE_SECONDS``. The exception is when ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled:
+revoked refresh tokens are then what allows reuse of a rotated token to be detected, so they are kept
+until they expire per ``REFRESH_TOKEN_EXPIRE_SECONDS``.
+
 Note: Refresh tokens need to expire before AccessTokens can be removed from the
 database. Using ``cleartokens`` without ``REFRESH_TOKEN_EXPIRE_SECONDS`` has limited effect.
 

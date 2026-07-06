@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unique constraint.
 
 ### Changed
+* #1688 `cleartokens` now removes revoked refresh tokens once `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`
+  has passed, instead of keeping them until `REFRESH_TOKEN_EXPIRE_SECONDS`. When
+  `REFRESH_TOKEN_REUSE_PROTECTION` is enabled, revoked tokens are still kept until they expire so
+  that token reuse can be detected.
 * #1601 `RefreshToken.token` is now a `TextField` and lookups use a new SHA-256 `token_checksum`
   field, removing the 255 character limit so long refresh tokens (e.g. Microsoft's JWT refresh
   tokens) are supported. This mirrors the `AccessToken.token_checksum` approach introduced in 3.0.0

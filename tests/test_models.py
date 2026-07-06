@@ -684,6 +684,11 @@ class TestClearRevoked(BaseTestModels):
         result = excinfo.value.__class__.__name__
         assert result == "ImproperlyConfigured"
 
+    def test_clear_expired_tokens_negative_grace_period(self):
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = -self.grace_secs
+        with pytest.raises(ImproperlyConfigured):
+            clear_expired()
+
     def test_clear_revoked_tokens_with_grace_period(self):
         self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = self.grace_secs
 
@@ -709,7 +714,7 @@ class TestClearRevoked(BaseTestModels):
         )
 
     def test_clear_revoked_tokens_without_grace_period(self):
-        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = None
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 0
 
         clear_expired()
 
@@ -719,6 +724,41 @@ class TestClearRevoked(BaseTestModels):
         )
         remaining_revoked_rt_count = RefreshToken.objects.filter(revoked__lte=self.now).count()
         assert remaining_revoked_rt_count == 0, "no revoked refresh tokens should still exist."
+        remaining_current_rt_count = RefreshToken.objects.filter(revoked__isnull=True).count()
+        assert remaining_current_rt_count == self.initial_current_rt_count, (
+            "all the current refresh tokens should still exist."
+        )
+
+    def test_clear_revoked_tokens_with_reuse_protection(self):
+        self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = True
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = self.grace_secs
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = None
+
+        clear_expired()
+
+        remaining_rt_count = RefreshToken.objects.count()
+        assert remaining_rt_count == self.initial_rt_count, (
+            "with reuse protection and no expiry, all revoked refresh tokens should be kept."
+        )
+
+    def test_clear_revoked_tokens_with_reuse_protection_and_expiry(self):
+        self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = True
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = self.grace_secs
+        # expiry cutoff falls between the two groups of revoked tokens
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = self.grace_secs + self.grace_secs // 2
+
+        clear_expired()
+
+        remaining_rt_count = RefreshToken.objects.count()
+        assert remaining_rt_count == self.initial_rt_count // 3 * 2, (
+            "with reuse protection, only revoked refresh tokens older than the expiry should be deleted."
+        )
+        remaining_revoked_rt_inside_grace_count = RefreshToken.objects.filter(
+            revoked__gt=self.grace_time
+        ).count()
+        assert remaining_revoked_rt_inside_grace_count == self.initial_revoked_rt_inside_grace_count, (
+            "all revoked refresh tokens inside grace period should still exist."
+        )
         remaining_current_rt_count = RefreshToken.objects.filter(revoked__isnull=True).count()
         assert remaining_current_rt_count == self.initial_current_rt_count, (
             "all the current refresh tokens should still exist."
