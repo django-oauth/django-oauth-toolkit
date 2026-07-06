@@ -6,8 +6,10 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
-from django.http import HttpResponse
+from django.core.exceptions import ImproperlyConfigured
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import resolve_url
+from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -153,8 +155,20 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # Application is not available at this time.
             return self.error_response(error, application=None)
 
-        prompt = request.GET.get("prompt")
-        if prompt == "login":
+        # prompt is a space-delimited, case-sensitive list of ASCII values
+        # (OpenID Connect Core 1.0 section 3.1.2.1). Prompt Create 1.0
+        # recommends that create not be combined with other values, but when
+        # it is, account creation has to happen before any of the others can
+        # be satisfied, so create is handled first.
+        prompt = set(request.GET.get("prompt", "").split())
+        if "create" in prompt:
+            # None means create is a no-op for this request (the user already
+            # has an authenticated session): continue with the other prompt
+            # values and the normal flow.
+            response = self.handle_prompt_create()
+            if response is not None:
+                return response
+        if "login" in prompt:
             return self.handle_prompt_login()
 
         all_scopes = get_scopes_backend().get_all_scopes()
@@ -254,19 +268,112 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             self.get_redirect_field_name(),
         )
 
+    def handle_prompt_create(self):
+        """
+        When the prompt parameter of the authorization request contains
+        create, redirect unauthenticated users to the registration page.
+        After registration, the user should be redirected back to the
+        authorization endpoint, with create removed from the prompt
+        parameter, to continue the OIDC flow.
+
+        For a user with an existing authenticated session, create is a
+        no-op: None is returned and the authorization request proceeds as
+        if create was not present. The spec leaves this case open ("whether
+        the AS creates a brand new identity or helps the user authenticate
+        an identity they already have is out of scope") and this matches
+        how major providers treat a signup hint alongside an active
+        session. A Relying Party that wants re-authentication instead can
+        combine prompt values, e.g. "create login".
+
+        Implements OpenID Connect Prompt Create 1.0 specification.
+        https://openid.net/specs/openid-connect-prompt-create-1_0.html
+        """
+        # Per Prompt Create 1.0 section 4.1.1, an OP receiving a prompt value it
+        # does not support (one not declared in prompt_values_supported) SHOULD
+        # respond with HTTP 400 and an error value of invalid_request.
+        if not oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
+            return JsonResponse(
+                {"error": "invalid_request", "error_description": "prompt=create is not supported"},
+                status=400,
+            )
+
+        # The no-op for authenticated sessions comes before the registration
+        # URL is resolved: these requests never redirect to registration, so
+        # a misconfigured URL must not break them. Anonymous create requests
+        # below still surface the misconfiguration loudly.
+        if self.request.user.is_authenticated:
+            return None
+
+        # An enabled feature without a resolvable registration page is server
+        # misconfiguration, not a client error: fail loudly for the operator
+        # instead of sending a misleading error to the relying party.
+        registration_location = oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL
+        if not registration_location:
+            raise ImproperlyConfigured(
+                "OIDC_RP_INITIATED_REGISTRATION_URL must be set when "
+                "OIDC_RP_INITIATED_REGISTRATION_ENABLED is True."
+            )
+        try:
+            # Like LOGIN_URL, accepts a URL pattern name, a path or an absolute URL.
+            registration_url = resolve_url(registration_location)
+        except NoReverseMatch as exc:
+            raise ImproperlyConfigured(
+                f"OIDC_RP_INITIATED_REGISTRATION_URL {registration_location!r} could not be "
+                "resolved to a registration page."
+            ) from exc
+
+        # The request MUST be validated against a registered client before
+        # the user is redirected anywhere: an invalid request has to fail here
+        # (safely — when entered via handle_no_permission no validation has
+        # run yet, and error_response never redirects to an unregistered
+        # redirect_uri) rather than after the user has created an account.
+        try:
+            self.validate_authorization_request(self.request)
+        except OAuthToolkitError as error:
+            return self.error_response(error, application=None)
+
+        # Build the next parameter so the user returns to the authorization
+        # endpoint after registration. Drop create from the prompt parameter
+        # so the flow continues, but keep any other prompt values the RP sent
+        # (e.g. "login create").
+        parsed = urlparse(self.request.build_absolute_uri())
+        parsed_query = dict(parse_qsl(parsed.query))
+        other_prompts = [p for p in parsed_query.pop("prompt", "").split() if p != "create"]
+        if other_prompts:
+            parsed_query["prompt"] = " ".join(other_prompts)
+        next_url = parsed._replace(query=urlencode(parsed_query)).geturl()
+
+        # Merge next into the registration URL's query so an existing query
+        # string or fragment in the configured URL is preserved.
+        parsed_registration = urlparse(registration_url)
+        registration_query = dict(parse_qsl(parsed_registration.query))
+        registration_query["next"] = next_url
+        redirect_to = parsed_registration._replace(query=urlencode(registration_query)).geturl()
+        return HttpResponseRedirect(redirect_to)
+
     def handle_no_permission(self):
         """
         Generate response for unauthorized users.
 
-        If prompt is set to none, then we redirect with an error code as defined
-        by OpenID Connect Core 1.0 section 3.1.2.6 (Authentication Error Response)
+        If the prompt parameter contains none, then we redirect with an error
+        code as defined by OpenID Connect Core 1.0 section 3.1.2.6
+        (Authentication Error Response)
         <https://openid.net/specs/openid-connect-core-1_0.html#AuthError>.
+
+        If the prompt parameter contains create, then we redirect to the
+        registration page.
+
+        If the prompt parameter contains login, then we redirect straight to
+        the login flow with the prompt consumed, so the user is not sent to
+        login a second time when they return to this endpoint authenticated.
 
         Some code copied from OAuthLibMixin.error_response, but that is designed
         to operate on OAuth2Error from oauthlib wrapped in a OAuthToolkitError
         """
-        prompt = self.request.GET.get("prompt")
-        if prompt == "none":
+        # prompt is a space-delimited, case-sensitive list of ASCII values
+        # (OpenID Connect Core 1.0 section 3.1.2.1).
+        prompt = set(self.request.GET.get("prompt", "").split())
+        if "none" in prompt:
             # Per OpenID Connect Core 1.0 section 3.1.2.6 (Authentication Error
             # Response) an unauthenticated prompt=none request returns a
             # login_required error to the client's redirect_uri. The request
@@ -276,6 +383,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # redirect_uri (and no client_id) and have the victim's browser 302'd
             # to an attacker-controlled origin.
             # https://openid.net/specs/openid-connect-core-1_0.html#AuthError
+            # none combined with any other value is itself invalid (Core
+            # section 3.1.2.1); oauthlib rejects the combination during
+            # validation, so it errors here instead of falling through to an
+            # interactive redirect.
             try:
                 _scopes, credentials = self.validate_authorization_request(self.request)
             except OAuthToolkitError as error:
@@ -299,6 +410,18 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             separator = "&" if "?" in redirect_uri else "?"
             redirect_to = redirect_uri + separator + urlencode(response_parameters)
             return self.redirect(redirect_to, application)
+
+        if "create" in prompt:
+            # If prompt contains create and the user is not authenticated,
+            # redirect to registration.
+            return self.handle_prompt_create()
+
+        if "login" in prompt:
+            # Logging in satisfies the login prompt, and handle_prompt_login
+            # strips it from the next URL. Falling through to the default
+            # redirect instead would keep prompt=login in next, bouncing the
+            # user to the login page a second time after they authenticate.
+            return self.handle_prompt_login()
 
         return super().handle_no_permission()
 

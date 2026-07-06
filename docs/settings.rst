@@ -406,6 +406,49 @@ Whether to delete the access, refresh and ID tokens of the user that is being lo
 The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
 The default is to delete the tokens of all applications if this flag is enabled.
 
+OIDC_RP_INITIATED_REGISTRATION_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Whether to allow the Relying Party (RP) to direct a user to an OpenID
+Provider (OP) to create a new account rather than authenticate with an
+existing one, per `OpenID Connect Prompt Create 1.0
+<https://openid.net/specs/openid-connect-prompt-create-1_0.html>`_.
+This is done by adding a ``prompt=create`` parameter to the
+authorization request. When enabled,
+``OIDC_RP_INITIATED_REGISTRATION_URL`` must also be set.
+
+Only unauthenticated users are redirected to registration. For a user
+with an existing authenticated session, ``create`` is a no-op and the
+authorization request proceeds as if it was not present — matching how
+major providers treat a signup hint alongside an active session. A
+Relying Party that wants re-authentication instead can combine prompt
+values, e.g. ``prompt=create login``.
+
+OIDC_RP_INITIATED_REGISTRATION_URL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+Where users are sent to create an account when an authorization request
+contains ``prompt=create``. Like ``LOGIN_URL``, the value is resolved with
+:func:`django.shortcuts.resolve_url` and so accepts a URL pattern name, a
+path, or an absolute URL. For example, with `django-allauth
+<https://docs.allauth.org>`_::
+
+    OAUTH2_PROVIDER = {
+        # ...
+        "OIDC_RP_INITIATED_REGISTRATION_ENABLED": True,
+        "OIDC_RP_INITIATED_REGISTRATION_URL": "account_signup",
+    }
+
+The registration page receives a ``next`` query parameter pointing back to
+the authorization endpoint, and must redirect the user there after a
+successful registration so the OAuth flow can complete.
+
+This setting is required when ``OIDC_RP_INITIATED_REGISTRATION_ENABLED`` is
+``True``: if it is unset or cannot be resolved, ``ImproperlyConfigured`` is
+raised when a ``prompt=create`` request is received.
+
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~
 Default: ``""``

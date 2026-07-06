@@ -1,6 +1,10 @@
+from urllib.parse import parse_qs, urlparse
+
 import pytest
-from django.contrib.auth import get_user
+from django.conf import settings
+from django.contrib.auth import get_user, get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ImproperlyConfigured
 from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
@@ -12,9 +16,15 @@ from oauth2_provider.exceptions import (
     InvalidOIDCClientError,
     InvalidOIDCRedirectURIError,
 )
-from oauth2_provider.models import get_access_token_model, get_id_token_model, get_refresh_token_model
+from oauth2_provider.models import (
+    get_access_token_model,
+    get_application_model,
+    get_id_token_model,
+    get_refresh_token_model,
+)
 from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.settings import oauth2_settings
+from oauth2_provider.views.base import AuthorizationView
 from oauth2_provider.views.oidc import RPInitiatedLogoutView, _load_id_token, _validate_claims
 
 from . import presets
@@ -46,6 +56,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
+            "prompt_values_supported": ["none", "login"],
         }
         response = self.client.get("/o/.well-known/openid-configuration")
         self.assertEqual(response.status_code, 200)
@@ -73,6 +84,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
+            "prompt_values_supported": ["none", "login"],
         }
         response = self.client.get("/o/.well-known/openid-configuration/")
         self.assertEqual(response.status_code, 200)
@@ -100,6 +112,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
+            "prompt_values_supported": ["none", "login"],
             "end_session_endpoint": f"{base}/logout/",
         }
         response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
@@ -134,6 +147,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
+            "prompt_values_supported": ["none", "login"],
         }
         response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
         self.assertEqual(response.status_code, 200)
@@ -212,6 +226,367 @@ class TestJwksInfoView(TestCase):
         response = self.client.get(reverse("oauth2_provider:jwks-info"))
         self.assertEqual(response.status_code, 200)
         assert response.json() == expected_response
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RP_REGISTRATION)
+class TestRPInitiatedRegistration(TestCase):
+    def setUp(self):
+        Application = get_application_model()
+        self.application = Application.objects.create(
+            name="Test Application",
+            redirect_uris="http://localhost http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+        User = get_user_model()
+        self.test_user = User.objects.create_user("test_user", "test@example.com", "123456")
+
+    def _build_authorization_request(self, query_params, user=None):
+        auth_url = reverse("oauth2_provider:authorize")
+        request = RequestFactory().get(auth_url, data=query_params)
+        request.user = user or AnonymousUser()
+        return request
+
+    def test_connect_discovery_info_has_create(self):
+        expected_response = {
+            "issuer": "http://localhost/o",
+            "authorization_endpoint": "http://localhost/o/authorize/",
+            "token_endpoint": "http://localhost/o/token/",
+            "userinfo_endpoint": "http://localhost/o/userinfo/",
+            "jwks_uri": "http://localhost/o/.well-known/jwks.json",
+            "scopes_supported": ["read", "write", "openid"],
+            "response_types_supported": [
+                "code",
+                "token",
+                "id_token",
+                "id_token token",
+                "code token",
+                "code id_token",
+                "code id_token token",
+            ],
+            "subject_types_supported": ["public"],
+            "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "code_challenge_methods_supported": ["plain", "S256"],
+            "claims_supported": ["sub"],
+            "prompt_values_supported": ["none", "login", "create"],
+        }
+        response = self.client.get("/o/.well-known/openid-configuration")
+        self.assertEqual(response.status_code, 200)
+        assert response.json() == expected_response
+
+    def test_prompt_create_redirects_to_registration_view(self):
+        request = self._build_authorization_request(
+            query_params={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "create",
+            }
+        )
+        view = AuthorizationView()
+        view.setup(request)
+        response = view.get(request)
+
+        self.assertEqual(response.status_code, 302)
+        redirect_url = response.url
+        parsed_url = urlparse(redirect_url)
+
+        # Verify it's the registration URL configured in the preset
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
+
+        # Verify the query parameters
+        query = parse_qs(parsed_url.query)
+        self.assertIn("next", query)
+
+        # Verify the next parameter doesn't contain prompt=create
+        next_url = query["next"][0]
+        self.assertNotIn("prompt=create", next_url)
+
+        # But it should contain the other original parameters
+        self.assertIn("response_type=code", next_url)
+        self.assertIn(f"client_id={self.application.client_id}", next_url)
+
+    def test_multi_value_prompt_containing_create_triggers_registration(self):
+        """
+        prompt is a space-delimited list (OpenID Connect Core 1.0 section
+        3.1.2.1): create must be honored when combined with other values,
+        and the other values are preserved in the next URL.
+        """
+        request = self._build_authorization_request(
+            query_params={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "login create",
+            }
+        )
+        view = AuthorizationView()
+        view.setup(request)
+        response = view.get(request)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_url = urlparse(response.url)
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
+        next_url = parse_qs(parsed_url.query)["next"][0]
+        self.assertIn("prompt=login", next_url)
+        self.assertNotIn("create", next_url)
+
+    def test_anonymous_multi_value_prompt_redirects_to_registration(self):
+        """
+        The same multi-value prompt must also trigger registration when it
+        arrives via handle_no_permission (full request cycle, anonymous user).
+        """
+        query_data = {
+            "response_type": "code",
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://localhost",
+            "scope": "openid",
+            "prompt": "login create",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_url = urlparse(response["Location"])
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
+        next_url = parse_qs(parsed_url.query)["next"][0]
+        self.assertIn("prompt=login", next_url)
+        self.assertNotIn("create", next_url)
+
+    def test_authenticated_users_proceed_to_authorization(self):
+        """
+        create is a no-op for a user with an existing authenticated session:
+        the authorization request proceeds to the normal consent flow.
+        """
+        self.client.force_login(self.test_user)
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "create",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["application"], self.application)
+
+    def test_authenticated_users_are_not_affected_by_misconfiguration(self):
+        """
+        The authenticated no-op happens before the registration URL is
+        resolved, so a misconfigured URL cannot break flows that never
+        redirect to registration.
+        """
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = None
+        self.client.force_login(self.test_user)
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "create",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["application"], self.application)
+
+    def test_authenticated_multi_value_prompt_forces_login(self):
+        """
+        A Relying Party that wants re-authentication of a logged-in user can
+        combine prompt values: create is skipped and login is honored.
+        """
+        self.client.force_login(self.test_user)
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "create login",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response["Location"]).path, settings.LOGIN_URL)
+
+    def test_missing_redirect_uri_is_rejected_without_redirect(self):
+        """
+        A request without redirect_uri is fatal when the client has more than
+        one registered redirect_uri (RFC 6749 section 3.1.2.3), so the error
+        page is rendered and no redirect is emitted.
+        """
+        view = AuthorizationView()
+        request = self._build_authorization_request(
+            query_params={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "scope": "openid",
+                "prompt": "create",
+            },
+        )
+        view.setup(request)
+        response = view.handle_prompt_create()
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
+    def test_prompt_create_open_redirect_unregistered_redirect_uri(self):
+        """
+        Regression test for the prompt=create open redirect.
+
+        An unauthenticated prompt=create request enters handle_prompt_create
+        via handle_no_permission, where no validation has run yet. With a
+        redirect_uri that is not registered for the client, the error path
+        must not redirect at all: the error page is rendered instead of any
+        Location header being emitted.
+        """
+        query_data = {
+            "response_type": "code",
+            "client_id": self.application.client_id,
+            "scope": "openid",
+            "prompt": "create",
+            "redirect_uri": "http://attacker.example/cb",
+            "state": "phish-123",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
+    def test_prompt_create_open_redirect_no_client(self):
+        """
+        Regression test for the prompt=create open redirect.
+
+        With no client_id at all, nothing can be validated, so no redirect
+        may be emitted for the error.
+        """
+        query_data = {
+            "prompt": "create",
+            "redirect_uri": "http://attacker.example/cb",
+            "state": "phish-123",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
+    def test_redirect_on_handle_no_permission(self):
+        view = AuthorizationView()
+        request = self._build_authorization_request(
+            query_params={
+                "response_type": "code",
+                "redirect_uri": "http://localhost",
+                "client_id": self.application.client_id,
+                "scope": "openid",
+                "prompt": "create",
+            }
+        )
+        view.setup(request)
+        response = view.handle_no_permission()
+        self.assertEqual(response.status_code, 302)
+
+    def _get_with_prompt_create(self):
+        view = AuthorizationView()
+        request = self._build_authorization_request(
+            query_params={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "create",
+            }
+        )
+        view.setup(request)
+        return view.get(request)
+
+    def test_registration_url_accepts_a_url_pattern_name(self):
+        """
+        Like LOGIN_URL, the setting is resolved with resolve_url() and so
+        accepts a URL pattern name as well as a path.
+        """
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = "admin:login"
+        response = self._get_with_prompt_create()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.url).path, reverse("admin:login"))
+
+    def test_registration_url_query_and_fragment_are_preserved(self):
+        """
+        next is merged into the configured URL's query string, so an existing
+        query or fragment survives (naive concatenation would append the
+        parameter after the fragment, where it never reaches the server).
+        """
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = "/accounts/signup/?plan=free#form"
+        response = self._get_with_prompt_create()
+        self.assertEqual(response.status_code, 302)
+        parsed_url = urlparse(response.url)
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
+        self.assertEqual(parsed_url.fragment, "form")
+        query = parse_qs(parsed_url.query)
+        self.assertEqual(query["plan"], ["free"])
+        self.assertIn("next", query)
+
+    def test_unset_registration_url_raises_improperly_configured(self):
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = None
+        with self.assertRaises(ImproperlyConfigured):
+            self._get_with_prompt_create()
+
+    def test_unresolvable_registration_url_raises_improperly_configured(self):
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = "nonexistent_signup_view"
+        with self.assertRaises(ImproperlyConfigured):
+            self._get_with_prompt_create()
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestRPInitiatedRegistrationDisabled(TestCase):
+    """
+    Per OpenID Connect Prompt Create 1.0 section 4.1.1, an OP receiving a
+    prompt value it does not support SHOULD respond with HTTP 400 and an
+    error value of invalid_request.
+    """
+
+    def setUp(self):
+        Application = get_application_model()
+        self.application = Application.objects.create(
+            name="Test Application",
+            redirect_uris="http://localhost http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+        User = get_user_model()
+        self.test_user = User.objects.create_user("test_user", "test@example.com", "123456")
+
+    def _authorize_with_prompt_create(self):
+        query_data = {
+            "response_type": "code",
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://localhost",
+            "scope": "openid",
+            "prompt": "create",
+            "state": "some_state",
+        }
+        return self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+    def test_prompt_create_is_invalid_request_for_anonymous_user(self):
+        response = self._authorize_with_prompt_create()
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertEqual(response.json()["error"], "invalid_request")
+
+    def test_prompt_create_is_invalid_request_for_authenticated_user(self):
+        self.client.force_login(self.test_user)
+        response = self._authorize_with_prompt_create()
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertEqual(response.json()["error"], "invalid_request")
 
 
 def mock_request():
