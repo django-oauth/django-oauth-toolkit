@@ -42,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Oracle (or a MySQL backend that raises warnings as errors), you must also regenerate — or
   hand-edit — your existing `CreateModel` migration for the swapped model, since it still declares
   both uniqueness rules and will fail the same way migration `0013` did.
+* If you use a swapped access token model (`OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`) and have **not
+  yet applied** the `0012_add_token_checksum` migration (i.e. you are upgrading from a version
+  below 3.0), its `token_checksum` backfill now deterministically skips the swapped model — the
+  schema operations in that migration never applied to swapped models, and the old backfill only
+  worked when the ordering of your app's migrations happened to allow it. `migrate` logs a warning
+  when the backfill is skipped and your table contains access tokens. Until `token_checksum` is
+  backfilled those tokens will not validate; no data is lost, and tokens work again as soon as the
+  checksum is populated. To backfill, add a data migration to your app (ordered after your
+  migration that adds `token_checksum`): adapt the batched backfill loop from `forwards_func` in
+  `oauth2_provider/migrations/0012_add_token_checksum.py`, dropping its swapped-model guard (the
+  early return) and resolving your own model instead. You can check for affected rows with
+  `YourAccessToken.objects.filter(token_checksum__isnull=True).exists()`. Installs that already
+  applied `0012` (any 3.x deployment) are unaffected.
 
 ### Changed
 * #1688 `cleartokens` now removes revoked refresh tokens once `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`
@@ -57,13 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calls (1000 rows per statement) instead of saving each access token individually, sharply
   reducing how long the migration locks the access token table on large installations. Running
   `cleartokens` before upgrading is still the best preparation for tables with many expired
-  tokens. If you use a swapped access token model (`OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`) the
-  backfill now skips the swapped model — consistent with the schema operations in that migration,
-  which never applied to swapped models. If your swapped table already contains access tokens and
-  you have not yet applied `0012`, backfill `token_checksum` in your own data migration: adapt the
-  batched backfill loop from `forwards_func` in
-  `oauth2_provider/migrations/0012_add_token_checksum.py`, but drop its swapped-model guard (the
-  early return) and resolve your own model instead.
+  tokens. See the warning above if you use a swapped access token model.
 
 ### Deprecated
 * Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
