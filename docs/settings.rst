@@ -371,7 +371,6 @@ this you must also provide the service at that endpoint.
 If unset, the default location is used, eg if ``django-oauth-toolkit`` is
 mounted at ``/o/``, it will be ``<server-address>/o/userinfo/``.
 
-
 OIDC_RP_INITIATED_LOGOUT_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``
@@ -413,17 +412,35 @@ Default: ``False``
 
 Whether to allow the Relying Party (RP) to direct a user to an OpenID
 Provider (OP) to create a new account rather than authenticate with an
-existing one. This is done by adding a `prompt=create` parameter to
-the authorization request.
+existing one, per `OpenID Connect Prompt Create 1.0
+<https://openid.net/specs/openid-connect-prompt-create-1_0.html>`_.
+This is done by adding a ``prompt=create`` parameter to the
+authorization request. When enabled,
+``OIDC_RP_INITIATED_REGISTRATION_URL`` must also be set.
 
-OIDC_RP_INITIATED_REGISTRATION_VIEW_NAME
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+OIDC_RP_INITIATED_REGISTRATION_URL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``None``
 
-The name of the view for the URL that the user will be redirected to
-in case RP-Initiated Registration is enabled.
+Where users are sent to create an account when an authorization request
+contains ``prompt=create``. Like ``LOGIN_URL``, the value is resolved with
+:func:`django.shortcuts.resolve_url` and so accepts a URL pattern name, a
+path, or an absolute URL. For example, with `django-allauth
+<https://docs.allauth.org>`_::
 
+    OAUTH2_PROVIDER = {
+        # ...
+        "OIDC_RP_INITIATED_REGISTRATION_ENABLED": True,
+        "OIDC_RP_INITIATED_REGISTRATION_URL": "account_signup",
+    }
 
+The registration page receives a ``next`` query parameter pointing back to
+the authorization endpoint, and must redirect the user there after a
+successful registration so the OAuth flow can complete.
+
+This setting is required when ``OIDC_RP_INITIATED_REGISTRATION_ENABLED`` is
+``True``: if it is unset or cannot be resolved, ``ImproperlyConfigured`` is
+raised when a ``prompt=create`` request is received.
 
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~

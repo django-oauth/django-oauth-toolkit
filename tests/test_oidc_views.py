@@ -1,12 +1,11 @@
-from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.contrib.auth import get_user, get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ImproperlyConfigured
 from django.test import RequestFactory
 from django.urls import reverse
-from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from pytest_django.asserts import assertRedirects
 
@@ -290,17 +289,14 @@ class TestRPInitiatedRegistration(TestCase):
         )
         view = AuthorizationView()
         view.setup(request)
-
-        with patch("oauth2_provider.views.base.reverse") as patched_reverse:
-            patched_reverse.return_value = "/register-test/"
-            response = view.get(request)
+        response = view.get(request)
 
         self.assertEqual(response.status_code, 302)
         redirect_url = response.url
         parsed_url = urlparse(redirect_url)
 
-        # Verify it's the registration URL
-        self.assertEqual(parsed_url.path, "/register-test/")
+        # Verify it's the registration URL configured in the preset
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
 
         # Verify the query parameters
         query = parse_qs(parsed_url.query)
@@ -424,7 +420,7 @@ class TestRPInitiatedRegistration(TestCase):
         response = view.handle_no_permission()
         self.assertEqual(response.status_code, 302)
 
-    def test_bad_request_for_unresolvable_view_name(self):
+    def _get_with_prompt_create(self):
         view = AuthorizationView()
         request = self._build_authorization_request(
             query_params={
@@ -435,13 +431,28 @@ class TestRPInitiatedRegistration(TestCase):
                 "prompt": "create",
             }
         )
+        view.setup(request)
+        return view.get(request)
 
-        with patch("oauth2_provider.views.base.reverse") as patched_reverse:
-            patched_reverse.side_effect = NoReverseMatch()
-            view.setup(request)
-            response = view.get(request)
-            self.assertEqual(response.status_code, 302)
-            self.assertIn("access_denied", response.url)
+    def test_registration_url_accepts_a_url_pattern_name(self):
+        """
+        Like LOGIN_URL, the setting is resolved with resolve_url() and so
+        accepts a URL pattern name as well as a path.
+        """
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = "admin:login"
+        response = self._get_with_prompt_create()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.url).path, reverse("admin:login"))
+
+    def test_unset_registration_url_raises_improperly_configured(self):
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = None
+        with self.assertRaises(ImproperlyConfigured):
+            self._get_with_prompt_create()
+
+    def test_unresolvable_registration_url_raises_improperly_configured(self):
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = "nonexistent_signup_view"
+        with self.assertRaises(ImproperlyConfigured):
+            self._get_with_prompt_create()
 
 
 @pytest.mark.usefixtures("oauth2_settings")

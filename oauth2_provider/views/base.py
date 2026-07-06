@@ -6,9 +6,9 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse
 from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
+from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import resolve_url
-from django.urls import reverse
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -279,6 +279,24 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 status=400,
             )
 
+        # An enabled feature without a resolvable registration page is server
+        # misconfiguration, not a client error: fail loudly for the operator
+        # instead of sending a misleading error to the relying party.
+        registration_location = oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL
+        if not registration_location:
+            raise ImproperlyConfigured(
+                "OIDC_RP_INITIATED_REGISTRATION_URL must be set when "
+                "OIDC_RP_INITIATED_REGISTRATION_ENABLED is True."
+            )
+        try:
+            # Like LOGIN_URL, accepts a URL pattern name, a path or an absolute URL.
+            registration_url = resolve_url(registration_location)
+        except NoReverseMatch as exc:
+            raise ImproperlyConfigured(
+                f"OIDC_RP_INITIATED_REGISTRATION_URL {registration_location!r} could not be "
+                "resolved to a registration page."
+            ) from exc
+
         # The request MUST be validated against a registered client before any
         # error is redirected to redirect_uri, otherwise this endpoint becomes
         # an open redirector: when entered via handle_no_permission no
@@ -291,29 +309,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # redirect_uri, so this is safe.
             return self.error_response(error, application=None)
 
-        error = None
-        registration_url = None
         if self.request.user.is_authenticated:
-            error = "account_selection_required"
-        else:
-            views_to_attempt = [oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_VIEW_NAME, "account_signup"]
-            for view_name in views_to_attempt:
-                if not view_name:
-                    continue
-                try:
-                    registration_url = reverse(view_name)
-                    break
-                except NoReverseMatch:
-                    # If the URL pattern is not defined for this view name, try the next option.
-                    pass
-            if registration_url is None:
-                error = "access_denied"
-
-        if error is not None:
             # oauthlib has confirmed redirect_uri is registered for the client.
             redirect_uri = credentials["redirect_uri"]
             application = get_application_model().objects.get(client_id=credentials["client_id"])
-            response_parameters = {"error": error}
+            response_parameters = {"error": "account_selection_required"}
             # REQUIRED if the Authorization Request included the state parameter.
             # Set to the value received from the Client
             state = credentials.get("state")
