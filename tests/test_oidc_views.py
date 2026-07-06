@@ -310,6 +310,54 @@ class TestRPInitiatedRegistration(TestCase):
         self.assertIn("response_type=code", next_url)
         self.assertIn(f"client_id={self.application.client_id}", next_url)
 
+    def test_multi_value_prompt_containing_create_triggers_registration(self):
+        """
+        prompt is a space-delimited list (OpenID Connect Core 1.0 section
+        3.1.2.1): create must be honored when combined with other values,
+        and the other values are preserved in the next URL.
+        """
+        request = self._build_authorization_request(
+            query_params={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "login+create",
+            }
+        )
+        view = AuthorizationView()
+        view.setup(request)
+        response = view.get(request)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_url = urlparse(response.url)
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
+        next_url = parse_qs(parsed_url.query)["next"][0]
+        self.assertIn("prompt=login", next_url)
+        self.assertNotIn("create", next_url)
+
+    def test_anonymous_multi_value_prompt_redirects_to_registration(self):
+        """
+        The same multi-value prompt must also trigger registration when it
+        arrives via handle_no_permission (full request cycle, anonymous user).
+        """
+        query_data = {
+            "response_type": "code",
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://localhost",
+            "scope": "openid",
+            "prompt": "login create",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_url = urlparse(response["Location"])
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
+        next_url = parse_qs(parsed_url.query)["next"][0]
+        self.assertIn("prompt=login", next_url)
+        self.assertNotIn("create", next_url)
+
     def test_logged_users_can_not_prompt_create(self):
         view = AuthorizationView()
         request = self._build_authorization_request(

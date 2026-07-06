@@ -155,11 +155,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # Application is not available at this time.
             return self.error_response(error, application=None)
 
-        prompt = request.GET.get("prompt")
-        if prompt == "login":
-            return self.handle_prompt_login()
-        elif prompt == "create":
+        # prompt is a space-delimited, case-sensitive list of ASCII values
+        # (OpenID Connect Core 1.0 section 3.1.2.1). Prompt Create 1.0
+        # recommends that create not be combined with other values, but when
+        # it is, account creation has to happen before any of the others can
+        # be satisfied, so create is handled first.
+        prompt = set(request.GET.get("prompt", "").split())
+        if "create" in prompt:
             return self.handle_prompt_create()
+        if "login" in prompt:
+            return self.handle_prompt_login()
 
         all_scopes = get_scopes_backend().get_all_scopes()
         kwargs["scopes_descriptions"] = [all_scopes[scope] for scope in scopes]
@@ -260,11 +265,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
     def handle_prompt_create(self):
         """
-        When prompt=create is in the authorization request,
-        redirect the user to the registration page. After
+        When the prompt parameter of the authorization request contains
+        create, redirect the user to the registration page. After
         registration, the user should be redirected back to the
-        authorization endpoint without the prompt parameter to
-        continue the OIDC flow.
+        authorization endpoint, with create removed from the prompt
+        parameter, to continue the OIDC flow.
 
         Implements OpenID Connect Prompt Create 1.0 specification.
         https://openid.net/specs/openid-connect-prompt-create-1_0.html
@@ -323,10 +328,14 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             return self.redirect(redirect_uri + separator + urlencode(response_parameters), application)
 
         # Build the next parameter so the user returns to the authorization
-        # endpoint after registration, minus the prompt parameter.
+        # endpoint after registration. Drop create from the prompt parameter
+        # so the flow continues, but keep any other prompt values the RP sent
+        # (e.g. "login create").
         parsed = urlparse(self.request.build_absolute_uri())
         parsed_query = dict(parse_qsl(parsed.query))
-        parsed_query.pop("prompt", None)
+        other_prompts = [p for p in parsed_query.pop("prompt", "").split() if p != "create"]
+        if other_prompts:
+            parsed_query["prompt"] = " ".join(other_prompts)
         next_url = parsed._replace(query=urlencode(parsed_query)).geturl()
 
         separator = "&" if "?" in registration_url else "?"
@@ -380,8 +389,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             redirect_to = redirect_uri + separator + urlencode(response_parameters)
             return self.redirect(redirect_to, application)
 
-        if prompt == "create":
-            # If prompt=create and user is not authenticated, redirect to registration
+        if "create" in (prompt or "").split():
+            # If prompt contains create and the user is not authenticated,
+            # redirect to registration.
             return self.handle_prompt_create()
 
         return super().handle_no_permission()
