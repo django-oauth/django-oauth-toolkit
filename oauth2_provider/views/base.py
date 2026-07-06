@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse
 from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
-from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import resolve_url
 from django.urls import reverse
 from django.urls.exceptions import NoReverseMatch
@@ -270,13 +270,33 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         https://openid.net/specs/openid-connect-prompt-create-1_0.html
 
         """
+        # Per Prompt Create 1.0 section 4.1.1, an OP receiving a prompt value it
+        # does not support (one not declared in prompt_values_supported) SHOULD
+        # respond with HTTP 400 and an error value of invalid_request.
+        if not oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
+            return JsonResponse(
+                {"error": "invalid_request", "error_description": "prompt=create is not supported"},
+                status=400,
+            )
+
+        # The request MUST be validated against a registered client before any
+        # error is redirected to redirect_uri, otherwise this endpoint becomes
+        # an open redirector: when entered via handle_no_permission no
+        # validation has run yet (see the prompt=none equivalent there).
         try:
-            assert not self.request.user.is_authenticated, "account_selection_required"
-            path = self.request.build_absolute_uri()
+            _scopes, credentials = self.validate_authorization_request(self.request)
+        except OAuthToolkitError as error:
+            # Invalid client_id / redirect_uri (etc). error_response only
+            # redirects for non-fatal errors, and never to an unregistered
+            # redirect_uri, so this is safe.
+            return self.error_response(error, application=None)
 
+        error = None
+        registration_url = None
+        if self.request.user.is_authenticated:
+            error = "account_selection_required"
+        else:
             views_to_attempt = [oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_VIEW_NAME, "account_signup"]
-
-            registration_url = None
             for view_name in views_to_attempt:
                 if not view_name:
                     continue
@@ -286,37 +306,31 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 except NoReverseMatch:
                     # If the URL pattern is not defined for this view name, try the next option.
                     pass
+            if registration_url is None:
+                error = "access_denied"
 
-            # Parse the current URL and remove the prompt parameter
-            parsed = urlparse(path)
-            parsed_query = dict(parse_qsl(parsed.query))
-            parsed_query.pop("prompt", None)
+        if error is not None:
+            # oauthlib has confirmed redirect_uri is registered for the client.
+            redirect_uri = credentials["redirect_uri"]
+            application = get_application_model().objects.get(client_id=credentials["client_id"])
+            response_parameters = {"error": error}
+            # REQUIRED if the Authorization Request included the state parameter.
+            # Set to the value received from the Client
+            state = credentials.get("state")
+            if state:
+                response_parameters["state"] = state
+            separator = "&" if "?" in redirect_uri else "?"
+            return self.redirect(redirect_uri + separator + urlencode(response_parameters), application)
 
-            # Create the next parameter to redirect back to the authorization endpoint
-            next_url = parsed._replace(query=urlencode(parsed_query)).geturl()
+        # Build the next parameter so the user returns to the authorization
+        # endpoint after registration, minus the prompt parameter.
+        parsed = urlparse(self.request.build_absolute_uri())
+        parsed_query = dict(parse_qsl(parsed.query))
+        parsed_query.pop("prompt", None)
+        next_url = parsed._replace(query=urlencode(parsed_query)).geturl()
 
-            assert oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED, "access_denied"
-            assert registration_url is not None, "access_denied"
-
-            # Add next parameter to registration URL
-            separator = "&" if "?" in registration_url else "?"
-            redirect_to = f"{registration_url}{separator}next={quote(next_url)}"
-
-            return HttpResponseRedirect(redirect_to)
-
-        except AssertionError as exc:
-            redirect_uri = self.request.GET.get("redirect_uri")
-            if redirect_uri:
-                response_parameters = {"error": str(exc)}
-                state = self.request.GET.get("state")
-                if state:
-                    response_parameters["state"] = state
-
-                separator = "&" if "?" in redirect_uri else "?"
-                redirect_to = redirect_uri + separator + urlencode(response_parameters)
-                return self.redirect(redirect_to, application=None)
-            else:
-                return HttpResponseBadRequest(str(exc))
+        separator = "&" if "?" in registration_url else "?"
+        return HttpResponseRedirect(f"{registration_url}{separator}next={quote(next_url)}")
 
     def handle_no_permission(self):
         """

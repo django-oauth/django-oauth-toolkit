@@ -346,7 +346,12 @@ class TestRPInitiatedRegistration(TestCase):
         response = view.get(request)
         self.assertIn("state=testing_state", response.url)
 
-    def test_bad_request_if_missing_redirect_uri(self):
+    def test_missing_redirect_uri_is_rejected_without_redirect(self):
+        """
+        A request without redirect_uri is fatal when the client has more than
+        one registered redirect_uri (RFC 6749 section 3.1.2.3), so the error
+        page is rendered and no redirect is emitted.
+        """
         view = AuthorizationView()
         request = self._build_authorization_request(
             query_params={
@@ -360,6 +365,49 @@ class TestRPInitiatedRegistration(TestCase):
         view.setup(request)
         response = view.handle_prompt_create()
         self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
+    def test_prompt_create_open_redirect_unregistered_redirect_uri(self):
+        """
+        Regression test for the prompt=create open redirect.
+
+        An unauthenticated prompt=create request enters handle_prompt_create
+        via handle_no_permission, where no validation has run yet. With a
+        redirect_uri that is not registered for the client, the error path
+        must not redirect at all: the error page is rendered instead of any
+        Location header being emitted.
+        """
+        query_data = {
+            "response_type": "code",
+            "client_id": self.application.client_id,
+            "scope": "openid",
+            "prompt": "create",
+            "redirect_uri": "http://attacker.example/cb",
+            "state": "phish-123",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
+    def test_prompt_create_open_redirect_no_client(self):
+        """
+        Regression test for the prompt=create open redirect.
+
+        With no client_id at all, nothing can be validated, so no redirect
+        may be emitted for the error.
+        """
+        query_data = {
+            "prompt": "create",
+            "redirect_uri": "http://attacker.example/cb",
+            "state": "phish-123",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
 
     def test_redirect_on_handle_no_permission(self):
         view = AuthorizationView()
@@ -394,6 +442,51 @@ class TestRPInitiatedRegistration(TestCase):
             response = view.get(request)
             self.assertEqual(response.status_code, 302)
             self.assertIn("access_denied", response.url)
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestRPInitiatedRegistrationDisabled(TestCase):
+    """
+    Per OpenID Connect Prompt Create 1.0 section 4.1.1, an OP receiving a
+    prompt value it does not support SHOULD respond with HTTP 400 and an
+    error value of invalid_request.
+    """
+
+    def setUp(self):
+        Application = get_application_model()
+        self.application = Application.objects.create(
+            name="Test Application",
+            redirect_uris="http://localhost http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+        User = get_user_model()
+        self.test_user = User.objects.create_user("test_user", "test@example.com", "123456")
+
+    def _authorize_with_prompt_create(self):
+        query_data = {
+            "response_type": "code",
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://localhost",
+            "scope": "openid",
+            "prompt": "create",
+            "state": "some_state",
+        }
+        return self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+    def test_prompt_create_is_invalid_request_for_anonymous_user(self):
+        response = self._authorize_with_prompt_create()
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertEqual(response.json()["error"], "invalid_request")
+
+    def test_prompt_create_is_invalid_request_for_authenticated_user(self):
+        self.client.force_login(self.test_user)
+        response = self._authorize_with_prompt_create()
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertEqual(response.json()["error"], "invalid_request")
 
 
 def mock_request():
