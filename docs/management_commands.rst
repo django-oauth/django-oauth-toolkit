@@ -9,18 +9,27 @@ or :doc:`Celery <tutorial/tutorial_05>`.
 cleartokens
 ~~~~~~~~~~~
 
-The ``cleartokens`` management command allows the user to remove those refresh tokens whose lifetime is greater than the
-amount specified by ``REFRESH_TOKEN_EXPIRE_SECONDS`` settings. It is important that this command is run regularly
-(eg: via cron) to avoid cluttering the database with expired refresh tokens.
+The ``cleartokens`` management command allows the user to remove refresh tokens that can no longer be
+used: those whose lifetime is greater than the amount specified by the ``REFRESH_TOKEN_EXPIRE_SECONDS``
+setting, and those that have been revoked for longer than the ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``
+setting. It is important that this command is run regularly (eg: via cron) to avoid cluttering the
+database with expired refresh tokens.
 
 If ``cleartokens`` runs daily the maximum delay before a refresh token is
-removed is ``REFRESH_TOKEN_EXPIRE_SECONDS`` + 1 day. This is normally not a
-problem since refresh tokens are long lived.
+removed is its retention period (``REFRESH_TOKEN_EXPIRE_SECONDS`` for expired
+tokens, ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` for revoked ones) + 1 day. This
+is normally not a problem since refresh tokens are long lived.
 
 To prevent the CPU and RAM high peaks during deletion process use ``CLEAR_EXPIRED_TOKENS_BATCH_SIZE`` and
 ``CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL`` settings to adjust the process speed.
 
 The ``cleartokens`` management command will also delete expired access and ID tokens alongside expired refresh tokens.
+
+Refresh tokens that have already been revoked (for example by refresh token rotation) are removed as
+soon as their ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` grace period has passed, without waiting for
+``REFRESH_TOKEN_EXPIRE_SECONDS``. The exception is when ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled:
+revoked refresh tokens are then what allows reuse of a rotated token to be detected, so they are kept
+until they expire per ``REFRESH_TOKEN_EXPIRE_SECONDS``.
 
 Note: Refresh tokens need to expire before AccessTokens can be removed from the
 database. Using ``cleartokens`` without ``REFRESH_TOKEN_EXPIRE_SECONDS`` has limited effect.

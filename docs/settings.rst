@@ -190,13 +190,18 @@ tokens will last until revoked or the end of time. You should change this.
 
 REFRESH_TOKEN_GRACE_PERIOD_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The number of seconds between when a refresh token is first used when it is
-expired. The most common case of this for this is native mobile applications
-that run into issues of network connectivity during the refresh cycle and are
-unable to complete the full request/response life cycle. Without a grace
-period the application, the app then has only a consumed refresh token and the
-only recourse is to have the user re-authenticate. A suggested value, if this
-is enabled, is 2 minutes.
+The number of seconds a refresh token can still be used after it has been
+revoked, for example because it was consumed by refresh token rotation. The
+most common use case is native mobile applications that run into issues of
+network connectivity during the refresh cycle and are unable to complete the
+full request/response life cycle. Without a grace period the app has only a
+consumed refresh token and the only recourse is to have the user
+re-authenticate. A suggested value, if this is enabled, is 2 minutes. The
+value must not be negative.
+
+The ``cleartokens`` management command removes revoked refresh tokens once the
+grace period has passed, unless ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled.
+Check :ref:`cleartokens` management command for further info.
 
 REFRESH_TOKEN_REUSE_PROTECTION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

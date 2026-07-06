@@ -835,12 +835,25 @@ def clear_expired():
         return deleted
 
     now = timezone.now()
+    refresh_revoked_at = now
     refresh_expire_at = None
     access_token_model = get_access_token_model()
     refresh_token_model = get_refresh_token_model()
     id_token_model = get_id_token_model()
     grant_model = get_grant_model()
+    REFRESH_TOKEN_GRACE_PERIOD_SECONDS = oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS
     REFRESH_TOKEN_EXPIRE_SECONDS = oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS
+
+    if REFRESH_TOKEN_GRACE_PERIOD_SECONDS:
+        try:
+            REFRESH_TOKEN_GRACE_PERIOD_SECONDS = timedelta(seconds=REFRESH_TOKEN_GRACE_PERIOD_SECONDS)
+        except TypeError:
+            e = "REFRESH_TOKEN_GRACE_PERIOD_SECONDS must be in seconds"
+            raise ImproperlyConfigured(e)
+        if REFRESH_TOKEN_GRACE_PERIOD_SECONDS < timedelta(0):
+            e = "REFRESH_TOKEN_GRACE_PERIOD_SECONDS must not be negative"
+            raise ImproperlyConfigured(e)
+        refresh_revoked_at = now - REFRESH_TOKEN_GRACE_PERIOD_SECONDS
 
     if REFRESH_TOKEN_EXPIRE_SECONDS:
         if not isinstance(REFRESH_TOKEN_EXPIRE_SECONDS, timedelta):
@@ -851,20 +864,29 @@ def clear_expired():
                 raise ImproperlyConfigured(e)
         refresh_expire_at = now - REFRESH_TOKEN_EXPIRE_SECONDS
 
-    if refresh_expire_at:
-        revoked_query = models.Q(revoked__lt=refresh_expire_at)
+    if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION:
+        # Revoked refresh tokens are what allows reuse of a rotated token to
+        # be detected and the token family revoked, so they must be kept
+        # until they expire.
+        refresh_revoked_at = refresh_expire_at
+
+    if refresh_revoked_at:
+        revoked_query = models.Q(revoked__lte=refresh_revoked_at)
         revoked = refresh_token_model.objects.filter(revoked_query)
 
         revoked_deleted_no = batch_delete(revoked, revoked_query)
         logger.info("%s Revoked refresh tokens deleted", revoked_deleted_no)
+    else:
+        logger.info("refresh_revoked_at is %s. No revoked refresh tokens deleted.", refresh_revoked_at)
 
+    if refresh_expire_at:
         expired_query = models.Q(access_token__expires__lt=refresh_expire_at)
         expired = refresh_token_model.objects.filter(expired_query)
 
         expired_deleted_no = batch_delete(expired, expired_query)
         logger.info("%s Expired refresh tokens deleted", expired_deleted_no)
     else:
-        logger.info("refresh_expire_at is %s. No refresh tokens deleted.", refresh_expire_at)
+        logger.info("refresh_expire_at is %s. No expired refresh tokens deleted.", refresh_expire_at)
 
     access_token_query = models.Q(refresh_token__isnull=True, expires__lt=now)
     access_tokens = access_token_model.objects.filter(access_token_query)
