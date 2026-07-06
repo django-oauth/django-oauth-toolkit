@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from urllib.parse import parse_qsl, quote, urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -339,8 +339,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             parsed_query["prompt"] = " ".join(other_prompts)
         next_url = parsed._replace(query=urlencode(parsed_query)).geturl()
 
-        separator = "&" if "?" in registration_url else "?"
-        return HttpResponseRedirect(f"{registration_url}{separator}next={quote(next_url)}")
+        # Merge next into the registration URL's query so an existing query
+        # string or fragment in the configured URL is preserved.
+        parsed_registration = urlparse(registration_url)
+        registration_query = dict(parse_qsl(parsed_registration.query))
+        registration_query["next"] = next_url
+        redirect_to = parsed_registration._replace(query=urlencode(registration_query)).geturl()
+        return HttpResponseRedirect(redirect_to)
 
     def handle_no_permission(self):
         """

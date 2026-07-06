@@ -496,6 +496,22 @@ class TestRPInitiatedRegistration(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(urlparse(response.url).path, reverse("admin:login"))
 
+    def test_registration_url_query_and_fragment_are_preserved(self):
+        """
+        next is merged into the configured URL's query string, so an existing
+        query or fragment survives (naive concatenation would append the
+        parameter after the fragment, where it never reaches the server).
+        """
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = "/accounts/signup/?plan=free#form"
+        response = self._get_with_prompt_create()
+        self.assertEqual(response.status_code, 302)
+        parsed_url = urlparse(response.url)
+        self.assertEqual(parsed_url.path, "/accounts/signup/")
+        self.assertEqual(parsed_url.fragment, "form")
+        query = parse_qs(parsed_url.query)
+        self.assertEqual(query["plan"], ["free"])
+        self.assertIn("next", query)
+
     def test_unset_registration_url_raises_improperly_configured(self):
         self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = None
         with self.assertRaises(ImproperlyConfigured):
