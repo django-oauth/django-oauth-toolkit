@@ -410,8 +410,12 @@ to halve downstream migration churn, even if Phase 2/3 features ship later.
    current consent as the union of unrevoked rows. Is a separate durable
    `Consent` (user × app) table wanted later, or is derivation enough?
 3. **Does terminating a Django session terminate the OP `Session`?**
-   Correlation via `session_key` makes it possible (e.g. a logout signal
-   handler); is that Phase 2 or Phase 3?
+   *Resolved: yes, in Phase 2.* Django sends ``user_logged_out`` before
+   ``logout()`` flushes the session, so a signal receiver can still read the
+   ``sid`` from the Django session and terminate the OP `Session`
+   (``reason="logout"``). Already-terminated sessions are left untouched, so
+   RP-initiated logout (Phase 3) can record its own reason first; the same
+   receiver is where back-channel logout dispatch will hang.
 4. **Retention defaults** for terminated `Session`s and revoked
    `Authorization`s before `cleartokens` purges them.
 5. **`require_approval="auto"` switch** — Phase 1 (proposed) or deferred to
