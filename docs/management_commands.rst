@@ -9,9 +9,11 @@ or :doc:`Celery <tutorial/tutorial_05>`.
 cleartokens
 ~~~~~~~~~~~
 
-The ``cleartokens`` management command allows the user to remove those refresh tokens whose lifetime is greater than the
-amount specified by ``REFRESH_TOKEN_EXPIRE_SECONDS`` settings. It is important that this command is run regularly
-(eg: via cron) to avoid cluttering the database with expired refresh tokens.
+The ``cleartokens`` management command allows the user to remove refresh tokens that can no longer be
+used: those whose lifetime is greater than the amount specified by the ``REFRESH_TOKEN_EXPIRE_SECONDS``
+setting, and those that have been revoked for longer than the ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``
+setting. It is important that this command is run regularly (eg: via cron) to avoid cluttering the
+database with expired refresh tokens.
 
 If ``cleartokens`` runs daily the maximum delay before a refresh token is
 removed is ``REFRESH_TOKEN_EXPIRE_SECONDS`` + 1 day. This is normally not a
