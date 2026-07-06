@@ -346,17 +346,21 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         """
         Generate response for unauthorized users.
 
-        If prompt is set to none, then we redirect with an error code as defined
-        by OpenID Connect Core 1.0 section 3.1.2.6 (Authentication Error Response)
+        If the prompt parameter contains none, then we redirect with an error
+        code as defined by OpenID Connect Core 1.0 section 3.1.2.6
+        (Authentication Error Response)
         <https://openid.net/specs/openid-connect-core-1_0.html#AuthError>.
 
-        If prompt is set to create, then we redirect to the registration page.
+        If the prompt parameter contains create, then we redirect to the
+        registration page.
 
         Some code copied from OAuthLibMixin.error_response, but that is designed
         to operate on OAuth2Error from oauthlib wrapped in a OAuthToolkitError
         """
-        prompt = self.request.GET.get("prompt")
-        if prompt == "none":
+        # prompt is a space-delimited, case-sensitive list of ASCII values
+        # (OpenID Connect Core 1.0 section 3.1.2.1).
+        prompt = set(self.request.GET.get("prompt", "").split())
+        if "none" in prompt:
             # Per OpenID Connect Core 1.0 section 3.1.2.6 (Authentication Error
             # Response) an unauthenticated prompt=none request returns a
             # login_required error to the client's redirect_uri. The request
@@ -366,6 +370,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # redirect_uri (and no client_id) and have the victim's browser 302'd
             # to an attacker-controlled origin.
             # https://openid.net/specs/openid-connect-core-1_0.html#AuthError
+            # none combined with any other value is itself invalid (Core
+            # section 3.1.2.1); oauthlib rejects the combination during
+            # validation, so it errors here instead of falling through to an
+            # interactive redirect.
             try:
                 _scopes, credentials = self.validate_authorization_request(self.request)
             except OAuthToolkitError as error:
@@ -390,7 +398,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             redirect_to = redirect_uri + separator + urlencode(response_parameters)
             return self.redirect(redirect_to, application)
 
-        if "create" in (prompt or "").split():
+        if "create" in prompt:
             # If prompt contains create and the user is not authenticated,
             # redirect to registration.
             return self.handle_prompt_create()

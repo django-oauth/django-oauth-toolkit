@@ -746,6 +746,32 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertEqual(response.status_code, 400)
         self.assertNotIn("Location", response)
 
+    def test_prompt_none_combined_with_other_values_is_rejected(self):
+        """
+        prompt is a space-delimited list, and none is mutually exclusive with
+        the other values (OIDC Core 1.0 section 3.1.2.1): the combination is
+        rejected as invalid_request rather than falling through to an
+        interactive login redirect (which would display UI that prompt=none
+        forbids).
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid",
+            "prompt": "none login",
+            "redirect_uri": "http://example.org",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("http://example.org"))
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertIn("invalid_request", parsed_query["error"])
+
 
 class BaseAuthorizationCodeTokenView(BaseTest):
     def get_auth(self, scope="read write"):
