@@ -243,9 +243,7 @@ class TestRPInitiatedRegistration(TestCase):
 
     def _build_authorization_request(self, query_params, user=None):
         auth_url = reverse("oauth2_provider:authorize")
-        query_string = "&".join(f"{k}={v}" for k, v in query_params.items())
-        full_auth_url = f"{auth_url}?{query_string}"
-        request = RequestFactory().get(full_auth_url)
+        request = RequestFactory().get(auth_url, data=query_params)
         request.user = user or AnonymousUser()
         return request
 
@@ -322,7 +320,7 @@ class TestRPInitiatedRegistration(TestCase):
                 "client_id": self.application.client_id,
                 "redirect_uri": "http://localhost",
                 "scope": "openid",
-                "prompt": "login+create",
+                "prompt": "login create",
             }
         )
         view = AuthorizationView()
