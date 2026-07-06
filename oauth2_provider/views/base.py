@@ -297,6 +297,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 status=400,
             )
 
+        # The no-op for authenticated sessions comes before the registration
+        # URL is resolved: these requests never redirect to registration, so
+        # a misconfigured URL must not break them. Anonymous create requests
+        # below still surface the misconfiguration loudly.
+        if self.request.user.is_authenticated:
+            return None
+
         # An enabled feature without a resolvable registration page is server
         # misconfiguration, not a client error: fail loudly for the operator
         # instead of sending a misleading error to the relying party.
@@ -314,9 +321,6 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 f"OIDC_RP_INITIATED_REGISTRATION_URL {registration_location!r} could not be "
                 "resolved to a registration page."
             ) from exc
-
-        if self.request.user.is_authenticated:
-            return None
 
         # The request MUST be validated against a registered client before
         # the user is redirected anywhere: an invalid request has to fail here
@@ -358,6 +362,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
         If the prompt parameter contains create, then we redirect to the
         registration page.
+
+        If the prompt parameter contains login, then we redirect straight to
+        the login flow with the prompt consumed, so the user is not sent to
+        login a second time when they return to this endpoint authenticated.
 
         Some code copied from OAuthLibMixin.error_response, but that is designed
         to operate on OAuth2Error from oauthlib wrapped in a OAuthToolkitError
@@ -407,6 +415,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # If prompt contains create and the user is not authenticated,
             # redirect to registration.
             return self.handle_prompt_create()
+
+        if "login" in prompt:
+            # Logging in satisfies the login prompt, and handle_prompt_login
+            # strips it from the next URL. Falling through to the default
+            # redirect instead would keep prompt=login in next, bouncing the
+            # user to the login page a second time after they authenticate.
+            return self.handle_prompt_login()
 
         return super().handle_no_permission()
 

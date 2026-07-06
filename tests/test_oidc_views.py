@@ -376,6 +376,27 @@ class TestRPInitiatedRegistration(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["application"], self.application)
 
+    def test_authenticated_users_are_not_affected_by_misconfiguration(self):
+        """
+        The authenticated no-op happens before the registration URL is
+        resolved, so a misconfigured URL cannot break flows that never
+        redirect to registration.
+        """
+        self.oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL = None
+        self.client.force_login(self.test_user)
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "create",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["application"], self.application)
+
     def test_authenticated_multi_value_prompt_forces_login(self):
         """
         A Relying Party that wants re-authentication of a logged-in user can
