@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
             name="SampleDeviceGrant",
             fields=[
                 ("id", models.BigAutoField(primary_key=True, serialize=False)),
-                ("device_code", models.CharField(max_length=100, unique=True)),
+                ("device_code", models.CharField(max_length=100)),
                 ("user_code", models.CharField(max_length=100)),
                 ("scope", models.CharField(max_length=64, null=True)),
                 ("interval", models.IntegerField(default=5)),

@@ -500,6 +500,13 @@ The import string of the class (model) representing your OAuth2 device grants.
 Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.AbstractDeviceGrant``).
 
+.. note:: ``device_code`` uniqueness is enforced by the named ``UniqueConstraint``
+    ``<app_label>_<class>_unique_device_code`` inherited from
+    ``AbstractDeviceGrant.Meta.constraints``. Do not add ``unique=True`` to the field in your
+    swapped model: declaring both creates a duplicate unique index, which breaks ``migrate`` on
+    Oracle (``ORA-02261``) and on MySQL backends that raise database warnings as errors
+    (``ER_DUP_INDEX``).
+
 OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your refresh tokens.

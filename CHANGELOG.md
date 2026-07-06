@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   add nullable checksum → drop the old `("token", "revoked")` unique constraint → widen `token` to
   `TextField` → backfill → make checksum non-nullable → add the `("token_checksum", "revoked")`
   unique constraint.
+* If you use a swapped device grant model (`OAUTH2_PROVIDER_DEVICE_GRANT_MODEL`), run
+  `manage.py makemigrations` after upgrading: the redundant field-level `unique=True` was removed
+  from `AbstractDeviceGrant.device_code` (#1656), so your app needs a one-operation `AlterField`
+  migration that drops the extra unique index. Uniqueness remains enforced by the
+  `<app_label>_<class>_unique_device_code` constraint. If you are doing a *fresh* install on
+  Oracle (or a MySQL backend that raises warnings as errors), you must also regenerate — or
+  hand-edit — your existing `CreateModel` migration for the swapped model, since it still declares
+  both uniqueness rules and will fail the same way migration `0013` did.
 
 ### Changed
 * #1688 `cleartokens` now removes revoked refresh tokens once `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`
@@ -63,7 +71,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the migration transaction's own locks. This also makes both migrations backfill the correct
   database when migrating a non-default alias (`migrate --database=...`). Thanks to Igor Petrik for
   the diagnosis and fix.
-
+* #1656 Remove the redundant `unique=True` on `DeviceGrant.device_code`, which duplicated the
+  `unique_device_code` `UniqueConstraint` and created two identical unique indexes on the same
+  column. Fresh installs failed on Oracle (`ORA-02261`) and on MySQL backends that raise database
+  warnings as errors (`ER_DUP_INDEX`, 1831). Migration `0013` is fixed in place because the
+  duplicate was created inside `CREATE TABLE`, so a follow-up migration could never fix fresh
+  installs. Databases that already applied the old `0013` keep one harmless extra unique index;
+  it can optionally be dropped by hand. Thanks to Febin Micheal Antony (#1659) and
+  moscowmule2240 (#1718) for the fixes.
 
 ## [3.3.0] - 2025-05-21
 
