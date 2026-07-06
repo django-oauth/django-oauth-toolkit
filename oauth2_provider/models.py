@@ -694,7 +694,7 @@ class AbstractDeviceGrant(models.Model):
     # adding unique=True here would create a redundant duplicate index (MySQL warns ER_DUP_INDEX 1831).
     device_code = models.CharField(max_length=100)
     user_code = models.CharField(max_length=100)
-    scope = models.CharField(max_length=64, null=True)
+    scope = models.TextField(blank=True)
     interval = models.IntegerField(default=5)
     expires = models.DateTimeField()
     status = models.CharField(
@@ -752,7 +752,7 @@ def create_device_grant(
         client_id=device_request.client_id,
         device_code=device_response.device_code,
         user_code=device_response.user_code,
-        scope=device_request.scope,
+        scope=device_request.scope or "",
         expires=now + timedelta(seconds=device_response.expires_in),
     )
 

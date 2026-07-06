@@ -34,8 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unique constraint.
 * If you use a swapped device grant model (`OAUTH2_PROVIDER_DEVICE_GRANT_MODEL`), run
   `manage.py makemigrations` after upgrading: the redundant field-level `unique=True` was removed
-  from `AbstractDeviceGrant.device_code` (#1656), so your app needs a one-operation `AlterField`
-  migration that drops the extra unique index. Uniqueness remains enforced by the
+  from `AbstractDeviceGrant.device_code` (#1656), and `AbstractDeviceGrant.scope` changed from
+  `CharField(max_length=64, null=True)` to a non-nullable `TextField(blank=True)` (#1693). When
+  prompted for a default for existing NULL `scope` rows, provide the one-off default `""` —
+  matching `oauth2_provider/migrations/0016_alter_devicegrant_scope.py`. Uniqueness remains enforced by the
   `<app_label>_<class>_unique_device_code` constraint. If you are doing a *fresh* install on
   Oracle (or a MySQL backend that raises warnings as errors), you must also regenerate — or
   hand-edit — your existing `CreateModel` migration for the swapped model, since it still declares
@@ -59,6 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release.
 
 ### Fixed
+* #1693 `AbstractDeviceGrant.scope` is now a `TextField(blank=True)` like the other grant and token
+  models, instead of `CharField(max_length=64, null=True)`. 64 characters is well below the limits
+  common in the broader OAuth ecosystem (Okta allows 1024, Google 2048), so longer scope strings
+  no longer fail or get truncated in the device authorization flow. Existing rows with a NULL
+  scope are backfilled to an empty string by migration `0016`.
 * #1593 Use `pk` instead of `id` in `clear_expired()` and `RefreshToken.revoke()` so token models with a custom primary key field are supported.
 * #1594 Fix introspection token expiry handling to consistently use UTC and avoid the deprecated
   `datetime.utcfromtimestamp`.

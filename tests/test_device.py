@@ -12,6 +12,9 @@ from django.urls import reverse
 
 import oauth2_provider.models
 from oauth2_provider.models import (
+    DeviceCodeResponse,
+    DeviceRequest,
+    create_device_grant,
     get_access_token_model,
     get_application_model,
     get_device_grant_model,
@@ -942,6 +945,52 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         DeviceGrantModel = get_device_grant_model()
         grant = DeviceGrantModel.objects.get(device_code="def")
         assert grant.scope == "read write"
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "def",
+    )
+    def test_device_flow_scope_longer_than_64_chars_is_stored_intact(self):
+        """
+        DeviceGrant.scope used to be a CharField(max_length=64), which silently truncated
+        (or rejected, depending on the backend) longer scope strings. Real-world providers
+        allow much longer scopes (Okta 1024, Google 2048), so scope is now a TextField and
+        must store long values intact. Regression test for issue #1693.
+        """
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
+
+        long_scope = " ".join(f"scope{i}" for i in range(300))
+        assert len(long_scope) > 2048
+
+        device_authorization_response = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=urlencode({"client_id": self.application.client_id, "scope": long_scope}),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert device_authorization_response.status_code == 200
+
+        DeviceGrantModel = get_device_grant_model()
+        grant = DeviceGrantModel.objects.get(device_code="def")
+        assert grant.scope == long_scope
+
+    def test_create_device_grant_stores_empty_string_when_scope_is_none(self):
+        """
+        DeviceGrant.scope is non-nullable (like the other grant and token models), so
+        create_device_grant must coerce a missing scope to an empty string.
+        """
+        device_request = DeviceRequest(client_id=self.application.client_id, scope=None)
+        device_response = DeviceCodeResponse(
+            verification_uri="example.com/device",
+            expires_in=3600,
+            user_code="ABC",
+            device_code="ghi",
+            interval=5,
+        )
+        grant = create_device_grant(device_request, device_response)
+
+        grant.refresh_from_db()
+        assert grant.scope == ""
 
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
