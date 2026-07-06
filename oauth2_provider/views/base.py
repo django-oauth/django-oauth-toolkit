@@ -162,7 +162,12 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         # be satisfied, so create is handled first.
         prompt = set(request.GET.get("prompt", "").split())
         if "create" in prompt:
-            return self.handle_prompt_create()
+            # None means create is a no-op for this request (the user already
+            # has an authenticated session): continue with the other prompt
+            # values and the normal flow.
+            response = self.handle_prompt_create()
+            if response is not None:
+                return response
         if "login" in prompt:
             return self.handle_prompt_login()
 
@@ -266,14 +271,22 @@ class AuthorizationView(BaseAuthorizationView, FormView):
     def handle_prompt_create(self):
         """
         When the prompt parameter of the authorization request contains
-        create, redirect the user to the registration page. After
-        registration, the user should be redirected back to the
+        create, redirect unauthenticated users to the registration page.
+        After registration, the user should be redirected back to the
         authorization endpoint, with create removed from the prompt
         parameter, to continue the OIDC flow.
 
+        For a user with an existing authenticated session, create is a
+        no-op: None is returned and the authorization request proceeds as
+        if create was not present. The spec leaves this case open ("whether
+        the AS creates a brand new identity or helps the user authenticate
+        an identity they already have is out of scope") and this matches
+        how major providers treat a signup hint alongside an active
+        session. A Relying Party that wants re-authentication instead can
+        combine prompt values, e.g. "create login".
+
         Implements OpenID Connect Prompt Create 1.0 specification.
         https://openid.net/specs/openid-connect-prompt-create-1_0.html
-
         """
         # Per Prompt Create 1.0 section 4.1.1, an OP receiving a prompt value it
         # does not support (one not declared in prompt_values_supported) SHOULD
@@ -302,30 +315,18 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 "resolved to a registration page."
             ) from exc
 
-        # The request MUST be validated against a registered client before any
-        # error is redirected to redirect_uri, otherwise this endpoint becomes
-        # an open redirector: when entered via handle_no_permission no
-        # validation has run yet (see the prompt=none equivalent there).
-        try:
-            _scopes, credentials = self.validate_authorization_request(self.request)
-        except OAuthToolkitError as error:
-            # Invalid client_id / redirect_uri (etc). error_response only
-            # redirects for non-fatal errors, and never to an unregistered
-            # redirect_uri, so this is safe.
-            return self.error_response(error, application=None)
-
         if self.request.user.is_authenticated:
-            # oauthlib has confirmed redirect_uri is registered for the client.
-            redirect_uri = credentials["redirect_uri"]
-            application = get_application_model().objects.get(client_id=credentials["client_id"])
-            response_parameters = {"error": "account_selection_required"}
-            # REQUIRED if the Authorization Request included the state parameter.
-            # Set to the value received from the Client
-            state = credentials.get("state")
-            if state:
-                response_parameters["state"] = state
-            separator = "&" if "?" in redirect_uri else "?"
-            return self.redirect(redirect_uri + separator + urlencode(response_parameters), application)
+            return None
+
+        # The request MUST be validated against a registered client before
+        # the user is redirected anywhere: an invalid request has to fail here
+        # (safely — when entered via handle_no_permission no validation has
+        # run yet, and error_response never redirects to an unregistered
+        # redirect_uri) rather than after the user has created an account.
+        try:
+            self.validate_authorization_request(self.request)
+        except OAuthToolkitError as error:
+            return self.error_response(error, application=None)
 
         # Build the next parameter so the user returns to the authorization
         # endpoint after registration. Drop create from the prompt parameter

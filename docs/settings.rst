@@ -418,6 +418,13 @@ This is done by adding a ``prompt=create`` parameter to the
 authorization request. When enabled,
 ``OIDC_RP_INITIATED_REGISTRATION_URL`` must also be set.
 
+Only unauthenticated users are redirected to registration. For a user
+with an existing authenticated session, ``create`` is a no-op and the
+authorization request proceeds as if it was not present — matching how
+major providers treat a signup hint alongside an active session. A
+Relying Party that wants re-authentication instead can combine prompt
+values, e.g. ``prompt=create login``.
+
 OIDC_RP_INITIATED_REGISTRATION_URL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``None``

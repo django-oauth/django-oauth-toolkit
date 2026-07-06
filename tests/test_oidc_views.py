@@ -1,6 +1,7 @@
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user, get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
@@ -356,37 +357,43 @@ class TestRPInitiatedRegistration(TestCase):
         self.assertIn("prompt=login", next_url)
         self.assertNotIn("create", next_url)
 
-    def test_logged_users_can_not_prompt_create(self):
-        view = AuthorizationView()
-        request = self._build_authorization_request(
-            query_params={
+    def test_authenticated_users_proceed_to_authorization(self):
+        """
+        create is a no-op for a user with an existing authenticated session:
+        the authorization request proceeds to the normal consent flow.
+        """
+        self.client.force_login(self.test_user)
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
                 "response_type": "code",
                 "client_id": self.application.client_id,
                 "redirect_uri": "http://localhost",
                 "scope": "openid",
                 "prompt": "create",
             },
-            user=self.test_user,
         )
-        view.setup(request)
-        response = view.get(request)
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("account_selection_required", response.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["application"], self.application)
 
-    def test_state_is_echoed_on_bad_requests(self):
-        state_query_params = {
-            "response_type": "code",
-            "client_id": self.application.client_id,
-            "redirect_uri": "http://localhost",
-            "scope": "openid",
-            "prompt": "create",
-            "state": "testing_state",
-        }
-        view = AuthorizationView()
-        request = self._build_authorization_request(query_params=state_query_params, user=self.test_user)
-        view.setup(request)
-        response = view.get(request)
-        self.assertIn("state=testing_state", response.url)
+    def test_authenticated_multi_value_prompt_forces_login(self):
+        """
+        A Relying Party that wants re-authentication of a logged-in user can
+        combine prompt values: create is skipped and login is honored.
+        """
+        self.client.force_login(self.test_user)
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "response_type": "code",
+                "client_id": self.application.client_id,
+                "redirect_uri": "http://localhost",
+                "scope": "openid",
+                "prompt": "create login",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response["Location"]).path, settings.LOGIN_URL)
 
     def test_missing_redirect_uri_is_rejected_without_redirect(self):
         """
@@ -402,7 +409,6 @@ class TestRPInitiatedRegistration(TestCase):
                 "scope": "openid",
                 "prompt": "create",
             },
-            user=self.test_user,
         )
         view.setup(request)
         response = view.handle_prompt_create()
