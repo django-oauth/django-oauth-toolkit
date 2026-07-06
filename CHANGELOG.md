@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [unreleased]
 
 ### Added
+* #1373 Integration and docs for Django Ninja authentication
 * #1546 Support for RP-Initiated Registration
 
 ### Security
