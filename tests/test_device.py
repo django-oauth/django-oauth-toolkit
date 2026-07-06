@@ -7,6 +7,7 @@ import pytest
 from django import http
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import models
 from django.test import RequestFactory
 from django.urls import reverse
 
@@ -971,6 +972,8 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         assert device_authorization_response.status_code == 200
 
         DeviceGrantModel = get_device_grant_model()
+        # SQLite does not enforce varchar lengths, so also assert the field type directly.
+        assert isinstance(DeviceGrantModel._meta.get_field("scope"), models.TextField)
         grant = DeviceGrantModel.objects.get(device_code="def")
         assert grant.scope == long_scope
 

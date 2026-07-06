@@ -737,7 +737,7 @@ class DeviceRequest:
 class DeviceCodeResponse:
     verification_uri: str
     expires_in: int
-    user_code: int
+    user_code: str
     device_code: str
     interval: int
     verification_uri_complete: Optional[Union[str, Callable]] = None
