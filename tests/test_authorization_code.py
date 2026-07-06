@@ -673,6 +673,36 @@ class TestOIDCAuthorizationCodeView(BaseTest):
 
         self.assertNotIn("prompt=login", next)
 
+    def test_prompt_login_unauthenticated_single_redirect(self):
+        """
+        An unauthenticated prompt=login request goes straight to the login
+        page with the prompt stripped from next: logging in satisfies the
+        prompt, so the user must not be bounced to login a second time when
+        they return to the authorization endpoint authenticated.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://example.org",
+            "prompt": "login",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+
+        scheme, netloc, path, params, query, fragment = urlparse(response["Location"])
+        self.assertEqual(path, settings.LOGIN_URL)
+
+        next = parse_qs(query)["next"][0]
+        self.assertNotIn("prompt=login", next)
+        self.assertIn("state=random_state_string", next)
+        self.assertIn(f"client_id={self.application.client_id}", next)
+
     def test_prompt_none_unauthorized(self):
         """
         Test response for redirect when supplied with prompt: none
