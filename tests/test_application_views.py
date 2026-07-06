@@ -1,7 +1,10 @@
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
+from django.forms.models import modelform_factory
 from django.urls import reverse
 
+from oauth2_provider.forms import ApplicationForm, _is_hashed
 from oauth2_provider.models import get_application_model
 from oauth2_provider.views.application import ApplicationRegistration
 
@@ -287,9 +290,82 @@ class TestApplicationViews(BaseTest):
         response = self.client.get(reverse("oauth2_provider:register"))
         form = response.context["form"]
         self.assertIn("Copy and store this secret now", form.fields["client_secret"].help_text)
+        self.assertContains(response, "Copy and store this secret now")
 
     def test_client_secret_help_text_existing_application(self):
         self.client.login(username="foo_user", password="123456")
         response = self.client.get(reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)))
         form = response.context["form"]
-        self.assertIn("has been hashed", form.fields["client_secret"].help_text)
+        self.assertIn("can no longer be viewed", form.fields["client_secret"].help_text)
+        self.assertContains(response, "can no longer be viewed")
+
+    def test_client_secret_help_text_existing_application_unhashed(self):
+        # Create with hashing disabled from the start so the stored secret stays cleartext.
+        app = Application.objects.create(
+            name="app foo_user unhashed",
+            redirect_uris="http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            user=self.foo_user,
+            hash_client_secret=False,
+            client_secret="cleartext-secret",
+        )
+        self.assertEqual(app.client_secret, "cleartext-secret")  # sanity: not hashed on save
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:update", args=(app.pk,)))
+        form = response.context["form"]
+        self.assertIn("stores its client secret unhashed", form.fields["client_secret"].help_text)
+        self.assertContains(response, "stores its client secret unhashed")
+
+    def test_client_secret_help_text_existing_application_hashed_after_disable(self):
+        # Disabling hash_client_secret does not unhash an already-hashed stored secret,
+        # so the edit form must still show the "hashed / cannot be viewed" message.
+        app = self._create_application("app foo_user was hashed", self.foo_user)
+        self.assertTrue(app.hash_client_secret)  # hashed on create by default
+        app.hash_client_secret = False
+        app.save()
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:update", args=(app.pk,)))
+        form = response.context["form"]
+        self.assertIn("can no longer be viewed", form.fields["client_secret"].help_text)
+
+    def test_client_secret_help_text_existing_unhashed_enabling_hashing(self):
+        # Existing cleartext secret + hashing being enabled (e.g. failed-POST
+        # re-render): the secret will be hashed on save, so the form must warn
+        # rather than say the value "remains usable".
+        app = Application.objects.create(
+            name="app foo_user enabling hashing",
+            redirect_uris="http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            user=self.foo_user,
+            hash_client_secret=False,
+            client_secret="cleartext-secret",
+        )
+        form_class = ApplicationRegistration().get_form_class()
+        form = form_class(data={"hash_client_secret": "on"}, instance=app)
+        self.assertIn("it will be hashed and cannot be recovered", form.fields["client_secret"].help_text)
+
+    def test_client_secret_help_text_new_application_unhashed(self):
+        form_class = ApplicationRegistration().get_form_class()
+        form = form_class(instance=Application(hash_client_secret=False))
+        self.assertIn("stores the secret unhashed", form.fields["client_secret"].help_text)
+
+    def test_client_secret_help_text_new_application_honors_submitted_value(self):
+        # After a failed POST the help text should reflect the submitted
+        # hash_client_secret value, not just the model default.
+        form_class = ApplicationRegistration().get_form_class()
+        form = form_class(data={"name": "incomplete"})  # bound, hash checkbox unchecked -> False
+        self.assertIn("stores the secret unhashed", form.fields["client_secret"].help_text)
+
+    def test_application_form_without_client_secret_field(self):
+        # ApplicationForm must not assume client_secret / hash_client_secret are
+        # present in the field set when used as a modelform_factory base.
+        form_class = modelform_factory(Application, form=ApplicationForm, fields=("name",))
+        form_class()  # should not raise KeyError
+
+    def test_is_hashed_helper(self):
+        self.assertFalse(_is_hashed(""))  # empty/falsy
+        self.assertFalse(_is_hashed(None))  # None (guards against identify_hasher TypeError)
+        self.assertFalse(_is_hashed("cleartext-secret"))  # unrecognized -> ValueError
+        self.assertTrue(_is_hashed(make_password("cleartext-secret")))  # real hash

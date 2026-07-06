@@ -6,6 +6,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 from ..forms import ApplicationForm
 from ..models import get_application_model
 
+
 APPLICATION_FIELDS = (
     "name",
     "client_id",
