@@ -696,7 +696,7 @@ class TestClearRevoked(BaseTestModels):
 
         remaining_rt_count = RefreshToken.objects.count()
         assert remaining_rt_count == self.initial_rt_count // 3 * 2, (
-            "two thirds of the the refresh tokens should still exist."
+            "two thirds of the refresh tokens should still exist."
         )
         remaining_rt_revoked_count = RefreshToken.objects.filter(revoked__lte=self.grace_time).count()
         assert remaining_rt_revoked_count == 0, (
@@ -720,7 +720,7 @@ class TestClearRevoked(BaseTestModels):
 
         remaining_rt_count = RefreshToken.objects.count()
         assert remaining_rt_count == self.initial_rt_count // 3, (
-            "one third of the the refresh tokens should still exist."
+            "one third of the refresh tokens should still exist."
         )
         remaining_revoked_rt_count = RefreshToken.objects.filter(revoked__lte=self.now).count()
         assert remaining_revoked_rt_count == 0, "no revoked refresh tokens should still exist."
