@@ -125,6 +125,39 @@ class TestSessionMinting(BaseSessionTest):
         sids = set(Session.objects.values_list("sid", flat=True))
         self.assertEqual(len(sids), 2)
 
+    def test_django_logout_terminates_the_session(self):
+        self.client.login(username="test_user", password="123456")
+        self.authorize()
+
+        self.client.logout()
+
+        session = Session.objects.get()
+        self.assertIsNotNone(session.terminated_at)
+        self.assertEqual(session.termination_reason, Session.TERMINATION_LOGOUT)
+        self.assertFalse(session.is_active())
+
+    def test_logout_does_not_overwrite_prior_termination_reason(self):
+        # RP-initiated logout (phase 3) will terminate with its own reason
+        # before calling logout(); the receiver must not clobber it.
+        self.client.login(username="test_user", password="123456")
+        self.authorize()
+
+        session = Session.objects.get()
+        session.terminate(reason=Session.TERMINATION_RP_LOGOUT)
+
+        self.client.logout()
+
+        session.refresh_from_db()
+        self.assertEqual(session.termination_reason, Session.TERMINATION_RP_LOGOUT)
+
+    def test_logout_without_op_session_is_a_noop(self):
+        # Logging out of a Django session that never touched the authorize
+        # endpoint must not error or create anything.
+        self.client.login(username="test_user", password="123456")
+        self.client.logout()
+
+        self.assertEqual(Session.objects.count(), 0)
+
     def test_terminate_marks_session_inactive(self):
         self.client.login(username="test_user", password="123456")
         self.authorize()

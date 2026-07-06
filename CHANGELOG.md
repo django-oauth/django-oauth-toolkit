@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Sessions are minted lazily at the first authorization after login, reused for subsequent
   authorizations from the same user agent, and referenced by the `Authorization`s granted during
   them. ID tokens issued for session-bound authorizations now carry the `sid` claim, the
-  prerequisite for front-/back-channel logout. The admin exposes a "Terminate selected sessions"
+  prerequisite for front-/back-channel logout. Logging out of Django terminates the OP session
+  (via the `user_logged_out` signal). The admin exposes a "Terminate selected sessions"
   action (all fields read-only, no add/delete), and `cleartokens` purges ended sessions once no
   authorization references them. Configurable via `OAUTH2_PROVIDER_SESSION_MODEL` /
   `SESSION_ADMIN_CLASS`.

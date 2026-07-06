@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, urlparse
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.hashers import identify_hasher, make_password
-from django.contrib.auth.signals import user_logged_in
+from django.contrib.auth.signals import user_logged_in, user_logged_out
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models, router, transaction
 from django.dispatch import receiver
@@ -1066,6 +1066,27 @@ def _remember_auth_time(sender, request, user, **kwargs):
     user-global ``last_login`` is refreshed by logins on *other* devices).
     """
     request.session[SESSION_AUTH_TIME_KEY] = timezone.now().isoformat()
+
+
+@receiver(user_logged_out)
+def _terminate_session_on_logout(sender, request, user, **kwargs):
+    """
+    End the OP authentication session when the user logs out of the OP.
+
+    ``user_logged_out`` is sent before ``logout()`` flushes the Django
+    session, so the sid is still readable here. Already-terminated sessions
+    are left untouched (e.g. RP-initiated logout may terminate with its own
+    reason before calling ``logout()``).
+    """
+    if request is None or not hasattr(request, "session"):
+        return
+    sid = request.session.get(SESSION_SID_KEY)
+    if not sid:
+        return
+    session_model = get_session_model()
+    session = session_model.objects.filter(sid=sid, terminated_at__isnull=True).first()
+    if session is not None:
+        session.terminate(reason=session_model.TERMINATION_LOGOUT)
 
 
 def get_or_create_oauth2_session(request):
