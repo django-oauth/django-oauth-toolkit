@@ -284,13 +284,45 @@ grant credential for that flow. The new entities are `Authorization` and
 `Session` (both swappable, `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` /
 `OAUTH2_PROVIDER_SESSION_MODEL`), with docs clarifying the distinction.
 
+### Deletion semantics
+
+Deletion is not a domain action for either new entity — `revoke()` (consent
+axis) and `terminate()` (session axis) are. The schema enforces this rather
+than relying on convention:
+
+- **Token FKs to `Authorization` are `on_delete=RESTRICT`**: an
+  authorization cannot be deleted while tokens issued under it exist,
+  *except* through a cascade that is deleting those tokens too (user or
+  application deletion — this is why `RESTRICT`, not `PROTECT`). `SET_NULL`
+  would let a raw `.delete()` silently orphan tokens and erase the lineage
+  this ADR exists to create; `CASCADE` would erase the revoked-refresh-token
+  trail that rotation-reuse detection (`REFRESH_TOKEN_REUSE_PROTECTION`)
+  depends on, making "revoke by delete" a security regression.
+- **`Grant.authorization` is `CASCADE`**: a code is only a claim ticket on
+  its consent record and must not remain exchangeable without it.
+  `DeviceGrant.authorization` stays `SET_NULL` — the device row predates the
+  authorization and carries independent audit state (`DENIED`, timestamps).
+- **`Authorization.session` is `SET_NULL`**: authorizations legitimately
+  outlive sessions (`offline_access`), so `RESTRICT` here would block
+  session cleanup indefinitely; a nulled pointer means "the session is over
+  and has been purged."
+- **`revoke()` also closes outstanding credentials**: unexchanged codes are
+  deleted and approved-but-unredeemed device grants are denied, so a revoked
+  consent cannot mint new tokens; `validate_code` rejects codes whose
+  authorization is inactive as a race guard.
+- **The admin exposes the domain actions, not deletion**: "Revoke selected
+  authorizations" / "Terminate selected sessions" actions, all fields
+  read-only, add and delete disabled.
+
 ### Cleanup
 
-`cleartokens` learns two new steps with strict ordering: purge terminated /
-expired `Session`s, and purge revoked / dormant `Authorization`s **only
-after** their token chains are gone (the FKs are `SET_NULL`; purging early
-would silently discard the lineage this ADR exists to create). Retention
-windows are settings.
+`cleartokens` purges rows only once nothing depends on them, which the
+`RESTRICT` constraint independently guarantees for authorizations: revoked
+`Authorization`s are deleted once every token issued under them is gone, and
+ended (terminated or expired) `Session`s are deleted once no authorization
+references them — so the `sid` linkage survives exactly as long as the
+authorizations granted during the session do. Retention windows are
+settings.
 
 ## Alternatives considered
 
