@@ -70,8 +70,8 @@ def user_code_generator(user_code_length: int = 8) -> str:
 
     entropy (in bits) = length of user code * log2(size of the character set)
 
-    This implementation uses a 32-character (Base32) alphabet, so for the
-    default length of 8 characters:
+    This implementation uses a 32-character (RFC 4648 Base32hex, ``0-9A-V``)
+    alphabet, so for the default length of 8 characters:
 
         e = 8 * log2(32) = 8 * 5 = 40 bits
 
@@ -80,9 +80,10 @@ def user_code_generator(user_code_length: int = 8) -> str:
     for the UI, not part of the value.)
 
     An attacker would need to try up to 2^40 combinations to exhaust the space.
-    Note that this library does not itself rate-limit or expire the verification
-    step, so deployments should keep the code's validity window short and
-    rate-limit the verification endpoint to make brute-forcing impractical.
+    The device grant does expire (its validity window is enforced), but this
+    library does not itself rate-limit the verification step, so deployments
+    should keep the code's validity window short and rate-limit the verification
+    endpoint to make brute-forcing impractical.
 
     The code is drawn from ``secrets`` (a CSPRNG) rather than ``random`` so
     that the ``user_code`` is unguessable, as required for device-flow
