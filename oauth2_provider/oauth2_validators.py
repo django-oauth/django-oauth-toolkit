@@ -177,7 +177,7 @@ class OAuth2Validator(RequestValidator):
         ):
             return True
         elif not self._check_secret(client_secret, request.client.client_secret):
-            log.debug("Failed basic auth: wrong client secret for client_id %s" % client_id)
+            log.debug("Failed basic auth: wrong client secret for client_id %s", client_id)
             return False
         else:
             return True
@@ -207,7 +207,7 @@ class OAuth2Validator(RequestValidator):
         ):
             return True
         elif not self._check_secret(client_secret, request.client.client_secret):
-            log.debug("Failed body auth: wrong client secret for client_id %s" % client_id)
+            log.debug("Failed body auth: wrong client secret for client_id %s", client_id)
             return False
         else:
             return True
