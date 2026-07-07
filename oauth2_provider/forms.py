@@ -1,4 +1,17 @@
 from django import forms
+from django.contrib.auth.hashers import identify_hasher
+from django.utils.translation import gettext_lazy as _
+
+
+def _is_hashed(secret):
+    """Return True if ``secret`` is a recognized password hash (not cleartext)."""
+    if not secret:
+        return False
+    try:
+        identify_hasher(secret)
+    except ValueError:
+        return False
+    return True
 
 
 class AllowForm(forms.Form):
@@ -26,3 +39,60 @@ class ConfirmLogoutForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.request = kwargs.pop("request", None)
         super(ConfirmLogoutForm, self).__init__(*args, **kwargs)
+
+
+class ApplicationForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # This form is normally bound to the (swappable) application model via
+        # ``modelform_factory``; guard against field sets that omit client_secret.
+        if "client_secret" not in self.fields:
+            return
+        # Hashing is optional per-application (``hash_client_secret``); when it is
+        # disabled the secret is stored as-is and stays readable, so the warnings
+        # about hashing / unrecoverability only apply when the secret is (or will
+        # be) hashed.
+        existing = bool(self.instance and self.instance.pk)
+        if existing and _is_hashed(self.instance.client_secret):
+            # Already hashed. This cannot be undone, so the flag is irrelevant here
+            # and there is nothing for the live toggle to swap.
+            self.fields["client_secret"].help_text = _(
+                "The client secret is hashed and can no longer be viewed. "
+                "To rotate it, enter a new value and copy it before saving; "
+                "the original secret cannot be recovered."
+            )
+            return
+        # The secret is currently readable. Which warning applies depends on whether
+        # it will be hashed on save, which the user toggles via hash_client_secret.
+        # Expose both messages so the template can swap them live as the checkbox
+        # changes; the server picks the correct one for the initial / no-JS render.
+        self.client_secret_help_when_hashed = _(
+            "Copy and store this secret now. Once saved, it will be hashed and cannot be recovered."
+        )
+        if existing:
+            self.client_secret_help_when_unhashed = _(
+                "This application stores its client secret unhashed, so the value above "
+                "remains usable. Entering a new value replaces it."
+            )
+        else:
+            self.client_secret_help_when_unhashed = _(
+                "Copy and store this secret now. This application stores the secret unhashed."
+            )
+        self.fields["client_secret"].help_text = (
+            self.client_secret_help_when_hashed
+            if self._will_hash_client_secret()
+            else self.client_secret_help_when_unhashed
+        )
+
+    def _will_hash_client_secret(self):
+        """Whether the client secret will be hashed on save.
+
+        Honors the submitted value so the help text stays correct when the form
+        is re-rendered after a failed POST; otherwise falls back to the
+        instance/model default.
+        """
+        if self.is_bound and "hash_client_secret" in self.fields:
+            return self.fields["hash_client_secret"].widget.value_from_datadict(
+                self.data, self.files, self.add_prefix("hash_client_secret")
+            )
+        return getattr(self.instance, "hash_client_secret", True)

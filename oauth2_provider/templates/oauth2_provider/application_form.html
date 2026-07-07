@@ -16,6 +16,9 @@
                     <label class="control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                     <div class="controls">
                         {{ field }}
+                        {% if field.help_text %}
+                            <span class="help-block">{{ field.help_text }}</span>
+                        {% endif %}
                         {% for error in field.errors %}
                             <span class="help-inline">{{ error }}</span>
                         {% endfor %}
@@ -39,4 +42,34 @@
             </div>
         </form>
     </div>
+
+    {% if form.client_secret_help_when_hashed and form.client_secret_help_when_unhashed %}
+        {{ form.client_secret_help_when_hashed|json_script:"client-secret-help-when-hashed" }}
+        {{ form.client_secret_help_when_unhashed|json_script:"client-secret-help-when-unhashed" }}
+        <script>
+            (function () {
+                var hashField = document.getElementById("id_hash_client_secret");
+                var secretField = document.getElementById("id_client_secret");
+                if (!hashField || !secretField) {
+                    return;
+                }
+                var controls = secretField.closest(".controls");
+                var help = controls ? controls.querySelector(".help-block") : null;
+                if (!help) {
+                    return;
+                }
+                var whenHashed = JSON.parse(
+                    document.getElementById("client-secret-help-when-hashed").textContent
+                );
+                var whenUnhashed = JSON.parse(
+                    document.getElementById("client-secret-help-when-unhashed").textContent
+                );
+                function sync() {
+                    help.textContent = hashField.checked ? whenHashed : whenUnhashed;
+                }
+                hashField.addEventListener("change", sync);
+                sync();
+            })();
+        </script>
+    {% endif %}
 {% endblock %}

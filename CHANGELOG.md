@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 * #1373 Integration and docs for Django Ninja authentication
 * #1546 Support for RP-Initiated Registration
+* #1635 Dynamic help text on the application form's `client_secret` field, warning users to copy the
+  secret on creation and explaining it is hashed and unrecoverable when editing.
 
 ### Security
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
