@@ -75,12 +75,14 @@ def user_code_generator(user_code_length: int = 8) -> str:
 
         e = 8 * log2(32) = 8 * 5 = 40 bits
 
-    i.e. _ _ _ _ - _ _ _ _  ->  32^8 == 2^40 possible codes.
+    i.e. there are 32^8 == 2^40 possible codes. (The generated code is a plain
+    string with no separator; any grouping/hyphenation is a presentation concern
+    for the UI, not part of the value.)
 
-    In other words an attacker would need to try up to 2^40 combinations to
-    exhaust the space. Combined with a short validity window and rate limiting
-    on the verification endpoint, a brute-force attack is extremely unlikely to
-    succeed.
+    An attacker would need to try up to 2^40 combinations to exhaust the space.
+    Note that this library does not itself rate-limit or expire the verification
+    step, so deployments should keep the code's validity window short and
+    rate-limit the verification endpoint to make brute-forcing impractical.
 
     The code is drawn from ``secrets`` (a CSPRNG) rather than ``random`` so
     that the ``user_code`` is unguessable, as required for device-flow
