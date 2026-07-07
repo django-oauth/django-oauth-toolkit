@@ -899,10 +899,25 @@ def test_application_key(oauth2_settings, application):
         application.jwk_key
     assert "You must set OIDC_RSA_PRIVATE_KEY" in str(exc.value)
 
-    # HS256 key
+    # HS256 key: the secret is the signing key, so it must be stored unhashed.
     application.algorithm = Application.HS256_ALGORITHM
+    application.hash_client_secret = False
+    application.client_secret = CLEARTEXT_SECRET
+    application.save()
     key = application.jwk_key
     assert key.kty == "oct"
+
+    # HS256 with a hashed secret must fail loudly instead of signing a token the relying
+    # party (which holds the plaintext secret) could never verify.
+    application.hash_client_secret = True
+    application.client_secret = CLEARTEXT_SECRET
+    application.save()
+    with pytest.raises(ImproperlyConfigured) as exc:
+        application.jwk_key
+    assert "hash_client_secret=False" in str(exc.value)
+    application.hash_client_secret = False
+    application.client_secret = CLEARTEXT_SECRET
+    application.save()
 
     # No algorithm
     application.algorithm = Application.NO_ALGORITHM
@@ -923,9 +938,17 @@ def test_application_clean(oauth2_settings, application):
         application.clean()
     assert "You must set OIDC_RSA_PRIVATE_KEY" in str(exc.value)
 
-    # HS256 algorithm, auth code + confidential -> allowed
+    # HS256 algorithm, auth code + confidential, unhashed secret -> allowed
     application.algorithm = Application.HS256_ALGORITHM
+    application.hash_client_secret = False
     application.clean()
+
+    # HS256 with a hashed client secret -> forbidden (the secret is the HS256 signing key)
+    application.hash_client_secret = True
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert "hashed client secret" in str(exc.value)
+    application.hash_client_secret = False
 
     # HS256, auth code + public -> forbidden
     application.client_type = Application.CLIENT_PUBLIC

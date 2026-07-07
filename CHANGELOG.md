@@ -52,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RefreshToken`, and `Grant` model `__str__` methods no longer return the raw token/code (which the
   admin renders in a row's change-page title and breadcrumbs, and which also appears in `repr()` and
   logs); they now return a `"<Model> #<pk>"` identifier.
+* Fix HS256-signed ID tokens being signed with the *hashed* client secret. When an application
+  used the `HS256` algorithm with `hash_client_secret=True` (the default), the ID token was signed
+  with the stored password-hash string as the HMAC key instead of the shared client secret, so a
+  relying party holding the real (plaintext) secret could never verify the signature — and a
+  password hash was misused as a MAC key. `HS256` now requires `hash_client_secret=False`:
+  `Application.clean()` rejects the combination, and `jwk_key` raises `ImproperlyConfigured`
+  rather than emit an unverifiable token. See the breaking-changes note below.
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
   an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
   *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's
@@ -60,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reported by Brian Lee (SSLab, Georgia Tech).
 
 ### WARNING - POTENTIAL BREAKING CHANGES
+* Applications using the `HS256` signing algorithm must now be configured with
+  `hash_client_secret=False`. Previously such applications signed ID tokens with the hashed client
+  secret, producing tokens that relying parties could not verify. `Application.clean()` now raises a
+  `ValidationError` for `HS256` + `hash_client_secret=True`, and `Application.jwk_key` raises
+  `ImproperlyConfigured` at signing time if the secret is hashed. To migrate an affected
+  application, recreate it (or reset its secret) with `hash_client_secret=False` so the plaintext
+  secret is stored and can be used as the shared HMAC key.
 * Changes to the `AbstractRefreshToken` model require doing a `manage.py migrate` after upgrading.
 * If you use a swapped refresh token model (`OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL`) you will need to
   update your custom model with `manage.py makemigrations`. If your table already contains refresh
