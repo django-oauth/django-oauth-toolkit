@@ -89,3 +89,49 @@ class TestProtectedResourceDecorator(TestCase):
         request = self.request_factory.get("/fake-resource", **auth_headers)
         response = scoped_view(request)
         self.assertEqual(response.status_code, 403)
+
+    def test_rw_protected_scopes_not_polluted_across_requests(self):
+        """
+        Regression test: the read/write scope must not accumulate on a shared list
+        across requests. A prior write (POST) request must not cause a later read
+        (GET) request made with a read-only token to be rejected.
+        """
+        self.access_token.scope = "exotic_scope read"
+        self.access_token.save()
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.access_token.token,
+        }
+
+        @rw_protected_resource(scopes=["exotic_scope"])
+        def scoped_view(request, *args, **kwargs):
+            return "protected contents"
+
+        # POST requires the write scope, which this token does not have -> denied.
+        request = self.request_factory.post("/fake-resource", **auth_headers)
+        response = scoped_view(request)
+        self.assertEqual(response.status_code, 403)
+
+        # A subsequent GET requires only the read scope, which this token has.
+        # With the scope-list-mutation bug, the "write" scope appended by the POST
+        # above would still be required here and this would wrongly return 403.
+        request = self.request_factory.get("/fake-resource", **auth_headers)
+        response = scoped_view(request)
+        self.assertEqual(response, "protected contents")
+
+    def test_rw_protected_does_not_mutate_scopes_argument(self):
+        """The caller-supplied ``scopes`` list must never be mutated by a request."""
+        scopes_arg = ["exotic_scope"]
+
+        @rw_protected_resource(scopes=scopes_arg)
+        def scoped_view(request, *args, **kwargs):
+            return "protected contents"
+
+        self.access_token.scope = "exotic_scope read"
+        self.access_token.save()
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.access_token.token,
+        }
+        request = self.request_factory.get("/fake-resource", **auth_headers)
+        scoped_view(request)
+
+        self.assertEqual(scopes_arg, ["exotic_scope"])

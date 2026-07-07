@@ -67,16 +67,19 @@ def rw_protected_resource(scopes=None, validator_cls=OAuth2Validator, server_cls
                     " to be in OAUTH2_PROVIDER['SCOPES'] list in settings".format(read_write_scopes)
                 )
 
-            # Check if method is safe
+            # Check if method is safe. Build a fresh list per request so the read/write
+            # scope is not appended to the shared, decoration-time `_scopes` list (which
+            # would accumulate across requests and eventually reject valid tokens, and
+            # would also mutate a caller-supplied `scopes` argument).
             if request.method.upper() in ["GET", "HEAD", "OPTIONS"]:
-                _scopes.append(oauth2_settings.READ_SCOPE)
+                required_scopes = _scopes + [oauth2_settings.READ_SCOPE]
             else:
-                _scopes.append(oauth2_settings.WRITE_SCOPE)
+                required_scopes = _scopes + [oauth2_settings.WRITE_SCOPE]
 
             # proceed with validation
             validator = validator_cls()
             core = OAuthLibCore(server_cls(validator))
-            valid, oauthlib_req = core.verify_request(request, scopes=_scopes)
+            valid, oauthlib_req = core.verify_request(request, scopes=required_scopes)
             if valid:
                 request.resource_owner = oauthlib_req.user
                 return view_func(request, *args, **kwargs)
