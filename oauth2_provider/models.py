@@ -1001,10 +1001,18 @@ def redirect_to_uri_allowed(uri, allowed_uris):
         # time of the request for loopback IP redirect URIs, to accommodate
         # clients that obtain an available ephemeral port from the operating
         # system at the time of the request.
-        allowed_uri_is_loopback = parsed_allowed_uri.scheme == "http" and parsed_allowed_uri.hostname in [
-            "127.0.0.1",
-            "::1",
-        ]
+        #
+        # Section 8.3 notes that "localhost" redirect URIs "function similarly
+        # to loopback IP redirects" but their use is NOT RECOMMENDED, so the
+        # port exemption is not extended to the "localhost" hostname by
+        # default.  Some native clients nonetheless register "localhost" and
+        # receive the callback on an ephemeral port; ALLOW_LOCALHOST_LOOPBACK
+        # opts in to treating it as loopback.  The hostname must still match
+        # exactly, so "localhost" is never conflated with the IP literals.
+        allowed_uri_is_loopback = parsed_allowed_uri.scheme == "http" and (
+            parsed_allowed_uri.hostname in ("127.0.0.1", "::1")
+            or (oauth2_settings.ALLOW_LOCALHOST_LOOPBACK and parsed_allowed_uri.hostname == "localhost")
+        )
         """ check port """
         if not allowed_uri_is_loopback and parsed_allowed_uri.port != parsed_uri.port:
             continue

@@ -1124,3 +1124,48 @@ invalid_wildcard_redirect_to_params = [
 def test_wildcard_redirect_to_uri_allowed_invalid(uri, allowed_uri, oauth2_settings):
     oauth2_settings.ALLOW_URI_WILDCARDS = True
     assert not redirect_to_uri_allowed(uri, allowed_uri)
+
+
+def test_localhost_loopback_port_mismatch_rejected_by_default():
+    # Default (ALLOW_LOCALHOST_LOOPBACK off): only the 127.0.0.1/::1 literals
+    # get the RFC 8252 any-port exemption; "localhost" keeps strict matching.
+    assert not redirect_to_uri_allowed("http://localhost:49152/callback", ["http://localhost/callback"])
+    # ...and the IP literals keep the exemption regardless of the setting.
+    assert redirect_to_uri_allowed("http://127.0.0.1:49152/callback", ["http://127.0.0.1/callback"])
+    assert redirect_to_uri_allowed("http://[::1]:49152/callback", ["http://[::1]/callback"])
+
+
+valid_localhost_loopback_params = [
+    # RFC 8252 §7.3 any-port exemption, extended to "localhost" when enabled.
+    ("http://localhost:49152/callback", ["http://localhost/callback"]),
+    ("http://localhost/callback", ["http://localhost/callback"]),
+    # urlparse lowercases the hostname, so the match is case-insensitive.
+    ("http://LOCALHOST:49152/callback", ["http://localhost/callback"]),
+]
+
+
+@pytest.mark.parametrize("uri, allowed_uri", valid_localhost_loopback_params)
+def test_localhost_loopback_redirect_allowed_when_enabled(uri, allowed_uri, oauth2_settings):
+    oauth2_settings.ALLOW_LOCALHOST_LOOPBACK = True
+    assert redirect_to_uri_allowed(uri, allowed_uri)
+
+
+invalid_localhost_loopback_params = [
+    # Path stays strict — a different callback path is a different endpoint.
+    ("http://localhost:49152/other", ["http://localhost/callback"]),
+    # https is not the RFC 8252 loopback shape; the exemption is http-only.
+    ("https://localhost:49152/callback", ["https://localhost/callback"]),
+    # No cross-spelling, both directions: the hostname must still match
+    # exactly, so "localhost" is never conflated with the IP literals.
+    ("http://127.0.0.1:49152/callback", ["http://localhost/callback"]),
+    ("http://localhost:49152/callback", ["http://127.0.0.1/callback"]),
+    ("http://localhost:49152/callback", ["http://[::1]/callback"]),
+    # A hostname merely containing "localhost" is not loopback.
+    ("http://localhost.evil.example:49152/callback", ["http://localhost/callback"]),
+]
+
+
+@pytest.mark.parametrize("uri, allowed_uri", invalid_localhost_loopback_params)
+def test_localhost_loopback_redirect_rejected_when_enabled(uri, allowed_uri, oauth2_settings):
+    oauth2_settings.ALLOW_LOCALHOST_LOOPBACK = True
+    assert not redirect_to_uri_allowed(uri, allowed_uri)
