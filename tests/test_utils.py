@@ -47,6 +47,11 @@ CQDpSvwIvDMSIQIJAMDk47DzG9FHAghtvg1TWpy3oQIJAL6NHlS+RBufAgkA6QLA
         # scheme must match exactly, not merely start with "Bearer"
         ("BearerX sometoken", None),
         ("Bearersometoken", None),
+        # RFC 6750 token68: a Bearer token cannot contain whitespace, so
+        # multi-part values are malformed and rejected
+        ("Bearer token extra", None),
+        ("Bearer token  extra", None),
+        ("Bearer token extra more", None),
         # other schemes are rejected
         ("Basic dXNlcjpwYXNz", None),
         # missing or empty token

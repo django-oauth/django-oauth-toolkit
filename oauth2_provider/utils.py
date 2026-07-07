@@ -13,18 +13,20 @@ def parse_bearer_token(auth_header):
     Implements RFC 7235 / RFC 6750 semantics: the scheme match is
     case-insensitive ("bearer", "Bearer" and "BEARER" are all accepted) and
     exact (schemes that merely start with "Bearer", e.g. "BearerX", are
-    rejected), any whitespace run between scheme and token is tolerated, and
-    the token is returned stripped of surrounding whitespace.
+    rejected), and any whitespace runs around the scheme and token are
+    tolerated. RFC 6750 Bearer credentials are a single ``token68`` value and
+    cannot contain whitespace, so values with more than one whitespace-separated
+    part after the scheme (e.g. "Bearer token extra") are rejected.
 
     Return the token string, or ``None`` if the header is not a well-formed
     Bearer authorization.
     """
     if not auth_header:
         return None
-    splits = auth_header.split(maxsplit=1)
+    splits = auth_header.split()
     if len(splits) != 2 or splits[0].lower() != "bearer":
         return None
-    return splits[1].strip() or None
+    return splits[1]
 
 
 @functools.lru_cache()
