@@ -6,6 +6,27 @@ from jwcrypto import jwk
 from oauthlib.common import Request
 
 
+def parse_bearer_token(auth_header):
+    """
+    Extract the token from a Bearer ``Authorization`` header value.
+
+    Implements RFC 7235 / RFC 6750 semantics: the scheme match is
+    case-insensitive ("bearer", "Bearer" and "BEARER" are all accepted) and
+    exact (schemes that merely start with "Bearer", e.g. "BearerX", are
+    rejected), any whitespace run between scheme and token is tolerated, and
+    the token is returned stripped of surrounding whitespace.
+
+    Return the token string, or ``None`` if the header is not a well-formed
+    Bearer authorization.
+    """
+    if not auth_header:
+        return None
+    splits = auth_header.split(maxsplit=1)
+    if len(splits) != 2 or splits[0].lower() != "bearer":
+        return None
+    return splits[1].strip() or None
+
+
 @functools.lru_cache()
 def jwk_from_pem(pem_string):
     """

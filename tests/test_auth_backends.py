@@ -139,6 +139,26 @@ class TestOAuth2Middleware(BaseTest):
         m(request)
         self.assertEqual(request.user, self.user)
 
+    def test_middleware_lowercase_bearer_scheme(self):
+        # RFC 7235: the Bearer scheme name is case-insensitive
+        m = OAuth2TokenMiddleware(self.dummy_get_response)
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "bearer " + "tokstr",
+        }
+        request = self.factory.get("/a-resource", **auth_headers)
+        m(request)
+        self.assertEqual(request.user, self.user)
+
+    def test_middleware_scheme_starting_with_bearer_is_ignored(self):
+        # Schemes that merely start with "Bearer" (e.g. "BearerX") are not Bearer
+        m = OAuth2TokenMiddleware(self.dummy_get_response)
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "BearerX " + "tokstr",
+        }
+        request = self.factory.get("/a-resource", **auth_headers)
+        m(request)
+        self.assertFalse(hasattr(request, "user"))
+
     def test_middleware_response(self):
         m = OAuth2TokenMiddleware(self.dummy_get_response)
         auth_headers = {

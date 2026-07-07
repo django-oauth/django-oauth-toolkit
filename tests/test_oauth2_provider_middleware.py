@@ -98,3 +98,50 @@ class TestOAuth2ExtraTokenMiddleware(TestCase):
 
         # Should not have access_token attribute
         self.assertFalse(hasattr(request, "access_token"))
+
+    def _create_access_token(self, token_string):
+        token_checksum = hashlib.sha256(token_string.encode("utf-8")).hexdigest()
+        return AccessToken.objects.create(
+            user=self.user,
+            scope="read",
+            expires=datetime.datetime.now() + datetime.timedelta(days=1),
+            token=token_string,
+            token_checksum=token_checksum,
+            application=self.application,
+        )
+
+    def test_case_insensitive_bearer_scheme(self):
+        """RFC 7235: the Bearer scheme name is case-insensitive"""
+        access_token = self._create_access_token("test-token-case")
+
+        for scheme in ("bearer", "BEARER", "BeArEr"):
+            with self.subTest(scheme=scheme):
+                request = self.factory.get("/", HTTP_AUTHORIZATION=f"{scheme} test-token-case")
+
+                _ = self.middleware(request)
+
+                self.assertTrue(hasattr(request, "access_token"))
+                self.assertEqual(request.access_token, access_token)
+
+    def test_scheme_starting_with_bearer_is_rejected(self):
+        """Schemes that merely start with 'Bearer' (e.g. 'BearerX') are not Bearer"""
+        self._create_access_token("test-token-schemes")
+
+        request = self.factory.get("/", HTTP_AUTHORIZATION="BearerX test-token-schemes")
+
+        _ = self.middleware(request)
+
+        self.assertFalse(hasattr(request, "access_token"))
+
+    def test_whitespace_variations(self):
+        """Whitespace runs between scheme and token, and around the token, are tolerated"""
+        access_token = self._create_access_token("test-token-ws")
+
+        for header in ("Bearer   test-token-ws", "Bearer\ttest-token-ws", "Bearer test-token-ws  "):
+            with self.subTest(header=header):
+                request = self.factory.get("/", HTTP_AUTHORIZATION=header)
+
+                _ = self.middleware(request)
+
+                self.assertTrue(hasattr(request, "access_token"))
+                self.assertEqual(request.access_token, access_token)
