@@ -168,7 +168,7 @@ class TestOAuth2Validator(TransactionTestCase):
         self.request.headers = get_basic_auth_header("client_id", "super_secret_value")
         with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
             self.assertFalse(self.validator._authenticate_basic_auth(self.request))
-        self.assertFalse(any("super_secret_value" in message for message in logs.output))
+        self.assertNotIn("super_secret_value", "\n".join(logs.output))
 
     def test_authenticate_request_body_wrong_client_secret_not_logged(self):
         """The client secret must never be written to the logs (body auth)."""
@@ -176,7 +176,7 @@ class TestOAuth2Validator(TransactionTestCase):
         self.request.client_secret = "super_secret_value"
         with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
             self.assertFalse(self.validator._authenticate_request_body(self.request))
-        self.assertFalse(any("super_secret_value" in message for message in logs.output))
+        self.assertNotIn("super_secret_value", "\n".join(logs.output))
 
     def test_authenticate_basic_auth_undecodable_credentials_not_logged(self):
         """The raw credential string must not be logged when base64/unicode decoding fails."""
