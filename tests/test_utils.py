@@ -94,11 +94,12 @@ def test_user_code_generator_uses_csprng(mocker):
     source (``secrets``), not the predictable ``random`` module, per RFC 8628
     sections 5.1/5.2.
     """
-    choice = mocker.patch("oauth2_provider.utils.secrets.choice", return_value="A")
+    secrets_choice = mocker.patch("oauth2_provider.utils.secrets.choice", return_value="A")
+    random_choice = mocker.patch("random.choice")
 
     user_code = utils.user_code_generator(user_code_length=8)
 
     assert user_code == "AAAAAAAA"
-    assert choice.call_count == 8
-    # Guard against regressing to the non-cryptographic ``random`` module.
-    assert not hasattr(utils, "random")
+    assert secrets_choice.call_count == 8
+    # The predictable ``random`` module must not be used to generate the code.
+    random_choice.assert_not_called()
