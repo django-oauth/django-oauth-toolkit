@@ -319,8 +319,8 @@ class AbstractApplication(models.Model):
             if self._client_secret_is_hashed(self.client_secret):
                 raise ImproperlyConfigured(
                     "HS256 signing requires the plaintext client secret as the HMAC key, but this "
-                    "application's client secret is hashed. Recreate the application with "
-                    "hash_client_secret=False."
+                    "application's client secret is hashed. Set hash_client_secret=False and reset "
+                    "the client_secret (or recreate the application) so the plaintext secret is stored."
                 )
             return jwk.JWK(kty="oct", k=base64url_encode(self.client_secret))
         raise ImproperlyConfigured("This application does not support signed tokens")
