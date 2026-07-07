@@ -23,7 +23,9 @@ def parse_bearer_token(auth_header):
     """
     if not auth_header:
         return None
-    splits = auth_header.split()
+    # maxsplit=2 bounds the work on arbitrarily long malformed headers: a third
+    # whitespace-separated part still fails the length check below either way.
+    splits = auth_header.split(maxsplit=2)
     if len(splits) != 2 or splits[0].lower() != "bearer":
         return None
     return splits[1]
