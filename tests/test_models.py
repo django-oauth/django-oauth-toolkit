@@ -941,14 +941,28 @@ def test_application_clean(oauth2_settings, application):
     # HS256 algorithm, auth code + confidential, unhashed secret -> allowed
     application.algorithm = Application.HS256_ALGORITHM
     application.hash_client_secret = False
+    application.client_secret = CLEARTEXT_SECRET
+    application.save()
     application.clean()
 
-    # HS256 with a hashed client secret -> forbidden (the secret is the HS256 signing key)
+    # HS256 with hash_client_secret=True -> forbidden (the secret is the HS256 signing key)
     application.hash_client_secret = True
     with pytest.raises(ValidationError) as exc:
         application.clean()
     assert "hashed client secret" in str(exc.value)
+
+    # HS256 with an already-hashed stored secret is rejected even when the flag is False
+    # (e.g. the flag was toggled after the secret had already been hashed).
+    application.client_secret = CLEARTEXT_SECRET
+    application.save()  # hash_client_secret is still True here, so this stores a hashed secret
     application.hash_client_secret = False
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert "hashed client secret" in str(exc.value)
+
+    # restore an unhashed secret for the remaining assertions
+    application.client_secret = CLEARTEXT_SECRET
+    application.save()
 
     # HS256, auth code + public -> forbidden
     application.client_type = Application.CLIENT_PUBLIC
