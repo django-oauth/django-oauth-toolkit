@@ -54,28 +54,35 @@ class ApplicationForm(forms.ModelForm):
         # be) hashed.
         existing = bool(self.instance and self.instance.pk)
         if existing and _is_hashed(self.instance.client_secret):
-            # Already hashed. This cannot be undone, so the flag is irrelevant here.
+            # Already hashed. This cannot be undone, so the flag is irrelevant here
+            # and there is nothing for the live toggle to swap.
             self.fields["client_secret"].help_text = _(
                 "The client secret is hashed and can no longer be viewed. "
                 "To rotate it, enter a new value and copy it before saving; "
                 "the original secret cannot be recovered."
             )
-        elif self._will_hash_client_secret():
-            # Secret is currently readable but will be hashed on save. Covers a new
-            # application and an existing cleartext secret with hashing being enabled
-            # (e.g. re-rendered after a failed POST).
-            self.fields["client_secret"].help_text = _(
-                "Copy and store this secret now. Once saved, it will be hashed and cannot be recovered."
-            )
-        elif existing:
-            self.fields["client_secret"].help_text = _(
+            return
+        # The secret is currently readable. Which warning applies depends on whether
+        # it will be hashed on save, which the user toggles via hash_client_secret.
+        # Expose both messages so the template can swap them live as the checkbox
+        # changes; the server picks the correct one for the initial / no-JS render.
+        self.client_secret_help_when_hashed = _(
+            "Copy and store this secret now. Once saved, it will be hashed and cannot be recovered."
+        )
+        if existing:
+            self.client_secret_help_when_unhashed = _(
                 "This application stores its client secret unhashed, so the value above "
                 "remains usable. Entering a new value replaces it."
             )
         else:
-            self.fields["client_secret"].help_text = _(
+            self.client_secret_help_when_unhashed = _(
                 "Copy and store this secret now. This application stores the secret unhashed."
             )
+        self.fields["client_secret"].help_text = (
+            self.client_secret_help_when_hashed
+            if self._will_hash_client_secret()
+            else self.client_secret_help_when_unhashed
+        )
 
     def _will_hash_client_secret(self):
         """Whether the client secret will be hashed on save.

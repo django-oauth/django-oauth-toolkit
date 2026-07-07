@@ -358,6 +358,27 @@ class TestApplicationViews(BaseTest):
         form = form_class(data={"name": "incomplete"})  # bound, hash checkbox unchecked -> False
         self.assertIn("stores the secret unhashed", form.fields["client_secret"].help_text)
 
+    def test_client_secret_help_text_live_toggle_rendered_on_register(self):
+        # The register page must ship both help variants plus the checkbox-driven
+        # script so the message updates live as hash_client_secret is toggled,
+        # rather than being frozen at the server-rendered value.
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:register"))
+        self.assertContains(response, 'id="client-secret-help-when-hashed"')
+        self.assertContains(response, 'id="client-secret-help-when-unhashed"')
+        self.assertContains(response, "it will be hashed and cannot be recovered")
+        self.assertContains(response, "stores the secret unhashed")
+        self.assertContains(response, "id_hash_client_secret")
+        self.assertContains(response, "addEventListener")
+
+    def test_client_secret_help_text_no_live_toggle_when_already_hashed(self):
+        # An already-hashed secret cannot be reverted by unchecking the box, so the
+        # toggle script must not be rendered on that edit page.
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)))
+        self.assertContains(response, "can no longer be viewed")
+        self.assertNotContains(response, 'id="client-secret-help-when-hashed"')
+
     def test_application_form_without_client_secret_field(self):
         # ApplicationForm must not assume client_secret / hash_client_secret are
         # present in the field set when used as a modelform_factory base.
