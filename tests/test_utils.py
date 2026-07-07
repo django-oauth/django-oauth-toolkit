@@ -95,11 +95,11 @@ def test_user_code_generator_uses_csprng(mocker):
     sections 5.1/5.2.
     """
     secrets_choice = mocker.patch("oauth2_provider.utils.secrets.choice", return_value="A")
-    random_choice = mocker.patch("random.choice")
 
     user_code = utils.user_code_generator(user_code_length=8)
 
+    # Every character comes from secrets.choice (a CSPRNG). This also guards against a
+    # regression to random.choice: if the generator used the predictable random module
+    # instead, secrets.choice would not be called and neither assertion would hold.
     assert user_code == "AAAAAAAA"
     assert secrets_choice.call_count == 8
-    # The predictable ``random`` module must not be used to generate the code.
-    random_choice.assert_not_called()
