@@ -1,5 +1,5 @@
 import functools
-import random
+import secrets
 
 from django.conf import settings
 from jwcrypto import jwk
@@ -87,6 +87,10 @@ def user_code_generator(user_code_length: int = 8) -> str:
     to work
 
     for our function we'll be using a base 32 character set
+
+    The code is drawn from ``secrets`` (a CSPRNG) rather than ``random`` so
+    that the ``user_code`` is unguessable, as required for device-flow
+    credentials by RFC 8628 sections 5.1 and 5.2.
     """
     if user_code_length < 1:
         raise ValueError("user_code_length needs to be greater than 0")
@@ -98,7 +102,7 @@ def user_code_generator(user_code_length: int = 8) -> str:
     user_code = [""] * user_code_length
 
     for i in range(user_code_length):
-        user_code[i] = random.choice(character_space)
+        user_code[i] = secrets.choice(character_space)
 
     return "".join(user_code)
 

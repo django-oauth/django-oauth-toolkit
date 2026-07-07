@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field and can be filtered in the Django admin.
 
 ### Security
+* Generate device-flow `user_code` values with the cryptographically secure `secrets` module
+  instead of the predictable `random` module (Mersenne Twister). The `user_code` is a device
+  authorization credential and must be unguessable per
+  [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628) sections 5.1 and 5.2.
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
   an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
   *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's
