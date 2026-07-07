@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of the predictable `random` module (Mersenne Twister). The `user_code` is a device
   authorization credential and must be unguessable per
   [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628) sections 5.1 and 5.2.
+* Stop writing client secrets to the logs. On a failed client authentication the `OAuth2Validator`
+  logged the submitted `client_secret` (and, for Basic auth, the base64 `client_id:client_secret`
+  credential string) at `DEBUG` level. These messages now identify only the `client_id`, so
+  password-equivalent client secrets no longer leak into log files or aggregators.
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
   an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
   *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's

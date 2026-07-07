@@ -162,6 +162,38 @@ class TestOAuth2Validator(TransactionTestCase):
         self.request.headers = get_basic_auth_header("client_id", "wrong_secret")
         self.assertFalse(self.validator._authenticate_basic_auth(self.request))
 
+    def test_authenticate_basic_auth_wrong_client_secret_not_logged(self):
+        """The client secret must never be written to the logs (basic auth)."""
+        self.request.encoding = "utf-8"
+        self.request.headers = get_basic_auth_header("client_id", "super_secret_value")
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_basic_auth(self.request))
+        self.assertFalse(any("super_secret_value" in message for message in logs.output))
+
+    def test_authenticate_request_body_wrong_client_secret_not_logged(self):
+        """The client secret must never be written to the logs (body auth)."""
+        self.request.client_id = "client_id"
+        self.request.client_secret = "super_secret_value"
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_request_body(self.request))
+        self.assertFalse(any("super_secret_value" in message for message in logs.output))
+
+    def test_authenticate_basic_auth_undecodable_credentials_not_logged(self):
+        """The raw credential string must not be logged when base64/unicode decoding fails."""
+        self.request.encoding = "utf-8"
+
+        # Not valid base64 -> hits the base64 decode failure branch.
+        self.request.headers = {"HTTP_AUTHORIZATION": "Basic not_base64"}
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_basic_auth(self.request))
+        self.assertFalse(any("not_base64" in message for message in logs.output))
+
+        # Valid base64 but not valid utf-8 -> hits the unicode decode failure branch.
+        self.request.headers = {"HTTP_AUTHORIZATION": "Basic SECRETNEEDLE"}
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_basic_auth(self.request))
+        self.assertFalse(any("SECRETNEEDLE" in message for message in logs.output))
+
     def test_authenticate_basic_auth_not_b64_auth_string(self):
         self.request.encoding = "utf-8"
         # Can"t b64decode
