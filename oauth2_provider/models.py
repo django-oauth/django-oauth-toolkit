@@ -263,6 +263,10 @@ class AbstractApplication(models.Model):
                 )
             ):
                 raise ValidationError(_("You cannot use HS256 with public grants or clients"))
+            if not self.client_secret:
+                raise ValidationError(
+                    _("You cannot use HS256 without a client secret; it is the HMAC signing key.")
+                )
             # For HS256 the client secret is the shared HMAC signing key, so it must be stored
             # unhashed. Reject both the intent to hash (the flag) and an already-hashed stored
             # value (e.g. the flag was toggled after the secret was hashed, or a legacy row), so
@@ -314,6 +318,12 @@ class AbstractApplication(models.Model):
                 raise ImproperlyConfigured("You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm")
             return jwk_from_pem(oauth2_settings.OIDC_RSA_PRIVATE_KEY)
         elif self.algorithm == AbstractApplication.HS256_ALGORITHM:
+            # An empty secret would sign tokens with an empty HMAC key, which is trivially
+            # forgeable by anyone.
+            if not self.client_secret:
+                raise ImproperlyConfigured(
+                    "HS256 signing requires a non-empty client secret to use as the HMAC key."
+                )
             # A hashed secret would sign tokens with the password hash string as the HMAC key,
             # which the relying party (holding the plaintext secret) can never verify.
             if self._client_secret_is_hashed(self.client_secret):

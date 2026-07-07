@@ -58,7 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relying party holding the real (plaintext) secret could never verify the signature — and a
   password hash was misused as a MAC key. `HS256` now requires `hash_client_secret=False`:
   `Application.clean()` rejects the combination, and `jwk_key` raises `ImproperlyConfigured`
-  rather than emit an unverifiable token. See the breaking-changes note below.
+  rather than emit an unverifiable token. `HS256` with an empty client secret is likewise rejected
+  (an empty HMAC key would make ID tokens trivially forgeable). See the breaking-changes note below.
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
   an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
   *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's

@@ -919,6 +919,15 @@ def test_application_key(oauth2_settings, application):
     application.client_secret = CLEARTEXT_SECRET
     application.save()
 
+    # HS256 with an empty secret must fail loudly rather than sign with an empty (forgeable) key.
+    application.client_secret = ""
+    application.save()
+    with pytest.raises(ImproperlyConfigured) as exc:
+        application.jwk_key
+    assert "non-empty client secret" in str(exc.value)
+    application.client_secret = CLEARTEXT_SECRET
+    application.save()
+
     # No algorithm
     application.algorithm = Application.NO_ALGORITHM
     with pytest.raises(ImproperlyConfigured) as exc:
@@ -959,6 +968,14 @@ def test_application_clean(oauth2_settings, application):
     with pytest.raises(ValidationError) as exc:
         application.clean()
     assert "hashed client secret" in str(exc.value)
+
+    # HS256 with an empty client secret -> forbidden (the secret is the HMAC signing key)
+    application.hash_client_secret = False
+    application.client_secret = ""
+    application.save()
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert "without a client secret" in str(exc.value)
 
     # restore an unhashed secret for the remaining assertions
     application.client_secret = CLEARTEXT_SECRET
