@@ -102,14 +102,20 @@ class IdpServer:
         return env
 
     def _manage(self, *args, env):
-        subprocess.run(
+        # Capture output so a migrate/loaddata failure surfaces its cause instead
+        # of an opaque non-zero exit.
+        result = subprocess.run(
             [sys.executable, "manage.py", *args],
             cwd=IDP_DIR,
             env=env,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"manage.py {' '.join(args)} failed (exit {result.returncode}):\n"
+                f"{result.stdout}\n{result.stderr}"
+            )
 
     def start(self, timeout=30):
         self._tmpdir = tempfile.mkdtemp(prefix="dot-e2e-idp-")

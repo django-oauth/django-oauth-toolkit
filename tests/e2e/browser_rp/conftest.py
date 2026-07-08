@@ -28,6 +28,22 @@ def browser_type_launch_args(browser_type_launch_args):
     return browser_type_launch_args
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _require_browser(browser_type, browser_type_launch_args):
+    """Skip (rather than error) the browser layer when no Chromium can launch.
+
+    pytest-playwright's ``page`` fixture errors during setup if the browser
+    binary is missing; this guard turns that into a clean skip so protocol-only
+    environments (where ``playwright install`` was best-effort) stay green.
+    """
+    try:
+        browser = browser_type.launch(**browser_type_launch_args)
+    except Exception as exc:  # pragma: no cover - environment guard
+        pytest.skip(f"No usable Chromium for Playwright ({exc}); skipping browser layer")
+    else:
+        browser.close()
+
+
 @pytest.fixture(scope="session")
 def browser_idp():
     # The RP is hard-configured for http://localhost:8000, so pin host+port.

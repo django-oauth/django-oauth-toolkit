@@ -33,6 +33,7 @@ urlpatterns = [
     # provider is mounted under /o/, strict clients look for it at
     # /.well-known/oauth-authorization-server/o (the issuer path appended). DOT's
     # docs recommend prefixed deployments also expose the metadata at the root,
-    # so mount metadata_urlpatterns here in addition to the /o/ include.
-    path("", include(metadata_urlpatterns)),
+    # under a distinct instance namespace so reverse() lookups stay unambiguous
+    # with the /o/ include above.
+    path("", include((metadata_urlpatterns, "oauth2_provider"), namespace="oauth2_provider_metadata")),
 ]
