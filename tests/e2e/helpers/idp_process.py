@@ -113,19 +113,24 @@ class IdpServer:
 
     def start(self, timeout=30):
         self._tmpdir = tempfile.mkdtemp(prefix="dot-e2e-idp-")
-        env = self._env()
-        self._manage("migrate", "--no-input", env=env)
-        self._manage("loaddata", *self.fixtures, env=env)
+        try:
+            env = self._env()
+            self._manage("migrate", "--no-input", env=env)
+            self._manage("loaddata", *self.fixtures, env=env)
 
-        self._log = open(os.path.join(self._tmpdir, "server.log"), "w+")
-        self._proc = subprocess.Popen(
-            [sys.executable, "manage.py", "runserver", f"{self.host}:{self.port}", "--noreload"],
-            cwd=IDP_DIR,
-            env=env,
-            stdout=self._log,
-            stderr=subprocess.STDOUT,
-        )
-        self._wait_until_ready(timeout)
+            self._log = open(os.path.join(self._tmpdir, "server.log"), "w+")
+            self._proc = subprocess.Popen(
+                [sys.executable, "manage.py", "runserver", f"{self.host}:{self.port}", "--noreload"],
+                cwd=IDP_DIR,
+                env=env,
+                stdout=self._log,
+                stderr=subprocess.STDOUT,
+            )
+            self._wait_until_ready(timeout)
+        except BaseException:
+            # Don't leak the runserver process / log / temp dir on a failed start.
+            self.stop()
+            raise
         return self
 
     def _wait_until_ready(self, timeout):

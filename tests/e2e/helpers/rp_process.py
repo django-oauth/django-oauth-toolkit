@@ -56,14 +56,19 @@ class RpServer:
 
     def start(self, timeout=90):
         self._ensure_dependencies()
-        self._log = open(os.path.join(os.getcwd(), ".rp-server.log"), "w+")
-        self._proc = subprocess.Popen(
-            ["npm", "run", "dev", "--", "--port", str(self.port), "--strictPort", "--host", self.host],
-            cwd=RP_DIR,
-            stdout=self._log,
-            stderr=subprocess.STDOUT,
-        )
-        self._wait_until_ready(timeout)
+        try:
+            self._log = open(os.path.join(os.getcwd(), ".rp-server.log"), "w+")
+            self._proc = subprocess.Popen(
+                ["npm", "run", "dev", "--", "--port", str(self.port), "--strictPort", "--host", self.host],
+                cwd=RP_DIR,
+                stdout=self._log,
+                stderr=subprocess.STDOUT,
+            )
+            self._wait_until_ready(timeout)
+        except BaseException:
+            # Don't leak the Node dev server process / log on a failed start.
+            self.stop()
+            raise
         return self
 
     def _wait_until_ready(self, timeout):

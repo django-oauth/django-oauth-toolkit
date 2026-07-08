@@ -6,6 +6,7 @@ JWKS, expressed in the language of *OpenID Connect Core 1.0 section 3.1.3.7
 
 import base64
 import json
+import time
 
 import requests
 from jwcrypto import jwk, jwt
@@ -42,10 +43,14 @@ def validate_id_token(token, issuer, audience):
     key = keyset.get_key(header["kid"])
     if key is None:
         raise AssertionError(f"ID Token kid {header['kid']!r} not present in JWKS")
+    # jwcrypto validates exp/nbf on construction; assert explicitly as well so
+    # this compliance helper fails loudly on a missing or past exp claim.
     verified = jwt.JWT(key=key, jwt=token)
     claims = json.loads(verified.claims)
     assert claims["iss"] == issuer, f"iss mismatch: {claims['iss']!r} != {issuer!r}"
     aud = claims["aud"]
     aud = aud if isinstance(aud, list) else [aud]
     assert audience in aud, f"aud {aud!r} does not contain {audience!r}"
+    assert "exp" in claims, "ID Token missing exp claim"
+    assert claims["exp"] > int(time.time()), "ID Token is expired (exp in the past)"
     return claims
