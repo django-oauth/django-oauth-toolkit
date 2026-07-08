@@ -393,12 +393,17 @@ class TestApplicationViews(BaseTest):
         self.assertTrue(_is_hashed(make_password("cleartext-secret")))  # real hash
 
     def test_hs256_warning_attrs_new_application(self):
-        # The algorithm field carries the data the live HS256 warning needs.
+        # The algorithm field carries the data the live HS256 warning needs, including
+        # the message shown next to the hash_client_secret checkbox.
         form = ApplicationRegistration().get_form_class()(instance=Application())
         attrs = form.fields["algorithm"].widget.attrs
         self.assertEqual(attrs.get("data-hs256-value"), Application.HS256_ALGORITHM)
         self.assertEqual(attrs.get("data-client-secret-stored-hashed"), "false")
         self.assertIn("must be stored unhashed", str(attrs.get("data-hs256-hashed-secret-warning")))
+        self.assertIn(
+            "HS256 requires an unhashed client secret",
+            str(attrs.get("data-hs256-hash-checkbox-warning")),
+        )
 
     def test_hs256_warning_attrs_present_even_when_secret_hashed(self):
         # Regression: an already-hashed secret short-circuits the client_secret help
@@ -415,6 +420,7 @@ class TestApplicationViews(BaseTest):
         response = self.client.get(reverse("oauth2_provider:register"))
         self.assertContains(response, 'data-hs256-value="HS256"')
         self.assertContains(response, "data-hs256-hashed-secret-warning")
+        self.assertContains(response, "data-hs256-hash-checkbox-warning")
         self.assertContains(response, "oauth2_provider/js/application_form.js")
 
 

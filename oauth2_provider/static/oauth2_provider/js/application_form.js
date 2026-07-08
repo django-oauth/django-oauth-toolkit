@@ -70,14 +70,40 @@
         sync();
     }
 
+    // Style inline and toggle via style.display (not the hidden attribute or a CSS
+    // class): the admin's .errornote rule sets display:block, which would override
+    // [hidden]{display:none} and leave the warning always visible. Inline styles win
+    // regardless of the surrounding stylesheet.
+    function makeWarning(text) {
+        var el = document.createElement("div");
+        el.className = "oauth2-hs256-warning";
+        el.setAttribute("role", "alert");
+        el.style.display = "none";
+        el.style.margin = "6px 0";
+        el.style.padding = "6px 10px";
+        el.style.color = "#a94442";
+        el.style.border = "1px solid #a94442";
+        el.style.borderRadius = "4px";
+        el.textContent = text;
+        return el;
+    }
+
+    // Place the warning on its own line beneath the field's row rather than inline
+    // beside it (the admin lays each field out in a flex row, so an element inserted
+    // right after the input sits to its right).
+    function insertUnder(field, el) {
+        var row = field.closest(".form-row, .control-group, .fieldBox");
+        (row || field).insertAdjacentElement("afterend", el);
+    }
+
     function initHs256Warning() {
         var algorithmField = document.getElementById("id_algorithm");
         if (!algorithmField) {
             return;
         }
         var hs256 = algorithmField.getAttribute("data-hs256-value");
-        var warningText = algorithmField.getAttribute("data-hs256-hashed-secret-warning");
-        if (!hs256 || !warningText) {
+        var algorithmText = algorithmField.getAttribute("data-hs256-hashed-secret-warning");
+        if (!hs256 || !algorithmText) {
             return;
         }
 
@@ -89,21 +115,19 @@
         var storedHashed = algorithmField.getAttribute("data-client-secret-stored-hashed") === "true";
         var originalSecret = secretField ? secretField.value : "";
 
-        // Style inline and toggle via style.display (not the hidden attribute or a
-        // CSS class): the admin's .errornote rule sets display:block, which would
-        // override [hidden]{display:none} and leave the warning always visible.
-        // Inline styles win regardless of the surrounding stylesheet.
-        var warning = document.createElement("div");
-        warning.className = "oauth2-hs256-warning";
-        warning.setAttribute("role", "alert");
-        warning.style.display = "none";
-        warning.style.color = "#a94442";
-        warning.style.marginTop = "6px";
-        warning.style.padding = "6px 10px";
-        warning.style.border = "1px solid #a94442";
-        warning.style.borderRadius = "4px";
-        warning.textContent = warningText;
-        algorithmField.insertAdjacentElement("afterend", warning);
+        // Flag the conflict from both sides: under the algorithm select and next to the
+        // hash_client_secret checkbox.
+        var warnings = [];
+        var algorithmWarning = makeWarning(algorithmText);
+        insertUnder(algorithmField, algorithmWarning);
+        warnings.push(algorithmWarning);
+
+        if (hashField) {
+            var hashText = algorithmField.getAttribute("data-hs256-hash-checkbox-warning") || algorithmText;
+            var hashWarning = makeWarning(hashText);
+            insertUnder(hashField, hashWarning);
+            warnings.push(hashWarning);
+        }
 
         function secretWillBeHashed() {
             if (hashField && hashField.checked) {
@@ -117,7 +141,9 @@
 
         function sync() {
             var invalid = algorithmField.value === hs256 && secretWillBeHashed();
-            warning.style.display = invalid ? "" : "none";
+            warnings.forEach(function (warning) {
+                warning.style.display = invalid ? "" : "none";
+            });
         }
 
         algorithmField.addEventListener("change", sync);

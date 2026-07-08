@@ -124,6 +124,12 @@ class ApplicationForm(forms.ModelForm):
                     "be stored unhashed. Uncheck “Hash client secret” and set an unhashed "
                     "client secret, or choose a different algorithm."
                 ),
+                # Shown next to the hash_client_secret checkbox as well, so the conflict is
+                # flagged from both fields (application_form.js renders both).
+                "data-hs256-hash-checkbox-warning": _(
+                    "HS256 requires an unhashed client secret. Uncheck this and set an unhashed "
+                    "client secret, or choose a different algorithm."
+                ),
             }
         )
 
