@@ -386,8 +386,8 @@ function linkIcon(url,name,cls){
   if(!url) return null;
   const a = el('a',cls);
   a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-  a.title = 'Open ' + name + ' — first-party source (new tab)';
-  a.setAttribute('aria-label', a.title);
+  a.title = url;
+  a.setAttribute('aria-label', name + ' source (opens in new tab)');
   a.addEventListener('click', e=>e.stopPropagation()); // don't toggle a suite row when clicking its child link
   a.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-8.5 8.5"/>'
     + '<path d="M19 14v4.5A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5v-11A1.5 1.5 0 0 1 6.5 6H11"/></svg>';
