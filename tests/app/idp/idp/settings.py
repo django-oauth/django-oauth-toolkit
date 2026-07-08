@@ -28,6 +28,7 @@ env = environ.FileAwareEnv(
     SECRET_KEY=(str, "django-insecure-vri27@j_q62e2it4$xiy9ca!7@qgjkhhan(*zs&lz0k@yukbb3"),
     OAUTH2_PROVIDER_OIDC_ENABLED=(bool, True),
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED=(bool, True),
+    OAUTH2_PROVIDER_DCR_ENABLED=(bool, True),
     OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY=(
         str,
         """
@@ -220,6 +221,11 @@ OAUTH2_PROVIDER = {
         "openid": "OpenID Connect scope",
     },
     "ALLOWED_SCHEMES": env("OAUTH2_PROVIDER_ALLOWED_SCHEMES"),
+    "DCR_ENABLED": env("OAUTH2_PROVIDER_DCR_ENABLED"),
+    # Open registration so the DCR endpoints can be exercised with curl; this
+    # demo IdP is for local testing only — in production keep the default
+    # IsAuthenticatedDCRPermission (or a custom permission class) instead.
+    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
 }
 # needs to be set to allow cors requests from the test app, along with ALLOWED_SCHEMES=["http"]
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = env("OAUTHLIB_INSECURE_TRANSPORT")

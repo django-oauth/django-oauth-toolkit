@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1546 Support for RP-Initiated Registration
 * #1635 Dynamic help text on the application form's `client_secret` field, warning users to copy the
   secret on creation and explaining it is hashed and unrecoverable when editing.
+* #670 Dynamic Client Registration Protocol (RFC 7591 / RFC 7592) — `DynamicClientRegistrationView` and
+  `DynamicClientRegistrationManagementView` with configurable permission classes and registration access
+  tokens. Dynamically registered applications are flagged with a new `AbstractApplication.dcr_created`
+  field and can be filtered in the Django admin.
 
 ### Security
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
@@ -40,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   add nullable checksum → drop the old `("token", "revoked")` unique constraint → widen `token` to
   `TextField` → backfill → make checksum non-nullable → add the `("token_checksum", "revoked")`
   unique constraint.
+* If you use a swapped application model (`OAUTH2_PROVIDER_APPLICATION_MODEL`), run
+  `manage.py makemigrations` after upgrading: `AbstractApplication` gained a new
+  `dcr_created` `BooleanField` (default `False`) to mark applications registered via
+  Dynamic Client Registration (#670). Installs using the built-in Application model
+  just need `manage.py migrate` (migration `0017`).
 * If you use a swapped device grant model (`OAUTH2_PROVIDER_DEVICE_GRANT_MODEL`), run
   `manage.py makemigrations` after upgrading: the redundant field-level `unique=True` was removed
   from `AbstractDeviceGrant.device_code` (#1656), and `AbstractDeviceGrant.scope` changed from
