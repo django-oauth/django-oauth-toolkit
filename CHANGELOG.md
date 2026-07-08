@@ -37,6 +37,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available; the base64/unicode decode-failure paths log a generic message with no credential), so
   password-equivalent client secrets and raw credential strings no longer leak into log files or
   aggregators.
+* Stop exposing cleartext access tokens, refresh tokens, and authorization codes in the Django
+  admin. The default `AccessTokenAdmin`, `RefreshTokenAdmin`, and `GrantAdmin` classes listed the
+  raw `token`/`code` in `list_display` and included them in `search_fields`. Because these values
+  are stored in cleartext, any staff user with view access saw replayable credentials, and
+  searching placed them in the `?q=` query string (captured by access logs and browser history).
+  The columns are now masked (last characters only) and are no longer searchable (search is
+  available by application and user instead). The raw `token`/`code` field is also excluded from
+  the admin change/view form, which showed the editable cleartext field to any staff user with view
+  access; a masked read-only value is shown instead. Adding tokens/codes through the admin is now
+  disabled (`has_add_permission` returns `False` on the `AccessToken`, `RefreshToken`, `Grant`, and
+  `IDToken` admins) — these are issued by the OAuth flows and are not meant to be hand-created, and
+  the add form would otherwise present an editable cleartext field. Relatedly, the `AccessToken`,
+  `RefreshToken`, and `Grant` model `__str__` methods no longer return the raw token/code (which the
+  admin renders in a row's change-page title and breadcrumbs, and which also appears in `repr()` and
+  logs); they now return a `"<Model> #<pk>"` identifier.
 * Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
   an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
   *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's
