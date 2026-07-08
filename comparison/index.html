@@ -1,0 +1,383 @@
+<title>OAuth/OIDC Compliance Matrix — Django OAuth Toolkit vs. the field</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f5f7f5; --panel: #ffffff; --ink: #16211c; --muted: #5c6b62;
+    --line: #d9e2db; --line-strong: #c2cfc6;
+    --accent: #0c8a4e; --accent-ink: #ffffff; --accent-soft: #e4f3ea;
+    --shadow: 0 1px 2px rgba(16,33,25,.06), 0 8px 24px rgba(16,33,25,.05);
+    /* status */
+    --s-full-bg:#dff3e6; --s-full-fg:#0d6b3c; --s-full-dot:#17a35b;
+    --s-optin-bg:#e0eef7; --s-optin-fg:#1a5f8f; --s-optin-dot:#2f83c4;
+    --s-part-bg:#fbeed3; --s-part-fg:#8a5a09; --s-part-dot:#d99a1c;
+    --s-addon-bg:#eee1f6; --s-addon-fg:#6a3696; --s-addon-dot:#9a5bcc;
+    --s-none-bg:#f2e3e3; --s-none-fg:#9a4b4b; --s-none-dot:#c07575;
+    --s-unk-bg:#e8ebe9; --s-unk-fg:#6a746e; --s-unk-dot:#9aa39d;
+    --req:#17a35b; --forbid:#c25b5b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#10161300; --bg:#0e1512; --panel:#151d19; --ink:#e6efe9; --muted:#9aa8a0;
+      --line:#25322b; --line-strong:#33443b;
+      --accent:#3cbb7a; --accent-ink:#06110b; --accent-soft:#16281e;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+      --s-full-bg:#123122; --s-full-fg:#63d597; --s-full-dot:#2fa564;
+      --s-optin-bg:#122a3b; --s-optin-fg:#6cb6e6; --s-optin-dot:#3f8fce;
+      --s-part-bg:#33280f; --s-part-fg:#e2b45a; --s-part-dot:#c8971f;
+      --s-addon-bg:#291a37; --s-addon-fg:#c39bea; --s-addon-dot:#9a5bcc;
+      --s-none-bg:#331d1d; --s-none-fg:#dd9a9a; --s-none-dot:#b46a6a;
+      --s-unk-bg:#1e2622; --s-unk-fg:#8b968f; --s-unk-dot:#66716a;
+      --req:#2fa564; --forbid:#c96a6a;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#f5f7f5; --panel:#fff; --ink:#16211c; --muted:#5c6b62; --line:#d9e2db; --line-strong:#c2cfc6;
+    --accent:#0c8a4e; --accent-ink:#fff; --accent-soft:#e4f3ea; --shadow:0 1px 2px rgba(16,33,25,.06),0 8px 24px rgba(16,33,25,.05);
+    --s-full-bg:#dff3e6;--s-full-fg:#0d6b3c;--s-full-dot:#17a35b;--s-optin-bg:#e0eef7;--s-optin-fg:#1a5f8f;--s-optin-dot:#2f83c4;
+    --s-part-bg:#fbeed3;--s-part-fg:#8a5a09;--s-part-dot:#d99a1c;--s-addon-bg:#eee1f6;--s-addon-fg:#6a3696;--s-addon-dot:#9a5bcc;
+    --s-none-bg:#f2e3e3;--s-none-fg:#9a4b4b;--s-none-dot:#c07575;--s-unk-bg:#e8ebe9;--s-unk-fg:#6a746e;--s-unk-dot:#9aa39d;--req:#17a35b;--forbid:#c25b5b;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0e1512; --panel:#151d19; --ink:#e6efe9; --muted:#9aa8a0; --line:#25322b; --line-strong:#33443b;
+    --accent:#3cbb7a; --accent-ink:#06110b; --accent-soft:#16281e; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    --s-full-bg:#123122;--s-full-fg:#63d597;--s-full-dot:#2fa564;--s-optin-bg:#122a3b;--s-optin-fg:#6cb6e6;--s-optin-dot:#3f8fce;
+    --s-part-bg:#33280f;--s-part-fg:#e2b45a;--s-part-dot:#c8971f;--s-addon-bg:#291a37;--s-addon-fg:#c39bea;--s-addon-dot:#9a5bcc;
+    --s-none-bg:#331d1d;--s-none-fg:#dd9a9a;--s-none-dot:#b46a6a;--s-unk-bg:#1e2622;--s-unk-fg:#8b968f;--s-unk-dot:#66716a;--req:#2fa564;--forbid:#c96a6a;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.5;
+    -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1180px; margin:0 auto; padding:28px 20px 80px; }
+  header.masthead { display:flex; flex-direction:column; gap:6px; margin-bottom:18px; }
+  .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--accent); font-weight:600; }
+  h1 { font-size:clamp(24px,3.4vw,34px); line-height:1.1; margin:0; text-wrap:balance; letter-spacing:-.01em; }
+  .sub { color:var(--muted); max-width:64ch; }
+  .sub code { font-family:var(--mono); font-size:.9em; background:var(--accent-soft); color:var(--accent);
+    padding:1px 5px; border-radius:4px; }
+  .meta { font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:2px; }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:20px 0; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
+  .stat .n { font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .stat .l { font-size:12.5px; color:var(--muted); }
+  .stat .n.accent { color:var(--accent); }
+
+  .toolbar { position:sticky; top:0; z-index:30; background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(8px); padding:10px 0; margin:8px 0 4px; display:flex; flex-wrap:wrap; gap:10px;
+    align-items:center; border-bottom:1px solid var(--line); }
+  .tabs { display:flex; gap:4px; flex-wrap:wrap; }
+  .tab { font-family:var(--sans); font-size:13.5px; font-weight:550; color:var(--muted); background:transparent;
+    border:1px solid transparent; padding:7px 13px; border-radius:9px; cursor:pointer; transition:.15s; }
+  .tab:hover { color:var(--ink); background:var(--panel); }
+  .tab[aria-selected="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .tab:focus-visible, .search input:focus-visible, .toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .spacer { flex:1 1 auto; }
+  .search { position:relative; }
+  .search input { font-family:var(--mono); font-size:13px; padding:7px 10px 7px 30px; border-radius:9px;
+    border:1px solid var(--line-strong); background:var(--panel); color:var(--ink); min-width:180px; }
+  .search svg { position:absolute; left:9px; top:50%; transform:translateY(-50%); width:14px; height:14px;
+    fill:none; stroke:var(--muted); stroke-width:2; }
+  .toggle { font-family:var(--mono); font-size:12px; background:var(--panel); border:1px solid var(--line-strong);
+    color:var(--muted); border-radius:9px; padding:7px 11px; cursor:pointer; }
+
+  .caption { margin:14px 0 8px; }
+  .caption h2 { font-size:18px; margin:0 0 2px; letter-spacing:-.01em; }
+  .caption p { margin:0; color:var(--muted); font-size:13.5px; max-width:80ch; }
+
+  .scroller { overflow-x:auto; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+    background:var(--panel); }
+  table { border-collapse:separate; border-spacing:0; width:100%; font-size:13px; }
+  thead th { position:sticky; top:0; z-index:10; background:var(--panel); color:var(--muted);
+    font-weight:600; font-size:11.5px; text-align:center; padding:9px 8px; border-bottom:1px solid var(--line-strong);
+    white-space:nowrap; }
+  thead th .tier { display:block; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent);
+    font-weight:600; opacity:.85; }
+  thead th.us { color:var(--accent); }
+  th.rowhead, td.rowhead { position:sticky; left:0; z-index:5; background:var(--panel); text-align:left;
+    font-family:var(--mono); font-size:12px; padding:8px 12px; border-right:1px solid var(--line-strong);
+    white-space:nowrap; min-width:230px; }
+  thead th.rowhead { z-index:15; }
+  tbody tr:hover td { background:var(--accent-soft); }
+  tbody tr:hover td.rowhead { background:var(--accent-soft); }
+  td { text-align:center; padding:5px 6px; border-bottom:1px solid var(--line); }
+  tbody tr:last-child td { border-bottom:none; }
+  td.sub-row.rowhead { padding-left:26px; color:var(--muted); font-size:11.5px; }
+  tr.section-cert td, tr.section-cert th { border-top:2px solid var(--line-strong); }
+
+  .chip { display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:22px;
+    padding:0 7px; border-radius:6px; font-family:var(--mono); font-size:12px; font-weight:700; line-height:1; }
+  .c-full{background:var(--s-full-bg);color:var(--s-full-fg);}
+  .c-optin{background:var(--s-optin-bg);color:var(--s-optin-fg);}
+  .c-part{background:var(--s-part-bg);color:var(--s-part-fg);}
+  .c-addon{background:var(--s-addon-bg);color:var(--s-addon-fg);}
+  .c-none{background:var(--s-none-bg);color:var(--s-none-fg);}
+  .c-unk{background:var(--s-unk-bg);color:var(--s-unk-fg);}
+  .c-na{color:var(--muted);opacity:.5;font-family:var(--mono);}
+  /* membership marks */
+  .m-req{color:var(--req);font-size:15px;} .m-opt{color:var(--muted);font-size:14px;}
+  .m-forbid{color:var(--forbid);font-size:14px;font-weight:700;}
+
+  .legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin:14px 2px 0; font-size:12.5px; color:var(--muted); }
+  .legend .item { display:inline-flex; align-items:center; gap:6px; }
+  .legend .sw { width:14px; height:14px; border-radius:4px; display:inline-block; }
+
+  footer { margin-top:26px; color:var(--muted); font-size:12.5px; max-width:80ch; }
+  footer a { color:var(--accent); }
+  .disclaimer { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--s-part-dot);
+    border-radius:10px; padding:12px 14px; margin-top:16px; font-size:12.5px; color:var(--muted); }
+  @media (max-width:640px){ th.rowhead, td.rowhead{ min-width:180px; } }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <span class="eyebrow">Django OAuth Toolkit · competitive &amp; compliance reference</span>
+    <h1>OAuth 2.0 / OpenID Connect compliance matrix</h1>
+    <p class="sub">Where <strong>Django OAuth Toolkit</strong> stands against other providers, servers, and SaaS IdPs — spec by spec and profile by profile. The <code>DOT</code> column is scored from source; every other column is externally sourced.</p>
+    <span class="meta">Last verified 2026-07 · point-in-time snapshot · not a certification</span>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <span class="spacer"></span>
+    <label class="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="filter" type="search" placeholder="filter specs…" aria-label="Filter specifications">
+    </label>
+    <button class="toggle" id="themeBtn" title="Toggle light/dark">◐ theme</button>
+  </div>
+
+  <div class="caption" id="caption"></div>
+  <div class="scroller"><table id="matrix"><thead></thead><tbody></tbody></table></div>
+  <div class="legend" id="legend"></div>
+
+  <div class="disclaimer" id="disclaimer"></div>
+  <footer>
+    Sourced from vendor documentation, project source, and the OpenID Foundation certification directory.
+    Cells marked <strong>?</strong> could not be confirmed from a primary source and should not be read as “no”.
+    Commercial editions vary by tier; <strong>+</strong> marks features gated behind enterprise/regulated plans.
+    Full methodology and the Markdown tables live alongside this file in <code style="font-family:var(--mono)">comparison/</code>.
+  </footer>
+</div>
+
+<script>
+// ---- status vocabulary ----
+const S = {
+  F:{cls:'c-full',t:'Full',g:'●'}, O:{cls:'c-optin',t:'Opt-in',g:'⚙'},
+  P:{cls:'c-part',t:'Partial',g:'◑'}, A:{cls:'c-addon',t:'Add-on',g:'+'},
+  N:{cls:'c-none',t:'None',g:'—'}, U:{cls:'c-unk',t:'?',g:'?'}, x:{cls:'c-na',t:'N/A',g:'–'}
+};
+const M = { R:{cls:'m-req',g:'●',t:'required'}, o:{cls:'m-opt',g:'○',t:'optional'}, x:{cls:'m-forbid',g:'⊘',t:'forbidden'}, '.':{cls:'',g:'',t:''} };
+
+// ---- competitor headers ----
+const OP = [
+  ['dot','DOT','ours',true],['oauthlib','oauthlib','library'],['authlib','Authlib','library'],['authentik','Authentik','oss idp'],
+  ['keycloak','Keycloak','oss server'],['hydra','Ory Hydra','oss server'],['wso2','WSO2','oss server'],['zitadel','Zitadel','oss server'],['janssen','Janssen','oss server'],
+  ['okta','Okta','saas'],['auth0','Auth0','saas'],['entra','Entra ID','saas'],['ping','Ping','saas']
+];
+const RP = [
+  ['dot','DOT','ours',true],['allauth','allauth','django'],['moz','moz-oidc','django'],['authlibc','Authlib','python'],['psa','social-auth','python'],
+  ['authjs','Auth.js','node'],['oidcts','oidc-ts','browser'],['passport','Passport','node'],['spring','Spring Sec','java']
+];
+const SUITES = [['oauth20','OAuth 2.0'],['oauth21','OAuth 2.1'],['oidc','OIDC'],['fapi2','FAPI 2.0'],['mcp','MCP'],['native','Native'],['rp','RP']];
+
+// spec label + optional sub flag
+const SPECS = [
+  ['RFC 6749 — OAuth 2.0 core'],['— Implicit grant',1],['— Resource-owner password',1],
+  ['RFC 6750 — Bearer usage'],['RFC 7009 — Revocation'],['RFC 7636 — PKCE'],['RFC 7662 — Introspection'],
+  ['RFC 8252 — Native apps'],['RFC 8414 — AS metadata'],['RFC 8628 — Device grant'],
+  ['RFC 7591 — Dynamic client registration'],['RFC 7592 — DCR management'],['RFC 7519 — JWT'],
+  ['RFC 7523 — private_key_jwt'],['RFC 9068 — at+jwt access tokens'],['RFC 9126 — PAR'],['RFC 9396 — RAR'],
+  ['RFC 9449 — DPoP'],['RFC 8705 — mTLS client auth'],['RFC 8707 — Resource indicators'],
+  ['RFC 9728 — Protected resource metadata'],['RFC 9700 — Security BCP'],
+  ['OIDC Core'],['OIDC Discovery'],['OIDC Dynamic Registration'],['OIDC RP-Initiated Logout'],
+  ['OIDC Session Management'],['OIDC Front-Channel Logout'],['OIDC Back-Channel Logout'],['CIBA']
+];
+// OP grid: order = OP competitors; rows align to SPECS
+const OPGRID = [
+  'FFFFFFFFFFFFF','FFFFFFFFFFFFF','FFFFNFNFFFFFF','FFFFFFFFFFFFF','FFFFFFFFFFPNF','FFFFFFFFFFFFF','FFFFFFFFFFNNF',
+  'PNNPPFPFFFFFF','FFFPFFFPFFFFF','FNFFFFFFFFFFF','ONFNFFFNFFFNF','ONFNFFFNFFNNF','PPFFFFFFFFFFF','NNFNFFFFFFFFF',
+  'NNFNPPFPFPFPF','NNNNFNFPFFANF','NNNNNNFUFUANF','NNNNFNFNFFFNF','NNNNFNFNFNAPF','NNNNPNUNNNPPF','NNNNPNUUUUPUU',
+  'PPPPPPPPUPPPP','OPFFFFFFFFFFF','ONFFFFFFFFFFF','PNFNFFFNFFFNF','ONFFFFFFFFFFF','NNNNFNFUFUPUP','NNNFFFFUFFFFF',
+  'NNNFFFFFFNANF','NNNNFNFNFPANF'
+];
+const OPCERT = 'NNNNFFFFFFFFF'; // OpenID-certified OP
+
+// membership rows — index matches SPECS; cols = SUITES
+const MEM = [
+ ['R','R','R','R','R','R','R'], ['o','x','o','x','x','x','x'], ['o','x','.','x','x','x','x'],
+ ['R','R','R','R','R','R','R'], ['o','o','o','o','o','.','o'], ['o','R','o','R','R','R','R'], ['o','o','o','o','o','.','.'],
+ ['o','o','.','.','o','R','o'], ['o','o','o','R','R','o','o'], ['o','o','.','.','o','o','.'],
+ ['o','o','o','o','o','.','o'], ['o','.','.','.','o','.','o'], ['o','o','R','R','o','.','R'],
+ ['o','o','o','o','o','.','o'], ['o','o','.','o','o','.','.'], ['o','o','.','R','o','.','o'], ['o','o','.','o','o','.','.'],
+ ['o','o','.','o','o','.','o'], ['o','o','.','o','.','.','.'], ['o','o','.','o','R','.','o'],
+ ['o','o','.','o','R','.','o'], ['o','R','o','R','R','R','o'], ['.','.','R','o','.','.','R'],
+ ['.','.','o','o','.','.','o'], ['.','.','o','.','o','.','o'], ['.','.','o','.','.','.','o'],
+ ['.','.','o','.','.','.','o'], ['.','.','o','.','.','.','o'], ['.','.','o','.','.','.','o'], ['.','.','o','o','.','.','.']
+];
+
+// rollup: rows = suites, cols = OP competitors
+const ROLLROWS = [
+  ['OAuth 2.0 (classic)','FFFFFFFFFFFPF'],
+  ['OAuth 2.1 (draft)','PPPPFFPFPPPPP'],
+  ['OpenID Connect','FPFFFFFFFFFFF'],
+  ['Native apps (8252)','PPPPPFPFFFFFF'],
+  ['FAPI 2.0','NNNNFNFNPNANF'],
+  ['MCP authorization','NNNNPNPNPNPNP'],
+  ['RP (client role)','xxPxxxxxxxxxx']
+];
+
+// RP capability rows align to RP competitors
+const RPSPECS = [
+  'OIDC Core (validate ID token)','OIDC Discovery','WebFinger discovery','Dynamic client registration','PKCE',
+  'state / nonce validation','Native-app redirect (8252)','Refresh token / rotation','RP-Initiated Logout',
+  'Front-Channel Logout','Back-Channel Logout','PAR (9126)','DPoP (9449)','private_key_jwt (7523)','JARM','Multi-provider OOTB'
+];
+const RPGRID = [
+  'xFFFFFFFF','xFPFFFFPF','xNNNNNNNN','xNNNNNNNN','xFFFFFFFF','xFFFFFFFF','xNNUNNNNN','xPPFPPFPF',
+  'xNPPNPFNF','xNNNNNPNN','xNNNNNNNF','xNNUNUUNN','xNNUNNFNP','xNNFNPNNF','xNNUNNUNU','xFNFFFNPF'
+];
+
+const TABS = [
+  {id:'op', label:'Provider matrix', kind:'op'},
+  {id:'member', label:'Suite definitions', kind:'member'},
+  {id:'rollup', label:'Suite rollup', kind:'rollup'},
+  {id:'rp', label:'RP libraries', kind:'rp'}
+];
+const CAPTIONS = {
+  op:['Table 1 · Spec × Competitor (Provider / Authorization-Server role)','One row per specification, one column per product. The DOT column is authoritative (scored from source). Hover a row to highlight; use the filter to find a spec.'],
+  member:['Table 2 · Suite → Spec membership','What each profile <em>is</em>, defined from the profile specs themselves. ● required · ○ optional / recommended · ⊘ forbidden. This scores nobody — it is the shared definition the rollup builds on.'],
+  rollup:['Table 3 · Suite × Competitor rollup','Profiles as rows — the aggregate of Table 1 through the definitions in Table 2. This is “suites as rows”, kept separate from the per-spec detail so nothing is double-counted.'],
+  rp:['Table 4 · Relying-Party (client) comparison','A different product category: client libraries, not servers. Django OAuth Toolkit is a provider, so it is N/A here by design — pair it with one of these to <em>consume</em> an external IdP.']
+};
+
+const $ = s => document.querySelector(s);
+const el = (t,c,h) => { const e=document.createElement(t); if(c)e.className=c; if(h!=null)e.innerHTML=h; return e; };
+
+function chip(code){
+  const s = S[code] || S.U;
+  const c = el('span','chip '+s.cls, s.g);
+  c.title = s.t;
+  return c;
+}
+function memMark(code){ const m=M[code]||M['.']; const s=el('span',m.cls,m.g); s.title=m.t; return s; }
+
+function buildHead(cols){
+  const tr = el('tr');
+  tr.appendChild(el('th','rowhead','Specification'));
+  cols.forEach(c=>{
+    const th = el('th', c[3]?'us':'');
+    th.innerHTML = '<span class="tier">'+c[2]+'</span>'+c[1];
+    tr.appendChild(th);
+  });
+  return tr;
+}
+
+function render(kind){
+  const head = $('#matrix thead'), body = $('#matrix tbody');
+  head.innerHTML=''; body.innerHTML='';
+  let cols, rows;
+  if(kind==='op'){
+    cols = OP;
+    head.appendChild(buildHead(cols));
+    SPECS.forEach((sp,i)=>{
+      const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase();
+      tr.appendChild(el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]));
+      OPGRID[i].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+    // cert row
+    const trc = el('tr','section-cert'); trc.dataset.label='openid certified';
+    trc.appendChild(el('td','rowhead','OpenID-certified OP'));
+    OPCERT.split('').forEach(ch=>{ const td=el('td'); const s= ch==='F'?chip('F'):el('span','c-na','—'); td.appendChild(s); trc.appendChild(td); });
+    body.appendChild(trc);
+  } else if(kind==='member'){
+    cols = SUITES.map(s=>[s[0],s[1],'suite']);
+    head.appendChild(buildHead(cols));
+    SPECS.forEach((sp,i)=>{
+      const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase();
+      tr.appendChild(el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]));
+      MEM[i].forEach(code=>{ const td=el('td'); td.appendChild(memMark(code)); tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+  } else if(kind==='rollup'){
+    cols = OP;
+    head.appendChild(buildHead(cols));
+    ROLLROWS.forEach(r=>{
+      const tr = el('tr'); tr.dataset.label=r[0].toLowerCase();
+      tr.appendChild(el('td','rowhead',r[0]));
+      r[1].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+  } else {
+    cols = RP;
+    head.appendChild(buildHead(cols));
+    RPSPECS.forEach((lab,i)=>{
+      const tr = el('tr'); tr.dataset.label=lab.toLowerCase();
+      tr.appendChild(el('td','rowhead',lab));
+      RPGRID[i].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+  }
+  const cap = CAPTIONS[kind];
+  $('#caption').innerHTML = '<h2>'+cap[0]+'</h2><p>'+cap[1]+'</p>';
+  applyFilter();
+}
+
+function applyFilter(){
+  const q = $('#filter').value.trim().toLowerCase();
+  document.querySelectorAll('#matrix tbody tr').forEach(tr=>{
+    tr.style.display = (!q || tr.dataset.label.includes(q)) ? '' : 'none';
+  });
+}
+
+function buildTabs(){
+  const t = $('#tabs');
+  TABS.forEach((tab,i)=>{
+    const b = el('button','tab',tab.label);
+    b.setAttribute('role','tab'); b.setAttribute('aria-selected', i===0?'true':'false');
+    b.onclick = ()=>{ document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected','false'));
+      b.setAttribute('aria-selected','true'); render(tab.kind); };
+    t.appendChild(b);
+  });
+}
+
+function buildLegend(){
+  const items = [['c-full','Full'],['c-optin','Opt-in (off by default)'],['c-part','Partial'],
+    ['c-addon','Add-on / paid tier'],['c-none','None'],['c-unk','Unverified']];
+  const L = $('#legend');
+  L.innerHTML = '<strong style="color:var(--ink)">Status</strong>';
+  items.forEach(it=>{ const sp=el('span','item'); sp.innerHTML='<span class="sw '+it[0]+'"></span>'+it[1]; L.appendChild(sp); });
+  const m=el('span','item'); m.style.marginLeft='6px';
+  m.innerHTML='<strong style="color:var(--ink)">Membership</strong> &nbsp; <span class="m-req">●</span> required &nbsp; <span class="m-opt">○</span> optional &nbsp; <span class="m-forbid">⊘</span> forbidden';
+  L.appendChild(m);
+}
+
+function buildStats(){
+  const cnt = c => OPGRID.reduce((a,r)=>a+(r[0]===c?1:0),0);
+  const full = cnt('F'), optin = cnt('O'), none = cnt('N');
+  const data = [
+    ['31','specs tracked','accent'],['13','providers compared',''],
+    [String(full+optin),'DOT: implemented','accent'],['4','tables, one model','']
+  ];
+  const S = $('#stats');
+  data.forEach(d=>{ const s=el('div','stat'); s.innerHTML='<div class="n '+(d[2]||'')+'">'+d[0]+'</div><div class="l">'+d[1]+'</div>'; S.appendChild(s); });
+}
+
+$('#disclaimer').innerHTML = '<strong style="color:var(--ink)">Read me:</strong> point-in-time snapshot (2026-07). “Full” means “implemented per primary sources,” not “certified” unless the OpenID-certified row says so. OAuth/OIDC support moves fast — re-verify before quoting. Not legal or compliance advice.';
+
+// theme toggle
+$('#themeBtn').onclick = ()=>{
+  const cur = document.documentElement.getAttribute('data-theme');
+  const dark = cur ? cur==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme', dark?'light':'dark');
+};
+$('#filter').addEventListener('input', applyFilter);
+
+buildTabs(); buildStats(); buildLegend(); render('op');
+</script>

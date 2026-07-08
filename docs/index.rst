@@ -49,6 +49,7 @@ Index
    settings
    resource_server
    management_commands
+   compliance
    glossary
 
 .. toctree::
