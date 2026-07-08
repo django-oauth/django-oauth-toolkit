@@ -27,38 +27,45 @@ apps, RFC 8252) · **RP** (Relying-Party / client role).
 
 ## Membership matrix
 
-| Specification | OAuth 2.0 | OAuth 2.1 | OIDC | FAPI 2.0 | MCP | Native | RP |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| RFC 6749 — OAuth 2.0 core | ● | ● | ● | ● | ● | ● | ● |
-| — Implicit grant | ○ | ⊘ | ○ | ⊘ | ⊘ | ⊘ | ⊘ |
-| — Resource-owner password grant | ○ | ⊘ | | ⊘ | ⊘ | ⊘ | ⊘ |
-| RFC 6750 — Bearer token usage | ● | ● | ● | ● | ● | ● | ● |
-| RFC 7009 — Revocation | ○ | ○ | ○ | ○ | ○ | | ○ |
-| RFC 7636 — PKCE | ○ | ● | ○ | ● | ● | ● | ● |
-| RFC 7662 — Introspection | ○ | ○ | ○ | ○ | ○ | | |
-| RFC 8252 — Native apps | ○ | ○ | | | ○ | ● | ○ |
-| RFC 8414 — AS metadata | ○ | ○ | ○ | ● | ● | ○ | ○ |
-| RFC 8628 — Device grant | ○ | ○ | | | ○ | ○ | |
-| RFC 7591 — Dynamic client registration | ○ | ○ | ○ | ○ | ○ † | | ○ |
-| RFC 7592 — DCR management | ○ | | | | ○ | | ○ |
-| RFC 7519 — JWT | ○ | ○ | ● | ● | ○ | | ● |
-| RFC 7523 — private_key_jwt | ○ | ○ | ○ | ○ ‡ | ○ | | ○ |
-| RFC 9068 — JWT access tokens (at+jwt) | ○ | ○ | | ○ | ○ | | |
-| RFC 9126 — PAR | ○ | ○ | | ● | ○ | | ○ |
-| RFC 9396 — RAR | ○ | ○ | | ○ | ○ | | |
-| RFC 9449 — DPoP | ○ | ○ | | ○ ‡ | ○ | | ○ |
-| RFC 8705 — mTLS client auth | ○ | ○ | | ○ ‡ | | | |
-| RFC 8707 — Resource indicators | ○ | ○ | | ○ | ● | | ○ |
-| RFC 9728 — Protected resource metadata | ○ | ○ | | ○ | ● | | ○ |
-| RFC 9700 — Security BCP | ○ | ● | ○ | ● | ● | ● | ○ |
-| OIDC Core | | | ● | ○ | | | ● |
-| OIDC Discovery | | | ○ | ○ | | | ○ |
-| OIDC Dynamic Registration | | | ○ | | ○ | | ○ |
-| OIDC RP-Initiated Logout | | | ○ | | | | ○ |
-| OIDC Session Management | | | ○ | | | | ○ |
-| OIDC Front-Channel Logout | | | ○ | | | | ○ |
-| OIDC Back-Channel Logout | | | ○ | | | | ○ |
-| CIBA | | | ○ | ○ | | | |
+Columns include the two client/API **roles** (RP, RS) alongside the provider profiles.
+
+| Specification | OAuth 2.0 | OAuth 2.1 | OIDC | FAPI 2.0 | MCP | Native | RP | RS |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| RFC 6749 — OAuth 2.0 core | ● | ● | ● | ● | ● | ● | ● | ○ |
+| — Implicit grant | ○ | ⊘ | ○ | ⊘ | ⊘ | ⊘ | ⊘ | |
+| — Resource-owner password grant | ○ | ⊘ | | ⊘ | ⊘ | ⊘ | ⊘ | |
+| RFC 6750 — Bearer token usage | ● | ● | ● | ● | ● | ● | ● | ● |
+| RFC 7009 — Revocation | ○ | ○ | ○ | ○ | ○ | | ○ | |
+| RFC 7636 — PKCE | ○ | ● | ○ | ● | ● | ● | ● | |
+| RFC 7662 — Introspection | ○ | ○ | ○ | ○ | ○ | | | ○ |
+| RFC 8252 — Native apps | ○ | ○ | | | ○ | ● | ○ | |
+| RFC 8414 — AS metadata | ○ | ○ | ○ | ● | ● | ○ | ○ | ○ |
+| RFC 8628 — Device grant | ○ | ○ | | | ○ | ○ | | |
+| RFC 7591 — Dynamic client registration | ○ | ○ | ○ | ○ | ○ † | | ○ | |
+| RFC 7592 — DCR management | ○ | | | | ○ | | ○ | |
+| RFC 7519 — JWT | ○ | ○ | ● | ● | ○ | | ● | ○ |
+| RFC 7523 — private_key_jwt | ○ | ○ | ○ | ○ ‡ | ○ | | ○ | |
+| RFC 9068 — JWT access tokens (at+jwt) | ○ | ○ | | ○ | ○ | | | ○ |
+| RFC 9126 — PAR | ○ | ○ | | ● | ○ | | ○ | |
+| RFC 9396 — RAR | ○ | ○ | | ○ | ○ | | | |
+| RFC 9449 — DPoP | ○ | ○ | | ○ ‡ | ○ | | ○ | ○ |
+| RFC 8705 — mTLS client auth | ○ | ○ | | ○ ‡ | | | | ○ |
+| RFC 8707 — Resource indicators | ○ | ○ | | ○ | ● | | ○ | ○ |
+| RFC 9728 — Protected resource metadata | ○ | ○ | | ○ | ● | | ○ | ● |
+| RFC 9700 — Security BCP | ○ | ● | ○ | ● | ● | ● | ○ | ○ |
+| OIDC Core | | | ● | ○ | | | ● | |
+| OIDC Discovery | | | ○ | ○ | | | ○ | |
+| OIDC Dynamic Registration | | | ○ | | ○ | | ○ | |
+| OIDC RP-Initiated Logout | | | ○ | | | | ○ | |
+| OIDC Session Management | | | ○ | | | | ○ | |
+| OIDC Front-Channel Logout | | | ○ | | | | ○ | |
+| OIDC Back-Channel Logout | | | ○ | | | | ○ | |
+| CIBA | | | ○ | ○ | | | | |
+
+The **RS** column marks what a resource server touches: it MUST accept bearer tokens
+(6750) and, for MCP, MUST publish protected-resource metadata (9728); it MAY validate JWT
+(7519/9068), introspect (7662), and honor DPoP/mTLS/resource-indicators when the tokens use
+them. See [Table 5](./rs-comparison.md).
 
 † **MCP** treats Dynamic Client Registration as SHOULD (strongly recommended), not MUST.
 ‡ **FAPI 2.0** requires *sender-constrained* tokens via **either** mTLS (8705) **or** DPoP

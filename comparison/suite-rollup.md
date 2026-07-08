@@ -28,10 +28,14 @@ Column keys: **DOT** · **oalib** = oauthlib · **Alib** = Authlib · **Autk** =
 | **Native apps** (RFC 8252) | ◑ | ◑ | ◑ | ◑ | ◑ | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **FAPI 2.0** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ◑ | ❌ | 🧩 | ❌ | ✅ |
 | **MCP authorization** | ❌ | ❌ | ❌ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ |
+| **RS** (resource-server role) | ✅ | ◑ | ✅ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 | **RP** (client role) | N/A | N/A | ◑ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 
-*RP is a different role — see [Table 4](./rp-comparison.md). Only Authlib among these also
-ships a client, hence ◑; the servers/SaaS are providers, not relying parties.*
+*The last two rows are separate **roles**, not provider profiles. **RS** (resource server):
+DOT itself protects APIs (✅), oauthlib gives building blocks (◑), Authlib ships a
+ResourceProtector (✅) — the rest are providers, compared as RS products in
+[Table 5](./rs-comparison.md). **RP** (client): only Authlib ships a client here (◑); DOT is
+N/A — see [Table 4](./rp-comparison.md).*
 
 ## How each verdict is reached (gating specs)
 

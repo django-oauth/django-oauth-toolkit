@@ -12,7 +12,7 @@ libraries, spec by spec and profile by profile.**
 
 ---
 
-## The organizing model (why there are four tables, not one)
+## The organizing model (why there are five tables, not one)
 
 The hard part of a comparison like this is that you're juggling **three** things —
 individual specs, named suites/profiles, and competitors — but a table only has two axes.
@@ -22,24 +22,35 @@ They separate cleanly once you notice:
 > FAPI, MCP) is just a **named bundle of specs** with mandatory/optional/forbidden rules
 > layered on. *Competitors* are the genuinely separate axis.
 
-So instead of one overloaded grid, this comparison is **four linked tables**:
+So instead of one overloaded grid, this comparison is **five linked tables**:
 
 | # | Table | Rows × Columns | Answers |
 |---|---|---|---|
 | 1 | [Spec × Competitor](./idp-op-comparison.md) | specs × products | "Who implements RFC X?" |
-| 2 | [Suite → Spec membership](./suite-membership.md) | specs × suites | "What *is* OAuth 2.1 / FAPI / MCP?" (definitions) |
-| 3 | [Suite × Competitor rollup](./suite-rollup.md) | suites × products | "Does product Y meet profile Z?" |
+| 2 | [Suite → Spec membership](./suite-membership.md) | specs × profiles/roles | "What *is* OAuth 2.1 / FAPI / MCP / RP / RS?" (definitions) |
+| 3 | [Suite × Competitor rollup](./suite-rollup.md) | profiles × products | "Does product Y meet profile Z?" |
 | 4 | [RP comparison](./rp-comparison.md) | RP capabilities × client libs | "Which *client* library should I use?" |
+| 5 | [RS comparison](./rs-comparison.md) | RS capabilities × API-protection tools | "What protects my API, and how well?" |
 
 **"Should suites also be rows?"** — Yes, in **Table 3**, which aggregates Table 1 through the
 definitions in Table 2. Keeping the suite rollup *separate* from the per-spec detail is what
 avoids double-counting (a suite row and its member-spec rows can't live in the same grid).
 
-**Two roles, two categories.** OAuth/OIDC has distinct roles. DOT is a **Provider /
-Authorization Server (OP/AS)** and resource server — so Tables 1–3 compare it against other
-*servers*. The **Relying Party (RP)** is the *client* role (logging users in *via* an IdP);
-that's a different product category, so it gets its own **Table 4** with client-library
-competitors, where DOT correctly shows as **N/A**.
+**Three roles, three categories — and Django can play all three.** OAuth/OIDC has distinct
+roles, and a Django project can occupy each:
+
+- **Authorization Server / OpenID Provider (AS/OP)** — issues tokens. **DOT's core, strong**
+  (Tables 1–3, provider competitors).
+- **Resource Server (RS)** — protects APIs by validating tokens. **DOT is a real
+  participant** (bearer + introspection + scopes + native DRF) — see **Table 5**, whose
+  competitors are API-protection middleware and gateways.
+- **Relying Party (RP)** — the *client* that logs users in via an external IdP. **DOT does
+  not provide this**, but a Django app can *be* an RP by pairing DOT with a companion
+  (mozilla-django-oidc, django-allauth) — see **Table 4**. DOT shows as N/A there, kept in
+  view so the role boundary is explicit.
+
+The profile/role dimension (OAuth 2.0/2.1, OIDC, FAPI, MCP, Native, **RP**, **RS**) lives as
+columns in Table 2 and as rows in Table 3.
 
 ---
 
@@ -62,11 +73,19 @@ competitors, where DOT correctly shows as **N/A**.
 django-allauth, mozilla-django-oidc, Authlib (client), python-social-auth, Auth.js/NextAuth,
 oidc-client-ts, passport-openidconnect, Spring Security OAuth2 Client.
 
+**Resource-server / API-protection tools (Table 5)**
+
+- *Python/Django:* **Django OAuth Toolkit** (RS mode), Authlib ResourceProtector,
+  DRF + PyJWT, FastAPI security utilities
+- *Other ecosystems:* Spring Security OAuth2 Resource Server, ASP.NET Core JwtBearer,
+  express-oauth2-jwt-bearer (Node)
+- *Gateways / proxies:* oauth2-proxy, Ory Oathkeeper, Kong, Envoy, Nginx
+
 ---
 
 ## Legend
 
-**Support (Tables 1, 3, 4)**
+**Support (Tables 1, 3, 4, 5)**
 
 | Mark | Meaning |
 |:---:|---|

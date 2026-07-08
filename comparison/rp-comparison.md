@@ -8,12 +8,14 @@ The **Relying Party (RP)** is the *client* role — the application that logs us
 [Table 1](./idp-op-comparison.md), so it gets its own competitor set (client libraries)
 and its own capability rows (the client-side obligations).
 
-> **Django OAuth Toolkit is not a Relying Party.** DOT is an OAuth2/OIDC *provider*
-> (authorization server + resource server). It does not consume external identity, so it
-> is **N/A** in every row here. In a Django project you would pair DOT (as your OP) with a
-> separate RP library (e.g. mozilla-django-oidc or django-allauth) if you also needed to
-> *consume* another IdP. That DOT scores N/A here is the expected, correct result — it
-> shows the boundary of what DOT is for.
+> **Django OAuth Toolkit is not a Relying Party.** Of the three OAuth roles a Django app can
+> play — Authorization Server ([Tables 1–3](./README.md)), Resource Server
+> ([Table 5](./rs-comparison.md)), and Relying Party — DOT provides the first two and **not**
+> this one. It does not consume external identity, so it is **N/A** in every row here. In a
+> Django project you would pair DOT (as your OP/RS) with a separate RP library (e.g.
+> mozilla-django-oidc or django-allauth) if you also needed to *consume* another IdP. DOT's
+> N/A here is the expected, correct result — it marks the boundary of what DOT is for, and is
+> kept in view so that boundary is explicit rather than hidden.
 
 ## Legend
 

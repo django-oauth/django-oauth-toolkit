@@ -170,6 +170,7 @@
     <span class="eyebrow">Django OAuth Toolkit · competitive &amp; compliance reference</span>
     <h1>OAuth 2.0 / OpenID Connect compliance matrix</h1>
     <p class="sub">Where <strong>Django OAuth Toolkit</strong> stands against other providers, servers, and SaaS IdPs — spec by spec and profile by profile. The <code>DOT</code> column is scored from source; every other column is externally sourced.</p>
+    <p class="sub">Django can play all three OAuth roles: <strong>IdP / Authorization Server</strong> (DOT's core), <strong>Resource Server</strong> (DOT protects APIs), and <strong>Relying Party</strong> (not DOT itself — pair a companion like mozilla-django-oidc). DOT stays in view across every tab.</p>
     <span class="meta">Last verified 2026-07 · point-in-time snapshot · not a certification</span>
   </header>
 
@@ -235,7 +236,7 @@ const RP = [
   ['passport','Passport','node',false,'https://www.passportjs.org/packages/passport-openidconnect/'],
   ['spring','Spring Sec','java',false,'https://docs.spring.io/spring-security/reference/servlet/oauth2/client/index.html']
 ];
-const SUITES = [['oauth20','OAuth 2.0'],['oauth21','OAuth 2.1'],['oidc','OIDC'],['fapi2','FAPI 2.0'],['mcp','MCP'],['native','Native'],['rp','RP']];
+const SUITES = [['oauth20','OAuth 2.0'],['oauth21','OAuth 2.1'],['oidc','OIDC'],['fapi2','FAPI 2.0'],['mcp','MCP'],['native','Native'],['rp','RP'],['rs','RS']];
 
 // spec label + optional sub flag
 const SPECS = [
@@ -292,17 +293,17 @@ const OPGRID = [
 ];
 const OPCERT = 'NNNNFFFFFFFFF'; // OpenID-certified OP
 
-// membership rows — index matches SPECS; cols = SUITES
+// membership rows — index matches SPECS; cols = SUITES (…, rp, rs)
 const MEM = [
- ['R','R','R','R','R','R','R'], ['o','x','o','x','x','x','x'], ['o','x','.','x','x','x','x'],
- ['R','R','R','R','R','R','R'], ['o','o','o','o','o','.','o'], ['o','R','o','R','R','R','R'], ['o','o','o','o','o','.','.'],
- ['o','o','.','.','o','R','o'], ['o','o','o','R','R','o','o'], ['o','o','.','.','o','o','.'],
- ['o','o','o','o','o','.','o'], ['o','.','.','.','o','.','o'], ['o','o','R','R','o','.','R'],
- ['o','o','o','o','o','.','o'], ['o','o','.','o','o','.','.'], ['o','o','.','R','o','.','o'], ['o','o','.','o','o','.','.'],
- ['o','o','.','o','o','.','o'], ['o','o','.','o','.','.','.'], ['o','o','.','o','R','.','o'],
- ['o','o','.','o','R','.','o'], ['o','R','o','R','R','R','o'], ['.','.','R','o','.','.','R'],
- ['.','.','o','o','.','.','o'], ['.','.','o','.','o','.','o'], ['.','.','o','.','.','.','o'],
- ['.','.','o','.','.','.','o'], ['.','.','o','.','.','.','o'], ['.','.','o','.','.','.','o'], ['.','.','o','o','.','.','.']
+ ['R','R','R','R','R','R','R','o'], ['o','x','o','x','x','x','x','.'], ['o','x','.','x','x','x','x','.'],
+ ['R','R','R','R','R','R','R','R'], ['o','o','o','o','o','.','o','.'], ['o','R','o','R','R','R','R','.'], ['o','o','o','o','o','.','.','o'],
+ ['o','o','.','.','o','R','o','.'], ['o','o','o','R','R','o','o','o'], ['o','o','.','.','o','o','.','.'],
+ ['o','o','o','o','o','.','o','.'], ['o','.','.','.','o','.','o','.'], ['o','o','R','R','o','.','R','o'],
+ ['o','o','o','o','o','.','o','.'], ['o','o','.','o','o','.','.','o'], ['o','o','.','R','o','.','o','.'], ['o','o','.','o','o','.','.','.'],
+ ['o','o','.','o','o','.','o','o'], ['o','o','.','o','.','.','.','o'], ['o','o','.','o','R','.','o','o'],
+ ['o','o','.','o','R','.','o','R'], ['o','R','o','R','R','R','o','o'], ['.','.','R','o','.','.','R','.'],
+ ['.','.','o','o','.','.','o','.'], ['.','.','o','.','o','.','o','.'], ['.','.','o','.','.','.','o','.'],
+ ['.','.','o','.','.','.','o','.'], ['.','.','o','.','.','.','o','.'], ['.','.','o','.','.','.','o','.'], ['.','.','o','o','.','.','.','.']
 ];
 
 // rollup: rows = suites, cols = OP competitors. [suiteKey, label, statusStr]
@@ -314,7 +315,8 @@ const ROLLROWS = [
   ['native','Native apps (8252)','PPPPPFPFFFFFF'],
   ['fapi2','FAPI 2.0','NNNNFNFNPNANF'],
   ['mcp','MCP authorization','NNNNPNPNPNPNP'],
-  ['rp','RP (client role)','xxPxxxxxxxxxx']
+  ['rs','RS · resource-server role','FPFxxxxxxxxxx'],
+  ['rp','RP · client role','xxPxxxxxxxxxx']
 ];
 
 // RP capability rows align to RP competitors
@@ -350,24 +352,63 @@ const SUITE_URL = {
   fapi2:'https://openid.net/specs/fapi-2_0-security-profile.html',
   mcp:'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization',
   native:'https://www.rfc-editor.org/rfc/rfc8252',
-  rp:'https://openid.net/specs/openid-connect-core-1_0.html'
+  rp:'https://openid.net/specs/openid-connect-core-1_0.html',
+  rs:'https://www.rfc-editor.org/rfc/rfc6750'
 };
 const RPGRID = [
   'xFFFFFFFF','xFPFFFFPF','xNNNNNNNN','xNNNNNNNN','xFFFFFFFF','xFFFFFFFF','xNNUNNNNN','xPPFPPFPF',
   'xNPPNPFNF','xNNNNNPNN','xNNNNNNNF','xNNUNUUNN','xNNUNNFNP','xNNFNPNNF','xNNUNNUNU','xFNFFFNPF'
 ];
 
+// Resource Server (API-protection) role. [key,label,tier,isOurs,url]
+const RS = [
+  ['dot','DOT','ours',true,'https://django-oauth-toolkit.readthedocs.io/en/latest/resource_server.html'],
+  ['authlib','Authlib','python',false,'https://docs.authlib.org/en/latest/'],
+  ['drfjwt','DRF+PyJWT','python',false,'https://www.django-rest-framework.org/api-guide/authentication/'],
+  ['fastapi','FastAPI','python',false,'https://fastapi.tiangolo.com/reference/security/'],
+  ['spring','Spring RS','java',false,'https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/index.html'],
+  ['aspnet','ASP.NET','dotnet',false,'https://learn.microsoft.com/aspnet/core/security/authentication/configure-jwt-bearer-authentication'],
+  ['express','express-jwt','node',false,'https://github.com/auth0/node-oauth2-jwt-bearer'],
+  ['o2p','oauth2-proxy','gateway',false,'https://oauth2-proxy.github.io/oauth2-proxy/'],
+  ['oathkeeper','Oathkeeper','gateway',false,'https://www.ory.sh/docs/oathkeeper'],
+  ['kong','Kong','gateway',false,'https://developer.konghq.com/plugins/openid-connect/'],
+  ['envoy','Envoy','gateway',false,'https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter'],
+  ['nginx','Nginx','gateway',false,'https://nginx.org/en/docs/http/ngx_http_auth_jwt_module.html']
+];
+const RSCAPS = [
+  ['Bearer token acceptance','https://www.rfc-editor.org/rfc/rfc6750'],
+  ['Local JWT validation (sig, iss/aud/exp)','https://www.rfc-editor.org/rfc/rfc7519'],
+  ['at+jwt access-token profile','https://www.rfc-editor.org/rfc/rfc9068'],
+  ['JWKS fetch + key rotation/caching','https://www.rfc-editor.org/rfc/rfc7517'],
+  ['Token introspection client','https://www.rfc-editor.org/rfc/rfc7662'],
+  ['Scope enforcement','https://www.rfc-editor.org/rfc/rfc6749#section-3.3'],
+  ['Audience validation','https://www.rfc-editor.org/rfc/rfc7519#section-4.1.3'],
+  ['Resource indicators','https://www.rfc-editor.org/rfc/rfc8707'],
+  ['DPoP-bound tokens','https://www.rfc-editor.org/rfc/rfc9449'],
+  ['mTLS certificate-bound tokens','https://www.rfc-editor.org/rfc/rfc8705'],
+  ['Protected resource metadata','https://www.rfc-editor.org/rfc/rfc9728'],
+  ['WWW-Authenticate 401 challenge','https://www.rfc-editor.org/rfc/rfc6750#section-3'],
+  ['AS metadata / discovery auto-config','https://www.rfc-editor.org/rfc/rfc8414']
+];
+// rows align to RSCAPS; chars align to RS competitors (A = via plugin/module)
+const RSGRID = [
+  'FFPFFFFPFAFA','NFFNFFFPFAFA','NFNNFPFNUUNU','NPFNFFFPFAFA','FFNNFNNNFAPA','FFPPFPFPFAPP',
+  'PFFNFFFPFAFP','NNNNNNNNNANN','NNNNFAFNNANN','NNNNFANNNAPN','NNNNPANNNANN','PFPFFFPNPAPP','NPNNFFFFPANA'
+];
+
 const TABS = [
   {id:'rollup', label:'By profile', kind:'rollup'},
   {id:'op', label:'By specification', kind:'op'},
+  {id:'rs', label:'Resource servers', kind:'rs'},
   {id:'rp', label:'Relying parties', kind:'rp'},
   {id:'member', label:'Profile definitions', kind:'member'}
 ];
 const CAPTIONS = {
-  rollup:['Compliance by profile','The headline view — does each product meet a named profile: OAuth 2.0, OAuth 2.1, OpenID Connect, FAPI 2.0, MCP? <strong>Click a suite</strong> to expand its member specs (<span class="pill req">req</span> required first, then <span class="pill opt">opt</span> optional, then <span class="pill forbid">×</span> forbidden) and see every product\'s status for each. The DOT column is authoritative (scored from source).'],
+  rollup:['Compliance by profile','The headline view — does each product meet a named profile: OAuth 2.0, OAuth 2.1, OpenID Connect, FAPI 2.0, MCP? <strong>Click a suite</strong> to expand its member specs (<span class="pill req">req</span> required first, then <span class="pill opt">opt</span> optional, then <span class="pill forbid">×</span> forbidden) and see every product\'s status for each. The last two rows are separate <em>roles</em> (resource server, relying party) — see their own tabs. The DOT column is authoritative (scored from source).'],
   op:['Support by specification','Every specification once, every product — the flat, de-duplicated view. Reach for this when you care about a single RFC regardless of which profile pulls it in. Hover a row to highlight; use the filter to find a spec.'],
-  rp:['Relying-party libraries','A different product category — client libraries, not servers. Django OAuth Toolkit is a provider, so it is N/A here by design; pair it with one of these to <em>consume</em> an external IdP.'],
-  member:['How the profiles are defined','Reference: which specs each profile <strong>requires</strong> (●), allows (○), or <strong>forbids</strong> (⊘). This is the definition behind the pills in the profile view — nobody is scored here.']
+  rs:['Resource servers — API protection','The role that validates access tokens and enforces scopes on your API. <strong>DOT is a real resource server here</strong> (bearer + introspection + scopes + native DRF), not N/A. A different product category from the authorization servers — middleware and gateways; the DOT column is authoritative.'],
+  rp:['Relying parties — the client role','Logging users in <em>via</em> an external IdP. A different category from servers: Django OAuth Toolkit doesn\'t provide it, so its column is N/A — but a Django app can <em>be</em> an RP by pairing DOT (as its IdP/RS) with one of these libraries. Kept in view so DOT\'s role boundary is explicit.'],
+  member:['How the profiles &amp; roles are defined','Reference: which specs each profile/role <strong>requires</strong> (●), allows (○), or <strong>forbids</strong> (⊘). This is the definition behind the pills in the profile view — nobody is scored here. The RP and RS columns define the two client/API roles.']
 };
 
 const $ = s => document.querySelector(s);
@@ -460,7 +501,7 @@ function render(kind){
     ROLLROWS.forEach(r=>{
       const [key,label,status] = r;
       const col = SUITES.findIndex(s=>s[0]===key);
-      const kids = key==='rp' ? [] : suiteChildren(col); // RP members are client-side; no drill-down
+      const kids = (key==='rp'||key==='rs') ? [] : suiteChildren(col); // role rows link to their own tabs; no drill-down
       const expandable = kids.length>0;
       const tr = el('tr','suite-row'); tr.dataset.label=label.toLowerCase(); tr.dataset.suite=key;
       const head0 = el('td','rowhead');
@@ -489,6 +530,17 @@ function render(kind){
         OPGRID[i].split('').forEach(code=>{ const td=el('td'); td.appendChild(chip(code)); ctr.appendChild(td); });
         body.appendChild(ctr);
       });
+    });
+  } else if(kind==='rs'){
+    cols = RS;
+    head.appendChild(buildHead(cols));
+    RSCAPS.forEach((cap,i)=>{
+      const tr = el('tr'); tr.dataset.label=cap[0].toLowerCase();
+      const rh = el('td','rowhead',cap[0]);
+      const lk = linkIcon(cap[1], cap[0], 'speclink'); if(lk) rh.appendChild(lk);
+      tr.appendChild(rh);
+      RSGRID[i].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
+      body.appendChild(tr);
     });
   } else {
     cols = RP;
@@ -527,7 +579,7 @@ function buildTabs(){
 
 function buildLegend(){
   const items = [['c-full','Full'],['c-optin','Opt-in (off by default)'],['c-part','Partial'],
-    ['c-addon','Add-on / paid tier'],['c-none','None'],['c-unk','Unverified']];
+    ['c-addon','Add-on / plugin / paid tier'],['c-none','None'],['c-unk','Unverified']];
   const L = $('#legend');
   L.innerHTML = '<strong style="color:var(--ink)">Status</strong>';
   items.forEach(it=>{ const sp=el('span','item'); sp.innerHTML='<span class="sw '+it[0]+'"></span>'+it[1]; L.appendChild(sp); });
@@ -541,7 +593,7 @@ function buildStats(){
   const full = cnt('F'), optin = cnt('O'), none = cnt('N');
   const data = [
     ['31','specs tracked','accent'],['13','providers compared',''],
-    [String(full+optin),'DOT: implemented','accent'],['4','tables, one model','']
+    [String(full+optin),'DOT: implemented','accent'],['5','tables, one model','']
   ];
   const S = $('#stats');
   data.forEach(d=>{ const s=el('div','stat'); s.innerHTML='<div class="n '+(d[2]||'')+'">'+d[0]+'</div><div class="l">'+d[1]+'</div>'; S.appendChild(s); });
