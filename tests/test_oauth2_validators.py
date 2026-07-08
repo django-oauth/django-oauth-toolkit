@@ -162,6 +162,47 @@ class TestOAuth2Validator(TransactionTestCase):
         self.request.headers = get_basic_auth_header("client_id", "wrong_secret")
         self.assertFalse(self.validator._authenticate_basic_auth(self.request))
 
+    def test_authenticate_basic_auth_wrong_client_secret_not_logged(self):
+        """The client secret must never be written to the logs (basic auth)."""
+        self.request.encoding = "utf-8"
+        self.request.headers = get_basic_auth_header("client_id", "super_secret_value")
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_basic_auth(self.request))
+        self.assertNotIn("super_secret_value", "\n".join(logs.output))
+
+    def test_authenticate_request_body_wrong_client_secret_not_logged(self):
+        """The client secret must never be written to the logs (body auth)."""
+        self.request.client_id = "client_id"
+        self.request.client_secret = "super_secret_value"
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_request_body(self.request))
+        self.assertNotIn("super_secret_value", "\n".join(logs.output))
+
+    def test_authenticate_basic_auth_undecodable_credentials_not_logged(self):
+        """The raw credential string must not be logged when base64/unicode decoding fails."""
+        self.request.encoding = "utf-8"
+
+        # Not valid base64 -> hits the base64 decode failure branch.
+        self.request.headers = {"HTTP_AUTHORIZATION": "Basic not_base64"}
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_basic_auth(self.request))
+        output = "\n".join(logs.output)
+        # Assert the base64-decode-failure branch actually ran (not some later path) ...
+        self.assertIn("can't be decoded as base64", output)
+        # ... and that it did not log the raw credential string.
+        self.assertNotIn("not_base64", output)
+
+        # "test" b64-decodes to non-utf-8 bytes, so it deterministically hits the unicode
+        # decode failure branch (same known fixture as test_authenticate_basic_auth_not_utf8).
+        self.request.headers = {"HTTP_AUTHORIZATION": "Basic test"}
+        with self.assertLogs("oauth2_provider", level="DEBUG") as logs:
+            self.assertFalse(self.validator._authenticate_basic_auth(self.request))
+        output = "\n".join(logs.output)
+        # Assert the unicode-decode-failure branch actually ran ...
+        self.assertIn("can't be decoded as unicode", output)
+        # ... and that it did not log the raw credential string.
+        self.assertNotIn("test", output)
+
     def test_authenticate_basic_auth_not_b64_auth_string(self):
         self.request.encoding = "utf-8"
         # Can"t b64decode

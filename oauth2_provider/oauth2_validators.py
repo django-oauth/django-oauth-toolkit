@@ -148,13 +148,15 @@ class OAuth2Validator(RequestValidator):
         try:
             b64_decoded = base64.b64decode(auth_string)
         except (TypeError, binascii.Error):
-            log.debug("Failed basic auth: %r can't be decoded as base64", auth_string)
+            # auth_string is the base64 of "client_id:client_secret"; never log it.
+            log.debug("Failed basic auth: credentials can't be decoded as base64")
             return False
 
         try:
             auth_string_decoded = b64_decoded.decode(encoding)
         except UnicodeDecodeError:
-            log.debug("Failed basic auth: %r can't be decoded as unicode by %r", auth_string, encoding)
+            # auth_string is the base64 of "client_id:client_secret"; never log it.
+            log.debug("Failed basic auth: credentials can't be decoded as unicode by %r", encoding)
             return False
 
         try:
@@ -175,7 +177,7 @@ class OAuth2Validator(RequestValidator):
         ):
             return True
         elif not self._check_secret(client_secret, request.client.client_secret):
-            log.debug("Failed basic auth: wrong client secret %s" % client_secret)
+            log.debug("Failed basic auth: wrong client secret for client_id %s", client_id)
             return False
         else:
             return True
@@ -205,7 +207,7 @@ class OAuth2Validator(RequestValidator):
         ):
             return True
         elif not self._check_secret(client_secret, request.client.client_secret):
-            log.debug("Failed body auth: wrong client secret %s" % client_secret)
+            log.debug("Failed body auth: wrong client secret for client_id %s", client_id)
             return False
         else:
             return True
