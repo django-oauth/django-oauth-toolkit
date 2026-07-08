@@ -534,6 +534,10 @@ jobs:
         run: python -m pip install --upgrade tox
 
       - name: Run end-to-end compliance suite
+        # Require the browser layer on CI: a missing/broken Chromium fails the
+        # job rather than silently skipping the browser RP coverage.
+        env:
+          E2E_REQUIRE_BROWSER: "1"
         run: tox -e e2e
 
       - name: Upload compliance matrix and JUnit report

@@ -39,7 +39,9 @@ pytest tests/e2e --confcutdir=tests/e2e -o addopts=
 in-process unit suite's `tests/conftest.py` (which configures Django).
 
 The browser tests self-skip when Node or Playwright is unavailable, so the
-protocol suite still runs in minimal environments.
+protocol suite still runs in minimal environments. Set `E2E_REQUIRE_BROWSER=1`
+(as the CI job does) to make a missing/broken Chromium a hard failure instead of
+a skip, so the browser RP coverage cannot be silently dropped.
 
 ## Layout
 

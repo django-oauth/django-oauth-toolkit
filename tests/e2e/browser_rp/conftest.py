@@ -7,6 +7,8 @@ working Node toolchain is not available, so the rest of the compliance suite
 still runs in minimal environments.
 """
 
+import os
+
 import pytest
 
 from tests.e2e import constants as c
@@ -30,16 +32,22 @@ def browser_type_launch_args(browser_type_launch_args):
 
 @pytest.fixture(scope="session", autouse=True)
 def _require_browser(browser_type, browser_type_launch_args):
-    """Skip (rather than error) the browser layer when no Chromium can launch.
+    """Skip the browser layer when no Chromium can launch — unless it is required.
 
     pytest-playwright's ``page`` fixture errors during setup if the browser
     binary is missing; this guard turns that into a clean skip so protocol-only
     environments (where ``playwright install`` was best-effort) stay green.
+
+    Set ``E2E_REQUIRE_BROWSER`` (as CI does) to make a missing browser a hard
+    failure instead, so the browser coverage cannot be silently skipped.
     """
     try:
         browser = browser_type.launch(**browser_type_launch_args)
     except Exception as exc:  # pragma: no cover - environment guard
-        pytest.skip(f"No usable Chromium for Playwright ({exc}); skipping browser layer")
+        message = f"No usable Chromium for Playwright ({exc})"
+        if os.environ.get("E2E_REQUIRE_BROWSER"):
+            pytest.fail(f"{message}; E2E_REQUIRE_BROWSER is set so the browser layer must run")
+        pytest.skip(f"{message}; skipping browser layer")
     else:
         browser.close()
 
