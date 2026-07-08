@@ -86,3 +86,20 @@ def test_user_code_generator():
     with pytest.raises(ValueError):
         utils.user_code_generator(user_code_length=0)
         utils.user_code_generator(user_code_length=-1)
+
+
+def test_user_code_generator_uses_csprng(mocker):
+    """
+    The device-flow user code must be drawn from a cryptographically secure
+    source (``secrets``), not the predictable ``random`` module, per RFC 8628
+    sections 5.1/5.2.
+    """
+    secrets_choice = mocker.patch("oauth2_provider.utils.secrets.choice", return_value="A")
+
+    user_code = utils.user_code_generator(user_code_length=8)
+
+    # Every character comes from secrets.choice (a CSPRNG). This also guards against a
+    # regression to random.choice: if the generator used the predictable random module
+    # instead, secrets.choice would not be called and neither assertion would hold.
+    assert user_code == "AAAAAAAA"
+    assert secrets_choice.call_count == 8

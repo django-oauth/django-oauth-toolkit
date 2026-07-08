@@ -1,5 +1,5 @@
 import functools
-import random
+import secrets
 
 from django.conf import settings
 from jwcrypto import jwk
@@ -64,29 +64,30 @@ def user_code_generator(user_code_length: int = 8) -> str:
     Recommended user code that retains enough entropy but doesn't
     ruin the user experience of typing the code in.
 
-    the below is based off:
+    This follows the guidance in:
     https://datatracker.ietf.org/doc/html/rfc8628#section-5.1
-    but with added explanation as to where 34.5 bits of entropy is coming from
+    with an explanation of the entropy this implementation provides.
 
-    entropy (in bits) = length of user code * log2(length of set of chars)
-    e = 8 * log2(20)
-    e = 34.5
+    entropy (in bits) = length of user code * log2(size of the character set)
 
-    log2(20) is used here to say "you can make 20 yes/no decisions per user code single input character".
+    This implementation uses a 32-character (RFC 4648 Base32hex, ``0-9A-V``)
+    alphabet, so for the default length of 8 characters:
 
-    _ _ _ _ - _ _ _ _ = 20^8 ~= 2^35.5
-    *
+        e = 8 * log2(32) = 8 * 5 = 40 bits
 
-    * you have 20 choices of chars to choose from (20 yes no decisions)
-    and so on for the other 7 spaces
+    i.e. there are 32^8 == 2^40 possible codes. (The generated code is a plain
+    string with no separator; any grouping/hyphenation is a presentation concern
+    for the UI, not part of the value.)
 
-    in english this means an attacker would need to try
-    2^34.5 unique combinations to exhaust all possibilities.
-    however with a user code only being valid for 30 seconds
-    and rate limiting, a brute force attack is extremely unlikely
-    to work
+    An attacker would need to try up to 2^40 combinations to exhaust the space.
+    The device grant does expire (its validity window is enforced), but this
+    library does not itself rate-limit the verification step, so deployments
+    should keep the code's validity window short and rate-limit the verification
+    endpoint to make brute-forcing impractical.
 
-    for our function we'll be using a base 32 character set
+    The code is drawn from ``secrets`` (a CSPRNG) rather than ``random`` so
+    that the ``user_code`` is unguessable, as required for device-flow
+    credentials by RFC 8628 sections 5.1 and 5.2.
     """
     if user_code_length < 1:
         raise ValueError("user_code_length needs to be greater than 0")
@@ -98,7 +99,7 @@ def user_code_generator(user_code_length: int = 8) -> str:
     user_code = [""] * user_code_length
 
     for i in range(user_code_length):
-        user_code[i] = random.choice(character_space)
+        user_code[i] = secrets.choice(character_space)
 
     return "".join(user_code)
 
