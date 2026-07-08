@@ -20,6 +20,11 @@ import requests
 from .http_forms import parse_form
 
 
+# Default HTTP timeout (seconds) for every request the client makes, so a slow or
+# unresponsive IdP fails the run in bounded time instead of hanging CI.
+DEFAULT_TIMEOUT = 10
+
+
 def generate_pkce_pair():
     """Return ``(code_verifier, code_challenge)`` for the S256 method (RFC 7636 §4)."""
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
@@ -88,6 +93,7 @@ class OAuthClient:
 
     # --- Resource-owner user agent (login + consent) ----------------------
     def _csrf_get(self, session, url, **kwargs):
+        kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
         return session.get(url, allow_redirects=False, **kwargs)
 
     def login(self, username, password, session=None):
@@ -102,7 +108,7 @@ class OAuthClient:
         _, fields = parse_form(resp.text)
         fields["username"] = username
         fields["password"] = password
-        resp = session.post(login_url, data=fields, allow_redirects=False)
+        resp = session.post(login_url, data=fields, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
         if resp.status_code not in (301, 302):
             raise AssertionError(f"Login did not succeed (status {resp.status_code})")
         return session
@@ -147,7 +153,9 @@ class OAuthClient:
         if extra:
             params.update(extra)
 
-        resp = session.get(self.url("/o/authorize/"), params=params, allow_redirects=False)
+        resp = session.get(
+            self.url("/o/authorize/"), params=params, allow_redirects=False, timeout=DEFAULT_TIMEOUT
+        )
         if resp.status_code == 200 and "<form" in resp.text:
             # Consent screen. Resubmit the hidden fields, approving or denying.
             action, fields = parse_form(resp.text)
@@ -156,7 +164,7 @@ class OAuthClient:
             else:
                 fields.pop("allow", None)
             post_url = action or self.url("/o/authorize/")
-            resp = session.post(post_url, data=fields, allow_redirects=False)
+            resp = session.post(post_url, data=fields, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
         return AuthorizeResult(resp)
 
     # --- Token endpoint ----------------------------------------------------
@@ -239,11 +247,15 @@ class OAuthClient:
             params["post_logout_redirect_uri"] = post_logout_redirect_uri
         if state is not None:
             params["state"] = state
-        resp = session.get(self.url("/o/logout/"), params=params, allow_redirects=False)
+        resp = session.get(
+            self.url("/o/logout/"), params=params, allow_redirects=False, timeout=DEFAULT_TIMEOUT
+        )
         if resp.status_code == 200 and "<form" in resp.text:
             action, fields = parse_form(resp.text)
             fields["allow"] = "Authorize"
-            resp = session.post(action or self.url("/o/logout/"), data=fields, allow_redirects=False)
+            resp = session.post(
+                action or self.url("/o/logout/"), data=fields, allow_redirects=False, timeout=DEFAULT_TIMEOUT
+            )
         return resp
 
     # --- Device Authorization Grant (RFC 8628) ----------------------------
@@ -260,19 +272,19 @@ class OAuthClient:
         protected).
         """
         device_url = self.url("/o/device/")
-        resp = session.get(device_url, allow_redirects=False)
+        resp = session.get(device_url, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
         _, fields = parse_form(resp.text)
         fields["user_code"] = user_code
-        resp = session.post(device_url, data=fields, allow_redirects=False)
+        resp = session.post(device_url, data=fields, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
         confirm_url = resp.headers.get("Location")
         if not confirm_url:
             raise AssertionError(f"user_code submission did not redirect to confirm page: {resp.status_code}")
         if confirm_url.startswith("/"):
             confirm_url = self.url(confirm_url)
-        resp = session.get(confirm_url, allow_redirects=False)
+        resp = session.get(confirm_url, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
         _, fields = parse_form(resp.text)
         fields["action"] = action
-        return session.post(confirm_url, data=fields, allow_redirects=False)
+        return session.post(confirm_url, data=fields, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
 
     def device_token(self, *, client_id, device_code):
         return self.token(
