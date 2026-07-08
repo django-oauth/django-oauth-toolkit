@@ -367,7 +367,9 @@ class AbstractGrant(models.Model):
         return uri == self.redirect_uri
 
     def __str__(self):
-        return self.code
+        # Never render the authorization code itself: __str__ appears in the admin
+        # change page/breadcrumbs, in repr() within tracebacks, and in log output.
+        return "Grant #{self.pk}".format(self=self)
 
     class Meta:
         abstract = True
@@ -483,7 +485,9 @@ class AbstractAccessToken(models.Model):
         return {name: desc for name, desc in all_scopes.items() if name in token_scopes}
 
     def __str__(self):
-        return self.token
+        # Never render the token itself: __str__ appears in the admin change
+        # page/breadcrumbs, in repr() within tracebacks, and in log output.
+        return "AccessToken #{self.pk}".format(self=self)
 
     class Meta:
         abstract = True
@@ -555,7 +559,9 @@ class AbstractRefreshToken(models.Model):
             self.save()
 
     def __str__(self):
-        return self.token
+        # Never render the token itself: __str__ appears in the admin change
+        # page/breadcrumbs, in repr() within tracebacks, and in log output.
+        return "RefreshToken #{self.pk}".format(self=self)
 
     class Meta:
         abstract = True
