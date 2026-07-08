@@ -11,7 +11,8 @@ from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
-from jwcrypto import jwt
+from jwcrypto import jwk, jwt
+from jwcrypto.common import base64url_encode
 from oauthlib.oauth2.rfc6749 import errors as oauthlib_errors
 
 from oauth2_provider.models import (
@@ -2037,6 +2038,10 @@ class TestOIDCAuthorizationCodeHSAlgorithm(BaseAuthorizationCodeTokenView):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.application.algorithm = Application.HS256_ALGORITHM
+        # HS256 uses the client secret as the HMAC signing key, so it must be stored
+        # unhashed for the relying party to be able to verify the ID token.
+        cls.application.hash_client_secret = False
+        cls.application.client_secret = CLEARTEXT_SECRET
         cls.application.save()
 
     def setUp(self):
@@ -2076,6 +2081,13 @@ class TestOIDCAuthorizationCodeHSAlgorithm(BaseAuthorizationCodeTokenView):
         jwt_token = jwt.JWT(key=key, jwt=content["id_token"])
         claims = json.loads(jwt_token.claims)
         assert claims["sub"] == str(self.test_user.pk)
+
+        # The ID token must be verifiable by a relying party holding the *plaintext* client
+        # secret (the shared HS256 key), not just by the server's own jwk_key. This fails if
+        # the token was signed with a hashed secret.
+        rp_key = jwk.JWK(kty="oct", k=base64url_encode(CLEARTEXT_SECRET))
+        rp_verified = jwt.JWT(key=rp_key, jwt=content["id_token"])
+        assert json.loads(rp_verified.claims)["sub"] == str(self.test_user.pk)
 
 
 @pytest.mark.oauth2_settings(presets.DEFAULT_SCOPES_RW)

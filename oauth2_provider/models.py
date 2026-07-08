@@ -263,6 +263,23 @@ class AbstractApplication(models.Model):
                 )
             ):
                 raise ValidationError(_("You cannot use HS256 with public grants or clients"))
+            if not self.client_secret:
+                raise ValidationError(
+                    _("You cannot use HS256 without a client secret; it is the HMAC signing key.")
+                )
+            # For HS256 the client secret is the shared HMAC signing key, so it must be stored
+            # unhashed. Reject both the intent to hash (the flag) and an already-hashed stored
+            # value (e.g. the flag was toggled after the secret was hashed, or a legacy row), so
+            # the misconfiguration surfaces here instead of only failing later at signing time.
+            if self.hash_client_secret or self._client_secret_is_hashed(self.client_secret):
+                raise ValidationError(
+                    _(
+                        "You cannot use HS256 with a hashed client secret. For HS256 the client "
+                        "secret is the shared signing key and must be stored unhashed so the relying "
+                        "party can verify the token; set hash_client_secret=False and store an "
+                        "unhashed client_secret on this application."
+                    )
+                )
 
     def get_absolute_url(self):
         return reverse("oauth2_provider:detail", args=[str(self.pk)])
@@ -285,6 +302,15 @@ class AbstractApplication(models.Model):
         """
         return True
 
+    @staticmethod
+    def _client_secret_is_hashed(client_secret):
+        """Return True if the stored client secret is a Django password hash."""
+        try:
+            identify_hasher(client_secret)
+        except ValueError:
+            return False
+        return True
+
     @property
     def jwk_key(self):
         if self.algorithm == AbstractApplication.RS256_ALGORITHM:
@@ -292,6 +318,20 @@ class AbstractApplication(models.Model):
                 raise ImproperlyConfigured("You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm")
             return jwk_from_pem(oauth2_settings.OIDC_RSA_PRIVATE_KEY)
         elif self.algorithm == AbstractApplication.HS256_ALGORITHM:
+            # An empty secret would sign tokens with an empty HMAC key, which is trivially
+            # forgeable by anyone.
+            if not self.client_secret:
+                raise ImproperlyConfigured(
+                    "HS256 signing requires a non-empty client secret to use as the HMAC key."
+                )
+            # A hashed secret would sign tokens with the password hash string as the HMAC key,
+            # which the relying party (holding the plaintext secret) can never verify.
+            if self._client_secret_is_hashed(self.client_secret):
+                raise ImproperlyConfigured(
+                    "HS256 signing requires the plaintext client secret as the HMAC key, but this "
+                    "application's client secret is hashed. Set hash_client_secret=False and reset "
+                    "the client_secret (or recreate the application) so the plaintext secret is stored."
+                )
             return jwk.JWK(kty="oct", k=base64url_encode(self.client_secret))
         raise ImproperlyConfigured("This application does not support signed tokens")
 
