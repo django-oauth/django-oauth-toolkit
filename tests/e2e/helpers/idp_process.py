@@ -59,9 +59,14 @@ class IdpServer:
         pkce_required=False,
         pkce_required_client_ids=None,
         fixtures=("fixtures/seed.json", "fixtures/e2e_seed.json"),
+        allowed_hosts=None,
     ):
         self.host = host
         self.port = port or find_free_port()
+        # The browser RP addresses the IdP as both localhost and 127.0.0.1
+        # (the SPA uses localhost for OIDC and 127.0.0.1 for the device page),
+        # so callers can widen ALLOWED_HOSTS beyond the bind host.
+        self.allowed_hosts = allowed_hosts or [host]
         self.scopes = scopes
         self.default_scopes = default_scopes or []
         self.pkce_required = pkce_required
@@ -86,7 +91,7 @@ class IdpServer:
         env = os.environ.copy()
         env["DJANGO_SETTINGS_MODULE"] = "idp.settings"
         env["DATABASE_URL"] = f"sqlite:///{self._tmpdir}/db.sqlite3"
-        env["ALLOWED_HOSTS"] = self.host
+        env["ALLOWED_HOSTS"] = ",".join(self.allowed_hosts)
         if self.scopes:
             env["OAUTH2_PROVIDER_SCOPES"] = _encode_env_dict(self.scopes)
         if self.default_scopes:
