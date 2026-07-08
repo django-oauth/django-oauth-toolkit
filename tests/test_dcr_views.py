@@ -514,8 +514,8 @@ class TestDynamicClientRegistrationManagement(TestCase):
         response = self.client.get(self.management_url, **_bearer(self.registration_token))
         assert response.status_code == 401
 
-    def test_get_token_wrong_client_is_403(self):
-        """GET with token for a different client → 403."""
+    def test_get_token_wrong_client_is_401(self):
+        """GET with token for a different client → 401 invalid_token (RFC 6750)."""
         # Create a second application with its own token
         self.client.force_login(self.user)
         data2 = {"redirect_uris": ["https://other.com/cb"], "grant_types": ["authorization_code"]}
@@ -524,7 +524,9 @@ class TestDynamicClientRegistrationManagement(TestCase):
         self.client.logout()
 
         response = self.client.get(self.management_url, **_bearer(other_token))
-        assert response.status_code == 403
+        assert response.status_code == 401
+        assert response.json()["error"] == "invalid_token"
+        assert response["WWW-Authenticate"].startswith('Bearer error="invalid_token"')
 
     # -- PUT -----------------------------------------------------------------
 

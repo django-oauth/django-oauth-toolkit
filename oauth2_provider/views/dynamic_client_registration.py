@@ -352,7 +352,11 @@ class DynamicClientRegistrationManagementView(View):
 
         application = token.application
         if application is None or application.client_id != client_id:
-            return None, _error_response("invalid_token", "Token does not match client_id", status=403)
+            # 401 rather than 403: per RFC 6750 the invalid_token error code
+            # belongs on a 401 challenge, and the token simply isn't valid for
+            # this registration URI. This also avoids confirming whether the
+            # requested client_id exists.
+            return None, _error_response("invalid_token", "Token does not match client_id", status=401)
 
         # RFC 7592 management only applies to dynamically registered clients.
         # This stops a regular access token that happens to carry
