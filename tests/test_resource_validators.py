@@ -6,7 +6,11 @@ from django.utils import timezone
 from oauthlib.common import Request as OauthlibRequest
 
 from oauth2_provider.models import get_access_token_model, get_application_model
-from oauth2_provider.oauth2_validators import OAuth2Validator, validate_resource_as_url_prefix
+from oauth2_provider.oauth2_validators import (
+    OAuth2Validator,
+    is_valid_resource_uri,
+    validate_resource_as_url_prefix,
+)
 from oauth2_provider.settings import oauth2_settings
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -151,6 +155,20 @@ class TestResourceValidatorPrefixMatch(TestCase):
 
         result = validate_resource_as_url_prefix(request_uri, audiences)
 
+        self.assertFalse(result)
+
+    def test_non_string_resource_fails_closed(self):
+        """A non-string resource entry is invalid (returns False), not a TypeError.
+
+        A JSON ``resource`` array containing a non-string element must fail closed
+        with a clean invalid_target error rather than raising a 500.
+        """
+        for value in (123, None, ["https://api.example.com"], {"uri": "https://api.example.com"}):
+            self.assertFalse(is_valid_resource_uri(value))
+
+    def test_non_string_audience_does_not_raise(self):
+        """A non-string audience is ignored rather than raising in prefix matching."""
+        result = validate_resource_as_url_prefix("https://api.example.com/", [123])
         self.assertFalse(result)
 
     def test_port_mismatch(self):

@@ -58,7 +58,13 @@ def _parse_and_validate_uri(uri):
     URIs with userinfo or fragment components are rejected. A query component is
     accepted (RFC 8707 allows one on resource indicators) but is not part of the
     returned tuple, so it plays no role in matching.
+
+    A non-string ``uri`` (e.g. a non-string element in a JSON ``resource`` array)
+    returns None rather than raising, so callers fail closed with a clean
+    ``invalid_target`` error instead of a TypeError / 500.
     """
+    if not isinstance(uri, str):
+        return None
     parsed = urllib.parse.urlsplit(uri)
     # "is not None" catches empty-but-present components ("https://@example.com",
     # "https://example.com/#") that truthiness checks would let through.
