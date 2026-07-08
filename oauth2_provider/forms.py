@@ -83,6 +83,22 @@ class ApplicationForm(forms.ModelForm):
             if self._will_hash_client_secret()
             else self.client_secret_help_when_unhashed
         )
+        # Expose both variants on the hash_client_secret checkbox as data-attributes
+        # so the shared application_form.js can swap the client_secret help text live
+        # as the box is toggled. Rendered identically by the front-end views and the
+        # Django admin, so both surfaces behave the same. Only emitted while the
+        # secret is still readable; the already-hashed branch returns above (there is
+        # nothing to toggle), leaving the checkbox without these attributes.
+        if "hash_client_secret" in self.fields:
+            self.fields["hash_client_secret"].widget.attrs.update(
+                {
+                    "data-client-secret-help-when-hashed": self.client_secret_help_when_hashed,
+                    "data-client-secret-help-when-unhashed": self.client_secret_help_when_unhashed,
+                }
+            )
+
+    class Media:
+        js = ("oauth2_provider/js/application_form.js",)
 
     def _will_hash_client_secret(self):
         """Whether the client secret will be hashed on save.

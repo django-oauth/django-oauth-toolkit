@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field and can be filtered in the Django admin.
 * #1739 `ALLOW_LOCALHOST_LOOPBACK` setting to extend the RFC 8252 §7.3 any-port loopback exemption to `http://localhost` redirect URIs (opt-in, default `False`)
 
+### Changed
+* The dynamic `client_secret` help text (added in #1635) is now shared by the Django admin
+  application form as well as the front-end register/edit views. The `ApplicationAdmin` uses
+  `ApplicationForm`, and a shared `oauth2_provider/js/application_form.js` updates the help text
+  live as the `hash_client_secret` checkbox is toggled on either surface.
+
 ### Security
 * Generate device-flow `user_code` values with the cryptographically secure `secrets` module
   instead of the predictable `random` module (Mersenne Twister). The `user_code` is a device

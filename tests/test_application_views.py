@@ -359,25 +359,26 @@ class TestApplicationViews(BaseTest):
         self.assertIn("stores the secret unhashed", form.fields["client_secret"].help_text)
 
     def test_client_secret_help_text_live_toggle_rendered_on_register(self):
-        # The register page must ship both help variants plus the checkbox-driven
-        # script so the message updates live as hash_client_secret is toggled,
-        # rather than being frozen at the server-rendered value.
+        # The register page must ship both help variants (as checkbox data-attributes)
+        # plus the shared application_form.js so the message updates live as
+        # hash_client_secret is toggled, rather than being frozen at the
+        # server-rendered value.
         self.client.login(username="foo_user", password="123456")
         response = self.client.get(reverse("oauth2_provider:register"))
-        self.assertContains(response, 'id="client-secret-help-when-hashed"')
-        self.assertContains(response, 'id="client-secret-help-when-unhashed"')
+        self.assertContains(response, "data-client-secret-help-when-hashed")
+        self.assertContains(response, "data-client-secret-help-when-unhashed")
         self.assertContains(response, "it will be hashed and cannot be recovered")
         self.assertContains(response, "stores the secret unhashed")
         self.assertContains(response, "id_hash_client_secret")
-        self.assertContains(response, "addEventListener")
+        self.assertContains(response, "oauth2_provider/js/application_form.js")
 
     def test_client_secret_help_text_no_live_toggle_when_already_hashed(self):
         # An already-hashed secret cannot be reverted by unchecking the box, so the
-        # toggle script must not be rendered on that edit page.
+        # toggle data-attributes must not be rendered on that edit page.
         self.client.login(username="foo_user", password="123456")
         response = self.client.get(reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)))
         self.assertContains(response, "can no longer be viewed")
-        self.assertNotContains(response, 'id="client-secret-help-when-hashed"')
+        self.assertNotContains(response, "data-client-secret-help-when-hashed")
 
     def test_application_form_without_client_secret_field(self):
         # ApplicationForm must not assume client_secret / hash_client_secret are
@@ -390,3 +391,60 @@ class TestApplicationViews(BaseTest):
         self.assertFalse(_is_hashed(None))  # None (guards against identify_hasher TypeError)
         self.assertFalse(_is_hashed("cleartext-secret"))  # unrecognized -> ValueError
         self.assertTrue(_is_hashed(make_password("cleartext-secret")))  # real hash
+
+
+class TestApplicationAdminHashClientSecretUX(BaseTest):
+    """The admin change form must offer the same hash_client_secret-driven
+    client_secret help text (and live toggle) as the front-end views."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.admin_user = UserModel.objects.create_superuser("admin_user", "admin@example.com", "123456")
+        cls.hashed_app = Application.objects.create(
+            name="hashed app",
+            redirect_uris="http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            user=cls.foo_user,
+        )
+        cls.unhashed_app = Application.objects.create(
+            name="unhashed app",
+            redirect_uris="http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            user=cls.foo_user,
+            hash_client_secret=False,
+            client_secret="cleartext-secret",
+        )
+
+    def test_admin_add_form_ships_live_toggle(self):
+        # A new application's secret is still readable, so the admin add form must
+        # expose both help variants and load the shared toggle script.
+        self.client.login(username="admin_user", password="123456")
+        response = self.client.get(reverse("admin:oauth2_provider_application_add"))
+        self.assertContains(response, "data-client-secret-help-when-hashed")
+        self.assertContains(response, "data-client-secret-help-when-unhashed")
+        self.assertContains(response, "it will be hashed and cannot be recovered")
+        self.assertContains(response, "oauth2_provider/js/application_form.js")
+
+    def test_admin_change_form_unhashed_shows_toggle(self):
+        # An application that stores its secret unhashed keeps a readable secret,
+        # so the admin edit form must still ship the live toggle.
+        self.client.login(username="admin_user", password="123456")
+        response = self.client.get(
+            reverse("admin:oauth2_provider_application_change", args=(self.unhashed_app.pk,))
+        )
+        self.assertContains(response, "data-client-secret-help-when-hashed")
+        self.assertContains(response, "stores its client secret unhashed")
+        self.assertContains(response, "oauth2_provider/js/application_form.js")
+
+    def test_admin_change_form_hashed_has_no_toggle(self):
+        # An already-hashed secret cannot be reverted, so no live toggle is offered;
+        # the admin shows the same static "cannot be viewed" message as the front-end.
+        self.client.login(username="admin_user", password="123456")
+        response = self.client.get(
+            reverse("admin:oauth2_provider_application_change", args=(self.hashed_app.pk,))
+        )
+        self.assertContains(response, "can no longer be viewed")
+        self.assertNotContains(response, "data-client-secret-help-when-hashed")
