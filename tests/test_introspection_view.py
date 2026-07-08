@@ -361,3 +361,44 @@ class TestTokenIntrospectionViews(TestCase):
         token_database = router.db_for_write(AccessToken)
         with self.assertNumQueries(1, using=token_database):
             self.client.post(reverse("oauth2_provider:introspect"))
+
+    def test_introspect_returns_aud_for_token_with_resource(self):
+        """
+        Test that introspection returns aud field for tokens with resource binding (RFC 8707)
+        """
+
+        token_with_resource = AccessToken.objects.create(
+            user=self.test_user,
+            token="token_with_aud",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+            resource=["https://api.example.com", "https://data.example.com"],
+        )
+
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:introspect"), {"token": token_with_resource.token}, **auth_headers
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.json()
+        self.assertIn("aud", content)
+        self.assertEqual(content["aud"], ["https://api.example.com", "https://data.example.com"])
+
+    def test_introspect_omits_aud_for_token_without_resource(self):
+        """
+        Test that introspection omits aud field for tokens without resource binding
+        """
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:introspect"), {"token": self.valid_token.token}, **auth_headers
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.json()
+        self.assertNotIn("aud", content)

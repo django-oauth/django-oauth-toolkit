@@ -2229,3 +2229,94 @@ class TestDefaultScopes(BaseTest):
         self.assertEqual(form["state"].value(), "random_state_string")
         self.assertEqual(form["scope"].value(), "read")
         self.assertEqual(form["client_id"].value(), self.application.client_id)
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class TestResourceIndicators(BaseTest):
+    """Test RFC 8707 Resource Indicators support"""
+
+    def test_authorization_code_stores_resource(self):
+        """Test that authorization code grant stores resource parameter in Grant"""
+        self.client.login(username="test_user", password="123456")
+
+        # Authorization request with resource
+        auth_params = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "redirect_uri": "http://example.org",
+            "scope": "read write",
+            "resource": "https://api.example.com/resource",
+            "allow": True,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=auth_params)
+        self.assertEqual(response.status_code, 302)
+
+        # Extract code from redirect
+        redirect_url = response["Location"]
+        code = parse_qs(urlparse(redirect_url).query)["code"][0]
+
+        # Verify Grant has resource stored as list
+        grant = Grant.objects.get(code=code)
+        self.assertEqual(grant.resource, ["https://api.example.com/resource"])
+
+    def test_authorization_form_rejects_invalid_resource(self):
+        """A tampered hidden resource form field is rejected with invalid_target"""
+        self.client.login(username="test_user", password="123456")
+
+        auth_params = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "redirect_uri": "http://example.org",
+            "scope": "read write",
+            "resource": "/not/absolute",
+            "allow": True,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=auth_params)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=invalid_target", response["Location"])
+        # RFC 6749: the error redirect must echo the client's state
+        self.assertIn("state=random_state_string", response["Location"])
+        self.assertEqual(Grant.objects.count(), 0)
+
+    def test_token_exchange_propagates_resource(self):
+        """Test that token exchange propagates resource from Grant to AccessToken"""
+        self.client.login(username="test_user", password="123456")
+
+        # Authorization request with resource
+        auth_params = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "redirect_uri": "http://example.org",
+            "scope": "read write",
+            "resource": "https://api.example.com/resource",
+            "allow": True,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=auth_params)
+        self.assertEqual(response.status_code, 302)
+
+        # Extract code from redirect
+        redirect_url = response["Location"]
+        code = parse_qs(urlparse(redirect_url).query)["code"][0]
+
+        # Exchange code for token
+        token_request_data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "http://example.org",
+            "client_id": self.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data)
+        self.assertEqual(response.status_code, 200)
+
+        # Verify AccessToken has resource from Grant
+        response_data = response.json()
+        token = AccessToken.objects.get(token=response_data["access_token"])
+        self.assertEqual(token.resource, ["https://api.example.com/resource"])

@@ -119,6 +119,10 @@ DEFAULTS = {
     "RESOURCE_SERVER_AUTH_TOKEN": None,
     "RESOURCE_SERVER_INTROSPECTION_CREDENTIALS": None,
     "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
+    # Resource Server Token Resource Validator (RFC 8707)
+    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
+        "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
+    ),
     # Deprecated: introspection ``exp`` values are Unix timestamps interpreted as UTC per RFC 7662/
     # RFC 7519. Setting a non-UTC time zone re-enables the legacy workaround of reinterpreting the
     # ``exp`` wall-clock time in the configured time zone. Configuring it emits a DeprecationWarning
@@ -183,6 +187,7 @@ IMPORT_STRINGS = (
     "ID_TOKEN_ADMIN_CLASS",
     "REFRESH_TOKEN_ADMIN_CLASS",
     "DCR_REGISTRATION_PERMISSION_CLASSES",
+    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR",
 )
 
 

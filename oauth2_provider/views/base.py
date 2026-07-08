@@ -15,6 +15,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
+from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
 from ..compat import login_not_required
@@ -22,6 +23,7 @@ from ..exceptions import OAuthToolkitError
 from ..forms import AllowForm
 from ..http import OAuth2ResponseRedirect
 from ..models import get_access_token_model, get_application_model, get_device_grant_model
+from ..oauth2_validators import is_valid_resource_uri
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
 from ..signals import app_authorized
@@ -113,6 +115,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             "code_challenge": self.oauth2_data.get("code_challenge", None),
             "code_challenge_method": self.oauth2_data.get("code_challenge_method", None),
             "claims": self.oauth2_data.get("claims", None),
+            "resource": self.oauth2_data.get("resource", None),  # RFC 8707
         }
         return initial_data
 
@@ -133,6 +136,31 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             credentials["nonce"] = form.cleaned_data.get("nonce")
         if form.cleaned_data.get("claims", False):
             credentials["claims"] = form.cleaned_data.get("claims")
+        if form.cleaned_data.get("resource", False):  # RFC 8707
+            resource_value = form.cleaned_data.get("resource")
+            # RFC 8707 uses repeated query params for multiple resources, but the
+            # authorization form stores them as a single whitespace-separated hidden field.
+            # str.split() with no argument splits on any whitespace run and yields a
+            # single-element list for one URI, so no special-casing is needed.
+            resource_list = resource_value.split()
+            # The GET handler validates these, but the hidden form field can be
+            # tampered with; re-validate before anything is stored on the grant.
+            for resource_uri in resource_list:
+                if not is_valid_resource_uri(resource_uri):
+                    error = OAuthToolkitError(
+                        error=CustomOAuth2Error(
+                            error="invalid_target",
+                            description=(
+                                f"The resource '{resource_uri}' is not a valid resource indicator: "
+                                "it must be an absolute URI with a scheme and host."
+                            ),
+                            # RFC 6749: error redirects must echo the client's state
+                            state=credentials.get("state"),
+                        ),
+                        redirect_uri=credentials["redirect_uri"],
+                    )
+                    return self.error_response(error, application)
+            credentials["resource"] = resource_list
 
         scopes = form.cleaned_data.get("scope")
         allow = form.cleaned_data.get("allow")
@@ -192,6 +220,32 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             kwargs["nonce"] = credentials["nonce"]
         if "claims" in credentials:
             kwargs["claims"] = json.dumps(credentials["claims"])
+        # RFC 8707: Extract resource parameter(s) from request (oauthlib doesn't handle it)
+        # Multiple resource parameters are allowed per RFC 8707
+        if "resource" in request.GET:
+            resource_list = request.GET.getlist("resource")
+            # Reject malformed resource URIs up front so they are never stored
+            # on the grant and surfaced again at token issuance.
+            for resource_uri in resource_list:
+                if not is_valid_resource_uri(resource_uri):
+                    error = OAuthToolkitError(
+                        error=CustomOAuth2Error(
+                            error="invalid_target",
+                            description=(
+                                f"The resource '{resource_uri}' is not a valid resource indicator: "
+                                "it must be an absolute URI with a scheme and host."
+                            ),
+                            # RFC 6749: error redirects must echo the client's state
+                            state=credentials.get("state"),
+                        ),
+                        redirect_uri=credentials["redirect_uri"],
+                    )
+                    return self.error_response(error, application)
+            # For form display: store as space-separated string
+            # Multiple resources are rare, but we need to preserve them
+            kwargs["resource"] = " ".join(resource_list)
+            # For skip_authorization path: add list to credentials
+            credentials["resource"] = resource_list
 
         self.oauth2_data = kwargs
         # following two loc are here only because of https://code.djangoproject.com/ticket/17795

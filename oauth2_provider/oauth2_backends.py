@@ -93,10 +93,19 @@ class OAuthLibCore:
     def extract_body(self, request):
         """
         Extracts the POST body from the Django request object
+
+        Repeated ``resource`` parameters are preserved because RFC 8707 allows
+        clients to request multiple resources by repeating the parameter. All
+        other repeated parameters keep Django's last-value-wins behavior.
+
         :param request: The current django.http.HttpRequest object
-        :return: provided POST parameters
+        :return: provided POST parameters as key/value pairs
         """
-        return request.POST.items()
+        return [
+            (key, value)
+            for key, values in request.POST.lists()
+            for value in (values if key == "resource" else values[-1:])
+        ]
 
     def validate_authorization_request(self, request):
         """
@@ -216,6 +225,11 @@ class OAuthLibCore:
         :param scopes: A list of scopes required to verify so that request is verified
         """
         uri, http_method, body, headers = self._extract_params(request)
+        # RFC 8707: audience validation compares the token's resource indicators
+        # against the request URI, so the URI must be absolute. build_absolute_uri
+        # honors SECURE_PROXY_SSL_HEADER / USE_X_FORWARDED_HOST when deployed
+        # behind a TLS-terminating proxy.
+        uri = request.build_absolute_uri(uri)
 
         valid, r = self.server.verify_request(uri, http_method, body, headers, scopes=scopes)
         return valid, r

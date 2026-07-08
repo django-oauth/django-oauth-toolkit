@@ -40,6 +40,8 @@ This directory contains plain-text standards documents used by this repository.
   - Source: https://www.rfc-editor.org/rfc/rfc8414.txt
 - `rfc8628.txt` - OAuth 2.0 Device Authorization Grant
   - Source: https://www.rfc-editor.org/rfc/rfc8628.txt
+- `rfc8707.txt` - Resource Indicators for OAuth 2.0
+  - Source: https://www.rfc-editor.org/rfc/rfc8707.txt
 - `rfc9700.txt` - Best Current Practice for OAuth 2.0 Security
   - Source: https://www.rfc-editor.org/rfc/rfc9700.txt
 
