@@ -204,6 +204,22 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
+    def test_register_missing_redirect_uris_is_400_with_rfc_terms(self):
+        """Omitted redirect_uris with authorization_code → 400 using RFC names.
+
+        The early check must speak RFC 7591 ("authorization_code"), not leak
+        DOT's internal grant constant ("authorization-code") from
+        Application.clean().
+        """
+        self.client.force_login(self.user)
+        data = {"grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "authorization_code" in body["error_description"]
+        assert "authorization-code" not in body["error_description"]
+
     def test_register_invalid_redirect_uri_is_400(self):
         """Invalid redirect_uri → 400."""
         self.client.force_login(self.user)

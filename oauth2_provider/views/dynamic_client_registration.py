@@ -37,6 +37,9 @@ GRANT_TYPE_MAP = {
 # Grant types that are handled automatically by DOT alongside authorization_code
 IGNORED_GRANT_TYPES = {"refresh_token"}
 
+# DOT grant types for which Application.clean() requires redirect_uris
+REDIRECT_REQUIRED_GRANT_TYPES = {"authorization-code", "implicit"}
+
 
 def _error_response(error, description, status=400):
     response = JsonResponse({"error": error, "error_description": description}, status=status)
@@ -167,6 +170,16 @@ def _build_application_kwargs(data):
     if err:
         return None, err
     kwargs["authorization_grant_type"] = dot_grant
+
+    # Fail early with RFC 7591 field names/values; deferring to
+    # Application.clean() would surface DOT's internal grant type constants
+    # (e.g. "authorization-code") in the error_description.
+    if dot_grant in REDIRECT_REQUIRED_GRANT_TYPES and not redirect_uris:
+        rfc_grant = _dot_grant_to_rfc_grant_types(dot_grant)[0]
+        return None, _error_response(
+            "invalid_client_metadata",
+            f"redirect_uris is required for grant type {rfc_grant!r}",
+        )
 
     # token_endpoint_auth_method → client_type
     SUPPORTED_AUTH_METHODS = ("none", "client_secret_basic", "client_secret_post")
