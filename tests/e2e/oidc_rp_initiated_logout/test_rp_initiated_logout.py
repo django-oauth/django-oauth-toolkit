@@ -8,7 +8,7 @@ from tests.e2e import constants as c
 
 
 def _login_and_get_id_token(oauth, login):
-    session = oauth.login(c.E2E_USERNAME, c.E2E_PASSWORD)
+    session = login()
     result = oauth.authorize(
         session,
         client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
