@@ -105,7 +105,11 @@ addopts = [
     "--cov=oauth2_provider",
     "--cov-report=",
     "--cov-append",
-    "-s"
+    "-s",
+    # The black-box end-to-end / compliance suite boots a live server and is run
+    # separately via `tox -e e2e` (which clears addopts). Keep it out of the
+    # in-process unit-test collection.
+    "--ignore=tests/e2e",
 ]
 markers = [
     "oauth2_settings: Custom OAuth2 settings to use - use with oauth2_settings fixture",
