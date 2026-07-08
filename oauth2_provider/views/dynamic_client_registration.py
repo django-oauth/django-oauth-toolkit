@@ -155,9 +155,11 @@ def _build_application_kwargs(data):
         return None, _error_response("invalid_client_metadata", "Each redirect_uri must be a string")
     kwargs["redirect_uris"] = " ".join(redirect_uris)
 
-    # client_name
-    if "client_name" in data:
-        kwargs["name"] = data["client_name"]
+    # client_name — always set so a request is a full replacement of the
+    # metadata (RFC 7592 §2.2): on PUT an omitted client_name resets
+    # Application.name to empty, consistent with the other fields below. On
+    # POST this is equivalent to the model's blank default.
+    kwargs["name"] = data.get("client_name", "")
 
     # grant_types → authorization_grant_type
     grant_types = data.get("grant_types", ["authorization_code"])

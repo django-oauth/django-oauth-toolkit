@@ -80,7 +80,7 @@ class AbstractApplication(models.Model):
                             the registration process as described in :rfc:`2.2`
     * :attr:`name` Friendly name for the Application
     * :attr:`dcr_created` True if the Application was registered via Dynamic
-                          Client Registration (:rfc:`7591`), False for manually
+                          Client Registration (RFC 7591), False for manually
                           created Applications
     """
 

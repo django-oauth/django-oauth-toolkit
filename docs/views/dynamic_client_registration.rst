@@ -54,8 +54,15 @@ GET/PUT/DELETE /o/register/{client_id}/
 Read, update, or delete the client configuration (RFC 7592).  Requires a
 ``Bearer {registration_access_token}`` header issued during registration.
 
-- **GET** — returns current client metadata (same format as registration response)
-- **PUT** — accepts the same JSON body as POST; updates the application
+- **GET** — returns current client metadata (same format as the registration response, except
+  ``client_secret``, which is only returned once on the initial ``POST`` since it is hashed at rest
+  and cannot be recovered afterward)
+- **PUT** — full replacement of the client metadata
+  (`RFC 7592 section 2.2 <https://datatracker.ietf.org/doc/html/rfc7592#section-2.2>`_): accepts the
+  same JSON body as POST and **must include every metadata field the client wants to keep**. Omitted
+  fields are reset to their registration defaults — for example, an omitted ``token_endpoint_auth_method``
+  reverts the client to confidential and an omitted ``client_name`` clears the name. Read the current
+  configuration with ``GET`` first, modify it, and send the complete document back.
 - **DELETE** — deletes the application and all associated tokens; returns 204
 
 

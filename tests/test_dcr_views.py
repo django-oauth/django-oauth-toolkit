@@ -580,6 +580,29 @@ class TestDynamicClientRegistrationManagement(TestCase):
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == "Updated App"
 
+    def test_put_is_full_replacement_and_resets_omitted_fields(self):
+        """PUT is a full replacement (RFC 7592 §2.2): omitted metadata resets.
+
+        The client was registered with a name; a PUT that omits client_name
+        clears Application.name rather than preserving it.
+        """
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            # client_name intentionally omitted
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert "client_name" not in body
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.name == ""
+
     def test_put_rotates_token_by_default(self):
         """PUT with DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE=True → new token issued."""
         update_data = {
