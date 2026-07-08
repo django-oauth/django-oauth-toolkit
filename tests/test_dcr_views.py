@@ -252,6 +252,19 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
+    def test_register_invalid_utf8_body_is_400(self):
+        """A body with invalid UTF-8 bytes → 400, not a 500.
+
+        json.loads() on such bytes raises UnicodeDecodeError, which is a
+        subclass of ValueError and is caught by _parse_metadata.
+        """
+        self.client.force_login(self.user)
+        response = self.client.post(
+            _register_url(), data=b'{"client_name": "\xff\xfe"}', content_type="application/json"
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
     def test_register_empty_grant_types_is_400(self):
         """grant_types=[] → 400."""
         self.client.force_login(self.user)
