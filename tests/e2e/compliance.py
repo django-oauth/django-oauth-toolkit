@@ -115,7 +115,7 @@ class CompliancePlugin:
         generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
         json_path = os.path.join(out_dir, "compliance-matrix.json")
-        with open(json_path, "w") as fh:
+        with open(json_path, "w", encoding="utf-8") as fh:
             json.dump(
                 {
                     "generated": generated,
@@ -133,7 +133,7 @@ class CompliancePlugin:
 
         md_path = os.path.join(out_dir, "compliance-matrix.md")
         icon = {"passed": "✅", "failed": "❌", "error": "❌", "skipped": "⚠️", "not-run": "—"}
-        with open(md_path, "w") as fh:
+        with open(md_path, "w", encoding="utf-8") as fh:
             fh.write("# OAuth 2.0 / OpenID Connect Compliance Matrix\n\n")
             fh.write(f"_Generated {generated} from the end-to-end suite (`tests/e2e`)._\n\n")
             total = sum(summary.values())
