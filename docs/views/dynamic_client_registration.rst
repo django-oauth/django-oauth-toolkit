@@ -82,9 +82,10 @@ Field Mapping
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since
     DOT's token endpoint authenticates confidential clients through either HTTP Basic auth or
     request-body credentials. The Application model does not record which method was requested, so
-    per :rfc:`7591#section-2` (the server "MAY replace any of the client's requested metadata
-    values ... with suitable values") responses normalize the registered value to
-    ``client_secret_basic``; clients may nevertheless use either method at the token endpoint.
+    per `RFC 7591 section 2 <https://datatracker.ietf.org/doc/html/rfc7591#section-2>`_ (the server
+    "MAY replace any of the client's requested metadata values ... with suitable values") responses
+    normalize the registered value to ``client_secret_basic``; clients may nevertheless use either
+    method at the token endpoint.
 
 
 Configuration
