@@ -12,11 +12,16 @@ class _FormParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self._in_form = False
+        # Only the first <form> is captured; once it closes we stop so fields or
+        # the action from any later form on the page cannot bleed in.
+        self._done = False
         self.action = None
         self.method = "post"
         self.fields = {}
 
     def handle_starttag(self, tag, attrs):
+        if self._done:
+            return
         attrs = dict(attrs)
         if tag == "form":
             self._in_form = True
@@ -28,8 +33,9 @@ class _FormParser(HTMLParser):
                 self.fields[name] = attrs.get("value", "")
 
     def handle_endtag(self, tag):
-        if tag == "form":
+        if tag == "form" and self._in_form:
             self._in_form = False
+            self._done = True
 
 
 def parse_form(html):
