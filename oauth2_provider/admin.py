@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 
+from oauth2_provider.forms import ApplicationForm
 from oauth2_provider.models import (
     get_access_token_admin_class,
     get_access_token_model,
@@ -56,6 +57,10 @@ def mask_credential(value):
 
 
 class ApplicationAdmin(admin.ModelAdmin):
+    # Reuse the front-end ApplicationForm so the admin gets the same
+    # hash_client_secret-driven client_secret help text (and the shared
+    # application_form.js that updates it live as the checkbox is toggled).
+    form = ApplicationForm
     list_display = ("pk", "name", "user", "client_type", "authorization_grant_type", "dcr_created")
     list_filter = ("client_type", "authorization_grant_type", "skip_authorization", "dcr_created")
     radio_fields = {

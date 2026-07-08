@@ -1,3 +1,4 @@
 include README.rst LICENSE
 recursive-include oauth2_provider/templates *.html
+recursive-include oauth2_provider/static *
 prune rfcs
