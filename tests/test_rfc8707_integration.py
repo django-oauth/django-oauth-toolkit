@@ -65,7 +65,7 @@ def test_rfc8707_authorization_code_flow_with_resource(client, oauth2_settings):
     assert "code=" in redirect_url
 
     # Extract authorization code
-    code = redirect_url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(redirect_url).query)["code"][0]
 
     # Verify grant has resource stored
     grant = Grant.objects.get(code=code)
@@ -406,7 +406,7 @@ def test_rfc8707_token_request_cannot_escalate_resources(client, oauth2_settings
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Token request trying to escalate to unauthorized resource
     token_url = reverse("oauth2_provider:token")
@@ -474,7 +474,7 @@ def test_rfc8707_token_request_without_resource_gets_all(client, oauth2_settings
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Token request WITHOUT resource parameter
     token_url = reverse("oauth2_provider:token")
@@ -548,7 +548,7 @@ def test_rfc8707_token_request_with_repeated_resource_params(client, oauth2_sett
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Token request repeating the resource parameter to narrow to two
     token_url = reverse("oauth2_provider:token")
@@ -615,7 +615,7 @@ def test_rfc8707_token_request_repeated_resource_params_reject_escalation(client
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Token request repeating resource params, one outside the grant
     token_url = reverse("oauth2_provider:token")
@@ -680,7 +680,7 @@ def test_rfc8707_refresh_token_preserves_resource(client, oauth2_settings):
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
@@ -777,7 +777,7 @@ def test_rfc8707_refresh_token_rejects_unauthorized_resource(client, oauth2_sett
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
@@ -822,7 +822,7 @@ def test_rfc8707_refresh_token_rejects_unauthorized_resource(client, oauth2_sett
     # Step 4: Get fresh token to test narrowing (previous refresh may have consumed token)
     auth_response2 = client.get(f"{auth_url}?{query_string}")
     assert auth_response2.status_code == 302
-    code2 = auth_response2.url.split("code=")[1].split("&")[0]
+    code2 = parse_qs(urlparse(auth_response2.url).query)["code"][0]
 
     token_response2 = client.post(
         token_url,
@@ -898,7 +898,7 @@ def test_rfc8707_refresh_token_rotation_preserves_resource(client, oauth2_settin
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
@@ -986,7 +986,7 @@ def test_rfc8707_non_rotating_refresh_preserves_resource(client, oauth2_settings
     auth_response = client.get(f"{auth_url}?{query_string}")
 
     assert auth_response.status_code == 302
-    code = auth_response.url.split("code=")[1].split("&")[0]
+    code = parse_qs(urlparse(auth_response.url).query)["code"][0]
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
