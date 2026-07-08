@@ -107,6 +107,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release.
 
 ### Fixed
+* Fix the `rw_protected_resource` decorator accumulating the read/write scope on a shared list
+  across requests. The required-scope list was built once at decoration time and appended to on
+  every request, so after a write (`POST`) request the `write` scope stayed in the list and a
+  subsequent read (`GET`) request with a read-only token was wrongly rejected. The behaviour was
+  request-order dependent, not thread-safe, and also mutated a caller-supplied `scopes` list. The
+  read/write scope is now added to a fresh per-request list.
 * #1693 `AbstractDeviceGrant.scope` is now a `TextField(blank=True)` like the other grant and token
   models, instead of `CharField(max_length=64, null=True)`. 64 characters is well below the limits
   common in the broader OAuth ecosystem (Okta allows 1024, Google 2048), so longer scope strings
