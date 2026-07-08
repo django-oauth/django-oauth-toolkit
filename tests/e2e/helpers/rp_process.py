@@ -75,6 +75,8 @@ class RpServer:
                 if requests.get(self.base_url, timeout=2).status_code == 200:
                     return
             except requests.RequestException:
+                # Connection errors/timeouts are expected until the dev server is
+                # ready; keep polling until the deadline.
                 pass
             time.sleep(0.3)
         raise RuntimeError(f"RP did not become ready within {timeout}s:\n{self.read_log()}")

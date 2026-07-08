@@ -1,5 +1,7 @@
 """OpenID Connect RP-Initiated Logout 1.0 (end_session endpoint)."""
 
+from urllib.parse import urlparse
+
 import pytest
 
 from tests.e2e import constants as c
@@ -51,4 +53,6 @@ def test_logout_rejects_unregistered_post_logout_redirect_uri(oauth, login):
     )
     # An unregistered post_logout_redirect_uri MUST NOT be redirected to.
     assert resp.status_code == 400
-    assert not resp.headers.get("Location", "").startswith("http://evil.example")
+    # Check the parsed redirect target host rather than a substring so the
+    # assertion cannot be fooled by the URL appearing elsewhere in Location.
+    assert urlparse(resp.headers.get("Location", "")).netloc != "evil.example"

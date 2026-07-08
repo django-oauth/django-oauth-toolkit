@@ -107,7 +107,7 @@ class CompliancePlugin:
 
     def write_reports(self):
         if not self.registry:
-            return
+            return None
         out_dir = os.environ.get("COMPLIANCE_MATRIX_DIR", os.getcwd())
         os.makedirs(out_dir, exist_ok=True)
         matrix = self._build_matrix()

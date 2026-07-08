@@ -138,6 +138,8 @@ class IdpServer:
                 if requests.get(url, timeout=2).status_code == 200:
                     return
             except requests.RequestException:
+                # Connection refused / timeouts are expected while the server is
+                # still starting up; keep polling until the deadline.
                 pass
             time.sleep(0.2)
         raise RuntimeError(f"IdP did not become ready within {timeout}s:\n{self.read_log()}")
