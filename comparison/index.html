@@ -120,6 +120,25 @@
   .m-req{color:var(--req);font-size:15px;} .m-opt{color:var(--muted);font-size:14px;}
   .m-forbid{color:var(--forbid);font-size:14px;font-weight:700;}
 
+  /* expandable suite rollup */
+  .disclosure{ display:inline-flex; align-items:center; gap:8px; width:100%; background:none; border:none;
+    color:inherit; font:inherit; font-weight:600; text-align:left; cursor:pointer; padding:0; }
+  .disclosure .caret{ color:var(--accent); font-size:11px; transition:transform .15s ease; display:inline-block;
+    width:12px; flex:none; }
+  .disclosure[aria-expanded="true"] .caret{ transform:rotate(90deg); }
+  td.rowhead.leaf{ color:var(--muted); }
+  tr.child.collapsed{ display:none; }
+  tr.child td{ background:color-mix(in srgb, var(--accent-soft) 45%, var(--panel)); font-size:12px;
+    border-bottom:1px solid var(--line); padding-top:4px; padding-bottom:4px; }
+  tr.child:hover td, tr.child:hover td.rowhead{ background:var(--accent-soft); }
+  td.child-head{ padding-left:34px; display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  td.child-head .cspec{ font-size:11.5px; color:var(--ink); }
+  .pill{ font-family:var(--mono); font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    padding:2px 5px; border-radius:4px; flex:none; line-height:1; }
+  .pill.req{ background:var(--s-full-bg); color:var(--s-full-fg); }
+  .pill.opt{ background:var(--s-unk-bg); color:var(--s-unk-fg); }
+  .pill.forbid{ background:var(--s-none-bg); color:var(--s-none-fg); }
+
   .legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin:14px 2px 0; font-size:12.5px; color:var(--muted); }
   .legend .item { display:inline-flex; align-items:center; gap:6px; }
   .legend .sw { width:14px; height:14px; border-radius:4px; display:inline-block; }
@@ -221,15 +240,16 @@ const MEM = [
  ['.','.','o','.','.','.','o'], ['.','.','o','.','.','.','o'], ['.','.','o','.','.','.','o'], ['.','.','o','o','.','.','.']
 ];
 
-// rollup: rows = suites, cols = OP competitors
+// rollup: rows = suites, cols = OP competitors. [suiteKey, label, statusStr]
+// suiteKey maps to SUITES (and therefore to the MEM membership column).
 const ROLLROWS = [
-  ['OAuth 2.0 (classic)','FFFFFFFFFFFPF'],
-  ['OAuth 2.1 (draft)','PPPPFFPFPPPPP'],
-  ['OpenID Connect','FPFFFFFFFFFFF'],
-  ['Native apps (8252)','PPPPPFPFFFFFF'],
-  ['FAPI 2.0','NNNNFNFNPNANF'],
-  ['MCP authorization','NNNNPNPNPNPNP'],
-  ['RP (client role)','xxPxxxxxxxxxx']
+  ['oauth20','OAuth 2.0 (classic)','FFFFFFFFFFFPF'],
+  ['oauth21','OAuth 2.1 (draft)','PPPPFFPFPPPPP'],
+  ['oidc','OpenID Connect','FPFFFFFFFFFFF'],
+  ['native','Native apps (8252)','PPPPPFPFFFFFF'],
+  ['fapi2','FAPI 2.0','NNNNFNFNPNANF'],
+  ['mcp','MCP authorization','NNNNPNPNPNPNP'],
+  ['rp','RP (client role)','xxPxxxxxxxxxx']
 ];
 
 // RP capability rows align to RP competitors
@@ -252,7 +272,7 @@ const TABS = [
 const CAPTIONS = {
   op:['Table 1 · Spec × Competitor (Provider / Authorization-Server role)','One row per specification, one column per product. The DOT column is authoritative (scored from source). Hover a row to highlight; use the filter to find a spec.'],
   member:['Table 2 · Suite → Spec membership','What each profile <em>is</em>, defined from the profile specs themselves. ● required · ○ optional / recommended · ⊘ forbidden. This scores nobody — it is the shared definition the rollup builds on.'],
-  rollup:['Table 3 · Suite × Competitor rollup','Profiles as rows — the aggregate of Table 1 through the definitions in Table 2. This is “suites as rows”, kept separate from the per-spec detail so nothing is double-counted.'],
+  rollup:['Table 3 · Suite × Competitor rollup','Profiles as rows — the aggregate of Table 1 through the definitions in Table 2. <strong>Click a suite</strong> to expand its member specs (<span class="pill req">req</span> required first, then <span class="pill opt">opt</span> optional, then <span class="pill forbid">×</span> forbidden) and see each product\'s status for them.'],
   rp:['Table 4 · Relying-Party (client) comparison','A different product category: client libraries, not servers. Django OAuth Toolkit is a provider, so it is N/A here by design — pair it with one of these to <em>consume</em> an external IdP.']
 };
 
@@ -266,6 +286,23 @@ function chip(code){
   return c;
 }
 function memMark(code){ const m=M[code]||M['.']; const s=el('span',m.cls,m.g); s.title=m.t; return s; }
+
+// member specs of a suite (MEM column `col`), required first, then optional, then forbidden;
+// SPECS order preserved within each group.
+function suiteChildren(col){
+  const rank = {R:0,o:1,x:2};
+  const out = [];
+  SPECS.forEach((sp,i)=>{ const mark = MEM[i][col]; if(mark==='R'||mark==='o'||mark==='x') out.push({i,mark}); });
+  return out.sort((a,b)=> rank[a.mark]-rank[b.mark] || a.i-b.i);
+}
+
+function toggleSuite(key,btn){
+  const open = btn.getAttribute('aria-expanded')==='true';
+  btn.setAttribute('aria-expanded', open?'false':'true');
+  document.querySelectorAll('#matrix tbody tr.child[data-suite="'+key+'"]')
+    .forEach(tr=> tr.classList.toggle('collapsed', open));
+  applyFilter();
+}
 
 function buildHead(cols){
   const tr = el('tr');
@@ -309,10 +346,36 @@ function render(kind){
     cols = OP;
     head.appendChild(buildHead(cols));
     ROLLROWS.forEach(r=>{
-      const tr = el('tr'); tr.dataset.label=r[0].toLowerCase();
-      tr.appendChild(el('td','rowhead',r[0]));
-      r[1].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
+      const [key,label,status] = r;
+      const col = SUITES.findIndex(s=>s[0]===key);
+      const kids = key==='rp' ? [] : suiteChildren(col); // RP members are client-side; no drill-down
+      const expandable = kids.length>0;
+      const tr = el('tr','suite-row'); tr.dataset.label=label.toLowerCase(); tr.dataset.suite=key;
+      const head0 = el('td','rowhead');
+      if(expandable){
+        const btn = el('button','disclosure');
+        btn.setAttribute('aria-expanded','false');
+        btn.innerHTML = '<span class="caret" aria-hidden="true">▸</span>'+label;
+        btn.addEventListener('click',()=>toggleSuite(key,btn));
+        head0.appendChild(btn);
+      } else { head0.textContent = label; head0.classList.add('leaf'); }
+      tr.appendChild(head0);
+      status.split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
       body.appendChild(tr);
+      // child spec rows (collapsed by default)
+      kids.forEach(kid=>{
+        const {i,mark} = kid;
+        const ctr = el('tr','child collapsed'); ctr.dataset.suite=key;
+        ctr.dataset.label = SPECS[i][0].toLowerCase();
+        const ch0 = el('td','rowhead child-head');
+        const pillCls = mark==='R'?'req':(mark==='o'?'opt':'forbid');
+        const pillTxt = mark==='R'?'req':(mark==='o'?'opt':'×');
+        const pillTitle = mark==='R'?'required by this profile':(mark==='o'?'optional / recommended':'forbidden (must not use) by this profile');
+        ch0.innerHTML = '<span class="pill '+pillCls+'" title="'+pillTitle+'">'+pillTxt+'</span><span class="cspec">'+SPECS[i][0]+'</span>';
+        ctr.appendChild(ch0);
+        OPGRID[i].split('').forEach(code=>{ const td=el('td'); td.appendChild(chip(code)); ctr.appendChild(td); });
+        body.appendChild(ctr);
+      });
     });
   } else {
     cols = RP;
