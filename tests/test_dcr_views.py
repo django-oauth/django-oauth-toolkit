@@ -86,6 +86,20 @@ class TestDynamicClientRegistration(TestCase):
         )
         assert app.dcr_created is False
 
+    def test_dcr_created_is_readonly_in_admin(self):
+        """dcr_created is a security boundary and must be read-only in the admin.
+
+        The RFC 7592 management endpoint only operates on dcr_created
+        applications; an editable admin field would let it be flipped on a
+        manually provisioned client and defeat that protection.
+        """
+        from django.contrib.admin.sites import AdminSite
+
+        from oauth2_provider.admin import ApplicationAdmin
+
+        model_admin = ApplicationAdmin(Application, AdminSite())
+        assert "dcr_created" in model_admin.get_readonly_fields(request=None)
+
     def test_register_with_client_name(self):
         """client_name is mapped to Application.name."""
         self.client.force_login(self.user)

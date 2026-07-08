@@ -27,6 +27,11 @@ class ApplicationAdmin(admin.ModelAdmin):
     }
     search_fields = ("name",) + (("user__email",) if has_email else ())
     raw_id_fields = ("user",)
+    # dcr_created is a security boundary: the RFC 7592 management endpoint only
+    # operates on applications where it is True. It reflects how the client was
+    # created and must not be editable in the admin, or a manually provisioned
+    # application could be made manageable by flipping it.
+    readonly_fields = ("dcr_created",)
 
 
 class AccessTokenAdmin(admin.ModelAdmin):
