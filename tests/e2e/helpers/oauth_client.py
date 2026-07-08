@@ -72,7 +72,15 @@ class OAuthClient:
         return requests.get(f"{self.issuer}/.well-known/openid-configuration", timeout=5)
 
     def oauth_metadata(self):
-        """RFC 8414 Authorization Server Metadata."""
+        """RFC 8414 Authorization Server Metadata.
+
+        Prefers the spec-strict well-known location for an issuer that has a path
+        component (issuer ``.../o`` -> ``/.well-known/oauth-authorization-server/o``),
+        falling back to the issuer-prefixed form some deployments expose.
+        """
+        strict = requests.get(self.url("/.well-known/oauth-authorization-server/o"), timeout=5)
+        if strict.status_code == 200:
+            return strict
         return requests.get(self.url("/o/.well-known/oauth-authorization-server"), timeout=5)
 
     def jwks(self):

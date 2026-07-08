@@ -1,6 +1,7 @@
 """RFC 8414 — OAuth 2.0 Authorization Server Metadata."""
 
 import pytest
+import requests
 
 from tests.e2e import constants as c
 
@@ -10,6 +11,15 @@ def metadata(oauth):
     resp = oauth.oauth_metadata()
     assert resp.status_code == 200
     return resp.json()
+
+
+@pytest.mark.compliance("RFC 8414", "3", "Well-Known URI (strict, issuer with path)")
+def test_metadata_served_at_strict_well_known_location(oauth, issuer):
+    # For an issuer with a path component (".../o"), RFC 8414 places the document
+    # at /.well-known/oauth-authorization-server/o, with the issuer reflected back.
+    resp = requests.get(oauth.url("/.well-known/oauth-authorization-server/o"), timeout=5)
+    assert resp.status_code == 200
+    assert resp.json()["issuer"] == issuer
 
 
 @pytest.mark.compliance("RFC 8414", "2", "Required metadata fields")

@@ -27,10 +27,10 @@ NOT_SUPPORTED = [
     ("RFC 9101", "JWT-Secured Authorization Request (JAR)", "No request/request_uri object support."),
     ("RFC 9449", "DPoP", "No DPoP-bound tokens."),
     ("RFC 8705", "mTLS client authentication", "No tls_client_auth / self_signed_tls_client_auth."),
-    ("OIDC Core 1.0", "private_key_jwt / client_secret_jwt", "Only client_secret_basic/_post."),
+    ("OpenID Connect Core 1.0", "private_key_jwt / client_secret_jwt", "Only client_secret_basic/_post."),
     ("OAuth 2.0 Form Post Response Mode", "response_mode=form_post", "Only query/fragment."),
     ("OIDC Session Management / Logout", "Back-/Front-Channel Logout", "Only RP-Initiated Logout."),
-    ("OIDC Core 1.0", "pairwise subject type", "Only public subject type."),
+    ("OpenID Connect Core 1.0", "pairwise subject type", "Only public subject type."),
 ]
 
 _STATUS_RANK = {"error": 3, "failed": 2, "skipped": 1, "passed": 0}

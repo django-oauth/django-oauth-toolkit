@@ -19,6 +19,8 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import TemplateView
 
+from oauth2_provider.urls import metadata_urlpatterns
+
 
 urlpatterns = [
     path(
@@ -27,4 +29,10 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     path("accounts/", include("django.contrib.auth.urls")),
+    # RFC 8414 locates the metadata document at the server root. Because the
+    # provider is mounted under /o/, strict clients look for it at
+    # /.well-known/oauth-authorization-server/o (the issuer path appended). DOT's
+    # docs recommend prefixed deployments also expose the metadata at the root,
+    # so mount metadata_urlpatterns here in addition to the /o/ include.
+    path("", include(metadata_urlpatterns)),
 ]
