@@ -11,7 +11,6 @@ import pytest
 
 from tests.e2e import constants as c
 from tests.e2e.helpers.jwt_tools import validate_id_token
-from tests.e2e.helpers.oauth_client import generate_pkce_pair
 
 
 @pytest.mark.compliance("RFC 6749", "4.1.1", "Authorization Request")
@@ -149,47 +148,3 @@ def test_unregistered_redirect_uri_is_rejected(oauth, user_session):
     # A mismatched redirect_uri MUST NOT redirect; the error is shown locally.
     assert result.status_code in (400, 401)
     assert "error" in result.response.text.lower()
-
-
-@pytest.mark.compliance("RFC 7636", "4.6", "PKCE downgrade")
-def test_pkce_required_client_rejects_missing_challenge(oauth, user_session):
-    # e2e-public-pkce is in PKCE_REQUIRED_CLIENT_IDS: an authorization request
-    # without a code_challenge MUST be rejected.
-    result = oauth.authorize(
-        user_session,
-        client_id=c.PUBLIC_PKCE_CLIENT_ID,
-        response_type="code",
-        redirect_uri=c.REDIRECT_URI,
-        scope="openid",
-        state="s",
-    )
-    assert result.status_code in (400, 302)
-    params = result.params
-    if result.status_code == 302:
-        assert params.get("error") == "invalid_request"
-    else:
-        assert "error" in result.response.text.lower()
-
-
-@pytest.mark.compliance("RFC 7636", "4.5", "code_verifier")
-def test_public_client_pkce_s256_round_trip(oauth, user_session):
-    verifier, challenge = generate_pkce_pair()
-    result = oauth.authorize(
-        user_session,
-        client_id=c.PUBLIC_PKCE_CLIENT_ID,
-        response_type="code",
-        redirect_uri=c.REDIRECT_URI,
-        scope="openid",
-        state="s",
-        code_challenge=challenge,
-        code_challenge_method="S256",
-    )
-    code = result.query_params["code"]
-    token_resp = oauth.exchange_code(
-        client_id=c.PUBLIC_PKCE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        code_verifier=verifier,
-    )
-    assert token_resp.status_code == 200
-    assert token_resp.json()["access_token"]

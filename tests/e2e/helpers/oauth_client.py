@@ -218,7 +218,9 @@ class OAuthClient:
         headers = {"Authorization": f"Bearer {access_token}"}
         return requests.get(f"{self.issuer}/userinfo/", headers=headers, timeout=10)
 
-    def rp_logout(self, session, *, id_token_hint=None, client_id=None, post_logout_redirect_uri=None, state=None):
+    def rp_logout(
+        self, session, *, id_token_hint=None, client_id=None, post_logout_redirect_uri=None, state=None
+    ):
         """OIDC RP-Initiated Logout 1.0 (end_session)."""
         params = {}
         if id_token_hint is not None:
@@ -249,7 +251,7 @@ class OAuthClient:
         Requires an authenticated ``session`` (the verification pages are login
         protected).
         """
-        device_url = self.url("/o/device")
+        device_url = self.url("/o/device/")
         resp = session.get(device_url, allow_redirects=False)
         _, fields = parse_form(resp.text)
         fields["user_code"] = user_code

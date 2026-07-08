@@ -39,6 +39,24 @@ SPEC_BY_PACKAGE = {
 
 ALL_SPEC_MARKERS = sorted({marker for _, marker in SPEC_BY_PACKAGE.values()})
 
+# Map a ``compliance()`` spec label (and a few close variants) to a family
+# marker, so a test tagged with a spec from *another* family (e.g. an OIDC test
+# also asserting an RFC 7636 requirement, or the RFC 7592 checks living in the
+# DCR package) is still selectable via ``-m spec_...``.
+SPEC_LABEL_TO_MARKER = {
+    "RFC 6749": "spec_rfc6749",
+    "RFC 7636": "spec_rfc7636",
+    "RFC 7009": "spec_rfc7009",
+    "RFC 7662": "spec_rfc7662",
+    "RFC 8414": "spec_rfc8414",
+    "RFC 8628": "spec_rfc8628",
+    "RFC 7591": "spec_rfc7591",
+    "RFC 7592": "spec_rfc7591",
+    "OpenID Connect Core 1.0": "spec_oidc_core",
+    "OpenID Connect Discovery 1.0": "spec_oidc_discovery",
+    "OpenID Connect RP-Initiated Logout 1.0": "spec_oidc_rp_logout",
+}
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -62,6 +80,13 @@ def pytest_collection_modifyitems(config, items):
             if part in SPEC_BY_PACKAGE:
                 item.add_marker(SPEC_BY_PACKAGE[part][1])
                 break
+        # Also tag by each compliance() spec label so cross-spec assertions are
+        # selectable via their own family marker.
+        for marker in item.iter_markers("compliance"):
+            if marker.args:
+                family = SPEC_LABEL_TO_MARKER.get(marker.args[0])
+                if family:
+                    item.add_marker(family)
     plugin = getattr(config, "_compliance_plugin", None)
     if plugin is not None:
         plugin.register(items, SPEC_BY_PACKAGE)

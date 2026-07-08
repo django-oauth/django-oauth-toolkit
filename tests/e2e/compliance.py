@@ -40,6 +40,14 @@ def _worst(a, b):
     return a if _STATUS_RANK[a] >= _STATUS_RANK[b] else b
 
 
+def _section_sort_key(section):
+    """Sort dotted spec sections numerically (3.1.2 before 3.10) when possible."""
+    parts = section.split(".")
+    if all(p.isdigit() for p in parts):
+        return (0, [int(p) for p in parts])
+    return (1, section)
+
+
 class CompliancePlugin:
     def __init__(self, config):
         self.config = config
@@ -116,9 +124,7 @@ class CompliancePlugin:
                         spec: {section: rows for section, rows in sections.items()}
                         for spec, sections in matrix.items()
                     },
-                    "not_supported": [
-                        {"spec": s, "feature": f, "note": n} for s, f, n in NOT_SUPPORTED
-                    ],
+                    "not_supported": [{"spec": s, "feature": f, "note": n} for s, f, n in NOT_SUPPORTED],
                 },
                 fh,
                 indent=2,
@@ -133,14 +139,12 @@ class CompliancePlugin:
             total = sum(summary.values())
             passed = summary.get("passed", 0)
             fh.write(f"**{passed}/{total} requirement checks passing.** ")
-            fh.write(
-                " · ".join(f"{icon.get(k, k)} {k}: {v}" for k, v in sorted(summary.items())) + "\n\n"
-            )
+            fh.write(" · ".join(f"{icon.get(k, k)} {k}: {v}" for k, v in sorted(summary.items())) + "\n\n")
             for spec in sorted(matrix):
                 fh.write(f"## {spec}\n\n")
                 fh.write("| Section | Requirement | Test | Status |\n")
                 fh.write("|---|---|---|---|\n")
-                for section in sorted(matrix[spec], key=lambda s: [int(p) if p.isdigit() else p for p in s.split(".")] if all(p.isdigit() for p in s.split(".")) else s):
+                for section in sorted(matrix[spec], key=_section_sort_key):
                     for row in matrix[spec][section]:
                         fh.write(
                             f"| {section} | {row['requirement']} | `{row['test']}` | "
