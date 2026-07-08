@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from oauth2_provider.contrib.rest_framework import (
     IsAuthenticatedOrTokenHasScope,
     OAuth2Authentication,
+    OAuth2ProtectedResourceAuthentication,
     TokenHasReadWriteScope,
     TokenHasResourceScope,
     TokenHasScope,
@@ -111,9 +112,14 @@ class AuthenticationNoneOAuth2View(MockView):
     authentication_classes = [AuthenticationNone]
 
 
+class OAuth2ProtectedResourceView(MockView):
+    authentication_classes = [OAuth2ProtectedResourceAuthentication]
+
+
 urlpatterns = [
     path("oauth2/", include("oauth2_provider.urls")),
     path("oauth2-test/", OAuth2View.as_view()),
+    path("oauth2-protected-resource-test/", OAuth2ProtectedResourceView.as_view()),
     path("oauth2-scoped-test/", ScopedView.as_view()),
     path("oauth2-scoped-missing-auth/", TokenHasScopeViewWrongAuth.as_view()),
     path("oauth2-read-write-test/", ReadWriteScopedView.as_view()),
@@ -176,6 +182,34 @@ class TestOAuth2Authentication(TestCase):
             response["WWW-Authenticate"],
             'Bearer realm="api",error="invalid_token",error_description="The access token is invalid."',
         )
+
+    def test_protected_resource_authentication_advertises_metadata(self):
+        """RFC 9728: the metadata authenticator adds resource_metadata to the challenge."""
+        metadata_url = "http://testserver/oauth2/.well-known/oauth-protected-resource"
+        response = self.client.get("/oauth2-protected-resource-test/")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response["WWW-Authenticate"],
+            'Bearer realm="api",resource_metadata="{}"'.format(metadata_url),
+        )
+
+    def test_protected_resource_authentication_metadata_with_invalid_token(self):
+        metadata_url = "http://testserver/oauth2/.well-known/oauth-protected-resource"
+        auth = self._create_authorization_header("fake-token")
+        response = self.client.get("/oauth2-protected-resource-test/", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response["WWW-Authenticate"],
+            'Bearer realm="api",error="invalid_token",'
+            'error_description="The access token is invalid.",'
+            'resource_metadata="{}"'.format(metadata_url),
+        )
+
+    def test_base_authentication_challenge_unchanged(self):
+        """The base OAuth2Authentication challenge must not gain resource_metadata."""
+        response = self.client.get("/oauth2-test/")
+        self.assertEqual(response.status_code, 401)
+        assert "resource_metadata" not in response["WWW-Authenticate"]
 
     def test_authentication_or_scope_denied(self):
         # user is not authenticated

@@ -13,6 +13,7 @@ from oauth2_provider.views.mixins import (
     OAuthLibMixin,
     OIDCLogoutOnlyMixin,
     OIDCOnlyMixin,
+    ProtectedResourceMetadataMixin,
     ProtectedResourceMixin,
     ScopedResourceMixin,
 )
@@ -136,6 +137,43 @@ class TestProtectedResourceMixin(BaseTest):
         view = TestView.as_view()
         response = view(request)
         self.assertEqual(response.status_code, 200)
+
+    def test_denied_returns_bare_403_by_default(self):
+        """Regression guard: the default mixin still returns a plain 403 (no challenge)."""
+
+        class TestView(ProtectedResourceMixin, View):
+            server_class = Server
+            validator_class = OAuth2Validator
+
+        request = self.request_factory.get("/fake-req")
+        response = TestView.as_view()(request)
+        self.assertEqual(response.status_code, 403)
+        assert "WWW-Authenticate" not in response
+
+
+class TestProtectedResourceMetadataMixin(BaseTest):
+    def test_denied_returns_401_with_resource_metadata_challenge(self):
+        class TestView(ProtectedResourceMetadataMixin, ProtectedResourceMixin, View):
+            server_class = Server
+            validator_class = OAuth2Validator
+
+        request = self.request_factory.get("/fake-req")
+        response = TestView.as_view()(request)
+        self.assertEqual(response.status_code, 401)
+        challenge = response["WWW-Authenticate"]
+        assert challenge.startswith("Bearer")
+        assert 'resource_metadata="http://testserver/o/.well-known/oauth-protected-resource"' in challenge
+
+    def test_realm_is_advertised_when_set(self):
+        class TestView(ProtectedResourceMetadataMixin, ProtectedResourceMixin, View):
+            server_class = Server
+            validator_class = OAuth2Validator
+            www_authenticate_realm = "example"
+
+        request = self.request_factory.get("/fake-req")
+        response = TestView.as_view()(request)
+        self.assertEqual(response.status_code, 401)
+        assert 'realm="example"' in response["WWW-Authenticate"]
 
 
 @pytest.fixture

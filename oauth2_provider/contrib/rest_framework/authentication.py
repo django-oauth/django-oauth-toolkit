@@ -4,6 +4,7 @@ from django.core.exceptions import SuspiciousOperation
 from rest_framework.authentication import BaseAuthentication
 
 from ...oauth2_backends import get_oauthlib_core
+from ...settings import oauth2_settings
 
 
 class OAuth2Authentication(BaseAuthentication):
@@ -53,3 +54,22 @@ class OAuth2Authentication(BaseAuthentication):
         return "Bearer {attributes}".format(
             attributes=self._dict_to_string(www_authenticate_attributes),
         )
+
+
+class OAuth2ProtectedResourceAuthentication(OAuth2Authentication):
+    """
+    RFC 9728 variant of :class:`OAuth2Authentication`.
+
+    Adds a ``resource_metadata`` parameter to the ``WWW-Authenticate`` challenge,
+    pointing clients at this server's protected-resource metadata document
+    (``/.well-known/oauth-protected-resource``). Opt in by listing this class in a
+    view's ``authentication_classes``; the base ``OAuth2Authentication`` challenge is
+    left unchanged.
+    """
+
+    def authenticate_header(self, request):
+        header = super().authenticate_header(request)
+        metadata_url = oauth2_settings.oauth2_resource_metadata_url(request)
+        if metadata_url:
+            header = '{header},resource_metadata="{url}"'.format(header=header, url=metadata_url)
+        return header

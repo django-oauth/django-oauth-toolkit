@@ -2,11 +2,12 @@ import logging
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
-from django.http import HttpRequest, HttpResponseForbidden, HttpResponseNotFound
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseNotFound
 
 from ..exceptions import FatalClientError
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
+from ..www_authenticate import build_bearer_challenge
 
 
 log = logging.getLogger("oauth2_provider")
@@ -209,6 +210,18 @@ class OAuthLibMixin:
         core = self.get_oauthlib_core()
         return core.authenticate_client(request)
 
+    def unauthenticated_response(self, request, oauthlib_request=None):
+        """Response returned when a protected resource request fails authentication.
+
+        Defaults to a bare ``403 Forbidden`` (the historical behaviour).
+        :class:`ProtectedResourceMetadataMixin` overrides this to return an RFC 6750
+        ``401`` carrying an RFC 9728 ``WWW-Authenticate`` challenge.
+
+        :param oauthlib_request: the oauthlib request produced by ``verify_request``,
+            carrying any ``oauth2_error`` detail (``None`` for client-auth failures).
+        """
+        return HttpResponseForbidden()
+
 
 class ScopedResourceMixin:
     """
@@ -249,7 +262,7 @@ class ProtectedResourceMixin(OAuthLibMixin):
             request.resource_owner = r.user
             return super().dispatch(request, *args, **kwargs)
         else:
-            return HttpResponseForbidden()
+            return self.unauthenticated_response(request, r)
 
 
 class ReadWriteScopedResourceMixin(ScopedResourceMixin, OAuthLibMixin):
@@ -307,9 +320,35 @@ class ClientProtectedResourceMixin(OAuthLibMixin):
             if valid:
                 request.resource_owner = r.user
                 return super().dispatch(request, *args, **kwargs)
-            return HttpResponseForbidden()
+            return self.unauthenticated_response(request, r)
         else:
             return super().dispatch(request, *args, **kwargs)
+
+
+class ProtectedResourceMetadataMixin:
+    """RFC 9728 opt-in: advertise protected-resource metadata on auth failure.
+
+    Mix this in *before* a protected-resource view/mixin
+    (:class:`ProtectedResourceMixin`, :class:`ClientProtectedResourceMixin`, …) to
+    turn the default bare ``403 Forbidden`` denial into an RFC 6750 ``401
+    Unauthorized`` carrying a ``WWW-Authenticate: Bearer`` challenge with the RFC
+    9728 ``resource_metadata`` parameter pointing at
+    ``/.well-known/oauth-protected-resource``. Opting in explicitly (rather than
+    via a global flag) keeps the default views' behaviour unchanged.
+
+    Set ``www_authenticate_realm`` to advertise a realm in the challenge.
+    """
+
+    www_authenticate_realm = None
+
+    def unauthenticated_response(self, request, oauthlib_request=None):
+        oauth2_error = getattr(oauthlib_request, "oauth2_error", None)
+        challenge = build_bearer_challenge(
+            request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm
+        )
+        response = HttpResponse(status=401)
+        response["WWW-Authenticate"] = challenge
+        return response
 
 
 class OIDCOnlyMixin:

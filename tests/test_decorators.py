@@ -4,7 +4,12 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.utils import timezone
 
-from oauth2_provider.decorators import protected_resource, rw_protected_resource
+from oauth2_provider.decorators import (
+    protected_resource,
+    protected_resource_metadata,
+    rw_protected_resource,
+    rw_protected_resource_metadata,
+)
 from oauth2_provider.models import get_access_token_model, get_application_model
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -44,6 +49,34 @@ class TestProtectedResourceDecorator(TestCase):
         request = self.request_factory.get("/fake-resource")
         response = view(request)
         self.assertEqual(response.status_code, 403)
+        assert "WWW-Authenticate" not in response
+
+    def test_access_denied_metadata_decorator_advertises_metadata(self):
+        """RFC 9728: the metadata decorator returns a 401 with a resource_metadata challenge."""
+
+        @protected_resource_metadata()
+        def view(request, *args, **kwargs):
+            return "protected contents"
+
+        request = self.request_factory.get("/fake-resource")
+        response = view(request)
+        self.assertEqual(response.status_code, 401)
+        challenge = response["WWW-Authenticate"]
+        assert challenge.startswith("Bearer")
+        assert 'resource_metadata="http://testserver/o/.well-known/oauth-protected-resource"' in challenge
+
+    def test_access_denied_rw_metadata_decorator_advertises_metadata(self):
+        @rw_protected_resource_metadata()
+        def view(request, *args, **kwargs):
+            return "protected contents"
+
+        request = self.request_factory.get("/fake-resource")
+        response = view(request)
+        self.assertEqual(response.status_code, 401)
+        assert (
+            'resource_metadata="http://testserver/o/.well-known/oauth-protected-resource"'
+            in response["WWW-Authenticate"]
+        )
 
     def test_access_allowed(self):
         @protected_resource()
