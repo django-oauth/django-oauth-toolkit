@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DynamicClientRegistrationManagementView` with configurable permission classes and registration access
   tokens. Dynamically registered applications are flagged with a new `AbstractApplication.dcr_created`
   field and can be filtered in the Django admin.
+* #1739 `ALLOW_LOCALHOST_LOOPBACK` setting to extend the RFC 8252 §7.3 any-port loopback exemption to `http://localhost` redirect URIs (opt-in, default `False`)
 
 ### Security
 * Generate device-flow `user_code` values with the cryptographically secure `secrets` module

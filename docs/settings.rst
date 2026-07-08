@@ -83,6 +83,29 @@ For example,
 This feature is useful for working with CI service such as cloudflare, netlify, and vercel that offer branch
 deployments for development previews and user acceptance testing.
 
+ALLOW_LOCALHOST_LOOPBACK
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+`RFC 8252 section 7.3 <https://datatracker.ietf.org/doc/html/rfc8252#section-7.3>`_ requires the
+authorization server to accept any port on a loopback ``redirect_uri`` at request time, so a native
+app can bind whatever ephemeral port the OS assigns. The toolkit applies that exemption to the loopback
+IP literals ``127.0.0.1`` and ``[::1]`` unconditionally. `Section 8.3
+<https://datatracker.ietf.org/doc/html/rfc8252#section-8.3>`_ notes that ``localhost`` redirect URIs
+"function similarly" but that their use is NOT RECOMMENDED, so ``localhost`` is *not* granted the
+any-port exemption by default.
+
+Some native clients nonetheless register ``http://localhost/callback`` and then receive the callback on
+an ephemeral port. When set to ``True``, the ``http://localhost`` hostname is treated as loopback and
+granted the same any-port exemption as the IP literals. The hostname must still match exactly, so
+``localhost`` is never conflated with ``127.0.0.1`` / ``[::1]``, and scheme, path, and query matching
+are unchanged.
+
+SECURITY WARNING: Per RFC 8252 section 8.3, prefer registering the loopback IP literals over
+``localhost``: a ``localhost`` redirect can resolve to a non-loopback interface on a host with
+misconfigured name resolution, whereas ``127.0.0.1`` / ``[::1]`` cannot. Only enable this if you must
+support clients that register ``localhost``.
+
 ALLOWED_SCHEMES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``["https"]``
