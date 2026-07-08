@@ -59,6 +59,9 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             "response_types_supported": oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED,
             "grant_types_supported": oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED,
             "scopes_supported": sorted(scopes.get_available_scopes()),
+            # draft-ietf-oauth-client-id-metadata-document: signal whether a
+            # client may use its metadata-document URL as its client_id.
+            "client_id_metadata_document_supported": oauth2_settings.CIMD_ENABLED,
         }
 
         # Endpoint URLs are resolved via reverse() and omitted if not registered

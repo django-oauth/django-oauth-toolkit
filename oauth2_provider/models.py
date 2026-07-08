@@ -105,6 +105,10 @@ class AbstractApplication(models.Model):
     * :attr:`dcr_created` True if the Application was registered via Dynamic
                           Client Registration (RFC 7591), False for manually
                           created Applications
+    * :attr:`cimd_created` True if the Application was resolved from a Client ID
+                           Metadata Document (draft-ietf-oauth-client-id-metadata-document)
+    * :attr:`cimd_expires_at` When the cached metadata document should be
+                              re-fetched, for CIMD applications
     """
 
     CLIENT_CONFIDENTIAL = "confidential"
@@ -139,7 +143,9 @@ class AbstractApplication(models.Model):
     )
 
     id = models.BigAutoField(primary_key=True)
-    client_id = models.CharField(max_length=100, unique=True, default=generate_client_id, db_index=True)
+    # 255 rather than 100 so a Client ID Metadata Document URL fits (CIMD uses
+    # the client's https URL as its client_id).
+    client_id = models.CharField(max_length=255, unique=True, default=generate_client_id, db_index=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="%(app_label)s_%(class)s",
@@ -181,6 +187,19 @@ class AbstractApplication(models.Model):
     dcr_created = models.BooleanField(
         default=False,
         help_text=_("True if this application was registered via Dynamic Client Registration (RFC 7591)"),
+    )
+    cimd_created = models.BooleanField(
+        default=False,
+        help_text=_(
+            "True if this application was resolved from a Client ID Metadata Document "
+            "(draft-ietf-oauth-client-id-metadata-document)"
+        ),
+    )
+    cimd_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text=_("When the cached Client ID Metadata Document should be re-fetched"),
     )
 
     class Meta:

@@ -45,6 +45,11 @@ This directory contains plain-text standards documents used by this repository.
 - `rfc9700.txt` - Best Current Practice for OAuth 2.0 Security
   - Source: https://www.rfc-editor.org/rfc/rfc9700.txt
 
+### IETF Drafts
+
+- `draft-ietf-oauth-client-id-metadata-document-01.txt` - OAuth Client ID Metadata Document
+  - Source: https://www.ietf.org/archive/id/draft-ietf-oauth-client-id-metadata-document-01.txt
+
 ### OpenID Connect Specs
 
 - `openid-connect-core-1_0.txt` - OpenID Connect Core 1.0 (errata set 2)

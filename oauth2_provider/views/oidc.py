@@ -80,6 +80,9 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             "code_challenge_methods_supported": [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS],
             "claims_supported": oidc_claims,
             "prompt_values_supported": ["none", "login"],
+            # draft-ietf-oauth-client-id-metadata-document: kept in sync with the
+            # RFC 8414 metadata endpoint so the two discovery documents agree.
+            "client_id_metadata_document_supported": oauth2_settings.CIMD_ENABLED,
         }
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
             data["prompt_values_supported"].append("create")
