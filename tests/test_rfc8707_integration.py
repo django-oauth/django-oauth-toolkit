@@ -426,9 +426,7 @@ def test_rfc8707_token_request_cannot_escalate_resources(client, oauth2_settings
     assert token_response.status_code == 400
 
     # Parse the JSON response (Note: Content-Type may be incorrect due to oauthlib CustomOAuth2Error)
-    import json as json_lib
-
-    error_data = json_lib.loads(token_response.content)
+    error_data = json.loads(token_response.content)
     assert error_data["error"] == "invalid_target"
     assert (
         "cannot escalate resource permissions beyond the original authorization grant"
