@@ -65,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applied `0012` (any 3.x deployment) are unaffected.
 
 ### Changed
+* #1732 Bearer `Authorization` header parsing is now harmonized across the codebase via a shared
+  `oauth2_provider.utils.parse_bearer_token` helper implementing RFC 7235 / RFC 6750 semantics.
+  As a result, `OAuth2TokenMiddleware` and `OAuth2ExtraTokenMiddleware` now accept the scheme
+  case-insensitively (e.g. a lowercase `bearer` header, which is RFC-correct, is no longer
+  ignored) and no longer mis-parse non-Bearer schemes that merely start with `Bearer`
+  (e.g. `BearerX token` was previously treated as a Bearer token and is now rejected).
 * #1688 `cleartokens` now removes revoked refresh tokens once `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`
   has passed, instead of keeping them until `REFRESH_TOKEN_EXPIRE_SECONDS`. When
   `REFRESH_TOKEN_REUSE_PROTECTION` is enabled, revoked tokens are still kept until they expire so

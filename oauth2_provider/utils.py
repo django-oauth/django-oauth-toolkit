@@ -6,6 +6,32 @@ from jwcrypto import jwk
 from oauthlib.common import Request
 
 
+def parse_bearer_token(auth_header):
+    """
+    Extract the token from a Bearer ``Authorization`` header value.
+
+    Implements RFC 7235 / RFC 6750 semantics: the scheme match is
+    case-insensitive ("bearer", "Bearer" and "BEARER" are all accepted) and
+    exact (schemes that merely start with "Bearer", e.g. "BearerX", are
+    rejected), and any whitespace runs around the scheme and token are
+    tolerated. RFC 6750 Bearer credentials are a single ``token68`` value and
+    cannot contain whitespace, so values with more than one whitespace-separated
+    part after the scheme (e.g. "Bearer token extra") are rejected.
+
+    Return the token string, or ``None`` if the header is not a well-formed
+    Bearer authorization.
+    """
+    if not auth_header:
+        return None
+    # maxsplit=2 (not 1) so whitespace inside the credentials produces a third
+    # element and fails the length check — a token68 value cannot contain
+    # whitespace — while still bounding the work on long malformed headers.
+    splits = auth_header.split(maxsplit=2)
+    if len(splits) != 2 or splits[0].lower() != "bearer":
+        return None
+    return splits[1]
+
+
 @functools.lru_cache()
 def jwk_from_pem(pem_string):
     """

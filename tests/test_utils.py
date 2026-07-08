@@ -29,6 +29,44 @@ CQDpSvwIvDMSIQIJAMDk47DzG9FHAghtvg1TWpy3oQIJAL6NHlS+RBufAgkA6QLA
     assert jwk3 is not jwk1
 
 
+@pytest.mark.parametrize(
+    "auth_header, expected",
+    [
+        # RFC 7235: scheme match is case-insensitive
+        ("Bearer sometoken", "sometoken"),
+        ("bearer sometoken", "sometoken"),
+        ("BEARER sometoken", "sometoken"),
+        ("BeArEr sometoken", "sometoken"),
+        # any whitespace run between scheme and token is tolerated
+        ("Bearer   sometoken", "sometoken"),
+        ("Bearer\tsometoken", "sometoken"),
+        ("Bearer \t sometoken", "sometoken"),
+        # surrounding whitespace is stripped from the token
+        ("Bearer sometoken  ", "sometoken"),
+        ("  Bearer sometoken", "sometoken"),
+        # scheme must match exactly, not merely start with "Bearer"
+        ("BearerX sometoken", None),
+        ("Bearersometoken", None),
+        # RFC 6750 token68: a Bearer token cannot contain whitespace, so
+        # multi-part values are malformed and rejected
+        ("Bearer token extra", None),
+        ("Bearer token  extra", None),
+        ("Bearer token extra more", None),
+        # other schemes are rejected
+        ("Basic dXNlcjpwYXNz", None),
+        # missing or empty token
+        ("Bearer", None),
+        ("Bearer ", None),
+        ("Bearer   ", None),
+        # empty/absent header
+        ("", None),
+        (None, None),
+    ],
+)
+def test_parse_bearer_token(auth_header, expected):
+    assert utils.parse_bearer_token(auth_header) == expected
+
+
 def test_user_code_generator():
     # Default argument, 8 characters
     user_code = utils.user_code_generator()
