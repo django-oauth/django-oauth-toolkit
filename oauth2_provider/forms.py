@@ -44,6 +44,12 @@ class ConfirmLogoutForm(forms.Form):
 class ApplicationForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # These run independently: the client_secret help handling may short-circuit
+        # (e.g. an already-hashed secret), but the HS256 warning must still be wired.
+        self._init_client_secret_help()
+        self._init_hs256_warning()
+
+    def _init_client_secret_help(self):
         # This form is normally bound to the (swappable) application model via
         # ``modelform_factory``; guard against field sets that omit client_secret.
         if "client_secret" not in self.fields:
@@ -96,6 +102,30 @@ class ApplicationForm(forms.ModelForm):
                     "data-client-secret-help-when-unhashed": self.client_secret_help_when_unhashed,
                 }
             )
+
+    def _init_hs256_warning(self):
+        # HS256 uses the client secret as the HMAC signing key, so the secret must be
+        # stored unhashed; Application.clean() rejects HS256 + a hashed secret, but only
+        # at save time. Expose what the shared application_form.js needs to warn live
+        # (as the algorithm / hash checkbox / secret change) so the misconfiguration is
+        # visible immediately rather than only after a failed save. Unlike the
+        # client_secret help above, this is wired even when the secret is already hashed
+        # -- that is exactly the case that needs the warning.
+        if "algorithm" not in self.fields:
+            return
+        model = type(self.instance)
+        stored_hashed = bool(self.instance and self.instance.pk and _is_hashed(self.instance.client_secret))
+        self.fields["algorithm"].widget.attrs.update(
+            {
+                "data-hs256-value": model.HS256_ALGORITHM,
+                "data-client-secret-stored-hashed": "true" if stored_hashed else "false",
+                "data-hs256-hashed-secret-warning": _(
+                    "HS256 signs tokens with the client secret as the HMAC key, so the secret must "
+                    "be stored unhashed. Uncheck “Hash client secret” and set an unhashed "
+                    "client secret, or choose a different algorithm."
+                ),
+            }
+        )
 
     class Media:
         js = ("oauth2_provider/js/application_form.js",)

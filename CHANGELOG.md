@@ -31,7 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The dynamic `client_secret` help text (added in #1635) is now shared by the Django admin
   application form as well as the front-end register/edit views. The `ApplicationAdmin` uses
   `ApplicationForm`, and a shared `oauth2_provider/js/application_form.js` updates the help text
-  live as the `hash_client_secret` checkbox is toggled on either surface.
+  live as the `hash_client_secret` checkbox is toggled on either surface. The application form
+  (admin and front-end) also warns immediately when the `HS256` algorithm is selected while the
+  client secret is — or will be — hashed, instead of only surfacing the error on save.
 
 ### Security
 * Generate device-flow `user_code` values with the cryptographically secure `secrets` module

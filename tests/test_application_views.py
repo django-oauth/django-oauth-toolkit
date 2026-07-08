@@ -392,6 +392,31 @@ class TestApplicationViews(BaseTest):
         self.assertFalse(_is_hashed("cleartext-secret"))  # unrecognized -> ValueError
         self.assertTrue(_is_hashed(make_password("cleartext-secret")))  # real hash
 
+    def test_hs256_warning_attrs_new_application(self):
+        # The algorithm field carries the data the live HS256 warning needs.
+        form = ApplicationRegistration().get_form_class()(instance=Application())
+        attrs = form.fields["algorithm"].widget.attrs
+        self.assertEqual(attrs.get("data-hs256-value"), Application.HS256_ALGORITHM)
+        self.assertEqual(attrs.get("data-client-secret-stored-hashed"), "false")
+        self.assertIn("must be stored unhashed", str(attrs.get("data-hs256-hashed-secret-warning")))
+
+    def test_hs256_warning_attrs_present_even_when_secret_hashed(self):
+        # Regression: an already-hashed secret short-circuits the client_secret help
+        # wiring, but the HS256 warning must still be wired -- that is exactly the case
+        # (edit an app whose secret is hashed, pick HS256) that needs it.
+        self.assertTrue(_is_hashed(self.app_foo_1.client_secret))  # hashed on create by default
+        form = ApplicationRegistration().get_form_class()(instance=self.app_foo_1)
+        attrs = form.fields["algorithm"].widget.attrs
+        self.assertEqual(attrs.get("data-hs256-value"), Application.HS256_ALGORITHM)
+        self.assertEqual(attrs.get("data-client-secret-stored-hashed"), "true")
+
+    def test_hs256_warning_rendered_on_register(self):
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:register"))
+        self.assertContains(response, 'data-hs256-value="HS256"')
+        self.assertContains(response, "data-hs256-hashed-secret-warning")
+        self.assertContains(response, "oauth2_provider/js/application_form.js")
+
 
 class TestApplicationAdminHashClientSecretUX(BaseTest):
     """The admin change form must offer the same hash_client_secret-driven
@@ -448,3 +473,16 @@ class TestApplicationAdminHashClientSecretUX(BaseTest):
         )
         self.assertContains(response, "can no longer be viewed")
         self.assertNotContains(response, "data-client-secret-help-when-hashed")
+
+    def test_admin_change_form_ships_hs256_warning(self):
+        # Editing an application whose secret is hashed (the default) and selecting
+        # HS256 is invalid; the admin must ship the data the live warning needs, even
+        # though the client_secret help toggle is (correctly) absent for a hashed secret.
+        self.client.login(username="admin_user", password="123456")
+        response = self.client.get(
+            reverse("admin:oauth2_provider_application_change", args=(self.hashed_app.pk,))
+        )
+        self.assertContains(response, 'data-hs256-value="HS256"')
+        self.assertContains(response, 'data-client-secret-stored-hashed="true"')
+        self.assertContains(response, "must be stored unhashed")
+        self.assertContains(response, "oauth2_provider/js/application_form.js")

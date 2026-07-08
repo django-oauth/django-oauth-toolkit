@@ -1,11 +1,19 @@
-// Live client-secret help text for the Application form.
+// Live client-secret UX for the Application form.
 //
 // Shared by the front-end register/update views and the Django admin change
-// form so both surfaces behave identically. The two help variants are exposed
-// by ApplicationForm as data-attributes on the hash_client_secret checkbox; as
-// the box is toggled we swap the message shown next to the client_secret field.
-// When those attributes are absent (e.g. an already-hashed secret that can no
-// longer be reverted) the server-rendered help text is left untouched.
+// form so both surfaces behave identically. It does two things:
+//
+//   1. Client-secret help text: the two help variants are exposed by
+//      ApplicationForm as data-attributes on the hash_client_secret checkbox; as
+//      the box is toggled we swap the message shown next to the client_secret
+//      field. When those attributes are absent (e.g. an already-hashed secret
+//      that can no longer be reverted) the server-rendered help is left as-is.
+//
+//   2. HS256 warning: HS256 signs tokens with the client secret as the HMAC key,
+//      so the secret must be stored unhashed (Application.clean() rejects the
+//      combination, but only at save time). When the algorithm is set to HS256
+//      while the secret is -- or will be -- hashed, we show an inline warning
+//      immediately, updating as the algorithm/checkbox/secret change.
 (function () {
     "use strict";
 
@@ -35,7 +43,7 @@
         return help;
     }
 
-    function init() {
+    function initClientSecretHelp() {
         var hashField = document.getElementById("id_hash_client_secret");
         var secretField = document.getElementById("id_client_secret");
         if (!hashField || !secretField) {
@@ -60,6 +68,63 @@
 
         hashField.addEventListener("change", sync);
         sync();
+    }
+
+    function initHs256Warning() {
+        var algorithmField = document.getElementById("id_algorithm");
+        if (!algorithmField) {
+            return;
+        }
+        var hs256 = algorithmField.getAttribute("data-hs256-value");
+        var warningText = algorithmField.getAttribute("data-hs256-hashed-secret-warning");
+        if (!hs256 || !warningText) {
+            return;
+        }
+
+        var hashField = document.getElementById("id_hash_client_secret");
+        var secretField = document.getElementById("id_client_secret");
+        // Whether the *stored* secret is already a hash (server-provided). An already
+        // hashed value stays hashed unless the user replaces it with a new plaintext
+        // secret, so unchecking the box alone does not clear the misconfiguration.
+        var storedHashed = algorithmField.getAttribute("data-client-secret-stored-hashed") === "true";
+        var originalSecret = secretField ? secretField.value : "";
+
+        var warning = document.createElement("div");
+        warning.className = "help-block errornote oauth2-hs256-warning";
+        warning.setAttribute("role", "alert");
+        warning.style.color = "#a94442";
+        warning.style.marginTop = "4px";
+        warning.textContent = warningText;
+        warning.hidden = true;
+        algorithmField.insertAdjacentElement("afterend", warning);
+
+        function secretWillBeHashed() {
+            if (hashField && hashField.checked) {
+                return true;
+            }
+            if (storedHashed && secretField && secretField.value === originalSecret) {
+                return true;
+            }
+            return false;
+        }
+
+        function sync() {
+            warning.hidden = !(algorithmField.value === hs256 && secretWillBeHashed());
+        }
+
+        algorithmField.addEventListener("change", sync);
+        if (hashField) {
+            hashField.addEventListener("change", sync);
+        }
+        if (secretField) {
+            secretField.addEventListener("input", sync);
+        }
+        sync();
+    }
+
+    function init() {
+        initClientSecretHelp();
+        initHs256Warning();
     }
 
     if (document.readyState === "loading") {
