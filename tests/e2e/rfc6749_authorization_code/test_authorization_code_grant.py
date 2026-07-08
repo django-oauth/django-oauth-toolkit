@@ -11,6 +11,7 @@ import pytest
 
 from tests.e2e import constants as c
 from tests.e2e.helpers.jwt_tools import validate_id_token
+from tests.e2e.helpers.oauth_client import token_data
 
 
 @pytest.mark.compliance("RFC 6749", "4.1.1", "Authorization Request")
@@ -76,12 +77,14 @@ def test_authorization_code_issues_valid_id_token(oauth, user_session, issuer):
         nonce="n-123",
     )
     code = result.query_params["code"]
-    body = oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()
+    body = token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )
 
     claims = validate_id_token(body["id_token"], issuer=issuer, audience=c.CONFIDENTIAL_CODE_CLIENT_ID)
     assert claims["nonce"] == "n-123"

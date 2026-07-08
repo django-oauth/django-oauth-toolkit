@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 import pytest
 
 from tests.e2e import constants as c
+from tests.e2e.helpers.oauth_client import token_data
 
 
 def _login_and_get_id_token(oauth, login):
@@ -18,12 +19,14 @@ def _login_and_get_id_token(oauth, login):
         state="s",
     )
     code = result.query_params["code"]
-    id_token = oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()["id_token"]
+    id_token = token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )["id_token"]
     return session, id_token
 
 

@@ -3,6 +3,7 @@
 import pytest
 
 from tests.e2e import constants as c
+from tests.e2e.helpers.oauth_client import token_data
 
 
 @pytest.fixture
@@ -28,12 +29,14 @@ def _subject_token(oauth, user_session):
         state="s",
     )
     code = result.query_params["code"]
-    return oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()["access_token"]
+    return token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )["access_token"]
 
 
 @pytest.mark.compliance("RFC 7662", "2.2", "Introspection Response (active token)")
@@ -65,10 +68,12 @@ def test_revoked_token_is_inactive(oauth, user_session, introspection_bearer):
 def test_introspection_without_scope_is_rejected(oauth, user_session):
     token = _subject_token(oauth, user_session)
     # A bearer token *without* the introspection scope must not be accepted.
-    non_introspection = oauth.client_credentials(
-        client_id=c.CLIENT_CREDENTIALS_CLIENT_ID,
-        client_secret=c.CLIENT_CREDENTIALS_SECRET,
-        scope="read",
-    ).json()["access_token"]
+    non_introspection = token_data(
+        oauth.client_credentials(
+            client_id=c.CLIENT_CREDENTIALS_CLIENT_ID,
+            client_secret=c.CLIENT_CREDENTIALS_SECRET,
+            scope="read",
+        )
+    )["access_token"]
     resp = oauth.introspect(token=token, bearer=non_introspection)
     assert resp.status_code in (401, 403)

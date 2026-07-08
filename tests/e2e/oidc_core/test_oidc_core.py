@@ -10,6 +10,7 @@ import pytest
 
 from tests.e2e import constants as c
 from tests.e2e.helpers.jwt_tools import validate_id_token
+from tests.e2e.helpers.oauth_client import token_data
 
 
 @pytest.mark.compliance("OpenID Connect Core 1.0", "3.3.2.5", "Hybrid Authorization Response")
@@ -51,12 +52,14 @@ def test_userinfo_returns_claims_for_granted_scopes(oauth, user_session):
         state="s",
     )
     code = result.query_params["code"]
-    access_token = oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()["access_token"]
+    access_token = token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )["access_token"]
 
     resp = oauth.userinfo(access_token)
     assert resp.status_code == 200
@@ -77,12 +80,14 @@ def test_userinfo_omits_email_when_scope_not_granted(oauth, user_session):
         state="s",
     )
     code = result.query_params["code"]
-    access_token = oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()["access_token"]
+    access_token = token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )["access_token"]
 
     body = oauth.userinfo(access_token).json()
     assert body["sub"]

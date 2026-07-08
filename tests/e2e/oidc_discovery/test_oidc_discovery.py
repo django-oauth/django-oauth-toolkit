@@ -3,6 +3,7 @@
 import pytest
 
 from tests.e2e.helpers.jwt_tools import decode_header
+from tests.e2e.helpers.oauth_client import token_data
 
 
 @pytest.fixture(scope="module")
@@ -56,12 +57,14 @@ def test_id_token_kid_is_present_in_jwks(oauth, user_session):
         state="s",
     )
     code = result.query_params["code"]
-    id_token = oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()["id_token"]
+    id_token = token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )["id_token"]
 
     kid = decode_header(id_token)["kid"]
     jwks_kids = {k["kid"] for k in oauth.jwks().json()["keys"]}

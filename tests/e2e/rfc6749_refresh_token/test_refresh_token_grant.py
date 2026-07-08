@@ -3,6 +3,7 @@
 import pytest
 
 from tests.e2e import constants as c
+from tests.e2e.helpers.oauth_client import token_data
 
 
 def _fresh_tokens(oauth, user_session):
@@ -15,12 +16,14 @@ def _fresh_tokens(oauth, user_session):
         state="s",
     )
     code = result.query_params["code"]
-    return oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()
+    return token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )
 
 
 @pytest.mark.compliance("RFC 6749", "6", "Refreshing an Access Token")
@@ -41,11 +44,13 @@ def test_refresh_token_is_rotated_and_old_token_is_revoked(oauth, user_session):
     tokens = _fresh_tokens(oauth, user_session)
     old_rt = tokens["refresh_token"]
 
-    first = oauth.refresh(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        refresh_token=old_rt,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()
+    first = token_data(
+        oauth.refresh(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            refresh_token=old_rt,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )
     new_rt = first["refresh_token"]
     assert new_rt != old_rt, "refresh token MUST be rotated"
 

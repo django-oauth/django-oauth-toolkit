@@ -3,6 +3,7 @@
 import pytest
 
 from tests.e2e import constants as c
+from tests.e2e.helpers.oauth_client import token_data
 
 
 def _tokens(oauth, user_session):
@@ -15,12 +16,14 @@ def _tokens(oauth, user_session):
         state="s",
     )
     code = result.query_params["code"]
-    return oauth.exchange_code(
-        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
-        code=code,
-        redirect_uri=c.REDIRECT_URI,
-        client_secret=c.CONFIDENTIAL_CODE_SECRET,
-    ).json()
+    return token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )
 
 
 @pytest.mark.compliance("RFC 7009", "2.1", "Revocation Request (access token)")

@@ -25,6 +25,18 @@ from .http_forms import parse_form
 DEFAULT_TIMEOUT = 10
 
 
+def token_data(response):
+    """Assert a successful token/exchange/refresh response and return its JSON body.
+
+    Keeps failures legible: a non-200 raises here with the status + body rather
+    than surfacing later as a confusing ``KeyError`` on a missing field.
+    """
+    assert response.status_code == 200, (
+        f"expected 200 from the token endpoint, got {response.status_code}: {response.text}"
+    )
+    return response.json()
+
+
 def generate_pkce_pair():
     """Return ``(code_verifier, code_challenge)`` for the S256 method (RFC 7636 §4)."""
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
