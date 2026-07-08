@@ -358,16 +358,16 @@ const RPGRID = [
 ];
 
 const TABS = [
-  {id:'op', label:'Provider matrix', kind:'op'},
-  {id:'member', label:'Suite definitions', kind:'member'},
-  {id:'rollup', label:'Suite rollup', kind:'rollup'},
-  {id:'rp', label:'RP libraries', kind:'rp'}
+  {id:'rollup', label:'By profile', kind:'rollup'},
+  {id:'op', label:'By specification', kind:'op'},
+  {id:'rp', label:'Relying parties', kind:'rp'},
+  {id:'member', label:'Profile definitions', kind:'member'}
 ];
 const CAPTIONS = {
-  op:['Table 1 · Spec × Competitor (Provider / Authorization-Server role)','One row per specification, one column per product. The DOT column is authoritative (scored from source). Hover a row to highlight; use the filter to find a spec.'],
-  member:['Table 2 · Suite → Spec membership','What each profile <em>is</em>, defined from the profile specs themselves. ● required · ○ optional / recommended · ⊘ forbidden. This scores nobody — it is the shared definition the rollup builds on.'],
-  rollup:['Table 3 · Suite × Competitor rollup','Profiles as rows — the aggregate of Table 1 through the definitions in Table 2. <strong>Click a suite</strong> to expand its member specs (<span class="pill req">req</span> required first, then <span class="pill opt">opt</span> optional, then <span class="pill forbid">×</span> forbidden) and see each product\'s status for them.'],
-  rp:['Table 4 · Relying-Party (client) comparison','A different product category: client libraries, not servers. Django OAuth Toolkit is a provider, so it is N/A here by design — pair it with one of these to <em>consume</em> an external IdP.']
+  rollup:['Compliance by profile','The headline view — does each product meet a named profile: OAuth 2.0, OAuth 2.1, OpenID Connect, FAPI 2.0, MCP? <strong>Click a suite</strong> to expand its member specs (<span class="pill req">req</span> required first, then <span class="pill opt">opt</span> optional, then <span class="pill forbid">×</span> forbidden) and see every product\'s status for each. The DOT column is authoritative (scored from source).'],
+  op:['Support by specification','Every specification once, every product — the flat, de-duplicated view. Reach for this when you care about a single RFC regardless of which profile pulls it in. Hover a row to highlight; use the filter to find a spec.'],
+  rp:['Relying-party libraries','A different product category — client libraries, not servers. Django OAuth Toolkit is a provider, so it is N/A here by design; pair it with one of these to <em>consume</em> an external IdP.'],
+  member:['How the profiles are defined','Reference: which specs each profile <strong>requires</strong> (●), allows (○), or <strong>forbids</strong> (⊘). This is the definition behind the pills in the profile view — nobody is scored here.']
 };
 
 const $ = s => document.querySelector(s);
@@ -557,5 +557,5 @@ $('#themeBtn').onclick = ()=>{
 };
 $('#filter').addEventListener('input', applyFilter);
 
-buildTabs(); buildStats(); buildLegend(); render('op');
+buildTabs(); buildStats(); buildLegend(); render('rollup');
 </script>
