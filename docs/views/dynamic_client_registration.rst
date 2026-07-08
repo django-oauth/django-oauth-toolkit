@@ -44,6 +44,10 @@ Creates a new OAuth2 application (RFC 7591).  Authentication is controlled by
      "registration_client_uri": "https://example.com/o/register/abc123/"
    }
 
+Applications created through this endpoint are flagged with ``dcr_created=True`` on the
+``Application`` model, so dynamically registered clients can be distinguished from manually
+provisioned ones — the Django admin's application list can be filtered on this field.
+
 GET/PUT/DELETE /o/register/{client_id}/
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -74,6 +78,14 @@ Field Mapping
 | ``token_endpoint_auth_method: ...`` | ``client_type = "confidential"``  | Default                          |
 +-------------------------------------+-----------------------------------+----------------------------------+
 
+.. note::
+    ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since
+    DOT's token endpoint authenticates confidential clients through either HTTP Basic auth or
+    request-body credentials. The Application model does not record which method was requested, so
+    per :rfc:`7591#section-2` (the server "MAY replace any of the client's requested metadata
+    values ... with suitable values") responses normalize the registered value to
+    ``client_secret_basic``; clients may nevertheless use either method at the token endpoint.
+
 
 Configuration
 -------------
@@ -98,6 +110,16 @@ sensible defaults.
 
     * ``oauth2_provider.dcr.IsAuthenticatedDCRPermission`` — requires Django session authentication.
     * ``oauth2_provider.dcr.AllowAllDCRPermission`` — open registration; no authentication required.
+
+    .. note::
+        The registration view itself is ``csrf_exempt`` so that anonymous and
+        ``Authorization``-header clients can POST to it. CSRF protection for
+        session-cookie-authenticated requests is enforced by
+        ``IsAuthenticatedDCRPermission`` instead: such requests must include a
+        valid CSRF token or they are rejected. If you write a custom permission
+        class that accepts Django session authentication, call
+        ``oauth2_provider.dcr.enforce_csrf(request)`` for cookie-authenticated
+        requests to keep the endpoint CSRF-protected.
 
 ``DCR_REGISTRATION_SCOPE``
     The scope string stored on the registration ``AccessToken`` used to protect the RFC 7592
@@ -126,6 +148,7 @@ Open registration (no auth required):
 .. code-block:: python
 
     OAUTH2_PROVIDER = {
+        "DCR_ENABLED": True,
         "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
     }
 
@@ -134,13 +157,22 @@ Custom permission class (e.g. initial-access token):
 .. code-block:: python
 
     # myapp/permissions.py
+    from oauth2_provider.utils import parse_bearer_token
+
+
     class InitialAccessTokenPermission:
         def has_permission(self, request) -> bool:
-            token = request.META.get("HTTP_AUTHORIZATION", "").removeprefix("Bearer ").strip()
+            # parse_bearer_token implements RFC 7235 / RFC 6750 semantics
+            # (exact, case-insensitive scheme match); None means the header
+            # is not a well-formed Bearer authorization.
+            token = parse_bearer_token(request.META.get("HTTP_AUTHORIZATION", ""))
+            if token is None:
+                return False
             return MyInitialToken.objects.filter(token=token, active=True).exists()
 
     # settings.py
     OAUTH2_PROVIDER = {
+        "DCR_ENABLED": True,
         "DCR_REGISTRATION_PERMISSION_CLASSES": ("myapp.permissions.InitialAccessTokenPermission",),
     }
 

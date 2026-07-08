@@ -22,6 +22,7 @@ from django.views.decorators.csrf import csrf_exempt
 from ..compat import login_not_required
 from ..models import get_access_token_model, get_application_model
 from ..settings import oauth2_settings
+from ..utils import parse_bearer_token
 
 
 # RFC 7591 grant type name → DOT AbstractApplication constant
@@ -38,17 +39,51 @@ IGNORED_GRANT_TYPES = {"refresh_token"}
 
 
 def _error_response(error, description, status=400):
-    return JsonResponse({"error": error, "error_description": description}, status=status)
+    response = JsonResponse({"error": error, "error_description": description}, status=status)
+    if status == 401:
+        # RFC 6750 §3: 401 responses to requests to a Bearer-protected
+        # resource must carry a WWW-Authenticate: Bearer challenge.
+        if error == "invalid_token":
+            response["WWW-Authenticate"] = 'Bearer error="invalid_token", error_description="{}"'.format(
+                description
+            )
+        else:
+            # No Bearer credentials were attempted; RFC 6750 §3.1 says the
+            # challenge should not include an error code in that case.
+            response["WWW-Authenticate"] = "Bearer"
+    return response
 
 
 def _check_permissions(request):
-    """Run all DCR_REGISTRATION_PERMISSION_CLASSES; return True if all pass."""
+    """
+    Run all DCR_REGISTRATION_PERMISSION_CLASSES; return True if all pass.
+
+    Fails closed: an empty DCR_REGISTRATION_PERMISSION_CLASSES denies all
+    registration. Open registration must be requested explicitly by
+    configuring AllowAllDCRPermission.
+    """
     permission_classes = oauth2_settings.DCR_REGISTRATION_PERMISSION_CLASSES
+    if not permission_classes:
+        return False
     for cls in permission_classes:
         instance = cls()
         if not instance.has_permission(request):
             return False
     return True
+
+
+def _validation_error_description(exc):
+    """
+    Build an RFC 7591 error_description from a Django ValidationError.
+
+    Uses only the validation messages, never the exception's repr, so no
+    internal details can leak into the API response.
+    """
+    if hasattr(exc, "message_dict"):
+        return "; ".join(
+            "{}: {}".format(field, " ".join(messages)) for field, messages in exc.message_dict.items()
+        )
+    return "; ".join(exc.messages)
 
 
 def _parse_metadata(body):
@@ -208,19 +243,25 @@ def _dot_grant_to_rfc_grant_types(dot_grant):
     return result
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
 class DynamicClientRegistrationView(View):
     """
     RFC 7591 — Dynamic Client Registration endpoint.
 
     POST /register/
+
+    The view is ``csrf_exempt`` because DCR is an API endpoint typically called
+    with no cookies at all (anonymous or ``Authorization``-header credentials).
+    CSRF protection for session-cookie-authenticated requests is enforced by
+    ``IsAuthenticatedDCRPermission`` in the permission layer instead; custom
+    permission classes that rely on Django's session authentication should do
+    the same (see ``oauth2_provider.dcr.enforce_csrf``).
     """
 
     def dispatch(self, request, *args, **kwargs):
         if not oauth2_settings.DCR_ENABLED:
             return JsonResponse({"error": "not_found"}, status=404)
-        if not request.user.is_authenticated or request.META.get("HTTP_AUTHORIZATION"):
-            request._dont_enforce_csrf_checks = True
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -242,7 +283,7 @@ class DynamicClientRegistrationView(View):
 
         Application = get_application_model()
         user = request.user if request.user.is_authenticated else None
-        application = Application(user=user, **app_kwargs)
+        application = Application(user=user, dcr_created=True, **app_kwargs)
 
         # Capture the raw secret before save() hashes it
         raw_secret = application.client_secret if application.client_type == "confidential" else None
@@ -250,7 +291,7 @@ class DynamicClientRegistrationView(View):
         try:
             application.full_clean()
         except ValidationError as exc:
-            return _error_response("invalid_client_metadata", str(exc))
+            return _error_response("invalid_client_metadata", _validation_error_description(exc))
 
         with transaction.atomic():
             application.save()
@@ -283,15 +324,14 @@ class DynamicClientRegistrationManagementView(View):
 
         Returns (application, registration_token) or (None, error_response).
         """
-        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-        if not auth_header.startswith("Bearer "):
+        raw_token = parse_bearer_token(request.META.get("HTTP_AUTHORIZATION", ""))
+        if raw_token is None:
             return None, _error_response(
                 "invalid_token",
                 "Registration access token required",
                 status=401,
             )
 
-        raw_token = auth_header[len("Bearer ") :]
         token_checksum = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         AccessToken = get_access_token_model()
         try:
@@ -313,6 +353,18 @@ class DynamicClientRegistrationManagementView(View):
         application = token.application
         if application is None or application.client_id != client_id:
             return None, _error_response("invalid_token", "Token does not match client_id", status=403)
+
+        # RFC 7592 management only applies to dynamically registered clients.
+        # This stops a regular access token that happens to carry
+        # DCR_REGISTRATION_SCOPE (e.g. through scope misconfiguration) from
+        # being used to reconfigure or delete a manually provisioned
+        # application.
+        if not application.dcr_created:
+            return None, _error_response(
+                "invalid_token",
+                "Token was not issued by the registration endpoint",
+                status=401,
+            )
 
         return application, token
 
@@ -345,7 +397,7 @@ class DynamicClientRegistrationManagementView(View):
         try:
             application.full_clean()
         except ValidationError as exc:
-            return _error_response("invalid_client_metadata", str(exc))
+            return _error_response("invalid_client_metadata", _validation_error_description(exc))
 
         with transaction.atomic():
             application.save()

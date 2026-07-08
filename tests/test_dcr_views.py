@@ -72,7 +72,19 @@ class TestDynamicClientRegistration(TestCase):
         assert "registration_access_token" in body
         assert "registration_client_uri" in body
         assert body["grant_types"] == ["authorization_code", "refresh_token"]
-        assert Application.objects.filter(client_id=body["client_id"]).exists()
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.dcr_created is True
+
+    def test_manually_created_application_is_not_dcr_created(self):
+        """Applications created outside DCR default to dcr_created=False."""
+        app = Application.objects.create(
+            name="Manual App",
+            user=self.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            redirect_uris="https://example.com/cb",
+        )
+        assert app.dcr_created is False
 
     def test_register_with_client_name(self):
         """client_name is mapped to Application.name."""
@@ -163,6 +175,9 @@ class TestDynamicClientRegistration(TestCase):
         response = _post_register(self.client, data)
         assert response.status_code == 401
         assert response.json()["error"] == "access_denied"
+        # RFC 6750 §3: 401 must carry a WWW-Authenticate: Bearer challenge;
+        # no error code since no Bearer credentials were attempted (§3.1).
+        assert response["WWW-Authenticate"] == "Bearer"
 
     # -- validation failures -------------------------------------------------
 
@@ -207,6 +222,81 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
+    def test_register_empty_grant_types_is_400(self):
+        """grant_types=[] → 400."""
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": []}
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_grant_types_not_array_is_400(self):
+        """grant_types as a string instead of an array → 400."""
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": "authorization_code"}
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_non_string_grant_type_is_400(self):
+        """A non-string grant_types element → 400."""
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": [123]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_non_object_json_is_400(self):
+        """A JSON body that is not an object → 400."""
+        self.client.force_login(self.user)
+        response = self.client.post(_register_url(), data="[1, 2]", content_type="application/json")
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_unsupported_grant_type_is_400(self):
+        """An unknown grant_type value → 400."""
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["magic_link"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_redirect_uris_not_array_is_400(self):
+        """redirect_uris as a string instead of an array → 400."""
+        self.client.force_login(self.user)
+        data = {"redirect_uris": "https://example.com/cb", "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_non_string_redirect_uri_is_400(self):
+        """A non-string redirect_uris element → 400."""
+        self.client.force_login(self.user)
+        data = {"redirect_uris": [123], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_unsupported_auth_method_is_400(self):
+        """An unsupported token_endpoint_auth_method → 400."""
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_validation_error_description_without_message_dict(self):
+        """Non-field ValidationErrors serialize via their messages list."""
+        from django.core.exceptions import ValidationError
+
+        from oauth2_provider.views.dynamic_client_registration import _validation_error_description
+
+        assert _validation_error_description(ValidationError("plain message")) == "plain message"
+
 
 # ---------------------------------------------------------------------------
 # Open registration (AllowAllDCRPermission)
@@ -231,6 +321,80 @@ class TestOpenRegistration(TestCase):
         # user should be None on the application
         app = Application.objects.get(client_id=body["client_id"])
         assert app.user is None
+
+
+# ---------------------------------------------------------------------------
+# CSRF enforcement (with enforce_csrf_checks=True, unlike the default test
+# client which bypasses CSRF validation entirely)
+# ---------------------------------------------------------------------------
+
+
+CSRF_SECRET = "0123456789abcdef0123456789abcdef"
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.DCR_SETTINGS)
+class TestDCRCsrfSessionAuthenticated(TestCase):
+    """Session-cookie-authenticated registration requires a valid CSRF token."""
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("csrf_user", "csrf@example.com", "pass")
+        self.csrf_client = self.client_class(enforce_csrf_checks=True)
+        self.csrf_client.force_login(self.user)
+        self.data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+        }
+
+    def test_session_auth_without_csrf_token_is_rejected(self):
+        """Session-authenticated POST without a CSRF token → 401."""
+        response = _post_register(self.csrf_client, self.data)
+        assert response.status_code == 401
+        assert response.json()["error"] == "access_denied"
+
+    def test_session_auth_with_csrf_token_succeeds(self):
+        """Session-authenticated POST with a valid CSRF token → 201."""
+        self.csrf_client.cookies["csrftoken"] = CSRF_SECRET
+        response = _post_register(self.csrf_client, self.data, HTTP_X_CSRFTOKEN=CSRF_SECRET)
+        assert response.status_code == 201
+        assert "client_id" in response.json()
+
+    def test_non_bearer_authorization_header_does_not_bypass_csrf(self):
+        """A Basic Authorization header must not exempt a session-authenticated request from CSRF."""
+        response = _post_register(
+            self.csrf_client,
+            self.data,
+            HTTP_AUTHORIZATION="Basic dXNlcjpwYXNz",
+        )
+        assert response.status_code == 401
+        assert response.json()["error"] == "access_denied"
+
+    def test_bearer_authorization_header_bypasses_csrf(self):
+        """A Bearer Authorization header exempts a session-authenticated request from CSRF."""
+        response = _post_register(
+            self.csrf_client,
+            self.data,
+            HTTP_AUTHORIZATION="Bearer some-initial-access-token",
+        )
+        assert response.status_code == 201
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.DCR_SETTINGS,
+        "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+    }
+)
+class TestDCRCsrfOpenRegistration(TestCase):
+    """Open (anonymous) registration works without any CSRF token."""
+
+    def test_anonymous_registration_without_csrf_token_succeeds(self):
+        csrf_client = self.client_class(enforce_csrf_checks=True)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(csrf_client, data)
+        assert response.status_code == 201
+        assert "client_id" in response.json()
 
 
 # ---------------------------------------------------------------------------
@@ -269,9 +433,85 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert body["client_name"] == "Managed App"
         assert "https://example.com/cb" in body["redirect_uris"]
 
-    def test_get_wrong_token_is_401(self):
-        """GET without token → 401."""
+    def test_get_missing_token_is_401(self):
+        """GET without token → 401 with a WWW-Authenticate Bearer challenge (RFC 6750 §3)."""
         response = self.client.get(self.management_url)
+        assert response.status_code == 401
+        assert response["WWW-Authenticate"].startswith('Bearer error="invalid_token"')
+
+    def test_registration_scoped_token_for_manual_application_is_401(self):
+        """A registration-scoped token can't manage a manually created application.
+
+        RFC 7592 management only applies to dynamically registered clients: a
+        regular access token that carries DCR_REGISTRATION_SCOPE (e.g. through
+        scope misconfiguration) must not allow a manually provisioned
+        application to be reconfigured or deleted.
+        """
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        manual_app = Application.objects.create(
+            name="Manual App",
+            user=self.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            redirect_uris="https://manual.example.com/cb",
+        )
+        stray_token = AccessToken.objects.create(
+            application=manual_app,
+            user=self.user,
+            token="stray-registration-scoped-token",
+            expires=timezone.now() + timedelta(hours=1),
+            scope=self.oauth2_settings.DCR_REGISTRATION_SCOPE,
+        )
+        response = self.client.get(_management_url(manual_app.client_id), **_bearer(stray_token.token))
+        assert response.status_code == 401
+        assert response.json()["error"] == "invalid_token"
+        # The application must remain untouched and undeletable through DCR
+        response = self.client.delete(_management_url(manual_app.client_id), **_bearer(stray_token.token))
+        assert response.status_code == 401
+        assert Application.objects.filter(pk=manual_app.pk).exists()
+
+    def test_get_tolerates_extra_whitespace_in_authorization_header(self):
+        """Bearer parsing tolerates any whitespace run between scheme and token."""
+        response = self.client.get(
+            self.management_url,
+            HTTP_AUTHORIZATION=f"Bearer   {self.registration_token}",
+        )
+        assert response.status_code == 200
+
+    def test_get_accepts_case_insensitive_bearer_scheme(self):
+        """RFC 7235: auth scheme names are case-insensitive."""
+        response = self.client.get(
+            self.management_url,
+            HTTP_AUTHORIZATION=f"bearer {self.registration_token}",
+        )
+        assert response.status_code == 200
+
+    def test_get_rejects_non_bearer_scheme(self):
+        """A scheme that merely starts with 'Bearer' (e.g. 'BearerX') → 401."""
+        response = self.client.get(
+            self.management_url,
+            HTTP_AUTHORIZATION=f"BearerX {self.registration_token}",
+        )
+        assert response.status_code == 401
+
+    def test_get_unknown_token_is_401(self):
+        """GET with a Bearer token that matches no AccessToken → 401."""
+        response = self.client.get(self.management_url, **_bearer("no-such-token"))
+        assert response.status_code == 401
+
+    def test_get_expired_token_is_401(self):
+        """GET with an expired registration token → 401."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        token = AccessToken.objects.get(token=self.registration_token)
+        token.expires = timezone.now() - timedelta(seconds=1)
+        token.save()
+        response = self.client.get(self.management_url, **_bearer(self.registration_token))
         assert response.status_code == 401
 
     def test_get_token_wrong_client_is_403(self):
@@ -346,7 +586,63 @@ class TestDynamicClientRegistrationManagement(TestCase):
         body = response.json()
         assert body["registration_access_token"] == self.registration_token
 
+    def test_put_without_token_is_401(self):
+        """PUT without a registration token → 401."""
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps({"redirect_uris": ["https://example.com/cb"]}),
+            content_type="application/json",
+        )
+        assert response.status_code == 401
+
+    def test_put_invalid_json_is_400(self):
+        """PUT with a non-JSON body → 400."""
+        response = self.client.put(
+            self.management_url,
+            data="not-json",
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_put_multiple_grant_types_is_400(self):
+        """PUT with multiple non-refresh_token grant types → 400."""
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code", "implicit"],
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_put_invalid_metadata_is_400(self):
+        """PUT with an invalid redirect_uri → 400 with validation message."""
+        update_data = {
+            "redirect_uris": ["not-a-valid-uri!"],
+            "grant_types": ["authorization_code"],
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
     # -- DELETE --------------------------------------------------------------
+
+    def test_delete_without_token_is_401(self):
+        """DELETE without a registration token → 401, application kept."""
+        response = self.client.delete(self.management_url)
+        assert response.status_code == 401
+        assert Application.objects.filter(client_id=self.client_id).exists()
 
     def test_delete_removes_application(self):
         """DELETE → 204, application deleted."""
@@ -413,6 +709,24 @@ class TestDCRTokenExpiry(TestCase):
         body = response.json()
         token = AccessToken.objects.get(token=body["registration_access_token"])
         assert token.expires.year == 9999
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.DCR_SETTINGS,
+        "DCR_REGISTRATION_PERMISSION_CLASSES": (),
+    }
+)
+class TestDCREmptyPermissionClasses(TestCase):
+    def test_empty_permission_classes_fails_closed(self):
+        """An empty DCR_REGISTRATION_PERMISSION_CLASSES denies registration instead of opening it."""
+        user = UserModel.objects.create_user("noperm_user", "noperm@example.com", "pass")
+        self.client.force_login(user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 401
+        assert response.json()["error"] == "access_denied"
 
 
 @pytest.mark.usefixtures("oauth2_settings")

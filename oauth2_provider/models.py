@@ -79,6 +79,9 @@ class AbstractApplication(models.Model):
     * :attr:`client_secret` Confidential secret issued to the client during
                             the registration process as described in :rfc:`2.2`
     * :attr:`name` Friendly name for the Application
+    * :attr:`dcr_created` True if the Application was registered via Dynamic
+                          Client Registration (:rfc:`7591`), False for manually
+                          created Applications
     """
 
     CLIENT_CONFIDENTIAL = "confidential"
@@ -151,6 +154,10 @@ class AbstractApplication(models.Model):
         blank=True,
         help_text=_("Allowed origins list to enable CORS, space separated"),
         default="",
+    )
+    dcr_created = models.BooleanField(
+        default=False,
+        help_text=_("True if this application was registered via Dynamic Client Registration (RFC 7591)"),
     )
 
     class Meta:

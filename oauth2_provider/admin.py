@@ -19,8 +19,8 @@ has_email = hasattr(get_user_model(), "email")
 
 
 class ApplicationAdmin(admin.ModelAdmin):
-    list_display = ("pk", "name", "user", "client_type", "authorization_grant_type")
-    list_filter = ("client_type", "authorization_grant_type", "skip_authorization")
+    list_display = ("pk", "name", "user", "client_type", "authorization_grant_type", "dcr_created")
+    list_filter = ("client_type", "authorization_grant_type", "skip_authorization", "dcr_created")
     radio_fields = {
         "client_type": admin.HORIZONTAL,
         "authorization_grant_type": admin.VERTICAL,
