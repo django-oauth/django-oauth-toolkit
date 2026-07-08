@@ -87,8 +87,8 @@
   .caption h2 { font-size:18px; margin:0 0 2px; letter-spacing:-.01em; }
   .caption p { margin:0; color:var(--muted); font-size:13.5px; max-width:80ch; }
 
-  .scroller { overflow-x:auto; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
-    background:var(--panel); }
+  .scroller { overflow:auto; max-height:78vh; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+    background:var(--panel); overscroll-behavior:contain; }
   table { border-collapse:separate; border-spacing:0; width:100%; font-size:13px; }
   thead th { position:sticky; top:0; z-index:10; background:var(--panel); color:var(--muted);
     font-weight:600; font-size:11.5px; text-align:center; padding:9px 8px; border-bottom:1px solid var(--line-strong);
@@ -97,7 +97,7 @@
     font-weight:600; opacity:.85; }
   thead th.us { color:var(--accent); }
   th.rowhead, td.rowhead { position:sticky; left:0; z-index:5; background:var(--panel); text-align:left;
-    font-family:var(--mono); font-size:12px; padding:8px 12px; border-right:1px solid var(--line-strong);
+    font-family:var(--mono); font-size:12px; padding:8px 30px 8px 12px; border-right:1px solid var(--line-strong);
     white-space:nowrap; min-width:230px; }
   thead th.rowhead { z-index:15; }
   tbody tr:hover td { background:var(--accent-soft); }
@@ -138,6 +138,20 @@
   .pill.req{ background:var(--s-full-bg); color:var(--s-full-fg); }
   .pill.opt{ background:var(--s-unk-bg); color:var(--s-unk-fg); }
   .pill.forbid{ background:var(--s-none-bg); color:var(--s-none-fg); }
+
+  /* first-party source links */
+  .speclink{ position:absolute; top:5px; right:8px; display:inline-flex; color:var(--muted); opacity:.5;
+    transition:color .15s, opacity .15s; }
+  .speclink:hover{ color:var(--accent); opacity:1; }
+  .collink{ display:inline-flex; vertical-align:middle; margin-left:4px; color:var(--muted); opacity:.6;
+    transition:color .15s, opacity .15s; }
+  thead th.us .collink{ color:var(--accent); opacity:.8; }
+  .collink:hover{ color:var(--accent); opacity:1; }
+  .speclink svg{ width:12px; height:12px; }
+  .collink svg{ width:11px; height:11px; }
+  .speclink svg, .collink svg{ fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .speclink:focus-visible, .collink:focus-visible{ outline:2px solid var(--accent); outline-offset:2px;
+    opacity:1; border-radius:3px; }
 
   .legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin:14px 2px 0; font-size:12.5px; color:var(--muted); }
   .legend .item { display:inline-flex; align-items:center; gap:6px; }
@@ -194,14 +208,32 @@ const S = {
 const M = { R:{cls:'m-req',g:'●',t:'required'}, o:{cls:'m-opt',g:'○',t:'optional'}, x:{cls:'m-forbid',g:'⊘',t:'forbidden'}, '.':{cls:'',g:'',t:''} };
 
 // ---- competitor headers ----
+// [key, label, tier, isOurs, firstPartyURL]
 const OP = [
-  ['dot','DOT','ours',true],['oauthlib','oauthlib','library'],['authlib','Authlib','library'],['authentik','Authentik','oss idp'],
-  ['keycloak','Keycloak','oss server'],['hydra','Ory Hydra','oss server'],['wso2','WSO2','oss server'],['zitadel','Zitadel','oss server'],['janssen','Janssen','oss server'],
-  ['okta','Okta','saas'],['auth0','Auth0','saas'],['entra','Entra ID','saas'],['ping','Ping','saas']
+  ['dot','DOT','ours',true,'https://django-oauth-toolkit.readthedocs.io/en/latest/'],
+  ['oauthlib','oauthlib','library',false,'https://oauthlib.readthedocs.io/en/latest/'],
+  ['authlib','Authlib','library',false,'https://authlib.org/'],
+  ['authentik','Authentik','oss idp',false,'https://goauthentik.io/'],
+  ['keycloak','Keycloak','oss server',false,'https://www.keycloak.org/'],
+  ['hydra','Ory Hydra','oss server',false,'https://www.ory.sh/hydra/'],
+  ['wso2','WSO2','oss server',false,'https://wso2.com/identity-server/'],
+  ['zitadel','Zitadel','oss server',false,'https://zitadel.com/'],
+  ['janssen','Janssen','oss server',false,'https://jans.io/'],
+  ['okta','Okta','saas',false,'https://developer.okta.com/'],
+  ['auth0','Auth0','saas',false,'https://auth0.com/'],
+  ['entra','Entra ID','saas',false,'https://learn.microsoft.com/entra/identity-platform/'],
+  ['ping','Ping','saas',false,'https://www.pingidentity.com/']
 ];
 const RP = [
-  ['dot','DOT','ours',true],['allauth','allauth','django'],['moz','moz-oidc','django'],['authlibc','Authlib','python'],['psa','social-auth','python'],
-  ['authjs','Auth.js','node'],['oidcts','oidc-ts','browser'],['passport','Passport','node'],['spring','Spring Sec','java']
+  ['dot','DOT','ours',true,'https://django-oauth-toolkit.readthedocs.io/en/latest/'],
+  ['allauth','allauth','django',false,'https://docs.allauth.org/'],
+  ['moz','moz-oidc','django',false,'https://mozilla-django-oidc.readthedocs.io/'],
+  ['authlibc','Authlib','python',false,'https://authlib.org/'],
+  ['psa','social-auth','python',false,'https://python-social-auth.readthedocs.io/'],
+  ['authjs','Auth.js','node',false,'https://authjs.dev/'],
+  ['oidcts','oidc-ts','browser',false,'https://github.com/authts/oidc-client-ts'],
+  ['passport','Passport','node',false,'https://www.passportjs.org/packages/passport-openidconnect/'],
+  ['spring','Spring Sec','java',false,'https://docs.spring.io/spring-security/reference/servlet/oauth2/client/index.html']
 ];
 const SUITES = [['oauth20','OAuth 2.0'],['oauth21','OAuth 2.1'],['oidc','OIDC'],['fapi2','FAPI 2.0'],['mcp','MCP'],['native','Native'],['rp','RP']];
 
@@ -216,6 +248,39 @@ const SPECS = [
   ['RFC 9728 — Protected resource metadata'],['RFC 9700 — Security BCP'],
   ['OIDC Core'],['OIDC Discovery'],['OIDC Dynamic Registration'],['OIDC RP-Initiated Logout'],
   ['OIDC Session Management'],['OIDC Front-Channel Logout'],['OIDC Back-Channel Logout'],['CIBA']
+];
+// First-party source per spec — IETF (rfc-editor.org) / OpenID Foundation (openid.net). Index matches SPECS.
+const SPEC_URL = [
+  'https://www.rfc-editor.org/rfc/rfc6749',
+  'https://www.rfc-editor.org/rfc/rfc6749#section-4.2',
+  'https://www.rfc-editor.org/rfc/rfc6749#section-4.3',
+  'https://www.rfc-editor.org/rfc/rfc6750',
+  'https://www.rfc-editor.org/rfc/rfc7009',
+  'https://www.rfc-editor.org/rfc/rfc7636',
+  'https://www.rfc-editor.org/rfc/rfc7662',
+  'https://www.rfc-editor.org/rfc/rfc8252',
+  'https://www.rfc-editor.org/rfc/rfc8414',
+  'https://www.rfc-editor.org/rfc/rfc8628',
+  'https://www.rfc-editor.org/rfc/rfc7591',
+  'https://www.rfc-editor.org/rfc/rfc7592',
+  'https://www.rfc-editor.org/rfc/rfc7519',
+  'https://www.rfc-editor.org/rfc/rfc7523',
+  'https://www.rfc-editor.org/rfc/rfc9068',
+  'https://www.rfc-editor.org/rfc/rfc9126',
+  'https://www.rfc-editor.org/rfc/rfc9396',
+  'https://www.rfc-editor.org/rfc/rfc9449',
+  'https://www.rfc-editor.org/rfc/rfc8705',
+  'https://www.rfc-editor.org/rfc/rfc8707',
+  'https://www.rfc-editor.org/rfc/rfc9728',
+  'https://www.rfc-editor.org/rfc/rfc9700',
+  'https://openid.net/specs/openid-connect-core-1_0.html',
+  'https://openid.net/specs/openid-connect-discovery-1_0.html',
+  'https://openid.net/specs/openid-connect-registration-1_0.html',
+  'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
+  'https://openid.net/specs/openid-connect-session-1_0.html',
+  'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
+  'https://openid.net/specs/openid-connect-backchannel-1_0.html',
+  'https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html'
 ];
 // OP grid: order = OP competitors; rows align to SPECS
 const OPGRID = [
@@ -258,6 +323,35 @@ const RPSPECS = [
   'state / nonce validation','Native-app redirect (8252)','Refresh token / rotation','RP-Initiated Logout',
   'Front-Channel Logout','Back-Channel Logout','PAR (9126)','DPoP (9449)','private_key_jwt (7523)','JARM','Multi-provider OOTB'
 ];
+// First-party source per RP capability (null = no single canonical spec). Index matches RPSPECS.
+const RP_URL = [
+  'https://openid.net/specs/openid-connect-core-1_0.html',
+  'https://openid.net/specs/openid-connect-discovery-1_0.html',
+  'https://www.rfc-editor.org/rfc/rfc7033',
+  'https://openid.net/specs/openid-connect-registration-1_0.html',
+  'https://www.rfc-editor.org/rfc/rfc7636',
+  'https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation',
+  'https://www.rfc-editor.org/rfc/rfc8252',
+  'https://www.rfc-editor.org/rfc/rfc6749#section-6',
+  'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
+  'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
+  'https://openid.net/specs/openid-connect-backchannel-1_0.html',
+  'https://www.rfc-editor.org/rfc/rfc9126',
+  'https://www.rfc-editor.org/rfc/rfc9449',
+  'https://www.rfc-editor.org/rfc/rfc7523',
+  'https://openid.net/specs/oauth-v2-jarm.html',
+  null
+];
+// First-party source per suite/profile (Table 2 column headers). Keyed by suite key.
+const SUITE_URL = {
+  oauth20:'https://www.rfc-editor.org/rfc/rfc6749',
+  oauth21:'https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/',
+  oidc:'https://openid.net/specs/openid-connect-core-1_0.html',
+  fapi2:'https://openid.net/specs/fapi-2_0-security-profile.html',
+  mcp:'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization',
+  native:'https://www.rfc-editor.org/rfc/rfc8252',
+  rp:'https://openid.net/specs/openid-connect-core-1_0.html'
+};
 const RPGRID = [
   'xFFFFFFFF','xFPFFFFPF','xNNNNNNNN','xNNNNNNNN','xFFFFFFFF','xFFFFFFFF','xNNUNNNNN','xPPFPPFPF',
   'xNPPNPFNF','xNNNNNPNN','xNNNNNNNF','xNNUNUUNN','xNNUNNFNP','xNNFNPNNF','xNNUNNUNU','xFNFFFNPF'
@@ -287,6 +381,19 @@ function chip(code){
 }
 function memMark(code){ const m=M[code]||M['.']; const s=el('span',m.cls,m.g); s.title=m.t; return s; }
 
+// small external-link icon → first-party source; returns null when no URL.
+function linkIcon(url,name,cls){
+  if(!url) return null;
+  const a = el('a',cls);
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.title = 'Open ' + name + ' — first-party source (new tab)';
+  a.setAttribute('aria-label', a.title);
+  a.addEventListener('click', e=>e.stopPropagation()); // don't toggle a suite row when clicking its child link
+  a.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-8.5 8.5"/>'
+    + '<path d="M19 14v4.5A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5v-11A1.5 1.5 0 0 1 6.5 6H11"/></svg>';
+  return a;
+}
+
 // member specs of a suite (MEM column `col`), required first, then optional, then forbidden;
 // SPECS order preserved within each group.
 function suiteChildren(col){
@@ -309,7 +416,8 @@ function buildHead(cols){
   tr.appendChild(el('th','rowhead','Specification'));
   cols.forEach(c=>{
     const th = el('th', c[3]?'us':'');
-    th.innerHTML = '<span class="tier">'+c[2]+'</span>'+c[1];
+    th.innerHTML = '<span class="tier">'+c[2]+'</span><span class="colname">'+c[1]+'</span>';
+    const lk = linkIcon(c[4], c[1], 'collink'); if(lk) th.appendChild(lk);
     tr.appendChild(th);
   });
   return tr;
@@ -324,7 +432,9 @@ function render(kind){
     head.appendChild(buildHead(cols));
     SPECS.forEach((sp,i)=>{
       const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase();
-      tr.appendChild(el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]));
+      const rh = el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]);
+      const lk = linkIcon(SPEC_URL[i], sp[0], 'speclink'); if(lk) rh.appendChild(lk);
+      tr.appendChild(rh);
       OPGRID[i].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
       body.appendChild(tr);
     });
@@ -334,11 +444,13 @@ function render(kind){
     OPCERT.split('').forEach(ch=>{ const td=el('td'); const s= ch==='F'?chip('F'):el('span','c-na','—'); td.appendChild(s); trc.appendChild(td); });
     body.appendChild(trc);
   } else if(kind==='member'){
-    cols = SUITES.map(s=>[s[0],s[1],'suite']);
+    cols = SUITES.map(s=>[s[0],s[1],'suite',false,SUITE_URL[s[0]]]);
     head.appendChild(buildHead(cols));
     SPECS.forEach((sp,i)=>{
       const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase();
-      tr.appendChild(el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]));
+      const rh = el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]);
+      const lk = linkIcon(SPEC_URL[i], sp[0], 'speclink'); if(lk) rh.appendChild(lk);
+      tr.appendChild(rh);
       MEM[i].forEach(code=>{ const td=el('td'); td.appendChild(memMark(code)); tr.appendChild(td); });
       body.appendChild(tr);
     });
@@ -372,6 +484,7 @@ function render(kind){
         const pillTxt = mark==='R'?'req':(mark==='o'?'opt':'×');
         const pillTitle = mark==='R'?'required by this profile':(mark==='o'?'optional / recommended':'forbidden (must not use) by this profile');
         ch0.innerHTML = '<span class="pill '+pillCls+'" title="'+pillTitle+'">'+pillTxt+'</span><span class="cspec">'+SPECS[i][0]+'</span>';
+        const clk = linkIcon(SPEC_URL[i], SPECS[i][0], 'speclink'); if(clk) ch0.appendChild(clk);
         ctr.appendChild(ch0);
         OPGRID[i].split('').forEach(code=>{ const td=el('td'); td.appendChild(chip(code)); ctr.appendChild(td); });
         body.appendChild(ctr);
@@ -382,7 +495,9 @@ function render(kind){
     head.appendChild(buildHead(cols));
     RPSPECS.forEach((lab,i)=>{
       const tr = el('tr'); tr.dataset.label=lab.toLowerCase();
-      tr.appendChild(el('td','rowhead',lab));
+      const rh = el('td','rowhead',lab);
+      const lk = linkIcon(RP_URL[i], lab, 'speclink'); if(lk) rh.appendChild(lk);
+      tr.appendChild(rh);
       RPGRID[i].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
       body.appendChild(tr);
     });
