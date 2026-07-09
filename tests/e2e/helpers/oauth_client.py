@@ -85,7 +85,7 @@ class OAuthClient:
     # --- Discovery / metadata ---------------------------------------------
     def discovery(self):
         """OIDC Discovery 1.0 provider configuration."""
-        return requests.get(f"{self.issuer}/.well-known/openid-configuration", timeout=5)
+        return requests.get(f"{self.issuer}/.well-known/openid-configuration", timeout=DEFAULT_TIMEOUT)
 
     def oauth_metadata(self):
         """RFC 8414 Authorization Server Metadata.
@@ -94,13 +94,13 @@ class OAuthClient:
         component (issuer ``.../o`` -> ``/.well-known/oauth-authorization-server/o``),
         falling back to the issuer-prefixed form some deployments expose.
         """
-        strict = requests.get(self.url("/.well-known/oauth-authorization-server/o"), timeout=5)
+        strict = requests.get(self.url("/.well-known/oauth-authorization-server/o"), timeout=DEFAULT_TIMEOUT)
         if strict.status_code == 200:
             return strict
-        return requests.get(self.url("/o/.well-known/oauth-authorization-server"), timeout=5)
+        return requests.get(self.url("/o/.well-known/oauth-authorization-server"), timeout=DEFAULT_TIMEOUT)
 
     def jwks(self):
-        return requests.get(f"{self.issuer}/.well-known/jwks.json", timeout=5)
+        return requests.get(f"{self.issuer}/.well-known/jwks.json", timeout=DEFAULT_TIMEOUT)
 
     # --- Resource-owner user agent (login + consent) ----------------------
     def _csrf_get(self, session, url, **kwargs):
@@ -181,7 +181,7 @@ class OAuthClient:
     # --- Token endpoint ----------------------------------------------------
     def token(self, data):
         """Raw POST to the token endpoint (RFC 6749 §3.2)."""
-        return requests.post(self.url("/o/token/"), data=data, timeout=10)
+        return requests.post(self.url("/o/token/"), data=data, timeout=DEFAULT_TIMEOUT)
 
     def exchange_code(self, *, client_id, code, redirect_uri, code_verifier=None, client_secret=None):
         data = {
@@ -229,7 +229,7 @@ class OAuthClient:
             data["client_secret"] = client_secret
         if token_type_hint is not None:
             data["token_type_hint"] = token_type_hint
-        return requests.post(self.url("/o/revoke_token/"), data=data, timeout=10)
+        return requests.post(self.url("/o/revoke_token/"), data=data, timeout=DEFAULT_TIMEOUT)
 
     def introspect(self, *, token, bearer, token_type_hint=None):
         """Introspect ``token`` using an access token that carries the
@@ -238,12 +238,12 @@ class OAuthClient:
         if token_type_hint is not None:
             data["token_type_hint"] = token_type_hint
         headers = {"Authorization": f"Bearer {bearer}"}
-        return requests.post(self.url("/o/introspect/"), data=data, headers=headers, timeout=10)
+        return requests.post(self.url("/o/introspect/"), data=data, headers=headers, timeout=DEFAULT_TIMEOUT)
 
     # --- OIDC UserInfo + RP-Initiated Logout ------------------------------
     def userinfo(self, access_token):
         headers = {"Authorization": f"Bearer {access_token}"}
-        return requests.get(f"{self.issuer}/userinfo/", headers=headers, timeout=10)
+        return requests.get(f"{self.issuer}/userinfo/", headers=headers, timeout=DEFAULT_TIMEOUT)
 
     def rp_logout(
         self, session, *, id_token_hint=None, client_id=None, post_logout_redirect_uri=None, state=None
@@ -274,7 +274,7 @@ class OAuthClient:
         data = {"client_id": client_id}
         if scope is not None:
             data["scope"] = scope
-        return requests.post(self.url("/o/device-authorization/"), data=data, timeout=10)
+        return requests.post(self.url("/o/device-authorization/"), data=data, timeout=DEFAULT_TIMEOUT)
 
     def device_user_approve(self, session, *, user_code, action="accept"):
         """Drive the user-interaction leg: enter the user code, then approve/deny.
