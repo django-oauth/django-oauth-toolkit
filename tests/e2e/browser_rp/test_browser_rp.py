@@ -7,6 +7,8 @@ CORS), token refresh, and Device Authorization initiation.
 
 import pytest
 
+from tests.e2e.helpers.browser import click_until
+
 
 pytestmark = pytest.mark.browser
 
@@ -23,11 +25,14 @@ def test_browser_oidc_login_populates_tokens(page, rp_login):
 @pytest.mark.compliance("RFC 6749", "6", "Refresh Token (browser RP)")
 def test_browser_refresh_token(page, rp_login):
     rp_login(page)
-    page.get_by_role("button", name="refreshToken").click()
-    # After refreshing, the RP stays authenticated with no error surfaced.
-    page.wait_for_timeout(1500)
-    first_table = page.locator("table").first.inner_text().lower()
-    assert "true" in first_table
+    # Wait for the actual refresh request to the token endpoint rather than a
+    # fixed sleep, so the assertion is tied to a concrete signal.
+    with page.expect_response(
+        lambda r: "/o/token/" in r.url and r.request.method == "POST", timeout=20000
+    ):
+        page.get_by_role("button", name="refreshToken").click()
+    # After refreshing, the RP stays authenticated with a token still displayed.
+    assert "true" in page.locator("table").first.inner_text().lower()
     assert "eyJ" in page.locator("body").inner_text()
 
 
@@ -35,12 +40,12 @@ def test_browser_refresh_token(page, rp_login):
 def test_browser_device_authorization_initiation(page, rp_server):
     page.goto(rp_server.base_url + "/device")
     button = page.get_by_role("button", name="Start Device Authorization")
-    button.wait_for(state="visible")
-    page.wait_for_timeout(1200)  # allow SvelteKit to hydrate before clicking
-    button.click()
-    # A successful device-authorization response (over CORS) advances the RP to
-    # the polling state, which shows the verification URL + user code.
-    page.wait_for_selector("text=Step 2: Authorize the Device", timeout=20000)
+    # Re-click until the device-authorization response (over CORS) advances the
+    # RP to the polling state — tolerates hydration without a fixed sleep.
+    click_until(
+        button,
+        lambda: page.wait_for_selector("text=Step 2: Authorize the Device", timeout=1500),
+    )
     body = page.locator("body").inner_text()
     assert "Verification URL" in body
     assert "Polling for authorization" in body

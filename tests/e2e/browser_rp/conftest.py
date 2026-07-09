@@ -17,6 +17,7 @@ from tests.e2e import constants as c
 pytest.importorskip("playwright")
 pytest.importorskip("pytest_playwright")
 
+from tests.e2e.helpers.browser import click_until  # noqa: E402
 from tests.e2e.helpers.idp_process import IdpServer  # noqa: E402
 from tests.e2e.helpers.rp_process import RpServer, chromium_executable  # noqa: E402
 
@@ -105,9 +106,10 @@ def rp_login(rp_server):
     def _login(page, username=c.SUPERUSER_USERNAME, password=c.SUPERUSER_PASSWORD):
         page.goto(rp_server.base_url)
         button = page.get_by_role("button", name="Login")
-        button.wait_for(state="visible")
-        page.wait_for_timeout(1200)  # allow SvelteKit to hydrate before clicking
-        button.click()
+        # Re-click until the RP actually navigates to the IdP login page; this
+        # tolerates SvelteKit hydration without a fixed sleep (the per-attempt
+        # wait_for_url timeout paces the retries).
+        click_until(button, lambda: page.wait_for_url("**/accounts/login/**", timeout=1000))
         page.wait_for_selector("#id_username", timeout=20000)
         page.fill("#id_username", username)
         page.fill("#id_password", password)

@@ -74,7 +74,9 @@ class CompliancePlugin:
     def pytest_runtest_logreport(self, report):
         if report.nodeid not in self.registry:
             return
-        if report.when == "setup" and report.failed:
+        if report.when in ("setup", "teardown") and report.failed:
+            # A fixture setup or teardown failure means the test's result cannot
+            # be trusted; record it as an error so the matrix reflects reality.
             status = "error"
         elif report.when == "setup" and report.skipped:
             status = "skipped"
