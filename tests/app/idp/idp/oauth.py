@@ -38,3 +38,21 @@ class CustomOAuth2Validator(OAuth2Validator):
 
     def validate_silent_authorization(self, request) -> None:
         return True
+
+    def get_additional_claims(self, request):
+        # Standard OIDC claims sourced from the Django user. django-oauth-toolkit
+        # filters each claim by the granted scope via ``oidc_claim_scope`` (e.g.
+        # ``email`` is only emitted when the ``email`` scope was granted, the
+        # ``profile`` claims only with the ``profile`` scope), so returning them
+        # unconditionally here is safe. These feed both the ID Token and the
+        # UserInfo response, giving the compliance suite real claims to assert.
+        # NB: email_verified is intentionally omitted. OIDC defines it as whether
+        # the address has actually been verified, which the stock Django user
+        # model does not track; emitting bool(email) would misrepresent it.
+        return {
+            "name": request.user.get_full_name() or request.user.get_username(),
+            "given_name": request.user.first_name,
+            "family_name": request.user.last_name,
+            "preferred_username": request.user.get_username(),
+            "email": request.user.email,
+        }
