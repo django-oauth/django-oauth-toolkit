@@ -87,8 +87,15 @@
   .caption h2 { font-size:18px; margin:0 0 2px; letter-spacing:-.01em; }
   .caption p { margin:0; color:var(--muted); font-size:13.5px; max-width:80ch; }
 
-  .scroller { overflow:auto; max-height:78vh; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
-    background:var(--panel); overscroll-behavior:contain; }
+  .scroller { overflow-x:auto; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+    background:var(--panel); }
+  /* floating header: pins the column headers to the top of the window on page scroll,
+     while the table keeps its own horizontal scroll and sticky first column */
+  #floathead { position:fixed; z-index:25; overflow:hidden; display:none; background:var(--panel);
+    border-bottom:1px solid var(--line-strong); box-shadow:0 6px 14px rgba(16,33,25,.08);
+    border-radius:0 0 0 0; }
+  #floathead table { border-collapse:separate; border-spacing:0; }
+  #floathead thead th { top:0; }
   table { border-collapse:separate; border-spacing:0; width:100%; font-size:13px; }
   thead th { position:sticky; top:0; z-index:10; background:var(--panel); color:var(--muted);
     font-weight:600; font-size:11.5px; text-align:center; padding:9px 8px; border-bottom:1px solid var(--line-strong);
@@ -188,6 +195,7 @@
 
   <div class="caption" id="caption"></div>
   <div class="scroller"><table id="matrix"><thead></thead><tbody></tbody></table></div>
+  <div id="floathead" aria-hidden="true"></div>
   <div class="legend" id="legend"></div>
 
   <div class="disclaimer" id="disclaimer"></div>
@@ -464,7 +472,9 @@ function buildHead(cols){
   return tr;
 }
 
+let renderGen = 0;
 function render(kind){
+  renderGen++;
   const head = $('#matrix thead'), body = $('#matrix tbody');
   head.innerHTML=''; body.innerHTML='';
   let cols, rows;
@@ -564,6 +574,41 @@ function applyFilter(){
   document.querySelectorAll('#matrix tbody tr').forEach(tr=>{
     tr.style.display = (!q || tr.dataset.label.includes(q)) ? '' : 'none';
   });
+  syncFloat();
+}
+
+// Floating header — keeps the column headers visible on page scroll without an internal
+// scroll box. The table scrolls the page vertically and scrolls itself horizontally; this
+// clone pins to the top and mirrors the horizontal offset + sticky first column.
+const floatEl = () => $('#floathead');
+let floatPending = false;
+function syncFloat(){
+  if(floatPending) return; floatPending = true;
+  requestAnimationFrame(()=>{ floatPending = false; doSyncFloat(); });
+}
+function doSyncFloat(){
+  const fl = floatEl(), sc = $('.scroller'), realHead = $('#matrix thead'), tbl = $('#matrix'),
+        toolbar = $('.toolbar');
+  if(!fl || !sc || !realHead || !tbl) return;
+  const pin = Math.max(0, Math.round(toolbar.getBoundingClientRect().bottom));
+  const scRect = sc.getBoundingClientRect();
+  const headRect = realHead.getBoundingClientRect();
+  const show = headRect.top < pin - 0.5 && scRect.bottom > pin + 24;
+  if(!show){ fl.style.display = 'none'; return; }
+  if(fl.dataset.gen !== String(renderGen)){
+    fl.innerHTML = '<table>' + realHead.outerHTML + '</table>';
+    fl.dataset.gen = String(renderGen);
+  }
+  const cloneTable = fl.firstChild;
+  const realThs = realHead.querySelectorAll('th');
+  const cloneThs = cloneTable.querySelectorAll('th');
+  cloneTable.style.width = tbl.offsetWidth + 'px';
+  realThs.forEach((th,i)=>{ if(cloneThs[i]){ const w = th.getBoundingClientRect().width; cloneThs[i].style.width = w+'px'; cloneThs[i].style.minWidth = w+'px'; } });
+  fl.style.display = 'block';
+  fl.style.top = pin + 'px';
+  fl.style.left = Math.round(scRect.left) + 'px';
+  fl.style.width = sc.clientWidth + 'px';
+  fl.scrollLeft = sc.scrollLeft;
 }
 
 function buildTabs(){
@@ -610,4 +655,7 @@ $('#themeBtn').onclick = ()=>{
 $('#filter').addEventListener('input', applyFilter);
 
 buildTabs(); buildStats(); buildLegend(); render('rollup');
+window.addEventListener('scroll', syncFloat, {passive:true});
+window.addEventListener('resize', syncFloat);
+$('.scroller').addEventListener('scroll', syncFloat, {passive:true});
 </script>
