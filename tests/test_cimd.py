@@ -105,7 +105,10 @@ def cimd_enabled(oauth2_settings):
     [
         ("https://client.example.com/meta.json", True),
         ("https://client.example.com/", True),
+        # RFC 3986 section 3.1: the scheme is case-insensitive.
+        ("HTTPS://client.example.com/meta.json", True),
         ("http://client.example.com/meta.json", False),
+        ("HTTP://client.example.com/meta.json", False),
         ("client-abc123", False),
         ("", False),
         (None, False),

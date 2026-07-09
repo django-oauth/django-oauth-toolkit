@@ -79,10 +79,12 @@ class CIMDError(Exception):
 def is_cimd_client_id(client_id):
     """Return True if *client_id* looks like a CIMD URL.
 
-    Cheap gate so ordinary (non-URL) client_ids skip all CIMD machinery. Full
-    validation happens in :func:`_validate_client_id_url`.
+    Cheap gate so ordinary (non-URL) client_ids skip all CIMD machinery. The
+    scheme is matched case-insensitively (RFC 3986 section 3.1) to stay
+    consistent with :func:`_validate_client_id_url`, where full validation
+    happens.
     """
-    return bool(client_id) and client_id.startswith("https://")
+    return bool(client_id) and client_id[:8].lower() == "https://"
 
 
 def _validate_client_id_url(client_id):
