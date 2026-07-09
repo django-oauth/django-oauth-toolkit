@@ -102,10 +102,18 @@ class AbstractApplication(models.Model):
     * :attr:`client_secret` Confidential secret issued to the client during
                             the registration process as described in :rfc:`2.2`
     * :attr:`name` Friendly name for the Application
-    * :attr:`dcr_created` True if the Application was registered via Dynamic
-                          Client Registration (RFC 7591), False for manually
-                          created Applications
+    * :attr:`registration_source` How the Application was registered: ``manual``
+                                  for manually created Applications, ``dcr`` for
+                                  those registered via Dynamic Client
+                                  Registration (RFC 7591), ``cimd`` for Client
+                                  ID Metadata Document
     """
+
+    class RegistrationSource(models.TextChoices):
+        MANUAL = "manual", _("Manual")
+        DCR = "dcr", _("Dynamic Client Registration")
+        CIMD = "cimd", _("Client ID Metadata Document")
+        # FEDERATION (OpenID Federation) reserved for future use
 
     CLIENT_CONFIDENTIAL = "confidential"
     CLIENT_PUBLIC = "public"
@@ -178,9 +186,11 @@ class AbstractApplication(models.Model):
         help_text=_("Allowed origins list to enable CORS, space separated"),
         default="",
     )
-    dcr_created = models.BooleanField(
-        default=False,
-        help_text=_("True if this application was registered via Dynamic Client Registration (RFC 7591)"),
+    registration_source = models.CharField(
+        max_length=32,
+        choices=RegistrationSource.choices,
+        default=RegistrationSource.MANUAL,
+        help_text=_("How this application was registered (manual, DCR per RFC 7591, or CIMD)"),
     )
 
     class Meta:
