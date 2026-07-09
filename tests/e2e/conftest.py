@@ -37,8 +37,6 @@ SPEC_BY_PACKAGE = {
     "browser_rp": ("Browser RP (SvelteKit)", "spec_browser_rp"),
 }
 
-ALL_SPEC_MARKERS = sorted({marker for _, marker in SPEC_BY_PACKAGE.values()})
-
 # Map a ``compliance()`` spec label (and a few close variants) to a family
 # marker, so a test tagged with a spec from *another* family (e.g. an OIDC test
 # also asserting an RFC 7636 requirement, or the RFC 7592 checks living in the
@@ -59,15 +57,10 @@ SPEC_LABEL_TO_MARKER = {
 
 
 def pytest_configure(config):
-    config.addinivalue_line(
-        "markers",
-        "compliance(spec, section, requirement): bind a test to a specification requirement "
-        "for the generated compliance matrix.",
-    )
-    config.addinivalue_line("markers", "deprecated: flow discouraged by OAuth 2.1 (implicit, ROPC).")
-    config.addinivalue_line("markers", "browser: requires a real browser (Playwright) + the SvelteKit RP.")
-    for marker in ALL_SPEC_MARKERS:
-        config.addinivalue_line("markers", f"{marker}: tests for this specification family.")
+    # Markers (compliance/deprecated/browser/spec_*) are declared in
+    # pyproject.toml's [tool.pytest.ini_options].markers, which pytest loads for
+    # these runs too, so they are not re-registered here — only the compliance
+    # reporting plugin is wired up.
     config._compliance_plugin = CompliancePlugin(config)
     config.pluginmanager.register(config._compliance_plugin, "dot-compliance")
 
