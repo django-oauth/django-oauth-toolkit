@@ -131,6 +131,6 @@ Operational notes
     Resolution has a side effect: on first sight of a CIMD URL, a ``GET`` to ``/authorize`` triggers an
     outbound fetch and persists an ``Application`` on the default database. Deployments using a
     read-replica router should ensure the authorize/token views can write to the default database.
-    Serving the last known-good document when a re-fetch fails is a deliberate availability-over-
-    freshness choice; it does not cache an error response (the draft forbids that), it just avoids
-    locking out a client over a transient blip.
+    Serving the last known-good document when a re-fetch fails is a deliberate choice of
+    availability over freshness; it does not cache an error response (the draft forbids that),
+    it just avoids locking out a client over a transient blip.
