@@ -123,6 +123,7 @@ markers = [
     "spec_rfc7009: RFC 7009 (token revocation)",
     "spec_rfc7662: RFC 7662 (token introspection)",
     "spec_rfc8414: RFC 8414 (authorization server metadata)",
+    "spec_rfc9728: RFC 9728 (protected resource metadata)",
     "spec_rfc8628: RFC 8628 (device authorization grant)",
     "spec_rfc7591: RFC 7591/7592 (dynamic client registration)",
     "spec_oidc_core: OpenID Connect Core 1.0",

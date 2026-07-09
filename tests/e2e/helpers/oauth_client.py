@@ -102,6 +102,26 @@ class OAuthClient:
     def jwks(self):
         return requests.get(f"{self.issuer}/.well-known/jwks.json", timeout=DEFAULT_TIMEOUT)
 
+    def resource_metadata(self, resource_path=""):
+        """RFC 9728 Protected Resource Metadata (well-known at the domain root).
+
+        With ``resource_path`` the RFC 9728 path-component form is requested
+        (``/.well-known/oauth-protected-resource/<resource_path>``).
+        """
+        suffix = f"/{resource_path}" if resource_path else ""
+        return requests.get(
+            self.url(f"/.well-known/oauth-protected-resource{suffix}"), timeout=DEFAULT_TIMEOUT
+        )
+
+    def protected_resource(self, access_token=None):
+        """The demo RFC 9728 protected resource endpoint on the IdP.
+
+        Sent with a Bearer token when ``access_token`` is given, otherwise
+        unauthenticated so the caller can observe the ``WWW-Authenticate`` challenge.
+        """
+        headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+        return requests.get(self.url("/resource/"), headers=headers, timeout=DEFAULT_TIMEOUT)
+
     # --- Resource-owner user agent (login + consent) ----------------------
     def _csrf_get(self, session, url, **kwargs):
         kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
