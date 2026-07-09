@@ -24,6 +24,6 @@ def click_until(locator, check, attempts=20):
         try:
             check()
             return
-        except Exception as exc:  # Playwright TimeoutError (or the check's own asserror)
+        except Exception as exc:  # Playwright TimeoutError (or the check's own AssertionError)
             last_exc = exc
     raise AssertionError(f"condition not met after {attempts} clicks") from last_exc
