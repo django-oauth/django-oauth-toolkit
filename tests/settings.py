@@ -1,4 +1,5 @@
 import django
+from django.conf import global_settings
 
 
 ADMINS = ()
@@ -95,7 +96,7 @@ INSTALLED_APPS = (
 # test_models.py exercises CLIENT_SECRET_HASHER="fast_pbkdf2".
 PASSWORD_HASHERS = (
     ["django.contrib.auth.hashers.MD5PasswordHasher"]
-    + list(django.conf.settings.PASSWORD_HASHERS)
+    + list(global_settings.PASSWORD_HASHERS)
     + ["tests.custom_hasher.MyPBKDF2PasswordHasher"]
 )
 
