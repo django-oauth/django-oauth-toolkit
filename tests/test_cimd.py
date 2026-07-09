@@ -76,6 +76,18 @@ class _UpdatedFetcher:
         return _document(redirect_uris=["https://client.example.com/new-callback"]), 3600
 
 
+class _OverlongNameFetcher:
+    def fetch(self, client_id):
+        # Passes the metadata checks but fails Application.full_clean
+        # (name is a max_length=255 CharField).
+        return _document(client_name="x" * 300), 3600
+
+
+class _ExplodingFetcher:
+    def fetch(self, client_id):
+        raise RuntimeError("boom")
+
+
 def _fetcher(cls):
     return cls
 
@@ -243,6 +255,8 @@ def test_build_application_kwargs_public():
         _document(client_secret_expires_at=0),  # spec: MUST NOT be present
         _document(redirect_uris="not-a-list"),
         _document(redirect_uris=[123]),
+        _document(grant_types="authorization_code"),  # not a list
+        _document(grant_types=[123]),
         _document(grant_types=["client_credentials"]),  # not a public/known grant
         _document(grant_types=["authorization_code", "implicit"]),  # more than one
         _document(client_name=123),
@@ -392,6 +406,46 @@ def test_resolve_recovers_from_concurrent_insert_race(cimd_enabled, mocker):
     assert resolved.pk == winner.pk
 
 
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_race_with_vanished_row_fails_closed(cimd_enabled, mocker):
+    # save() hits the unique constraint but the winning row is gone by the time
+    # we re-load it (e.g. rolled back): treat the client as unknown.
+    mocker.patch.object(Application.objects, "get", side_effect=Application.DoesNotExist)
+    mocker.patch.object(Application, "save", side_effect=IntegrityError("duplicate client_id"))
+    assert resolve_cimd_application(CLIENT_URL) is None
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_race_with_non_cimd_winner_is_refused(cimd_enabled, mocker):
+    # The concurrent writer that won the unique-constraint race was a manual
+    # registration: the hijack guard must hold on the re-load path too.
+    winner = Application.objects.create(
+        client_id=CLIENT_URL,
+        registration_source=Application.RegistrationSource.MANUAL,
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+    )
+    mocker.patch.object(Application.objects, "get", side_effect=[Application.DoesNotExist, winner])
+    mocker.patch.object(Application, "save", side_effect=IntegrityError("duplicate client_id"))
+    assert resolve_cimd_application(CLIENT_URL) is None
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_rejects_metadata_failing_model_validation(cimd_enabled):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_OverlongNameFetcher)
+    assert resolve_cimd_application(CLIENT_URL) is None
+    assert not Application.objects.filter(client_id=CLIENT_URL).exists()
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_degrades_unexpected_errors_and_backs_off(cimd_enabled, mocker):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ExplodingFetcher)
+    fetch = mocker.spy(_ExplodingFetcher, "fetch")
+    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL) is None
+    assert fetch.call_count == 1  # second call short-circuited by backoff
+
+
 # ---------------------------------------------------------------------------
 # refresh_if_stale
 # ---------------------------------------------------------------------------
@@ -501,6 +555,12 @@ def test_fetcher_rejects_oversized(oauth2_settings):
 
 def test_fetcher_rejects_bad_json():
     resp = _FakeHTTPResponse(body=b"not json")
+    with pytest.raises(CIMDError):
+        SafeMetadataFetcher()._read_document(resp)
+
+
+def test_fetcher_rejects_non_object_json():
+    resp = _FakeHTTPResponse(body=b'["valid json", "but not an object"]')
     with pytest.raises(CIMDError):
         SafeMetadataFetcher()._read_document(resp)
 
