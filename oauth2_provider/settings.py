@@ -22,7 +22,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.signals import setting_changed
 from django.http import HttpRequest
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils.module_loading import import_string
 from oauthlib.common import Request
 
@@ -155,6 +155,14 @@ DEFAULTS = {
         "refresh_token",
         "urn:ietf:params:oauth:grant-type:device_code",
     ],
+    # RFC 9728 Protected Resource Metadata
+    "OAUTH2_PROTECTED_RESOURCE_IDENTIFIER": "",
+    "OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS": [],
+    "OAUTH2_PROTECTED_RESOURCE_BEARER_METHODS_SUPPORTED": ["header"],
+    "OAUTH2_PROTECTED_RESOURCE_NAME": "",
+    "OAUTH2_PROTECTED_RESOURCE_DOCUMENTATION": "",
+    "OAUTH2_PROTECTED_RESOURCE_POLICY_URI": "",
+    "OAUTH2_PROTECTED_RESOURCE_TOS_URI": "",
 }
 
 # List of settings that cannot be empty
@@ -399,6 +407,63 @@ class OAuth2ProviderSettings:
             raise TypeError("request must be a django or oauthlib request: got %r" % request)
         abs_url = django_request.build_absolute_uri(reverse("oauth2_provider:oidc-connect-discovery-info"))
         return abs_url[: -len("/.well-known/openid-configuration")]
+
+    def oauth2_resource_identifier(self, request):
+        """
+        Get the RFC 9728 protected-resource identifier (the ``resource`` value).
+
+        If ``OAUTH2_PROTECTED_RESOURCE_IDENTIFIER`` is configured it is returned
+        verbatim. Otherwise the identifier is derived from the incoming request by
+        locating the ``/.well-known/oauth-protected-resource`` marker in the request
+        URL and splitting around it, mirroring :meth:`oauth2_metadata_issuer`:
+
+        * text *before* the marker is the base — this preserves any mount prefix;
+        * text *after* the marker is the RFC 9728 path component, appended back to
+          the base (e.g.
+          ``https://host/.well-known/oauth-protected-resource/tenant1`` →
+          ``https://host/tenant1``).
+        """
+        if self.OAUTH2_PROTECTED_RESOURCE_IDENTIFIER:
+            return self.OAUTH2_PROTECTED_RESOURCE_IDENTIFIER
+        abs_url = request.build_absolute_uri(request.path)
+        base, _, resource_path = abs_url.partition("/.well-known/oauth-protected-resource")
+        resource_path = resource_path.strip("/")
+        if resource_path:
+            return f"{base}/{resource_path}"
+        return base
+
+    def oauth2_resource_authorization_servers(self, request):
+        """
+        Get the RFC 9728 ``authorization_servers`` list for the protected resource.
+
+        If ``OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS`` is configured it is
+        returned verbatim. Otherwise this server's own authorization-server issuer
+        is used: ``OIDC_ISS_ENDPOINT`` when set, else derived from the RFC 8414
+        metadata route. Returns an empty list when no issuer can be resolved (e.g.
+        the metadata route is not mounted), so the field is omitted.
+        """
+        if self.OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS:
+            return list(self.OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS)
+        if self.OIDC_ISS_ENDPOINT:
+            return [self.OIDC_ISS_ENDPOINT]
+        try:
+            abs_url = request.build_absolute_uri(reverse("oauth2_provider:oauth-server-metadata"))
+        except NoReverseMatch:
+            return []
+        return [abs_url[: -len("/.well-known/oauth-authorization-server")]]
+
+    def oauth2_resource_metadata_url(self, request):
+        """
+        Absolute URL of this server's RFC 9728 protected-resource metadata document.
+
+        Returns ``None`` when the metadata route is not registered, so callers that
+        advertise it in a ``WWW-Authenticate`` challenge can simply omit the
+        ``resource_metadata`` parameter.
+        """
+        try:
+            return request.build_absolute_uri(reverse("oauth2_provider:oauth-resource-metadata"))
+        except NoReverseMatch:
+            return None
 
 
 oauth2_settings = OAuth2ProviderSettings(USER_SETTINGS, DEFAULTS, IMPORT_STRINGS, MANDATORY)

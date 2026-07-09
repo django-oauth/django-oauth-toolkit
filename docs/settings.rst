@@ -576,6 +576,56 @@ Default: ``["client_secret_post", "client_secret_basic"]``
 
 The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
 
+OAUTH2_PROTECTED_RESOURCE_IDENTIFIER
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``""``
+
+The ``resource`` identifier advertised by the :doc:`protected_resource_metadata`
+endpoint. When empty it is derived from the request URL.
+
+OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``[]``
+
+The ``authorization_servers`` advertised by the :doc:`protected_resource_metadata`
+endpoint. When empty, this server's own authorization-server issuer is used
+(``OIDC_ISS_ENDPOINT`` or the RFC 8414 route).
+
+OAUTH2_PROTECTED_RESOURCE_BEARER_METHODS_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["header"]``
+
+The ``bearer_methods_supported`` advertised by the :doc:`protected_resource_metadata`
+endpoint.
+
+OAUTH2_PROTECTED_RESOURCE_NAME
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``""``
+
+Human-readable ``resource_name`` advertised by the :doc:`protected_resource_metadata`
+endpoint. Omitted from the document when empty.
+
+OAUTH2_PROTECTED_RESOURCE_DOCUMENTATION
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``""``
+
+``resource_documentation`` URL advertised by the :doc:`protected_resource_metadata`
+endpoint. Omitted from the document when empty.
+
+OAUTH2_PROTECTED_RESOURCE_POLICY_URI
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``""``
+
+``resource_policy_uri`` URL advertised by the :doc:`protected_resource_metadata`
+endpoint. Omitted from the document when empty.
+
+OAUTH2_PROTECTED_RESOURCE_TOS_URI
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``""``
+
+``resource_tos_uri`` URL advertised by the :doc:`protected_resource_metadata`
+endpoint. Omitted from the document when empty.
+
 CLEAR_EXPIRED_TOKENS_BATCH_SIZE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``10000``
