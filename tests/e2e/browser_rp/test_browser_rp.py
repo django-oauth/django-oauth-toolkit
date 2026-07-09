@@ -19,7 +19,7 @@ def test_browser_oidc_login_populates_tokens(page, rp_login):
     # The RP renders isAuthenticated + tokens once the code flow completes.
     assert "true" in page.locator("table").first.inner_text().lower()
     body = page.locator("body").inner_text()
-    assert "eyJ" in body, "an access/ID token (JWT) should be displayed after login"
+    assert "eyJ" in body, "the ID token (a JWT) should be displayed after login"
 
 
 @pytest.mark.compliance("RFC 6749", "6", "Refresh Token (browser RP)")

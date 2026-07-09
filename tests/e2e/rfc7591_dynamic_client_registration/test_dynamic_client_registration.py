@@ -16,6 +16,13 @@ def _register(oauth, metadata):
     return requests.post(oauth.url("/o/register/"), json=metadata, timeout=10)
 
 
+def _register_ok(oauth, metadata):
+    """Register a client and return its JSON, asserting a 201 first."""
+    resp = _register(oauth, metadata)
+    assert resp.status_code == 201, f"DCR failed ({resp.status_code}): {resp.text}"
+    return resp.json()
+
+
 @pytest.mark.compliance("RFC 7591", "3.2.1", "Client Information Response")
 def test_register_confidential_client(oauth):
     resp = _register(
@@ -52,7 +59,7 @@ def test_register_authorization_code_without_redirect_uri_is_rejected(oauth):
 
 @pytest.mark.compliance("RFC 7592", "2.1", "Client Read Request")
 def test_registered_client_can_be_read_back(oauth):
-    created = _register(
+    created = _register_ok(
         oauth,
         {
             "client_name": "Readable Client",
@@ -60,7 +67,7 @@ def test_registered_client_can_be_read_back(oauth):
             "grant_types": ["authorization_code"],
             "token_endpoint_auth_method": "client_secret_basic",
         },
-    ).json()
+    )
 
     read = requests.get(
         created["registration_client_uri"],
@@ -73,7 +80,7 @@ def test_registered_client_can_be_read_back(oauth):
 
 @pytest.mark.compliance("RFC 7591", "3.1", "Registered client is usable")
 def test_registered_client_can_complete_authorization_code_flow(oauth, user_session):
-    created = _register(
+    created = _register_ok(
         oauth,
         {
             "client_name": "Usable Client",
@@ -81,7 +88,7 @@ def test_registered_client_can_complete_authorization_code_flow(oauth, user_sess
             "grant_types": ["authorization_code", "refresh_token"],
             "token_endpoint_auth_method": "client_secret_basic",
         },
-    ).json()
+    )
 
     # Use a non-OIDC scope: a dynamically registered client has no configured
     # signing algorithm, so it cannot mint ID Tokens (openid scope).
