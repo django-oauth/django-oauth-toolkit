@@ -29,6 +29,8 @@ env = environ.FileAwareEnv(
     OAUTH2_PROVIDER_OIDC_ENABLED=(bool, True),
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED=(bool, True),
     OAUTH2_PROVIDER_DCR_ENABLED=(bool, True),
+    OAUTH2_PROVIDER_CIMD_ENABLED=(bool, False),
+    OAUTH2_PROVIDER_CIMD_METADATA_FETCHER=(str, "oauth2_provider.cimd.SafeMetadataFetcher"),
     OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY=(
         str,
         """
@@ -249,6 +251,11 @@ OAUTH2_PROVIDER = {
     # demo IdP is for local testing only — in production keep the default
     # IsAuthenticatedDCRPermission (or a custom permission class) instead.
     "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+    "CIMD_ENABLED": env("OAUTH2_PROVIDER_CIMD_ENABLED"),
+    # The e2e suite points this at idp.cimd.LoopbackMetadataFetcher, which can
+    # fetch metadata documents from a plain-HTTP loopback server; production
+    # deployments must keep the default SSRF-hardened fetcher.
+    "CIMD_METADATA_FETCHER": env("OAUTH2_PROVIDER_CIMD_METADATA_FETCHER"),
 }
 # needs to be set to allow cors requests from the test app, along with ALLOWED_SCHEMES=["http"]
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = env("OAUTHLIB_INSECURE_TRANSPORT")

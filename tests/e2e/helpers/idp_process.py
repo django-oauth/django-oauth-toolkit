@@ -48,6 +48,10 @@ class IdpServer:
       IdP is launched with.
     * ``pkce_required`` / ``pkce_required_client_ids`` — global PKCE toggle and
       the set of clients PKCE is enforced for.
+    * ``cimd_enabled`` / ``cimd_metadata_fetcher`` — turn on Client ID Metadata
+      Document support and (optionally) swap the metadata fetcher import string
+      (the CIMD package uses ``idp.cimd.LoopbackMetadataFetcher`` so the IdP
+      can fetch documents from a local test server).
     """
 
     def __init__(
@@ -58,6 +62,8 @@ class IdpServer:
         default_scopes=None,
         pkce_required=False,
         pkce_required_client_ids=None,
+        cimd_enabled=False,
+        cimd_metadata_fetcher=None,
         fixtures=("fixtures/seed.json", "fixtures/e2e_seed.json"),
         allowed_hosts=None,
     ):
@@ -71,6 +77,8 @@ class IdpServer:
         self.default_scopes = default_scopes or []
         self.pkce_required = pkce_required
         self.pkce_required_client_ids = pkce_required_client_ids or []
+        self.cimd_enabled = cimd_enabled
+        self.cimd_metadata_fetcher = cimd_metadata_fetcher
         self.fixtures = fixtures
         self._proc = None
         self._tmpdir = None
@@ -99,6 +107,9 @@ class IdpServer:
         env["OAUTH2_PROVIDER_PKCE_REQUIRED"] = "True" if self.pkce_required else "False"
         if self.pkce_required_client_ids:
             env["OAUTH2_PROVIDER_PKCE_REQUIRED_CLIENT_IDS"] = ",".join(self.pkce_required_client_ids)
+        env["OAUTH2_PROVIDER_CIMD_ENABLED"] = "True" if self.cimd_enabled else "False"
+        if self.cimd_metadata_fetcher:
+            env["OAUTH2_PROVIDER_CIMD_METADATA_FETCHER"] = self.cimd_metadata_fetcher
         return env
 
     def _manage(self, *args, env):
