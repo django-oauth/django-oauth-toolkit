@@ -325,7 +325,7 @@ class ClientProtectedResourceMixin(OAuthLibMixin):
             return super().dispatch(request, *args, **kwargs)
 
 
-class ProtectedResourceMetadataMixin:
+class ProtectedResourceMetadataMixin(OAuthLibMixin):
     """RFC 9728 opt-in: advertise protected-resource metadata on auth failure.
 
     Mix this in *before* a protected-resource view/mixin
@@ -335,6 +335,10 @@ class ProtectedResourceMetadataMixin:
     9728 ``resource_metadata`` parameter pointing at
     ``/.well-known/oauth-protected-resource``. Opting in explicitly (rather than
     via a global flag) keeps the default views' behaviour unchanged.
+
+    It subclasses :class:`OAuthLibMixin` so that its ``unauthenticated_response``
+    is an unambiguous override of the base hook (rather than a value from an
+    unrelated base class) when combined with a protected-resource view/mixin.
 
     Set ``www_authenticate_realm`` to advertise a realm in the challenge.
     """
