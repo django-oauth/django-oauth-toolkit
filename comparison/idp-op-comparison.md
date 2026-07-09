@@ -28,8 +28,8 @@ or paid tier · ❌ None · ❓ Unverified
 | Specification | DOT | oauthlib | Authlib | Authentik |
 |---|:---:|:---:|:---:|:---:|
 | RFC 6749 — OAuth 2.0 core | ✅ | ✅ | ✅ | ✅ |
-| — Implicit grant | ✅ | ✅ | ✅ | ✅ |
-| — Resource-owner password grant | ✅ | ✅ | ✅ | ✅ |
+| — Implicit grant *(deprecated)* | ✅ | ✅ | ✅ | ✅ |
+| — Resource-owner password grant *(deprecated)* | ✅ | ✅ | ✅ | ✅ |
 | RFC 6750 — Bearer usage | ✅ | ✅ | ✅ | ✅ |
 | RFC 7009 — Revocation | ✅ | ✅ | ✅ | ✅ |
 | RFC 7636 — PKCE | ✅ | ✅ | ✅ | ✅ |
@@ -58,6 +58,7 @@ or paid tier · ❌ None · ❓ Unverified
 | OIDC Back-Channel Logout | ❌ | ❌ | ❌ | ✅ |
 | CIBA | ❌ | ❌ | ❌ | ❌ |
 | FAPI 1.0 / 2.0 | ❌ | ❌ | ❌ | ❌ |
+| CIMD — Client ID Metadata Document *(draft)* | ◑ | ❌ | ❌ | ❌ |
 
 *Read:* DOT and Authentik are complete, batteries-included servers; **oauthlib** is
 deliberately a lower-level library (DOT supplies discovery, device flow, DCR, and OIDC on top
@@ -71,8 +72,8 @@ a framework you assemble, not a Django-native app. None in this tier is OpenID-c
 | Specification | DOT | Keycloak | Ory Hydra | WSO2 IS | Zitadel | Janssen |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
 | RFC 6749 — OAuth 2.0 core | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| — Implicit grant | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| — Resource-owner password grant | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| — Implicit grant *(deprecated)* | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| — Resource-owner password grant *(deprecated)* | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
 | RFC 6750 — Bearer usage | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | RFC 7009 — Revocation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | RFC 7636 — PKCE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -101,6 +102,7 @@ a framework you assemble, not a Django-native app. None in this tier is OpenID-c
 | OIDC Back-Channel Logout | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | CIBA | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ |
 | FAPI 1.0 / 2.0 | ❌ | ✅ | ❌ | ✅ | ❌ | ◑ |
+| CIMD — Client ID Metadata Document *(draft)* | ◑ | ◑ | ❌ | ❓ | ❌ | ✅ |
 | **OpenID-certified OP** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 *Read:* **Keycloak, WSO2, and Janssen** are the standards-completeness leaders (FAPI, CIBA,
@@ -117,8 +119,8 @@ back-channel logout.**
 | Specification | DOT | Okta | Auth0 | Entra ID | Ping |
 |---|:---:|:---:|:---:|:---:|:---:|
 | RFC 6749 — OAuth 2.0 core | ✅ | ✅ | ✅ | ✅ | ✅ |
-| — Implicit grant | ✅ | ✅ | ✅ | ✅ | ✅ |
-| — Resource-owner password grant | ✅ | ✅ | ✅ | ✅ | ✅ |
+| — Implicit grant *(deprecated)* | ✅ | ✅ | ✅ | ✅ | ✅ |
+| — Resource-owner password grant *(deprecated)* | ✅ | ✅ | ✅ | ✅ | ✅ |
 | RFC 6750 — Bearer usage | ✅ | ✅ | ✅ | ✅ | ✅ |
 | RFC 7009 — Revocation | ✅ | ✅ | ◑ | ❌ | ✅ |
 | RFC 7636 — PKCE | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -147,6 +149,7 @@ back-channel logout.**
 | OIDC Back-Channel Logout | ❌ | ❌ | 🧩 | ❌ | ✅ |
 | CIBA | ❌ | ◑ | 🧩 | ❌ | ✅ |
 | FAPI 1.0 / 2.0 | ❌ | ❌ | 🧩 | ❌ | ✅ |
+| CIMD — Client ID Metadata Document *(draft)* | ◑ | ❌ | ❌ | ❌ | ❓ |
 | **OpenID-certified OP** | ❌ | ✅ | ✅ | ✅ | ✅ |
 
 *Read:* **Ping Identity** is the standards maximalist (FAPI 2.0 certified, full advanced

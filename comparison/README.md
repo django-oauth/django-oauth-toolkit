@@ -100,6 +100,10 @@ oidc-client-ts, passport-openidconnect, Spring Security OAuth2 Client.
 **Membership (Table 2)**: ● required · ○ optional/recommended · ⊘ forbidden · *(blank)* not
 in the profile.
 
+**Lifecycle**: *(draft)* = not yet a finalized standard (e.g. CIMD, and the OAuth 2.1 / MCP
+profiles); *(deprecated)* = discouraged or removed by newer specs (the implicit & resource-owner
+password grants). The interactive matrix flags these with a badge and a colored row rail.
+
 ---
 
 ## Methodology

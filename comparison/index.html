@@ -268,7 +268,8 @@ const SPECS = [
   ['RFC 9449 — DPoP'],['RFC 8705 — mTLS client auth'],['RFC 8707 — Resource indicators'],
   ['RFC 9728 — Protected resource metadata'],['RFC 9700 — Security BCP'],
   ['OIDC Core'],['OIDC Discovery'],['OIDC Dynamic Registration'],['OIDC RP-Initiated Logout'],
-  ['OIDC Session Management'],['OIDC Front-Channel Logout'],['OIDC Back-Channel Logout'],['CIBA']
+  ['OIDC Session Management'],['OIDC Front-Channel Logout'],['OIDC Back-Channel Logout'],['CIBA'],
+  ['CIMD — Client ID Metadata Document']
 ];
 // First-party source per spec — IETF (rfc-editor.org) / OpenID Foundation (openid.net). Index matches SPECS.
 const SPEC_URL = [
@@ -301,19 +302,22 @@ const SPEC_URL = [
   'https://openid.net/specs/openid-connect-session-1_0.html',
   'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
   'https://openid.net/specs/openid-connect-backchannel-1_0.html',
-  'https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html'
+  'https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html',
+  'https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/'
 ];
 // lifecycle status per spec (index matches SPECS): 'deprecated' | 'draft' | undefined (final)
 const SPEC_STATUS = [];
 SPEC_STATUS[1] = 'deprecated'; // implicit grant — removed by OAuth 2.1, discouraged by the Security BCP
 SPEC_STATUS[2] = 'deprecated'; // resource-owner password grant — removed by OAuth 2.1
+SPEC_STATUS[30] = 'draft';     // CIMD — IETF OAuth WG draft, MCP's preferred client registration
 // OP grid: order = OP competitors; rows align to SPECS
 const OPGRID = [
   'FFFFFFFFFFFFF','FFFFFFFFFFFFF','FFFFNFNFFFFFF','FFFFFFFFFFFFF','FFFFFFFFFFPNF','FFFFFFFFFFFFF','FFFFFFFFFFNNF',
   'PNNPPFPFFFFFF','FFFPFFFPFFFFF','FNFFFFFFFFFFF','ONFNFFFNFFFNF','ONFNFFFNFFNNF','PPFFFFFFFFFFF','NNFNFFFFFFFFF',
   'NNFNPPFPFPFPF','NNNNFNFPFFANF','NNNNNNFUFUANF','NNNNFNFNFFFNF','NNNNFNFNFNAPF','NNNNPNUNNNPPF','NNNNPNUUUUPUU',
   'PPPPPPPPUPPPP','OPFFFFFFFFFFF','ONFFFFFFFFFFF','PNFNFFFNFFFNF','ONFFFFFFFFFFF','NNNNFNFUFUPUP','NNNFFFFUFFFFF',
-  'NNNFFFFFFNANF','NNNNFNFNFPANF'
+  'NNNFFFFFFNANF','NNNNFNFNFPANF',
+  'PNNNPNUNFNNNU'
 ];
 const OPCERT = 'NNNNFFFFFFFFF'; // OpenID-certified OP
 
@@ -327,7 +331,8 @@ const MEM = [
  ['o','o','.','o','o','.','o','o'], ['o','o','.','o','.','.','.','o'], ['o','o','.','o','R','.','o','o'],
  ['o','o','.','o','R','.','o','R'], ['o','R','o','R','R','R','o','o'], ['.','.','R','o','.','.','R','.'],
  ['.','.','o','o','.','.','o','.'], ['.','.','o','.','o','.','o','.'], ['.','.','o','.','.','.','o','.'],
- ['.','.','o','.','.','.','o','.'], ['.','.','o','.','.','.','o','.'], ['.','.','o','.','.','.','o','.'], ['.','.','o','o','.','.','.','.']
+ ['.','.','o','.','.','.','o','.'], ['.','.','o','.','.','.','o','.'], ['.','.','o','.','.','.','o','.'], ['.','.','o','o','.','.','.','.'],
+ ['.','.','.','.','o','.','o','.']
 ];
 
 // rollup: rows = suites, cols = OP competitors. [suiteKey, label, statusStr]
@@ -672,7 +677,7 @@ function buildStats(){
   const cnt = c => OPGRID.reduce((a,r)=>a+(r[0]===c?1:0),0);
   const full = cnt('F'), optin = cnt('O'), none = cnt('N');
   const data = [
-    ['31','specs tracked','accent'],['13','providers compared',''],
+    [String(SPECS.length),'specs tracked','accent'],['13','providers compared',''],
     [String(full+optin),'DOT: implemented','accent'],['5','tables, one model','']
   ];
   const S = $('#stats');

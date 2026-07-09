@@ -32,8 +32,8 @@ Columns include the two client/API **roles** (RP, RS) alongside the provider pro
 | Specification | OAuth 2.0 | OAuth 2.1 | OIDC | FAPI 2.0 | MCP | Native | RP | RS |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | RFC 6749 — OAuth 2.0 core | ● | ● | ● | ● | ● | ● | ● | ○ |
-| — Implicit grant | ○ | ⊘ | ○ | ⊘ | ⊘ | ⊘ | ⊘ | |
-| — Resource-owner password grant | ○ | ⊘ | | ⊘ | ⊘ | ⊘ | ⊘ | |
+| — Implicit grant *(deprecated)* | ○ | ⊘ | ○ | ⊘ | ⊘ | ⊘ | ⊘ | |
+| — Resource-owner password grant *(deprecated)* | ○ | ⊘ | | ⊘ | ⊘ | ⊘ | ⊘ | |
 | RFC 6750 — Bearer token usage | ● | ● | ● | ● | ● | ● | ● | ● |
 | RFC 7009 — Revocation | ○ | ○ | ○ | ○ | ○ | | ○ | |
 | RFC 7636 — PKCE | ○ | ● | ○ | ● | ● | ● | ● | |
@@ -61,6 +61,11 @@ Columns include the two client/API **roles** (RP, RS) alongside the provider pro
 | OIDC Front-Channel Logout | | | ○ | | | | ○ | |
 | OIDC Back-Channel Logout | | | ○ | | | | ○ | |
 | CIBA | | | ○ | ○ | | | | |
+| CIMD — Client ID Metadata Document *(draft)* | | | | | ○ | | ○ | |
+
+**CIMD** (IETF OAuth WG draft) lets a client use an HTTPS URL as its `client_id`; the MCP
+2025-11-25 profile makes it the *preferred* client-registration mechanism (SHOULD), with
+RFC 7591 DCR demoted to a fallback. See [Table 1](./idp-op-comparison.md) for who implements it.
 
 The **RS** column marks what a resource server touches: it MUST accept bearer tokens
 (6750) and, for MCP, MUST publish protected-resource metadata (9728); it MAY validate JWT
