@@ -293,7 +293,7 @@ def test_resolve_creates_public_application(cimd_enabled):
     app = resolve_cimd_application(CLIENT_URL)
     assert app is not None
     assert app.client_id == CLIENT_URL
-    assert app.cimd_created is True
+    assert app.registration_source == Application.RegistrationSource.CIMD
     assert app.client_type == Application.CLIENT_PUBLIC
     assert app.authorization_grant_type == Application.GRANT_AUTHORIZATION_CODE
     assert app.redirect_uris == "https://client.example.com/callback"
@@ -339,7 +339,7 @@ def test_resolve_refuses_to_hijack_non_cimd_application(cimd_enabled):
     )
     assert resolve_cimd_application(CLIENT_URL) is None
     app = Application.objects.get(client_id=CLIENT_URL)
-    assert app.cimd_created is False
+    assert app.registration_source == Application.RegistrationSource.MANUAL
     assert app.client_type == Application.CLIENT_CONFIDENTIAL
 
 
@@ -377,7 +377,7 @@ def test_resolve_recovers_from_concurrent_insert_race(cimd_enabled, mocker):
     # then hits the unique constraint, and we recover by re-loading the winner.
     winner = Application.objects.create(
         client_id=CLIENT_URL,
-        cimd_created=True,
+        registration_source=Application.RegistrationSource.CIMD,
         client_type=Application.CLIENT_PUBLIC,
         authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
         redirect_uris="https://client.example.com/callback",
@@ -605,7 +605,7 @@ def test_validate_client_id_resolves_cimd_url(cimd_enabled):
     # validate_authorization_request.
     assert validator.validate_client_id(CLIENT_URL, request) is True
     assert request.client.client_id == CLIENT_URL
-    assert request.client.cimd_created is True
+    assert request.client.registration_source == Application.RegistrationSource.CIMD
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -622,7 +622,7 @@ def test_authenticate_client_id_resolves_cimd_url(cimd_enabled):
     # shares the same _load_application seam, so CIMD must resolve there too.
     assert validator.authenticate_client_id(CLIENT_URL, request) is True
     assert request.client.client_id == CLIENT_URL
-    assert request.client.cimd_created is True
+    assert request.client.registration_source == Application.RegistrationSource.CIMD
 
 
 def test_metadata_advertised_when_enabled(oauth2_settings, client):

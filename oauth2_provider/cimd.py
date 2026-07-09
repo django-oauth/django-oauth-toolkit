@@ -355,7 +355,7 @@ def _fetch_validate_upsert(client_id):
     Application = get_application_model()
     try:
         application = Application.objects.get(client_id=client_id)
-        if not application.cimd_created:
+        if application.registration_source != Application.RegistrationSource.CIMD:
             # A manually provisioned client happens to own this id; never let a
             # fetched document take it over.
             raise CIMDError("client_id URL collides with a non-CIMD application")
@@ -364,7 +364,7 @@ def _fetch_validate_upsert(client_id):
 
     application.user = None
     application.client_type = Application.CLIENT_PUBLIC
-    application.cimd_created = True
+    application.registration_source = Application.RegistrationSource.CIMD
     application.cimd_expires_at = timezone.now() + timedelta(seconds=max_age)
     for field, value in kwargs.items():
         setattr(application, field, value)
@@ -389,7 +389,7 @@ def _fetch_validate_upsert(client_id):
             application = Application.objects.get(client_id=client_id)
         except Application.DoesNotExist:
             raise CIMDError("client_id row vanished during a concurrent upsert") from exc
-        if not application.cimd_created:
+        if application.registration_source != Application.RegistrationSource.CIMD:
             raise CIMDError("client_id URL collides with a non-CIMD application")
     return application
 
@@ -447,7 +447,10 @@ def refresh_if_stale(application):
     good document on failure avoids locking a client out over a transient blip
     (the spec forbids caching an error as the authoritative result).
     """
-    if not application.cimd_created or application.cimd_expires_at is None:
+    if (
+        application.registration_source != application.RegistrationSource.CIMD
+        or application.cimd_expires_at is None
+    ):
         return application
     if timezone.now() <= application.cimd_expires_at:
         return application

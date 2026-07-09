@@ -1339,3 +1339,92 @@ class TestOAuthServerMetadataView(TestCase):
         # Static metadata is still present.
         assert "issuer" in data
         assert data["scopes_supported"] == ["openid", "read", "write"]
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestOAuthProtectedResourceMetadataView(TestCase):
+    def test_get_protected_resource_metadata(self):
+        expected_response = {
+            "resource": "http://testserver/o",
+            "authorization_servers": ["http://localhost/o"],
+            "scopes_supported": ["openid", "read", "write"],
+            "bearer_methods_supported": ["header"],
+        }
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response.json() == expected_response
+
+    def test_get_protected_resource_metadata_derives_authorization_server(self):
+        """Without OIDC_ISS_ENDPOINT the AS issuer is derived from the RFC 8414 route."""
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        assert data["resource"] == "http://testserver/o"
+        assert data["authorization_servers"] == ["http://testserver/o"]
+
+    def test_get_protected_resource_metadata_explicit_settings(self):
+        self.oauth2_settings.OAUTH2_PROTECTED_RESOURCE_IDENTIFIER = "https://api.example.com"
+        self.oauth2_settings.OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS = ["https://as.example.com"]
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        assert data["resource"] == "https://api.example.com"
+        assert data["authorization_servers"] == ["https://as.example.com"]
+
+    def test_get_protected_resource_metadata_optional_fields_omitted(self):
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        data = response.json()
+        for key in ["resource_name", "resource_documentation", "resource_policy_uri", "resource_tos_uri"]:
+            assert key not in data
+
+    def test_get_protected_resource_metadata_optional_fields_present(self):
+        self.oauth2_settings.OAUTH2_PROTECTED_RESOURCE_NAME = "Example API"
+        self.oauth2_settings.OAUTH2_PROTECTED_RESOURCE_DOCUMENTATION = "https://docs.example.com"
+        self.oauth2_settings.OAUTH2_PROTECTED_RESOURCE_POLICY_URI = "https://example.com/policy"
+        self.oauth2_settings.OAUTH2_PROTECTED_RESOURCE_TOS_URI = "https://example.com/tos"
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        data = response.json()
+        assert data["resource_name"] == "Example API"
+        assert data["resource_documentation"] == "https://docs.example.com"
+        assert data["resource_policy_uri"] == "https://example.com/policy"
+        assert data["resource_tos_uri"] == "https://example.com/tos"
+
+    def test_get_protected_resource_metadata_custom_bearer_methods(self):
+        self.oauth2_settings.OAUTH2_PROTECTED_RESOURCE_BEARER_METHODS_SUPPORTED = ["header", "body"]
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        assert response.json()["bearer_methods_supported"] == ["header", "body"]
+
+    def test_get_protected_resource_metadata_cors_header(self):
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response["Access-Control-Allow-Origin"] == "*"
+
+    def test_get_protected_resource_metadata_available_when_oidc_disabled(self):
+        self.oauth2_settings.OIDC_ENABLED = False
+        response = self.client.get(reverse("oauth2_provider:oauth-resource-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert "resource" in response.json()
+
+    @override_settings(ROOT_URLCONF="tests.urls_split_metadata")
+    def test_get_protected_resource_metadata_rfc9728_path_component(self):
+        """RFC 9728 path-component form: /.well-known/oauth-protected-resource/<path>."""
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        response = self.client.get("/.well-known/oauth-protected-resource/tenant1")
+        self.assertEqual(response.status_code, 200)
+        assert response.json()["resource"] == "http://testserver/tenant1"
+
+    @override_settings(ROOT_URLCONF="tests.urls_oidc_discovery_only")
+    def test_authorization_servers_omitted_when_route_unregistered(self):
+        """authorization_servers is [] when neither OIDC_ISS_ENDPOINT nor the RFC 8414
+        route can supply an issuer (NoReverseMatch)."""
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        request = RequestFactory().get("/whatever")
+        assert self.oauth2_settings.oauth2_resource_authorization_servers(request) == []
+
+    @override_settings(ROOT_URLCONF="tests.urls_oidc_discovery_only")
+    def test_resource_metadata_url_none_when_route_unregistered(self):
+        """oauth2_resource_metadata_url is None when the metadata route is not mounted."""
+        request = RequestFactory().get("/whatever")
+        assert self.oauth2_settings.oauth2_resource_metadata_url(request) is None

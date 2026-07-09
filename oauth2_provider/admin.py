@@ -61,34 +61,21 @@ class ApplicationAdmin(admin.ModelAdmin):
     # hash_client_secret-driven client_secret help text (and the shared
     # application_form.js that updates it live as the checkbox is toggled).
     form = ApplicationForm
-    list_display = (
-        "pk",
-        "name",
-        "user",
-        "client_type",
-        "authorization_grant_type",
-        "dcr_created",
-        "cimd_created",
-    )
-    list_filter = (
-        "client_type",
-        "authorization_grant_type",
-        "skip_authorization",
-        "dcr_created",
-        "cimd_created",
-    )
+    list_display = ("pk", "name", "user", "client_type", "authorization_grant_type", "registration_source")
+    list_filter = ("client_type", "authorization_grant_type", "skip_authorization", "registration_source")
     radio_fields = {
         "client_type": admin.HORIZONTAL,
         "authorization_grant_type": admin.VERTICAL,
     }
     search_fields = ("name",) + (("user__email",) if has_email else ())
     raw_id_fields = ("user",)
-    # dcr_created / cimd_created are security boundaries: they reflect how the
-    # client was provisioned and gate management/refresh behavior, so they must
-    # not be editable in the admin. cimd_expires_at is maintained by the CIMD
-    # resolver. Editing any of them by hand could hand a manually provisioned
-    # application over to those code paths.
-    readonly_fields = ("dcr_created", "cimd_created", "cimd_expires_at")
+    # registration_source is a security boundary: the RFC 7592 management endpoint
+    # only operates on applications registered via DCR, and the CIMD resolver only
+    # refreshes applications registered via CIMD. It reflects how the client was
+    # created and must not be editable in the admin, or a manually provisioned
+    # application could be handed over to those code paths (e.g. by flipping it
+    # to "dcr"). cimd_expires_at is maintained by the CIMD resolver.
+    readonly_fields = ("registration_source", "cimd_expires_at")
 
 
 class AccessTokenAdmin(admin.ModelAdmin):

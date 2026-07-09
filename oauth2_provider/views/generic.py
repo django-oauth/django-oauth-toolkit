@@ -2,6 +2,7 @@ from django.views.generic import View
 
 from .mixins import (
     ClientProtectedResourceMixin,
+    ProtectedResourceMetadataMixin,
     ProtectedResourceMixin,
     ReadWriteScopedResourceMixin,
     ScopedResourceMixin,
@@ -44,5 +45,36 @@ class ClientProtectedResourceView(ClientProtectedResourceMixin, View):
 
 class ClientProtectedScopedResourceView(ScopedResourceMixin, ClientProtectedResourceView):
     """Impose scope restrictions if client protection fallsback to access token."""
+
+    pass
+
+
+# RFC 9728 opt-in variants: on failed authentication these return a 401 with a
+# WWW-Authenticate: Bearer challenge advertising the protected-resource metadata
+# document, instead of the bare 403 the views above return.
+
+
+class ProtectedResourceMetadataView(ProtectedResourceMetadataMixin, ProtectedResourceView):
+    """:class:`ProtectedResourceView` that advertises RFC 9728 resource metadata."""
+
+    pass
+
+
+class ScopedProtectedResourceMetadataView(ProtectedResourceMetadataMixin, ScopedProtectedResourceView):
+    """:class:`ScopedProtectedResourceView` that advertises RFC 9728 resource metadata."""
+
+    pass
+
+
+class ReadWriteScopedProtectedResourceMetadataView(
+    ProtectedResourceMetadataMixin, ReadWriteScopedResourceView
+):
+    """:class:`ReadWriteScopedResourceView` that advertises RFC 9728 resource metadata."""
+
+    pass
+
+
+class ClientProtectedResourceMetadataView(ProtectedResourceMetadataMixin, ClientProtectedResourceView):
+    """:class:`ClientProtectedResourceView` that advertises RFC 9728 resource metadata."""
 
     pass

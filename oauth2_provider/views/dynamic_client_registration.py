@@ -298,7 +298,11 @@ class DynamicClientRegistrationView(View):
 
         Application = get_application_model()
         user = request.user if request.user.is_authenticated else None
-        application = Application(user=user, dcr_created=True, **app_kwargs)
+        application = Application(
+            user=user,
+            registration_source=Application.RegistrationSource.DCR,
+            **app_kwargs,
+        )
 
         # Capture the raw secret before save() hashes it
         raw_secret = application.client_secret if application.client_type == "confidential" else None
@@ -377,8 +381,11 @@ class DynamicClientRegistrationManagementView(View):
         # This stops a regular access token that happens to carry
         # DCR_REGISTRATION_SCOPE (e.g. through scope misconfiguration) from
         # being used to reconfigure or delete a manually provisioned
-        # application.
-        if not application.dcr_created:
+        # application. This must be an equality check against DCR: the other
+        # registration_source values ("manual", "cimd") are truthy strings, so
+        # a "not application.registration_source" test would let every
+        # application through the management endpoint.
+        if application.registration_source != application.RegistrationSource.DCR:
             return None, _error_response(
                 "invalid_token",
                 "Token was not issued by the registration endpoint",

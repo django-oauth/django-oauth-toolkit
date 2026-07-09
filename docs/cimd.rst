@@ -24,7 +24,8 @@ How it works
 
 When an authorization or token request arrives with a ``client_id`` that is an ``https`` URL and no
 application is stored for it, the server fetches and validates the document, then persists a single
-public :class:`~oauth2_provider.models.Application` keyed on the URL and flagged ``cimd_created``.
+public :class:`~oauth2_provider.models.Application` keyed on the URL, with ``registration_source``
+set to ``"cimd"``.
 Subsequent requests (and refresh-token exchanges) load that stored application without re-fetching,
 until its cached metadata expires (``cimd_expires_at``), at which point the next use re-fetches.
 
@@ -104,9 +105,10 @@ Denial of service
 
     A *successful* fetch persists an ``Application`` row. Rows are keyed on the URL, so the store is
     bounded by the number of *distinct* client URLs — but those are attacker-mintable (one public host
-    can serve a valid document at unlimited paths), and expired ``cimd_created`` rows are not
+    can serve a valid document at unlimited paths), and expired CIMD-registered rows are not
     garbage-collected automatically. Rate-limiting ``/authorize`` and periodically pruning
-    ``cimd_created`` applications whose ``cimd_expires_at`` is long past and that have no live tokens
+    ``registration_source="cimd"`` applications whose ``cimd_expires_at`` is long past and that have
+    no live tokens
     are recommended.
 
 Consent phishing

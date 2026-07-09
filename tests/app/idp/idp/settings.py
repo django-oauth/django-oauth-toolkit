@@ -86,6 +86,14 @@ ipUMvb4Se0LDJnmFuv8v6gM6V4vyXkP855mNOiRHUOHOSKdQ3SeKrLlnR6I=
 """,
     ),
     OAUTH2_PROVIDER_SCOPES=(dict, {"openid": "OpenID Connect scope"}),
+    # DEFAULT_SCOPES and PKCE_REQUIRED are env-driven so the end-to-end
+    # compliance suite can exercise flows that need extra scopes or need PKCE
+    # relaxed/required per client, without changing the defaults used by
+    # maintainers running the app by hand. Defaults preserve prior behaviour:
+    # a single "openid" scope and PKCE required (django-oauth-toolkit default).
+    OAUTH2_PROVIDER_DEFAULT_SCOPES=(list, ["openid"]),
+    OAUTH2_PROVIDER_PKCE_REQUIRED=(bool, True),
+    OAUTH2_PROVIDER_PKCE_REQUIRED_CLIENT_IDS=(list, []),
     OAUTH2_PROVIDER_ALLOWED_SCHEMES=(list, ["https", "http"]),
     OAUTHLIB_INSECURE_TRANSPORT=(bool, "1"),
     STATIC_ROOT=(str, BASE_DIR / "static"),
@@ -207,6 +215,21 @@ STATIC_URL = env("STATIC_URL")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# PKCE can be a bool or a callable taking the client_id. When a set of
+# client_ids is supplied (OAUTH2_PROVIDER_PKCE_REQUIRED_CLIENT_IDS), PKCE is
+# required only for those clients and relaxed for the rest; otherwise the plain
+# bool default applies. This lets the e2e suite prove both "PKCE enforced" and
+# "PKCE optional" behaviours against a single running IdP.
+_pkce_required_default = env("OAUTH2_PROVIDER_PKCE_REQUIRED")
+_pkce_required_client_ids = set(env("OAUTH2_PROVIDER_PKCE_REQUIRED_CLIENT_IDS"))
+
+
+def pkce_required(client_id):
+    if _pkce_required_client_ids:
+        return client_id in _pkce_required_client_ids
+    return _pkce_required_default
+
+
 OAUTH2_PROVIDER = {
     "OAUTH2_VALIDATOR_CLASS": "idp.oauth.CustomOAuth2Validator",
     "OAUTH_DEVICE_VERIFICATION_URI": "http://127.0.0.1:8000/o/device",
@@ -217,9 +240,9 @@ OAUTH2_PROVIDER = {
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": env("OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED"),
     # this key is just for out test app, you should never store a key like this in a production environment.
     "OIDC_RSA_PRIVATE_KEY": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY"),
-    "SCOPES": {
-        "openid": "OpenID Connect scope",
-    },
+    "SCOPES": env("OAUTH2_PROVIDER_SCOPES"),
+    "DEFAULT_SCOPES": env("OAUTH2_PROVIDER_DEFAULT_SCOPES"),
+    "PKCE_REQUIRED": pkce_required,
     "ALLOWED_SCHEMES": env("OAUTH2_PROVIDER_ALLOWED_SCHEMES"),
     "DCR_ENABLED": env("OAUTH2_PROVIDER_DCR_ENABLED"),
     # Open registration so the DCR endpoints can be exercised with curl; this

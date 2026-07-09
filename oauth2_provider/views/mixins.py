@@ -2,11 +2,12 @@ import logging
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
-from django.http import HttpRequest, HttpResponseForbidden, HttpResponseNotFound
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseNotFound
 
 from ..exceptions import FatalClientError
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
+from ..www_authenticate import build_bearer_challenge, challenge_status
 
 
 log = logging.getLogger("oauth2_provider")
@@ -209,6 +210,18 @@ class OAuthLibMixin:
         core = self.get_oauthlib_core()
         return core.authenticate_client(request)
 
+    def unauthenticated_response(self, request, oauthlib_request=None):
+        """Response returned when a protected resource request fails authentication.
+
+        Defaults to a bare ``403 Forbidden`` (the historical behaviour).
+        :class:`ProtectedResourceMetadataMixin` overrides this to return an RFC 6750
+        ``401`` carrying an RFC 9728 ``WWW-Authenticate`` challenge.
+
+        :param oauthlib_request: the oauthlib request produced by ``verify_request``,
+            carrying any ``oauth2_error`` detail (``None`` for client-auth failures).
+        """
+        return HttpResponseForbidden()
+
 
 class ScopedResourceMixin:
     """
@@ -249,7 +262,7 @@ class ProtectedResourceMixin(OAuthLibMixin):
             request.resource_owner = r.user
             return super().dispatch(request, *args, **kwargs)
         else:
-            return HttpResponseForbidden()
+            return self.unauthenticated_response(request, r)
 
 
 class ReadWriteScopedResourceMixin(ScopedResourceMixin, OAuthLibMixin):
@@ -307,9 +320,57 @@ class ClientProtectedResourceMixin(OAuthLibMixin):
             if valid:
                 request.resource_owner = r.user
                 return super().dispatch(request, *args, **kwargs)
-            return HttpResponseForbidden()
+            return self.unauthenticated_response(request, r)
         else:
             return super().dispatch(request, *args, **kwargs)
+
+
+class ProtectedResourceMetadataMixin(OAuthLibMixin):
+    """RFC 9728 opt-in: advertise protected-resource metadata on auth failure.
+
+    Mix this in *before* a protected-resource view/mixin
+    (:class:`ProtectedResourceMixin`, :class:`ClientProtectedResourceMixin`, …) to
+    replace the default bare ``403 Forbidden`` denial with a response carrying a
+    ``WWW-Authenticate: Bearer`` challenge and the RFC 9728 ``resource_metadata``
+    parameter pointing at ``/.well-known/oauth-protected-resource``. Per RFC 6750
+    the status is ``401 Unauthorized`` for a missing/invalid token and ``403
+    Forbidden`` for ``insufficient_scope``. Opting in explicitly (rather than via a
+    global flag) keeps the default views' behaviour unchanged.
+
+    It subclasses :class:`OAuthLibMixin` so that its ``unauthenticated_response``
+    is an unambiguous override of the base hook (rather than a value from an
+    unrelated base class) when combined with a protected-resource view/mixin.
+
+    Set ``www_authenticate_realm`` to advertise a realm in the challenge. Set
+    ``resource_metadata_url`` (or override :meth:`get_resource_metadata_url`) to
+    advertise a specific metadata document — e.g. the RFC 9728 path-component form
+    for a path-based/multi-tenant resource — instead of this server's root
+    ``/.well-known/oauth-protected-resource``.
+    """
+
+    www_authenticate_realm = None
+    resource_metadata_url = None
+
+    def get_resource_metadata_url(self, request):
+        """URL advertised in ``resource_metadata``.
+
+        Returns ``resource_metadata_url`` when set, otherwise ``None`` so the
+        challenge builder falls back to the server's root metadata route. Override
+        to derive the URL from the protected resource's identifier/path.
+        """
+        return self.resource_metadata_url
+
+    def unauthenticated_response(self, request, oauthlib_request=None):
+        oauth2_error = getattr(oauthlib_request, "oauth2_error", None)
+        url = self.get_resource_metadata_url(request)
+        extra = {} if url is None else {"resource_metadata_url": url}
+        challenge = build_bearer_challenge(
+            request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm, **extra
+        )
+        # RFC 6750: insufficient_scope is a 403, other Bearer errors a 401.
+        response = HttpResponse(status=challenge_status(oauth2_error))
+        response["WWW-Authenticate"] = challenge
+        return response
 
 
 class OIDCOnlyMixin:

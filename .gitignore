@@ -59,3 +59,10 @@ venv/
 /tests/app/idp/static
 
 *.orig
+
+# End-to-end / compliance suite local artifacts
+/.e2e-venv/
+/compliance-matrix.md
+/compliance-matrix.json
+/.rp-server.log
+/tests/e2e/reports/

@@ -102,14 +102,20 @@ class AbstractApplication(models.Model):
     * :attr:`client_secret` Confidential secret issued to the client during
                             the registration process as described in :rfc:`2.2`
     * :attr:`name` Friendly name for the Application
-    * :attr:`dcr_created` True if the Application was registered via Dynamic
-                          Client Registration (RFC 7591), False for manually
-                          created Applications
-    * :attr:`cimd_created` True if the Application was resolved from a Client ID
-                           Metadata Document (draft-ietf-oauth-client-id-metadata-document)
+    * :attr:`registration_source` How the Application was registered: ``manual``
+                                  for manually created Applications, ``dcr`` for
+                                  those registered via Dynamic Client
+                                  Registration (RFC 7591), ``cimd`` for Client
+                                  ID Metadata Document
     * :attr:`cimd_expires_at` When the cached metadata document should be
                               re-fetched, for CIMD applications
     """
+
+    class RegistrationSource(models.TextChoices):
+        MANUAL = "manual", _("Manual")
+        DCR = "dcr", _("Dynamic Client Registration")
+        CIMD = "cimd", _("Client ID Metadata Document")
+        # FEDERATION (OpenID Federation) reserved for future use
 
     CLIENT_CONFIDENTIAL = "confidential"
     CLIENT_PUBLIC = "public"
@@ -184,16 +190,11 @@ class AbstractApplication(models.Model):
         help_text=_("Allowed origins list to enable CORS, space separated"),
         default="",
     )
-    dcr_created = models.BooleanField(
-        default=False,
-        help_text=_("True if this application was registered via Dynamic Client Registration (RFC 7591)"),
-    )
-    cimd_created = models.BooleanField(
-        default=False,
-        help_text=_(
-            "True if this application was resolved from a Client ID Metadata Document "
-            "(draft-ietf-oauth-client-id-metadata-document)"
-        ),
+    registration_source = models.CharField(
+        max_length=32,
+        choices=RegistrationSource.choices,
+        default=RegistrationSource.MANUAL,
+        help_text=_("How this application was registered (manual, DCR per RFC 7591, or CIMD)"),
     )
     cimd_expires_at = models.DateTimeField(
         null=True,

@@ -7,15 +7,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('oauth2_provider', '0018_resource_indicators'),
+        ('oauth2_provider', '0019_application_registration_source'),
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='application',
-            name='cimd_created',
-            field=models.BooleanField(default=False, help_text='True if this application was resolved from a Client ID Metadata Document (draft-ietf-oauth-client-id-metadata-document)'),
-        ),
         migrations.AddField(
             model_name='application',
             name='cimd_expires_at',

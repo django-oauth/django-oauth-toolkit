@@ -43,6 +43,7 @@ Index
    advanced_topics
    oidc
    oauth2_server_metadata
+   protected_resource_metadata
    cimd
    signals
    settings
