@@ -27,9 +27,7 @@ def test_browser_refresh_token(page, rp_login):
     rp_login(page)
     # Wait for the actual refresh request to the token endpoint rather than a
     # fixed sleep, so the assertion is tied to a concrete signal.
-    with page.expect_response(
-        lambda r: "/o/token/" in r.url and r.request.method == "POST", timeout=20000
-    ):
+    with page.expect_response(lambda r: "/o/token/" in r.url and r.request.method == "POST", timeout=20000):
         page.get_by_role("button", name="refreshToken").click()
     # After refreshing, the RP stays authenticated with a token still displayed.
     assert "true" in page.locator("table").first.inner_text().lower()
