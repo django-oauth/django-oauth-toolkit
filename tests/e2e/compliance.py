@@ -108,7 +108,11 @@ class CompliancePlugin:
     def write_reports(self):
         if not self.registry:
             return None
-        out_dir = os.environ.get("COMPLIANCE_MATRIX_DIR", os.getcwd())
+        # Default to tests/e2e/reports/ (relative to this file) so a bare
+        # `pytest tests/e2e ...` run writes to the same place the tox env uses,
+        # rather than scattering reports into the current working directory.
+        default_dir = os.path.join(os.path.dirname(__file__), "reports")
+        out_dir = os.environ.get("COMPLIANCE_MATRIX_DIR", default_dir)
         os.makedirs(out_dir, exist_ok=True)
         matrix = self._build_matrix()
         summary = self._summary(matrix)

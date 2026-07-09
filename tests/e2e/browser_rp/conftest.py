@@ -21,6 +21,18 @@ from tests.e2e.helpers.idp_process import IdpServer  # noqa: E402
 from tests.e2e.helpers.rp_process import RpServer, chromium_executable  # noqa: E402
 
 
+def _skip_or_fail(message):
+    """Skip the browser layer, or fail it when E2E_REQUIRE_BROWSER is set.
+
+    CI sets E2E_REQUIRE_BROWSER so that a missing browser or an IdP/RP that
+    won't start is a hard failure rather than silently dropped coverage; local
+    and protocol-only runs keep skipping.
+    """
+    if os.environ.get("E2E_REQUIRE_BROWSER"):
+        pytest.fail(f"{message}; E2E_REQUIRE_BROWSER is set so the browser layer must run")
+    pytest.skip(f"{message}; skipping browser layer")
+
+
 @pytest.fixture(scope="session")
 def browser_type_launch_args(browser_type_launch_args):
     """Point Playwright at the pre-installed Chromium when present."""
@@ -44,10 +56,7 @@ def _require_browser(browser_type, browser_type_launch_args):
     try:
         browser = browser_type.launch(**browser_type_launch_args)
     except Exception as exc:  # pragma: no cover - environment guard
-        message = f"No usable Chromium for Playwright ({exc})"
-        if os.environ.get("E2E_REQUIRE_BROWSER"):
-            pytest.fail(f"{message}; E2E_REQUIRE_BROWSER is set so the browser layer must run")
-        pytest.skip(f"{message}; skipping browser layer")
+        _skip_or_fail(f"No usable Chromium for Playwright ({exc})")
     else:
         browser.close()
 
@@ -69,7 +78,7 @@ def browser_idp():
     try:
         server.start()
     except Exception as exc:  # pragma: no cover - environment guard
-        pytest.skip(f"Could not start IdP for browser tests: {exc}")
+        _skip_or_fail(f"Could not start IdP for browser tests: {exc}")
     try:
         yield server
     finally:
@@ -82,7 +91,7 @@ def rp_server(browser_idp):
     try:
         server.start()
     except Exception as exc:  # pragma: no cover - environment guard
-        pytest.skip(f"Could not start SvelteKit RP (Node/npm required): {exc}")
+        _skip_or_fail(f"Could not start SvelteKit RP (Node/npm required): {exc}")
     try:
         yield server
     finally:

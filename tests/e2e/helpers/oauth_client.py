@@ -11,7 +11,6 @@ spec test modules read as compliance statements.
 
 import base64
 import hashlib
-import re
 import secrets
 from urllib.parse import parse_qs, urlparse
 
@@ -306,14 +305,3 @@ class OAuthClient:
                 "client_id": client_id,
             }
         )
-
-
-def get_csrf_token(session):
-    """Return the CSRF cookie value from a session, if present."""
-    for name in ("csrftoken", "csrf"):
-        if name in session.cookies:
-            return session.cookies[name]
-    return None
-
-
-BEARER_RE = re.compile(r'Bearer realm="[^"]*"')
