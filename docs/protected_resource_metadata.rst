@@ -95,18 +95,27 @@ constructs:
   ``oauth2_provider.contrib.rest_framework``), a subclass of ``OAuth2Authentication``.
   List it in a view's ``authentication_classes``.
 
-Each of these returns a ``401`` whose ``WWW-Authenticate`` header carries
-``resource_metadata="https://example.com/.well-known/oauth-protected-resource"``. The
-parameter is omitted automatically when the metadata route is not registered.
+Each of these returns a ``401`` whose ``WWW-Authenticate`` header carries a
+``resource_metadata`` parameter pointing at the metadata document. The parameter is
+omitted automatically when the metadata route cannot be resolved.
 
-By default the advertised URL is this server's root
-``/.well-known/oauth-protected-resource``. For a protected resource whose identifier
-includes a path (the RFC 9728 path-component form, e.g. a multi-tenant deployment),
-advertise the matching document instead: set ``resource_metadata_url`` (or override
-``get_resource_metadata_url(request)``) on the mixin / DRF authenticator, or pass
-``resource_metadata_url=`` to the decorators. RFC 9728 §3.3 expects the advertised
-metadata URL — and the ``resource`` value it returns — to match the resource
-identifier, so path-based resources should advertise their path-component URL.
+By default the advertised URL is derived by reversing the toolkit's
+``oauth-resource-metadata`` route, so it points at wherever ``oauth2_provider.urls``
+is mounted — e.g. ``https://example.com/.well-known/oauth-protected-resource`` for a
+root mount, or ``https://example.com/o/.well-known/oauth-protected-resource`` under an
+``o/`` prefix. Because it reverses the default ``oauth2_provider`` instance namespace,
+a split/root ``metadata_urlpatterns`` mount under a *different* namespace (see the
+:doc:`RFC 8414 docs <oauth2_server_metadata>`) is not used for the default; the
+``o/`` toolkit mount in that layout supplies the URL instead.
+
+To advertise a specific document — the strict RFC 9728 domain-root URL, or the
+path-component form (``.../.well-known/oauth-protected-resource/<path>``) for a
+resource whose identifier includes a path (e.g. a multi-tenant deployment) — set
+``resource_metadata_url`` (or override ``get_resource_metadata_url(request)``) on the
+mixin / DRF authenticator, or pass ``resource_metadata_url=`` to the decorators. RFC
+9728 §3.3 expects the advertised metadata URL — and the ``resource`` value it returns
+— to match the resource identifier, so path-based resources should advertise their
+path-component URL.
 
 .. note::
 
