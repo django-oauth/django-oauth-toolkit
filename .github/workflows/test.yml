@@ -203,7 +203,10 @@ jobs:
     - name: Tox tests
       run: tox -v -e ${{ matrix.toxenv }}
 
+    # Coverage is collected only on the representative cell (see tox.ini
+    # [testenv:py312-dj52-lite3]); only that cell produces coverage.xml and uploads.
     - name: Upload coverage
+      if: matrix.toxenv == 'py312-dj52-lite3'
       uses: codecov/codecov-action@v5
       with:
         name: Python ${{ matrix.python-version }}
