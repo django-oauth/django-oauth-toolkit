@@ -189,6 +189,22 @@ class TestProtectedResourceMetadataMixin(BaseTest):
         self.assertEqual(response.status_code, 401)
         assert 'resource_metadata="{}"'.format(url) in response["WWW-Authenticate"]
 
+    def test_insufficient_scope_yields_403(self):
+        """RFC 6750: a valid token with insufficient scope is a 403, still with a challenge."""
+
+        class TestView(ProtectedResourceMetadataMixin, ProtectedResourceMixin, View):
+            server_class = Server
+            validator_class = OAuth2Validator
+
+        class FakeOauthlibRequest:
+            oauth2_error = {"error": "insufficient_scope", "error_description": "nope"}
+
+        request = self.request_factory.get("/fake-req")
+        response = TestView().unauthenticated_response(request, FakeOauthlibRequest())
+        self.assertEqual(response.status_code, 403)
+        assert response["WWW-Authenticate"].startswith("Bearer")
+        assert 'error="insufficient_scope"' in response["WWW-Authenticate"]
+
 
 @pytest.fixture
 def oidc_only_view():

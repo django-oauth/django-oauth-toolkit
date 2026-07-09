@@ -7,7 +7,7 @@ from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpRe
 from ..exceptions import FatalClientError
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
-from ..www_authenticate import build_bearer_challenge
+from ..www_authenticate import build_bearer_challenge, challenge_status
 
 
 log = logging.getLogger("oauth2_provider")
@@ -366,7 +366,8 @@ class ProtectedResourceMetadataMixin(OAuthLibMixin):
         challenge = build_bearer_challenge(
             request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm, **extra
         )
-        response = HttpResponse(status=401)
+        # RFC 6750: insufficient_scope is a 403, other Bearer errors a 401.
+        response = HttpResponse(status=challenge_status(oauth2_error))
         response["WWW-Authenticate"] = challenge
         return response
 

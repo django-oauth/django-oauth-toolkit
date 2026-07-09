@@ -1,9 +1,18 @@
 import pytest
 from django.test import RequestFactory, override_settings
 
-from oauth2_provider.www_authenticate import build_bearer_challenge
+from oauth2_provider.www_authenticate import build_bearer_challenge, challenge_status
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
+
+
+def test_challenge_status_insufficient_scope_is_403():
+    assert challenge_status({"error": "insufficient_scope"}) == 403
+
+
+@pytest.mark.parametrize("error", [None, {}, {"error": "invalid_token"}, {"error": "invalid_request"}])
+def test_challenge_status_other_errors_are_401(error):
+    assert challenge_status(error) == 401
 
 
 @pytest.mark.usefixtures("oauth2_settings")

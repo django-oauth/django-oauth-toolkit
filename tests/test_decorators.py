@@ -78,6 +78,19 @@ class TestProtectedResourceDecorator(TestCase):
             in response["WWW-Authenticate"]
         )
 
+    def test_metadata_decorator_insufficient_scope_yields_403(self):
+        """A valid token lacking the required scope is a 403 (RFC 6750), with a challenge."""
+
+        @protected_resource_metadata(scopes=["nonexistent_scope"])
+        def view(request, *args, **kwargs):
+            return "protected contents"
+
+        auth_headers = {"HTTP_AUTHORIZATION": "Bearer " + self.access_token.token}
+        request = self.request_factory.get("/fake-resource", **auth_headers)
+        response = view(request)
+        self.assertEqual(response.status_code, 403)
+        assert 'error="insufficient_scope"' in response["WWW-Authenticate"]
+
     def test_access_allowed(self):
         @protected_resource()
         def view(request, *args, **kwargs):

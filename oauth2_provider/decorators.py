@@ -8,7 +8,7 @@ from .oauth2_backends import OAuthLibCore
 from .oauth2_validators import OAuth2Validator
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
-from .www_authenticate import build_bearer_challenge
+from .www_authenticate import build_bearer_challenge, challenge_status
 
 
 def _denied_response(request, oauthlib_request, advertise_metadata, resource_metadata_url=None):
@@ -21,11 +21,11 @@ def _denied_response(request, oauthlib_request, advertise_metadata, resource_met
     """
     if not advertise_metadata:
         return HttpResponseForbidden()
+    oauth2_error = getattr(oauthlib_request, "oauth2_error", None)
     extra = {} if resource_metadata_url is None else {"resource_metadata_url": resource_metadata_url}
-    challenge = build_bearer_challenge(
-        request, oauth2_error=getattr(oauthlib_request, "oauth2_error", None), **extra
-    )
-    response = HttpResponse(status=401)
+    challenge = build_bearer_challenge(request, oauth2_error=oauth2_error, **extra)
+    # RFC 6750: insufficient_scope is a 403, other Bearer errors a 401.
+    response = HttpResponse(status=challenge_status(oauth2_error))
     response["WWW-Authenticate"] = challenge
     return response
 

@@ -28,6 +28,18 @@ def _quote(value):
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def challenge_status(oauth2_error):
+    """HTTP status for a Bearer challenge given oauthlib's ``oauth2_error``.
+
+    Per RFC 6750 §3.1 a valid token with insufficient scope is an authorization
+    failure (``403 Forbidden``), while a missing/invalid token is an authentication
+    failure (``401 Unauthorized``). Both still carry a ``WWW-Authenticate`` header.
+    """
+    if oauth2_error and oauth2_error.get("error") == "insufficient_scope":
+        return 403
+    return 401
+
+
 def build_bearer_challenge(request, oauth2_error=None, realm=None, resource_metadata_url=_UNSET):
     """Build a ``WWW-Authenticate: Bearer`` challenge value.
 
