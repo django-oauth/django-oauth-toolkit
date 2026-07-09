@@ -50,6 +50,174 @@ ADR 0001 already gets right.
 DOT already has the precedent in tree: the device flow references its client by
 `DeviceGrant.client_id` (a `CharField`), not by an `Application` FK.
 
+Two independent checks, added after review, support this and are the backbone of the
+argument: **Grounding A** shows the split is already present in the RFC/OIDC *domain
+language*; **Grounding B** shows five of six mature OSS servers already model durable
+client attribution exactly this way, and a sixth (WSO2) ships the principal/registration
+separation itself.
+
+---
+
+## Grounding A — the RFC domain language already separates these concepts
+
+The recommendation is not a new abstraction imposed on the specs; it is the vocabulary
+the specs already use. Four points, quote-driven.
+
+**A.1 — The corpus distinguishes *actor* / *identifier* / *metadata* / *credential* as
+four different things.**
+
+- *Client* (the actor) — RFC 6749 §1.2: "An application making protected resource
+  requests on behalf of the resource owner and with its authorization," and "The term
+  'client' does not imply any particular implementation characteristics."
+- *Client identifier* (the handle) — RFC 6749 §2.2: "a unique string **representing the
+  registration information** provided by the client," and "The client identifier is not
+  a secret; it is exposed to the resource owner and MUST NOT be used alone for client
+  authentication."
+- *Client metadata* (the associated record) — RFC 7591 §2: "Registered clients have a
+  set of metadata values **associated with their client identifier** at an authorization
+  server, such as the list of valid redirection URIs or a display name."
+- *Client credentials* (the secret) — the third, confidential-only thing (`client_secret`),
+  distinct from both identifier and metadata.
+
+The identifier *represents* / is *associated with* the registration — it **is not** the
+registration. This is precisely the principal-vs-registration split, stated in the base
+spec. `Application` collapses all four into one row; the specs never do.
+
+**A.2 — Unregistered and derived-identity clients are explicitly contemplated.**
+
+- RFC 6749 §2.4: "This specification does not exclude the use of unregistered clients.
+  However, the use of such clients is beyond the scope of this specification…" — a
+  principal without a provisioned registration is spec-sanctioned, merely left to
+  profiles like CIMD/federation to define.
+- CIMD (Abstract): identity "through the usage of a URL as a `client_id`… where the URL
+  refers to a document containing the necessary client metadata, enabling the
+  authorization server to **fetch** the metadata about the client as needed"; (Intro)
+  "how an OAuth 2.0 client can **publish its own registration information and avoid the
+  need for pre-registering**." The verbs are *fetch / retrieve / publish*, never
+  *register*. §4 binds it: the document's `client_id` "MUST match the Client Identifier
+  URL."
+- OpenID Federation: a Relying Party is an *Entity* identified by an *Entity Identifier*
+  — "A globally unique string identifier that is bound to one Entity. All Entity
+  Identifiers… are URLs that use the https scheme"; its usable metadata is *Resolved
+  Metadata* — "the metadata that results from applying the metadata policy in the Trust
+  Chain to the metadata in the Entity Configuration." **Derived, not provisioned.**
+
+*Correction to an earlier claim in this doc:* CIMD does **not** mandate public clients.
+The spec precludes only a pre-established shared secret (there is no registration step to
+set one); a CIMD client can still authenticate with an asymmetric method
+(`private_key_jwt`). DOT's `cimd.py` *chooses* public-only. So invariant **I3**
+(a client that cannot authenticate must not get `client_credentials`) stands, but
+"CIMD ⇒ public" is a DOT implementation decision, not a spec rule.
+
+**A.3 — "Authorization grant" is a *transient credential*; durable consent is undefined
+in the corpus.** RFC 6749 §1.3: "An authorization grant is a **credential** representing
+the resource owner's authorization… used by the client to obtain an access token." No
+RFC in the set (6749/7591/8628/9700) defines a durable, queryable consent record — it is
+out of scope everywhere. This is exactly the gap ADR 0001's `Authorization` fills, and it
+is why every mature server had to invent it (Grounding B). It also vindicates the ADR's
+non-renaming of `Grant`: the code *is* the grant credential (§1.3), while the durable
+record is a different concept that deserves a different name.
+
+**A.4 — The specific mechanisms the ADR targets are grounded verbatim.**
+
+- Code-replay revocation — RFC 6749 §4.1.2: "If an authorization code is used more than
+  once, the authorization server MUST deny the request and SHOULD revoke (when possible)
+  **all tokens previously issued based on that authorization code**." That italicized set
+  is precisely the lineage an `Authorization` makes reachable — grounding the phase-1
+  `Grant.exchanged_at` + `Authorization.revoke()` cascade.
+- Session / `sid` — Front-Channel Logout §1.2 defines *Session* ("Continuous period of
+  time during which an End-User accesses a Relying Party relying on the Authentication of
+  the End-User performed by the OpenID Provider") and *Session ID* ("Identifier for a
+  Session"); the `sid` claim is "opaque to the RP" and "Its syntax is the same as an
+  OAuth 2.0 Client Identifier." Note these live in the *logout* specs, **not** OIDC Core —
+  a small precision the ADR can absorb. This grounds `Session` as a distinct entity
+  carrying an opaque `sid`.
+
+*Verification note:* the canonical hosts (rfc-editor.org, openid.net, datatracker) were
+egress-blocked this session; OIDC/CIMD/Federation quotes were taken verbatim from the
+specs' own GitHub sources, and the four RFC quotes from an exact-text search index. A few
+phrasings could not be verbatim-confirmed and are therefore paraphrased above as
+normative substance rather than quoted: RFC 6749 §2.3's opening sentence, RFC 7591's
+per-field definitions, and RFC 9700 §4.14's exact wording on refresh-token-family
+revocation. Confirm these against the published text before quoting them as verbatim.
+
+---
+
+## Grounding B — how six mature OSS servers actually model this
+
+Source review of the client / consent / session models in six independent
+implementations (entity, schema and mapping files read directly). The pattern is
+strikingly uniform.
+
+| Project | Client entity & PK | How durable consent/tokens reference the client | First-class durable consent? | Session model |
+|---|---|---|---|---|
+| **Spring Authorization Server** | `RegisteredClient`, PK `id` (string) ≠ `client_id` | `OAuth2Authorization.registeredClientId` (**String**); consent table keyed on `registered_client_id` — **no FK in the DDL** | **Yes** — `OAuth2AuthorizationConsent`, PK `(registered_client_id, principal_name)` | Spring Security session (not modeled in AS) |
+| **Authlib** | `OAuth2ClientMixin.client_id` (String) | token & code mixins: `client_id = Column(String(48))`; `check_client()` compares the string — **no FK** | app-defined | — |
+| **Keycloak** | `ClientEntity`, **surrogate** PK `ID` (uuid) ≠ `CLIENT_ID` | `USER_CONSENT.CLIENT_ID` and `OFFLINE_CLIENT_SESSION.CLIENT_ID` are **plain strings, no FK** (only `USER_ID` is a FK) | **Yes** — `USER_CONSENT` + `USER_CONSENT_CLIENT_SCOPE` | **two-level** `USER_SESSION → AUTHENTICATED_CLIENT_SESSION` |
+| **IdentityServer4 / Duende** | `Client`, PK `int Id`, `ClientId` unique string | `PersistedGrant.ClientId` (**String**, `IsRequired`), PK is `Key` — **no FK to Client** | **Yes** — a `PersistedGrant` of `Type="user_consent"` | no server-side session table; `SessionId` **string** on the grant |
+| **node-oidc-provider (panva)** | `Client` (`clientId`) | tokens carry `clientId` + `grantId` **strings** — no FK | **Yes** — first-class `Grant` model (`accountId, clientId, scopes, claims`) | `Session` (public `uid`, per-client `sidFor`/`grantIdFor`) |
+| **WSO2 Identity Server** | **`SP_APP` (application principal)** *plus* `IDN_OAUTH_CONSUMER_APPS` (OAuth registration) | token → registration by **int FK** `CONSUMER_KEY_ID`; registration ↔ principal by **client_id string** (`SP_INBOUND_AUTH.INBOUND_AUTH_KEY`) | **Yes** — `CM_RECEIPT` (Kantara consent receipts) | `IDN_AUTH_SESSION_STORE` (+ per-app session info) |
+| *(DOT today, for contrast)* | `Application` (swappable) | tokens/grants/`Authorization` → `Application` by **hard FK**; **no `client_id` on the durable records** | Yes — `Authorization` (ADR/Phase-1) | `Session` (ADR) |
+
+What the survey establishes:
+
+1. **Durable client attribution is done by a stable identifier *string*, not a FK to the
+   registration row — in five of six.** Spring, Authlib, Keycloak, IdentityServer4 and
+   panva all store the `client_id`/registered-client-id as a string on the consent/grant/
+   token records with no database foreign key. Keycloak is especially telling: its client
+   has a *surrogate* UUID PK distinct from `CLIENT_ID`, its consent FK-joins the **user**
+   but references the **client by string**. **DOT is the outlier** — a hard FK to the
+   swappable registration and *no identifier string* on the durable records. That is the
+   exact coupling CIMD strains.
+2. **First-class durable consent, separate from tokens, is near-universal.** Spring
+   (`OAuth2AuthorizationConsent`), Keycloak (`USER_CONSENT`), IdentityServer4
+   (`user_consent` grant), panva (`Grant`), WSO2 (`CM_RECEIPT`) all model it. Only Ory
+   Hydra folds consent into its `hydra_oauth2_flow` row. This is strong, independent
+   validation of ADR 0001's `Authorization` — and **Spring independently chose the exact
+   same name** ("A representation of an OAuth 2.0 Authorization… state related to the
+   authorization granted to a client").
+3. **The "consumed/exchanged" marker on the code credential is prior art, not a DOT
+   invention.** IdentityServer4's `PersistedGrant.ConsumedTime` and panva's `consumed`
+   mixin are the same idea as Phase-1's `Grant.exchanged_at` (don't delete on exchange;
+   mark it, keep it as replay evidence). Validates that decision and its §4.1.2 purpose.
+4. **The two-level session→per-client structure the ADR describes is what Keycloak and
+   panva already do.** Keycloak's `USER_SESSION → AUTHENTICATED_CLIENT_SESSION` and
+   panva's `Session.authorizations[clientId]` (with a per-client `sid`) both realise
+   "one session spanning many clients," and match the ADR's "RP participation is derived"
+   stance.
+5. **The principal-vs-registration split itself ships in production — WSO2.** A WSO2
+   *Service Provider* (`SP_APP`, protocol-agnostic application identity) is deliberately
+   separate from the OAuth *registration/credentials* (`IDN_OAUTH_CONSUMER_APPS`), joined
+   by the `client_id` string; the OAuth registration's Java model literally
+   `OAuthAppDO extends InboundConfigurationProtocol` — a registration is *one inbound
+   protocol config* attached to the application. That is Model 2's north star, already
+   built.
+
+Honest boundaries of the prior art — where the recommendation is genuinely ahead of it:
+
+- **FK is not forbidden by prior art.** Hydra references the client by a string that is
+  *also* a DB foreign key (`hydra_client.id` is the `client_id`), and WSO2 uses an integer
+  FK to the registration. The load-bearing move is *carrying the stable `client_id` on the
+  durable records*; whether an **optional/nullable** `Application` FK is kept alongside is
+  an integrity/convenience choice several projects make. This refines Model 4: **add
+  `client_id` and keep the `Application` FK nullable — do not drop the FK** (that was
+  Model 1's overcorrection).
+- **Modeling derived-client metadata as an evictable *cache* rather than a registration is
+  the least-attested part.** Where servers support URL/derived clients they mostly
+  *auto-register*: Janssen resolves a CIMD URL and auto-creates a client; WSO2's
+  SSA-seeded DCR still provisions a local `SP_APP` + consumer app. That is exactly DOT's
+  current CIMD approach — and its problem (§0/§7 Model 0). So on cache-vs-registration the
+  **specs** (CIMD "fetch"; Federation "Resolved Metadata") are the better guide than
+  today's implementations, most of which have not separated the two yet.
+
+**Net effect on the recommendation.** Model 4 is not a gamble: carrying `client_id` on
+`Authorization` moves DOT onto the durable-attribution pattern that Spring, Authlib,
+Keycloak, IdentityServer4 and panva already share; keeping a first-class `Authorization`
+consent entity matches five of six (and Spring's naming); and the principal/registration
+separation is WSO2's shipping design. The parts that stay DOT-specific — treating
+derived-client metadata as a cache, not a registration — are precisely the parts the CIMD
+and Federation specs point to directly.
+
 ---
 
 ## 1. What `Application` actually is today
@@ -170,8 +338,9 @@ ephemeral):
   the *source* of the set differs (stored / fetched / trust-chain-derived).
 - **I3 — Auth capability gates flows.** A client either can authenticate (secret/key)
   or cannot. A client that cannot authenticate **must not** be issued a
-  `client_credentials` grant. CIMD is public-only and correctly forbids
-  `client_credentials`; the invariant must survive federation and ephemeral too.
+  `client_credentials` grant. DOT's CIMD implementation is public-only and correctly
+  forbids `client_credentials` (the CIMD spec itself permits asymmetric client auth —
+  see Grounding A.2); the invariant must survive federation and ephemeral too.
 - **I4 — Attribution durability.** Every issued token and every `Authorization` remains
   attributable to a stable client identifier for as long as it exists — *independent of
   whether the client's metadata record still exists.* This is the invariant the current
