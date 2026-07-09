@@ -33,10 +33,21 @@ def chromium_executable():
         return explicit
     browsers_root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
     if browsers_root:
-        matches = sorted(Path(browsers_root).glob("chromium-*/chrome-linux/chrome"))
+        matches = list(Path(browsers_root).glob("chromium-*/chrome-linux/chrome"))
         if matches:
-            return str(matches[-1])
+            # Pick the highest build revision by numeric value, not lexicographic
+            # order (so chromium-1234 beats chromium-999).
+            return str(max(matches, key=_chromium_revision))
     return None
+
+
+def _chromium_revision(chrome_path):
+    """Extract the numeric build revision from a ``chromium-<rev>/...`` path."""
+    for part in chrome_path.parts:
+        if part.startswith("chromium-"):
+            rev = part[len("chromium-") :]
+            return int(rev) if rev.isdigit() else -1
+    return -1
 
 
 class RpServer:
