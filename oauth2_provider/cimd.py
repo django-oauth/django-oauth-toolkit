@@ -321,9 +321,10 @@ def _resolve_grant_type(grant_types):
 def _build_application_kwargs(metadata):
     """Convert a CIMD metadata document to public-Application field kwargs.
 
-    Enforces the spec's public-client rules (no shared-secret auth method, no
-    client_secret) and returns kwargs; raises :class:`CIMDError` on invalid
-    metadata.
+    Requires ``token_endpoint_auth_method`` ``"none"`` — the spec forbids
+    shared-secret methods, and asymmetric ones such as ``private_key_jwt``
+    are not implemented — and rejects any ``client_secret`` property. Returns
+    kwargs; raises :class:`CIMDError` on invalid metadata.
     """
     auth_method = metadata.get("token_endpoint_auth_method", "none")
     if auth_method != "none":

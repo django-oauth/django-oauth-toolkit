@@ -33,8 +33,9 @@ Because the application is keyed on the URL, distinct clients map to distinct ro
 bounded by the number of distinct client URLs rather than growing per registration.
 
 Validation follows the spec: the document's ``client_id`` must equal the URL it was fetched from, the
-client must be public (no ``client_secret`` and no shared-secret ``token_endpoint_auth_method``), and
-redirect URIs are matched exactly as for any other application.
+client must be public — ``token_endpoint_auth_method`` must be ``none`` (the spec forbids shared-secret
+methods, and asymmetric methods such as ``private_key_jwt`` are not implemented) and the document must
+not contain a ``client_secret`` — and redirect URIs are matched exactly as for any other application.
 
 Settings
 --------
