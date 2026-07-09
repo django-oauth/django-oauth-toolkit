@@ -2,15 +2,17 @@ from django.db import migrations, models
 
 
 def forwards_set_dcr_source(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
     for model_name in ("BaseTestApplication", "SampleApplication"):
         Model = apps.get_model("tests", model_name)
-        Model.objects.filter(dcr_created=True).update(registration_source="dcr")
+        Model._default_manager.using(db_alias).filter(dcr_created=True).update(registration_source="dcr")
 
 
 def reverse_set_dcr_created(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
     for model_name in ("BaseTestApplication", "SampleApplication"):
         Model = apps.get_model("tests", model_name)
-        Model.objects.filter(registration_source="dcr").update(dcr_created=True)
+        Model._default_manager.using(db_alias).filter(registration_source="dcr").update(dcr_created=True)
 
 
 REGISTRATION_SOURCE_FIELD = models.CharField(

@@ -11,7 +11,8 @@ def forwards_set_dcr_source(apps, schema_editor):
         # migration are skipped for swapped models, so the swapped app has to add
         # registration_source and backfill it in its own migration (see CHANGELOG).
         return
-    Application.objects.filter(dcr_created=True).update(registration_source="dcr")
+    db_alias = schema_editor.connection.alias
+    Application._default_manager.using(db_alias).filter(dcr_created=True).update(registration_source="dcr")
 
 
 def reverse_set_dcr_created(apps, schema_editor):
@@ -19,7 +20,8 @@ def reverse_set_dcr_created(apps, schema_editor):
     Application = apps.get_model(oauth2_settings.APPLICATION_MODEL)
     if Application._meta.label_lower != "oauth2_provider.application":
         return
-    Application.objects.filter(registration_source="dcr").update(dcr_created=True)
+    db_alias = schema_editor.connection.alias
+    Application._default_manager.using(db_alias).filter(registration_source="dcr").update(dcr_created=True)
 
 
 class Migration(migrations.Migration):
