@@ -34,7 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client_id`; when `CIMD_ENABLED` is on the server fetches, validates and persists the metadata
   document as a public application (SSRF-hardened fetch, failure backoff and an in-flight fetch cap).
   Applications resolved this way carry `AbstractApplication.registration_source` set to `"cimd"`.
-  See `docs/cimd.rst`.
+  Registration can be gated with `CIMD_REGISTRATION_PERMISSION_CLASSES` (default allow-all;
+  `HostAllowlistCIMDPermission` restricts it to `CIMD_ALLOWED_HOSTS`), and the
+  `clearcimdapplications` management command prunes expired CIMD applications that hold no live
+  tokens. See `docs/cimd.rst`.
 
 ### Changed
 * Replaced the unreleased `AbstractApplication.dcr_created` `BooleanField` (added in #670) with a

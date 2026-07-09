@@ -31,6 +31,7 @@ import urllib3
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.http.request import validate_host
 from django.utils import timezone
 
 from .models import get_application_model
@@ -85,6 +86,42 @@ def is_cimd_client_id(client_id):
     happens.
     """
     return bool(client_id) and client_id[:8].lower() == "https://"
+
+
+class AllowAllCIMDPermission:
+    """Allow any CIMD client_id URL to register (default).
+
+    Registration happens on the pre-auth authorize/token path, where no
+    authenticated user exists, so unlike DCR the default is open.
+    """
+
+    def has_permission(self, client_id) -> bool:
+        return True
+
+
+class HostAllowlistCIMDPermission:
+    """Allow only client_id URLs whose host matches ``CIMD_ALLOWED_HOSTS``.
+
+    Entries use Django's ``ALLOWED_HOSTS`` syntax: an exact hostname,
+    ``".example.com"`` for a domain and all its subdomains, or ``"*"``.
+    An empty allowlist denies every host.
+    """
+
+    def has_permission(self, client_id) -> bool:
+        host = urlparse(client_id).hostname
+        return bool(host) and validate_host(host, oauth2_settings.CIMD_ALLOWED_HOSTS or [])
+
+
+def _registration_permitted(client_id):
+    """Run all CIMD_REGISTRATION_PERMISSION_CLASSES; return True if all pass.
+
+    Fails closed: an empty setting denies all registration, matching the DCR
+    permission-class semantics.
+    """
+    permission_classes = oauth2_settings.CIMD_REGISTRATION_PERMISSION_CLASSES
+    if not permission_classes:
+        return False
+    return all(cls().has_permission(client_id) for cls in permission_classes)
 
 
 def _validate_client_id_url(client_id):
@@ -415,6 +452,13 @@ def resolve_cimd_application(client_id):
     in-flight cap is reached, or the document is missing or invalid.
     """
     if not oauth2_settings.CIMD_ENABLED or not is_cimd_client_id(client_id):
+        return None
+
+    # Policy gate, checked before any fetch. A denial is not a fetch failure,
+    # so it does not set the backoff: adding a host to the allowlist takes
+    # effect on the very next request.
+    if not _registration_permitted(client_id):
+        log.info("CIMD registration refused by permission classes for %r", client_id)
         return None
 
     backoff_key = _backoff_cache_key(client_id)

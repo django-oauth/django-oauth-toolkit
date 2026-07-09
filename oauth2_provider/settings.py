@@ -144,6 +144,8 @@ DEFAULTS = {
     # Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
     "CIMD_ENABLED": False,
     "CIMD_METADATA_FETCHER": "oauth2_provider.cimd.SafeMetadataFetcher",
+    "CIMD_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.cimd.AllowAllCIMDPermission",),
+    "CIMD_ALLOWED_HOSTS": [],  # used by HostAllowlistCIMDPermission; ALLOWED_HOSTS syntax
     "CIMD_FETCH_TIMEOUT_SECONDS": 5,
     "CIMD_MAX_DOCUMENT_SIZE": 16 * 1024,  # draft §6.6 recommends ~5 KB; headroom, still bounded
     "CIMD_METADATA_MIN_AGE_SECONDS": 300,
@@ -206,6 +208,7 @@ IMPORT_STRINGS = (
     "DCR_REGISTRATION_PERMISSION_CLASSES",
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR",
     "CIMD_METADATA_FETCHER",
+    "CIMD_REGISTRATION_PERMISSION_CLASSES",
 )
 
 

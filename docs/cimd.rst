@@ -47,6 +47,19 @@ Settings
     site-specific policy. A fetcher's ``fetch(client_id)`` returns ``(metadata_dict, max_age_seconds)``
     or raises :class:`~oauth2_provider.cimd.CIMDError`.
 
+``CIMD_REGISTRATION_PERMISSION_CLASSES`` (default ``("oauth2_provider.cimd.AllowAllCIMDPermission",)``)
+    Permission classes run before any fetch; each must implement
+    ``has_permission(client_id) -> bool`` and all must pass, an empty value denies everything. The
+    default allows any URL, because resolution happens on the pre-auth authorize/token path where no
+    authenticated user exists. Configure
+    :class:`~oauth2_provider.cimd.HostAllowlistCIMDPermission` to restrict registration to known
+    hosts.
+
+``CIMD_ALLOWED_HOSTS`` (default ``[]``)
+    Hosts accepted by ``HostAllowlistCIMDPermission``, using the same syntax as Django's
+    ``ALLOWED_HOSTS``: an exact hostname, ``".example.com"`` for a domain and its subdomains, or
+    ``"*"``.
+
 ``CIMD_FETCH_TIMEOUT_SECONDS`` (default ``5``)
     Connect and read timeout for the metadata fetch.
 
@@ -105,11 +118,12 @@ Denial of service
 
     A *successful* fetch persists an ``Application`` row. Rows are keyed on the URL, so the store is
     bounded by the number of *distinct* client URLs — but those are attacker-mintable (one public host
-    can serve a valid document at unlimited paths), and expired CIMD-registered rows are not
-    garbage-collected automatically. Rate-limiting ``/authorize`` and periodically pruning
-    ``registration_source="cimd"`` applications whose ``cimd_expires_at`` is long past and that have
-    no live tokens
-    are recommended.
+    can serve a valid document at unlimited paths). Two controls bound the row count: the
+    ``CIMD_REGISTRATION_PERMISSION_CLASSES`` gate (with ``HostAllowlistCIMDPermission`` +
+    ``CIMD_ALLOWED_HOSTS``, only allowlisted hosts can mint rows at all), and the
+    :ref:`clearcimdapplications` management command, which prunes expired CIMD rows that hold no live
+    tokens. Rate-limiting ``/authorize`` is still recommended, and deployments that cannot enumerate
+    client hosts should run the pruning command on a schedule.
 
 Consent phishing
     A CIMD document fully controls its ``client_name`` and ``redirect_uris``, and the draft does not

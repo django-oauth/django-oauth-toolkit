@@ -17,6 +17,7 @@ from django.utils import timezone
 from oauth2_provider import cimd
 from oauth2_provider.cimd import (
     CIMDError,
+    HostAllowlistCIMDPermission,
     SafeMetadataFetcher,
     _build_application_kwargs,
     _effective_max_age,
@@ -387,6 +388,62 @@ def test_get_fetch_semaphore_disabled(oauth2_settings):
     assert cimd._get_fetch_semaphore() is None
 
 
+# ---------------------------------------------------------------------------
+# Registration permission gate
+# ---------------------------------------------------------------------------
+
+
+class _DenyAllPermission:
+    def has_permission(self, client_id):
+        return False
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_denied_by_permission_skips_fetch_without_backoff(cimd_enabled, mocker):
+    fetch = mocker.spy(_GoodFetcher, "fetch")
+    cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (_DenyAllPermission,)
+    assert resolve_cimd_application(CLIENT_URL) is None
+    assert fetch.call_count == 0
+    assert not Application.objects.filter(client_id=CLIENT_URL).exists()
+    # A policy denial must not back the URL off: allowing the host takes
+    # effect on the very next request.
+    cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (cimd.AllowAllCIMDPermission,)
+    assert resolve_cimd_application(CLIENT_URL) is not None
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_empty_permission_classes_fail_closed(cimd_enabled):
+    cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = ()
+    assert resolve_cimd_application(CLIENT_URL) is None
+
+
+@pytest.mark.parametrize(
+    "allowed_hosts, permitted",
+    [
+        (["client.example.com"], True),
+        (["other.example.com"], False),
+        ([".example.com"], True),  # domain-and-subdomains wildcard
+        (["*"], True),
+        ([], False),
+    ],
+)
+def test_host_allowlist_permission(oauth2_settings, allowed_hosts, permitted):
+    oauth2_settings.CIMD_ALLOWED_HOSTS = allowed_hosts
+    assert HostAllowlistCIMDPermission().has_permission(CLIENT_URL) is permitted
+
+
+def test_host_allowlist_permission_rejects_hostless_url(oauth2_settings):
+    oauth2_settings.CIMD_ALLOWED_HOSTS = ["*"]
+    assert HostAllowlistCIMDPermission().has_permission("https:///path-only") is False
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_with_host_allowlist(cimd_enabled):
+    cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (HostAllowlistCIMDPermission,)
+    cimd_enabled.CIMD_ALLOWED_HOSTS = ["client.example.com"]
+    assert resolve_cimd_application(CLIENT_URL) is not None
+
+
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_recovers_from_concurrent_insert_race(cimd_enabled, mocker):
     # Reproduce the interleaving the IntegrityError handler exists for: our
@@ -697,3 +754,69 @@ def test_metadata_advertised_when_enabled(oauth2_settings, client):
 def test_metadata_not_advertised_when_disabled(client):
     response = client.get(reverse("oauth2_provider:oauth-server-metadata"))
     assert response.json()["client_id_metadata_document_supported"] is False
+
+
+# ---------------------------------------------------------------------------
+# clearcimdapplications management command
+# ---------------------------------------------------------------------------
+
+
+def _stored_app(host, *, source=None, expires_delta=timedelta(hours=-1)):
+    return Application.objects.create(
+        client_id=f"https://{host}/meta.json",
+        name=host,
+        client_type=Application.CLIENT_PUBLIC,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        redirect_uris="https://client.example.com/callback",
+        registration_source=source or Application.RegistrationSource.CIMD,
+        cimd_expires_at=timezone.now() + expires_delta,
+    )
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_clearcimdapplications_prunes_only_dead_expired_cimd_rows(django_user_model, capsys):
+    from django.core.management import call_command
+
+    from oauth2_provider.models import (
+        get_access_token_model,
+        get_grant_model,
+        get_id_token_model,
+        get_refresh_token_model,
+    )
+
+    user = django_user_model.objects.create_user("cimd-prune-user")
+    now = timezone.now()
+
+    _stored_app("dead.example.com")
+    dead_tokens = _stored_app("dead-tokens.example.com")
+    get_access_token_model().objects.create(
+        token="expired-at", expires=now - timedelta(hours=1), application=dead_tokens
+    )
+    get_refresh_token_model().objects.create(
+        token="revoked-rt", user=user, application=dead_tokens, revoked=now - timedelta(hours=1)
+    )
+
+    fresh = _stored_app("fresh.example.com", expires_delta=timedelta(hours=1))
+    manual = _stored_app("manual.example.com", source=Application.RegistrationSource.MANUAL)
+    live_access = _stored_app("live-access.example.com")
+    get_access_token_model().objects.create(
+        token="live-at", expires=now + timedelta(hours=1), application=live_access
+    )
+    live_refresh = _stored_app("live-refresh.example.com")
+    get_refresh_token_model().objects.create(token="live-rt", user=user, application=live_refresh)
+    live_grant = _stored_app("live-grant.example.com")
+    get_grant_model().objects.create(
+        user=user,
+        code="live-code",
+        application=live_grant,
+        expires=now + timedelta(minutes=5),
+        redirect_uri="https://client.example.com/callback",
+    )
+    live_idtoken = _stored_app("live-idtoken.example.com")
+    get_id_token_model().objects.create(expires=now + timedelta(hours=1), application=live_idtoken)
+
+    call_command("clearcimdapplications")
+
+    survivors = set(Application.objects.values_list("pk", flat=True))
+    assert survivors == {fresh.pk, manual.pk, live_access.pk, live_refresh.pk, live_grant.pk, live_idtoken.pk}
+    assert "Deleted 2 expired CIMD application(s)" in capsys.readouterr().out
