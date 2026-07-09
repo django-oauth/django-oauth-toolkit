@@ -146,6 +146,18 @@
   .pill.opt{ background:var(--s-unk-bg); color:var(--s-unk-fg); }
   .pill.forbid{ background:var(--s-none-bg); color:var(--s-none-fg); }
 
+  /* draft / deprecated lifecycle badges */
+  .tag{ font-family:var(--mono); font-size:8.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    padding:2px 5px; border-radius:4px; margin-left:7px; vertical-align:middle; white-space:nowrap; }
+  .tag.deprecated{ background:var(--s-none-bg); color:var(--s-none-fg); }
+  .tag.draft{ background:var(--s-part-bg); color:var(--s-part-fg); }
+  tr[data-life="deprecated"] td.rowhead .cspec, tr[data-life="deprecated"] td.rowhead{ text-decoration:none; }
+  tr[data-life="deprecated"] > td.rowhead{ opacity:.82; }
+  tr[data-life="draft"] > td.rowhead::before, tr[data-life="deprecated"] > td.rowhead::before{
+    content:""; position:absolute; left:0; top:0; bottom:0; width:3px; }
+  tr[data-life="draft"] > td.rowhead::before{ background:var(--s-part-dot); }
+  tr[data-life="deprecated"] > td.rowhead::before{ background:var(--s-none-dot); }
+
   /* first-party source links */
   .speclink{ position:absolute; top:5px; right:8px; display:inline-flex; color:var(--muted); opacity:.5;
     transition:color .15s, opacity .15s; }
@@ -291,6 +303,10 @@ const SPEC_URL = [
   'https://openid.net/specs/openid-connect-backchannel-1_0.html',
   'https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html'
 ];
+// lifecycle status per spec (index matches SPECS): 'deprecated' | 'draft' | undefined (final)
+const SPEC_STATUS = [];
+SPEC_STATUS[1] = 'deprecated'; // implicit grant — removed by OAuth 2.1, discouraged by the Security BCP
+SPEC_STATUS[2] = 'deprecated'; // resource-owner password grant — removed by OAuth 2.1
 // OP grid: order = OP competitors; rows align to SPECS
 const OPGRID = [
   'FFFFFFFFFFFFF','FFFFFFFFFFFFF','FFFFNFNFFFFFF','FFFFFFFFFFFFF','FFFFFFFFFFPNF','FFFFFFFFFFFFF','FFFFFFFFFFNNF',
@@ -318,7 +334,7 @@ const MEM = [
 // suiteKey maps to SUITES (and therefore to the MEM membership column).
 const ROLLROWS = [
   ['oauth20','OAuth 2.0 (classic)','FFFFFFFFFFFPF'],
-  ['oauth21','OAuth 2.1 (draft)','PPPPFFPFPPPPP'],
+  ['oauth21','OAuth 2.1','PPPPFFPFPPPPP'],
   ['oidc','OpenID Connect','FPFFFFFFFFFFF'],
   ['native','Native apps (8252)','PPPPPFPFFFFFF'],
   ['fapi2','FAPI 2.0','NNNNFNFNPNANF'],
@@ -363,6 +379,8 @@ const SUITE_URL = {
   rp:'https://openid.net/specs/openid-connect-core-1_0.html',
   rs:'https://www.rfc-editor.org/rfc/rfc6750'
 };
+// profiles that are not finalized standards
+const SUITE_STATUS = { oauth21:'draft', mcp:'draft' };
 const RPGRID = [
   'xFFFFFFFF','xFPFFFFPF','xNNNNNNNN','xNNNNNNNN','xFFFFFFFF','xFFFFFFFF','xNNUNNNNN','xPPFPPFPF',
   'xNPPNPFNF','xNNNNNPNN','xNNNNNNNF','xNNUNUUNN','xNNUNNFNP','xNNFNPNNF','xNNUNNUNU','xFNFFFNPF'
@@ -443,6 +461,15 @@ function linkIcon(url,name,cls){
   return a;
 }
 
+// draft / deprecated lifecycle badge for a spec row (by SPECS index); null when final.
+function statusTag(i){
+  const s = SPEC_STATUS[i]; if(!s) return null;
+  const t = el('span','tag '+s, s);
+  t.title = s==='deprecated' ? 'Deprecated — discouraged; removed or superseded by newer specs'
+                             : 'Draft — not yet a finalized standard';
+  return t;
+}
+
 // member specs of a suite (MEM column `col`), required first, then optional, then forbidden;
 // SPECS order preserved within each group.
 function suiteChildren(col){
@@ -467,6 +494,7 @@ function buildHead(cols){
     const th = el('th', c[3]?'us':'');
     th.innerHTML = '<span class="tier">'+c[2]+'</span><span class="colname">'+c[1]+'</span>';
     const lk = linkIcon(c[4], c[1], 'collink'); if(lk) th.appendChild(lk);
+    if(SUITE_STATUS[c[0]]){ const t=el('span','tag '+SUITE_STATUS[c[0]], SUITE_STATUS[c[0]]); t.title='Draft — not yet a finalized standard'; th.appendChild(t); }
     tr.appendChild(th);
   });
   return tr;
@@ -482,8 +510,9 @@ function render(kind){
     cols = OP;
     head.appendChild(buildHead(cols));
     SPECS.forEach((sp,i)=>{
-      const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase();
+      const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase(); if(SPEC_STATUS[i]) tr.dataset.life = SPEC_STATUS[i];
       const rh = el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]);
+      const tg = statusTag(i); if(tg) rh.appendChild(tg);
       const lk = linkIcon(SPEC_URL[i], sp[0], 'speclink'); if(lk) rh.appendChild(lk);
       tr.appendChild(rh);
       OPGRID[i].split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
@@ -498,8 +527,9 @@ function render(kind){
     cols = SUITES.map(s=>[s[0],s[1],'suite',false,SUITE_URL[s[0]]]);
     head.appendChild(buildHead(cols));
     SPECS.forEach((sp,i)=>{
-      const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase();
+      const tr = el('tr'); tr.dataset.label = sp[0].toLowerCase(); if(SPEC_STATUS[i]) tr.dataset.life = SPEC_STATUS[i];
       const rh = el('td','rowhead'+(sp[1]?' sub-row':''), sp[0]);
+      const tg = statusTag(i); if(tg) rh.appendChild(tg);
       const lk = linkIcon(SPEC_URL[i], sp[0], 'speclink'); if(lk) rh.appendChild(lk);
       tr.appendChild(rh);
       MEM[i].forEach(code=>{ const td=el('td'); td.appendChild(memMark(code)); tr.appendChild(td); });
@@ -522,6 +552,7 @@ function render(kind){
         btn.addEventListener('click',()=>toggleSuite(key,btn));
         head0.appendChild(btn);
       } else { head0.textContent = label; head0.classList.add('leaf'); }
+      if(SUITE_STATUS[key]){ const t=el('span','tag '+SUITE_STATUS[key], SUITE_STATUS[key]); t.title='Draft — not yet a finalized standard'; head0.appendChild(t); }
       tr.appendChild(head0);
       status.split('').forEach(ch=>{ const td=el('td'); td.appendChild(chip(ch)); tr.appendChild(td); });
       body.appendChild(tr);
@@ -529,12 +560,13 @@ function render(kind){
       kids.forEach(kid=>{
         const {i,mark} = kid;
         const ctr = el('tr','child collapsed'); ctr.dataset.suite=key;
-        ctr.dataset.label = SPECS[i][0].toLowerCase();
+        ctr.dataset.label = SPECS[i][0].toLowerCase(); if(SPEC_STATUS[i]) ctr.dataset.life = SPEC_STATUS[i];
         const ch0 = el('td','rowhead child-head');
         const pillCls = mark==='R'?'req':(mark==='o'?'opt':'forbid');
         const pillTxt = mark==='R'?'req':(mark==='o'?'opt':'×');
         const pillTitle = mark==='R'?'required by this profile':(mark==='o'?'optional / recommended':'forbidden (must not use) by this profile');
         ch0.innerHTML = '<span class="pill '+pillCls+'" title="'+pillTitle+'">'+pillTxt+'</span><span class="cspec">'+SPECS[i][0]+'</span>';
+        const ctg = statusTag(i); if(ctg) ch0.appendChild(ctg);
         const clk = linkIcon(SPEC_URL[i], SPECS[i][0], 'speclink'); if(clk) ch0.appendChild(clk);
         ctr.appendChild(ch0);
         OPGRID[i].split('').forEach(code=>{ const td=el('td'); td.appendChild(chip(code)); ctr.appendChild(td); });
@@ -631,6 +663,9 @@ function buildLegend(){
   const m=el('span','item'); m.style.marginLeft='6px';
   m.innerHTML='<strong style="color:var(--ink)">Membership</strong> &nbsp; <span class="m-req">●</span> required &nbsp; <span class="m-opt">○</span> optional &nbsp; <span class="m-forbid">⊘</span> forbidden';
   L.appendChild(m);
+  const life=el('span','item'); life.style.marginLeft='6px';
+  life.innerHTML='<strong style="color:var(--ink)">Lifecycle</strong> &nbsp; <span class="tag draft">draft</span> not finalized &nbsp; <span class="tag deprecated">deprecated</span> discouraged';
+  L.appendChild(life);
 }
 
 function buildStats(){
