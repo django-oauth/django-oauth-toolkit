@@ -175,6 +175,20 @@ class TestProtectedResourceMetadataMixin(BaseTest):
         self.assertEqual(response.status_code, 401)
         assert 'realm="example"' in response["WWW-Authenticate"]
 
+    def test_resource_metadata_url_override_is_advertised(self):
+        """A path-based/multi-tenant view can advertise its own metadata URL."""
+        url = "https://api.example.com/.well-known/oauth-protected-resource/tenant1"
+
+        class TestView(ProtectedResourceMetadataMixin, ProtectedResourceMixin, View):
+            server_class = Server
+            validator_class = OAuth2Validator
+            resource_metadata_url = url
+
+        request = self.request_factory.get("/fake-req")
+        response = TestView.as_view()(request)
+        self.assertEqual(response.status_code, 401)
+        assert 'resource_metadata="{}"'.format(url) in response["WWW-Authenticate"]
+
 
 @pytest.fixture
 def oidc_only_view():

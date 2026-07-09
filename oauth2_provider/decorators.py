@@ -11,23 +11,31 @@ from .settings import oauth2_settings
 from .www_authenticate import build_bearer_challenge
 
 
-def _unauthenticated_response(request, oauthlib_request, advertise_metadata):
+def _unauthenticated_response(request, oauthlib_request, advertise_metadata, resource_metadata_url=None):
     """Failure response for the protected-resource decorators.
 
     Returns a bare ``403`` by default; when ``advertise_metadata`` is set, returns
     an RFC 6750 ``401`` with a ``WWW-Authenticate: Bearer`` challenge carrying the
-    RFC 9728 ``resource_metadata`` parameter.
+    RFC 9728 ``resource_metadata`` parameter. ``resource_metadata_url`` overrides the
+    advertised document (default: this server's root metadata route).
     """
     if not advertise_metadata:
         return HttpResponseForbidden()
-    challenge = build_bearer_challenge(request, oauth2_error=getattr(oauthlib_request, "oauth2_error", None))
+    extra = {} if resource_metadata_url is None else {"resource_metadata_url": resource_metadata_url}
+    challenge = build_bearer_challenge(
+        request, oauth2_error=getattr(oauthlib_request, "oauth2_error", None), **extra
+    )
     response = HttpResponse(status=401)
     response["WWW-Authenticate"] = challenge
     return response
 
 
 def protected_resource(
-    scopes=None, validator_cls=OAuth2Validator, server_cls=Server, advertise_metadata=False
+    scopes=None,
+    validator_cls=OAuth2Validator,
+    server_cls=Server,
+    advertise_metadata=False,
+    resource_metadata_url=None,
 ):
     """
     Decorator to protect views by providing OAuth2 authentication out of the box,
@@ -42,6 +50,8 @@ def protected_resource(
     Pass ``advertise_metadata=True`` (or use :func:`protected_resource_metadata`) to
     return an RFC 6750 ``401`` with an RFC 9728 ``resource_metadata``
     ``WWW-Authenticate`` challenge on failure instead of a bare ``403``.
+    ``resource_metadata_url`` advertises a specific metadata document (e.g. the RFC
+    9728 path-component form) instead of the server's root route.
     """
     _scopes = scopes or []
 
@@ -54,26 +64,36 @@ def protected_resource(
             if valid:
                 request.resource_owner = oauthlib_req.user
                 return view_func(request, *args, **kwargs)
-            return _unauthenticated_response(request, oauthlib_req, advertise_metadata)
+            return _unauthenticated_response(request, oauthlib_req, advertise_metadata, resource_metadata_url)
 
         return _validate
 
     return decorator
 
 
-def protected_resource_metadata(scopes=None, validator_cls=OAuth2Validator, server_cls=Server):
+def protected_resource_metadata(
+    scopes=None, validator_cls=OAuth2Validator, server_cls=Server, resource_metadata_url=None
+):
     """
     RFC 9728 variant of :func:`protected_resource`: on failed authentication the
     view returns a ``401`` with a ``WWW-Authenticate: Bearer`` challenge advertising
     the protected-resource metadata document.
     """
     return protected_resource(
-        scopes=scopes, validator_cls=validator_cls, server_cls=server_cls, advertise_metadata=True
+        scopes=scopes,
+        validator_cls=validator_cls,
+        server_cls=server_cls,
+        advertise_metadata=True,
+        resource_metadata_url=resource_metadata_url,
     )
 
 
 def rw_protected_resource(
-    scopes=None, validator_cls=OAuth2Validator, server_cls=Server, advertise_metadata=False
+    scopes=None,
+    validator_cls=OAuth2Validator,
+    server_cls=Server,
+    advertise_metadata=False,
+    resource_metadata_url=None,
 ):
     """
     Decorator to protect views by providing OAuth2 authentication and read/write scopes
@@ -121,19 +141,25 @@ def rw_protected_resource(
             if valid:
                 request.resource_owner = oauthlib_req.user
                 return view_func(request, *args, **kwargs)
-            return _unauthenticated_response(request, oauthlib_req, advertise_metadata)
+            return _unauthenticated_response(request, oauthlib_req, advertise_metadata, resource_metadata_url)
 
         return _validate
 
     return decorator
 
 
-def rw_protected_resource_metadata(scopes=None, validator_cls=OAuth2Validator, server_cls=Server):
+def rw_protected_resource_metadata(
+    scopes=None, validator_cls=OAuth2Validator, server_cls=Server, resource_metadata_url=None
+):
     """
     RFC 9728 variant of :func:`rw_protected_resource`: on failed authentication the
     view returns a ``401`` with a ``WWW-Authenticate: Bearer`` challenge advertising
     the protected-resource metadata document.
     """
     return rw_protected_resource(
-        scopes=scopes, validator_cls=validator_cls, server_cls=server_cls, advertise_metadata=True
+        scopes=scopes,
+        validator_cls=validator_cls,
+        server_cls=server_cls,
+        advertise_metadata=True,
+        resource_metadata_url=resource_metadata_url,
     )

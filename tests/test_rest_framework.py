@@ -116,10 +116,19 @@ class OAuth2ProtectedResourceView(MockView):
     authentication_classes = [OAuth2ProtectedResourceAuthentication]
 
 
+class OAuth2ProtectedResourceCustomUrlAuthentication(OAuth2ProtectedResourceAuthentication):
+    resource_metadata_url = "https://api.example.com/.well-known/oauth-protected-resource/tenant1"
+
+
+class OAuth2ProtectedResourceCustomUrlView(MockView):
+    authentication_classes = [OAuth2ProtectedResourceCustomUrlAuthentication]
+
+
 urlpatterns = [
     path("oauth2/", include("oauth2_provider.urls")),
     path("oauth2-test/", OAuth2View.as_view()),
     path("oauth2-protected-resource-test/", OAuth2ProtectedResourceView.as_view()),
+    path("oauth2-protected-resource-custom-url/", OAuth2ProtectedResourceCustomUrlView.as_view()),
     path("oauth2-scoped-test/", ScopedView.as_view()),
     path("oauth2-scoped-missing-auth/", TokenHasScopeViewWrongAuth.as_view()),
     path("oauth2-read-write-test/", ReadWriteScopedView.as_view()),
@@ -210,6 +219,16 @@ class TestOAuth2Authentication(TestCase):
         response = self.client.get("/oauth2-test/")
         self.assertEqual(response.status_code, 401)
         assert "resource_metadata" not in response["WWW-Authenticate"]
+
+    def test_protected_resource_authentication_custom_metadata_url(self):
+        """A subclass can advertise a path-component / multi-tenant metadata URL."""
+        response = self.client.get("/oauth2-protected-resource-custom-url/")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response["WWW-Authenticate"],
+            'Bearer realm="api",'
+            'resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/tenant1"',
+        )
 
     def test_authentication_or_scope_denied(self):
         # user is not authenticated

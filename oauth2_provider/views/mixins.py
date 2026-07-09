@@ -340,15 +340,31 @@ class ProtectedResourceMetadataMixin(OAuthLibMixin):
     is an unambiguous override of the base hook (rather than a value from an
     unrelated base class) when combined with a protected-resource view/mixin.
 
-    Set ``www_authenticate_realm`` to advertise a realm in the challenge.
+    Set ``www_authenticate_realm`` to advertise a realm in the challenge. Set
+    ``resource_metadata_url`` (or override :meth:`get_resource_metadata_url`) to
+    advertise a specific metadata document — e.g. the RFC 9728 path-component form
+    for a path-based/multi-tenant resource — instead of this server's root
+    ``/.well-known/oauth-protected-resource``.
     """
 
     www_authenticate_realm = None
+    resource_metadata_url = None
+
+    def get_resource_metadata_url(self, request):
+        """URL advertised in ``resource_metadata``.
+
+        Returns ``resource_metadata_url`` when set, otherwise ``None`` so the
+        challenge builder falls back to the server's root metadata route. Override
+        to derive the URL from the protected resource's identifier/path.
+        """
+        return self.resource_metadata_url
 
     def unauthenticated_response(self, request, oauthlib_request=None):
         oauth2_error = getattr(oauthlib_request, "oauth2_error", None)
+        url = self.get_resource_metadata_url(request)
+        extra = {} if url is None else {"resource_metadata_url": url}
         challenge = build_bearer_challenge(
-            request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm
+            request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm, **extra
         )
         response = HttpResponse(status=401)
         response["WWW-Authenticate"] = challenge

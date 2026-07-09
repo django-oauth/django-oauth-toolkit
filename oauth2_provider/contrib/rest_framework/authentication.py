@@ -65,11 +65,25 @@ class OAuth2ProtectedResourceAuthentication(OAuth2Authentication):
     (``/.well-known/oauth-protected-resource``). Opt in by listing this class in a
     view's ``authentication_classes``; the base ``OAuth2Authentication`` challenge is
     left unchanged.
+
+    Set ``resource_metadata_url`` (or override :meth:`get_resource_metadata_url`) to
+    advertise a specific metadata document — e.g. the RFC 9728 path-component form
+    for a path-based/multi-tenant resource — instead of the root route.
     """
+
+    resource_metadata_url = None
+
+    def get_resource_metadata_url(self, request):
+        """URL advertised in ``resource_metadata`` (``None`` uses the root route)."""
+        return self.resource_metadata_url
 
     def authenticate_header(self, request):
         # Delegate to the shared builder so every Bearer challenge is rendered
         # consistently and with proper quoted-string escaping. It appends
-        # ``resource_metadata`` only when the metadata route is registered.
+        # ``resource_metadata`` only when a URL is available.
         oauth2_error = getattr(request, "oauth2_error", {})
-        return build_bearer_challenge(request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm)
+        url = self.get_resource_metadata_url(request)
+        extra = {} if url is None else {"resource_metadata_url": url}
+        return build_bearer_challenge(
+            request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm, **extra
+        )

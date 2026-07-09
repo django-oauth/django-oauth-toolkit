@@ -99,6 +99,15 @@ Each of these returns a ``401`` whose ``WWW-Authenticate`` header carries
 ``resource_metadata="https://example.com/.well-known/oauth-protected-resource"``. The
 parameter is omitted automatically when the metadata route is not registered.
 
+By default the advertised URL is this server's root
+``/.well-known/oauth-protected-resource``. For a protected resource whose identifier
+includes a path (the RFC 9728 path-component form, e.g. a multi-tenant deployment),
+advertise the matching document instead: set ``resource_metadata_url`` (or override
+``get_resource_metadata_url(request)``) on the mixin / DRF authenticator, or pass
+``resource_metadata_url=`` to the decorators. RFC 9728 §3.3 expects the advertised
+metadata URL — and the ``resource`` value it returns — to match the resource
+identifier, so path-based resources should advertise their path-component URL.
+
 .. note::
 
     The plain (non-metadata) ``ProtectedResourceView`` family and the

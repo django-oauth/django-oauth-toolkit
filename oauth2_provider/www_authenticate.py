@@ -12,6 +12,11 @@ from collections import OrderedDict
 from .settings import oauth2_settings
 
 
+# Sentinel distinguishing "caller did not specify a metadata URL" (derive the
+# default) from an explicit ``None`` (omit ``resource_metadata`` entirely).
+_UNSET = object()
+
+
 def _quote(value):
     """Escape a value for inclusion in an RFC 7230 ``quoted-string``.
 
@@ -23,13 +28,19 @@ def _quote(value):
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def build_bearer_challenge(request, oauth2_error=None, realm=None):
+def build_bearer_challenge(request, oauth2_error=None, realm=None, resource_metadata_url=_UNSET):
     """Build a ``WWW-Authenticate: Bearer`` challenge value.
 
     ``oauth2_error`` is the structured error dict oauthlib stashes on the request
-    during ``verify_request`` (``{"error": ..., "error_description": ...}``). When
-    the RFC 9728 metadata route is registered, a ``resource_metadata`` parameter
-    pointing at the protected-resource metadata document is appended.
+    during ``verify_request`` (``{"error": ..., "error_description": ...}``). A
+    ``resource_metadata`` parameter pointing at the protected-resource metadata
+    document is appended when available.
+
+    ``resource_metadata_url`` controls which document is advertised: left unset it
+    defaults to this server's root metadata route
+    (``oauth2_settings.oauth2_resource_metadata_url``); pass an explicit URL to
+    advertise the RFC 9728 path-component form for a path-based/multi-tenant
+    resource, or ``None`` to omit the parameter.
 
     Parameters are rendered as comma-separated ``key="value"`` auth-params (no
     space after the comma, matching the DRF header builder), with values escaped
@@ -41,9 +52,10 @@ def build_bearer_challenge(request, oauth2_error=None, realm=None):
         attributes["realm"] = realm
     if oauth2_error:
         attributes.update(oauth2_error)
-    metadata_url = oauth2_settings.oauth2_resource_metadata_url(request)
-    if metadata_url:
-        attributes["resource_metadata"] = metadata_url
+    if resource_metadata_url is _UNSET:
+        resource_metadata_url = oauth2_settings.oauth2_resource_metadata_url(request)
+    if resource_metadata_url:
+        attributes["resource_metadata"] = resource_metadata_url
     if not attributes:
         return "Bearer"
     return "Bearer " + ",".join('{}="{}"'.format(key, _quote(value)) for key, value in attributes.items())
