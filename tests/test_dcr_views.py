@@ -73,10 +73,10 @@ class TestDynamicClientRegistration(TestCase):
         assert "registration_client_uri" in body
         assert body["grant_types"] == ["authorization_code", "refresh_token"]
         app = Application.objects.get(client_id=body["client_id"])
-        assert app.dcr_created is True
+        assert app.registration_source == Application.RegistrationSource.DCR
 
-    def test_manually_created_application_is_not_dcr_created(self):
-        """Applications created outside DCR default to dcr_created=False."""
+    def test_manually_created_application_registration_source_is_manual(self):
+        """Applications created outside DCR default to registration_source="manual"."""
         app = Application.objects.create(
             name="Manual App",
             user=self.user,
@@ -84,21 +84,21 @@ class TestDynamicClientRegistration(TestCase):
             authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
             redirect_uris="https://example.com/cb",
         )
-        assert app.dcr_created is False
+        assert app.registration_source == Application.RegistrationSource.MANUAL
 
-    def test_dcr_created_is_readonly_in_admin(self):
-        """dcr_created is a security boundary and must be read-only in the admin.
+    def test_registration_source_is_readonly_in_admin(self):
+        """registration_source is a security boundary and must be read-only in the admin.
 
-        The RFC 7592 management endpoint only operates on dcr_created
-        applications; an editable admin field would let it be flipped on a
-        manually provisioned client and defeat that protection.
+        The RFC 7592 management endpoint only operates on applications whose
+        registration_source is "dcr"; an editable admin field would let it be
+        flipped on a manually provisioned client and defeat that protection.
         """
         from django.contrib.admin.sites import AdminSite
 
         from oauth2_provider.admin import ApplicationAdmin
 
         model_admin = ApplicationAdmin(Application, AdminSite())
-        assert "dcr_created" in model_admin.get_readonly_fields(request=None)
+        assert "registration_source" in model_admin.get_readonly_fields(request=None)
 
     def test_register_with_client_name(self):
         """client_name is mapped to Application.name."""
@@ -515,6 +515,59 @@ class TestDynamicClientRegistrationManagement(TestCase):
         response = self.client.delete(_management_url(manual_app.client_id), **_bearer(stray_token.token))
         assert response.status_code == 401
         assert Application.objects.filter(pk=manual_app.pk).exists()
+
+    def test_non_dcr_registration_source_is_rejected_by_management_endpoint(self):
+        """Only registration_source="dcr" applications are manageable via RFC 7592.
+
+        The management gate is an equality check against DCR, not a truthiness
+        test: "manual" and "cimd" are non-empty strings, so a
+        ``not application.registration_source`` guard would wrongly let both
+        through. Every non-DCR source must be rejected (401) on GET, PUT and
+        DELETE even when the presented token carries DCR_REGISTRATION_SCOPE.
+        """
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        for source in (
+            Application.RegistrationSource.MANUAL,
+            Application.RegistrationSource.CIMD,
+        ):
+            app = Application.objects.create(
+                name=f"{source} App",
+                user=self.user,
+                client_type=Application.CLIENT_CONFIDENTIAL,
+                authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+                redirect_uris="https://example.com/cb",
+                registration_source=source,
+            )
+            token = AccessToken.objects.create(
+                application=app,
+                user=self.user,
+                token=f"stray-token-{source}",
+                expires=timezone.now() + timedelta(hours=1),
+                scope=self.oauth2_settings.DCR_REGISTRATION_SCOPE,
+            )
+            url = _management_url(app.client_id)
+
+            get_response = self.client.get(url, **_bearer(token.token))
+            assert get_response.status_code == 401, source
+            assert get_response.json()["error"] == "invalid_token"
+
+            put_response = self.client.put(
+                url,
+                data=json.dumps(
+                    {"redirect_uris": ["https://example.com/new"], "grant_types": ["authorization_code"]}
+                ),
+                content_type="application/json",
+                **_bearer(token.token),
+            )
+            assert put_response.status_code == 401, source
+
+            delete_response = self.client.delete(url, **_bearer(token.token))
+            assert delete_response.status_code == 401, source
+            # The application must survive every rejected management call.
+            assert Application.objects.filter(pk=app.pk).exists()
 
     def test_get_tolerates_extra_whitespace_in_authorization_header(self):
         """Bearer parsing tolerates any whitespace run between scheme and token."""

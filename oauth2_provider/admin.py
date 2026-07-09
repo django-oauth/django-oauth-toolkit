@@ -61,19 +61,19 @@ class ApplicationAdmin(admin.ModelAdmin):
     # hash_client_secret-driven client_secret help text (and the shared
     # application_form.js that updates it live as the checkbox is toggled).
     form = ApplicationForm
-    list_display = ("pk", "name", "user", "client_type", "authorization_grant_type", "dcr_created")
-    list_filter = ("client_type", "authorization_grant_type", "skip_authorization", "dcr_created")
+    list_display = ("pk", "name", "user", "client_type", "authorization_grant_type", "registration_source")
+    list_filter = ("client_type", "authorization_grant_type", "skip_authorization", "registration_source")
     radio_fields = {
         "client_type": admin.HORIZONTAL,
         "authorization_grant_type": admin.VERTICAL,
     }
     search_fields = ("name",) + (("user__email",) if has_email else ())
     raw_id_fields = ("user",)
-    # dcr_created is a security boundary: the RFC 7592 management endpoint only
-    # operates on applications where it is True. It reflects how the client was
-    # created and must not be editable in the admin, or a manually provisioned
-    # application could be made manageable by flipping it.
-    readonly_fields = ("dcr_created",)
+    # registration_source is a security boundary: the RFC 7592 management endpoint
+    # only operates on applications registered via DCR. It reflects how the client
+    # was created and must not be editable in the admin, or a manually provisioned
+    # application could be made manageable by flipping it to "dcr".
+    readonly_fields = ("registration_source",)
 
 
 class AccessTokenAdmin(admin.ModelAdmin):

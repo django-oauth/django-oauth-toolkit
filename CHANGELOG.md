@@ -26,11 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   secret on creation and explaining it is hashed and unrecoverable when editing.
 * #670 Dynamic Client Registration Protocol (RFC 7591 / RFC 7592) — `DynamicClientRegistrationView` and
   `DynamicClientRegistrationManagementView` with configurable permission classes and registration access
-  tokens. Dynamically registered applications are flagged with a new `AbstractApplication.dcr_created`
-  field and can be filtered in the Django admin.
+  tokens. Dynamically registered applications are flagged with `AbstractApplication.registration_source`
+  set to `"dcr"` and can be filtered in the Django admin.
 * #1739 `ALLOW_LOCALHOST_LOOPBACK` setting to extend the RFC 8252 §7.3 any-port loopback exemption to `http://localhost` redirect URIs (opt-in, default `False`)
 
 ### Changed
+* Replaced the unreleased `AbstractApplication.dcr_created` `BooleanField` (added in #670) with a
+  `registration_source` `CharField` enum (`AbstractApplication.RegistrationSource`, values `manual`,
+  `dcr`, `cimd`; default `manual`). This records client provenance as a single value instead of
+  accumulating one boolean per registration mechanism. `dcr_created=True` becomes
+  `registration_source="dcr"`. As `dcr_created` was never released (latest tag is 3.3.0), the change
+  ships with no deprecation.
 * The dynamic `client_secret` help text (added in #1635) is now shared by the Django admin
   application form as well as the front-end register/edit views. The `ApplicationAdmin` uses
   `ApplicationForm`, and a shared `oauth2_provider/js/application_form.js` updates the help text
@@ -98,10 +104,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TextField` → backfill → make checksum non-nullable → add the `("token_checksum", "revoked")`
   unique constraint.
 * If you use a swapped application model (`OAUTH2_PROVIDER_APPLICATION_MODEL`), run
-  `manage.py makemigrations` after upgrading: `AbstractApplication` gained a new
-  `dcr_created` `BooleanField` (default `False`) to mark applications registered via
-  Dynamic Client Registration (#670). Installs using the built-in Application model
-  just need `manage.py migrate` (migration `0017`).
+  `manage.py makemigrations` after upgrading: `AbstractApplication` gained a
+  `registration_source` `CharField` (choices `manual`/`dcr`/`cimd`, default `manual`) to mark
+  how an application was registered — for example via Dynamic Client Registration (#670). This
+  replaces the never-released `dcr_created` `BooleanField`. Installs using the built-in Application
+  model just need `manage.py migrate` (migration `0019`).
 * If you use a swapped device grant model (`OAUTH2_PROVIDER_DEVICE_GRANT_MODEL`), run
   `manage.py makemigrations` after upgrading: the redundant field-level `unique=True` was removed
   from `AbstractDeviceGrant.device_code` (#1656), and `AbstractDeviceGrant.scope` changed from
