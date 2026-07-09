@@ -89,7 +89,15 @@ INSTALLED_APPS = (
     "tests",
 )
 
-PASSWORD_HASHERS = django.conf.settings.PASSWORD_HASHERS + ["tests.custom_hasher.MyPBKDF2PasswordHasher"]
+# Use a fast (insecure) hasher by default so the ~260 user/secret hashes the suite
+# performs don't pay the full PBKDF2 cost on every run. The stock hashers are kept
+# registered (just not first), and MyPBKDF2PasswordHasher must stay in the list because
+# test_models.py exercises CLIENT_SECRET_HASHER="fast_pbkdf2".
+PASSWORD_HASHERS = (
+    ["django.contrib.auth.hashers.MD5PasswordHasher"]
+    + list(django.conf.settings.PASSWORD_HASHERS)
+    + ["tests.custom_hasher.MyPBKDF2PasswordHasher"]
+)
 
 LOGGING = {
     "version": 1,

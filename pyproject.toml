@@ -102,10 +102,18 @@ show_missing = true
 [tool.pytest.ini_options]
 django_find_project = false
 addopts = [
-    "--cov=oauth2_provider",
-    "--cov-report=",
-    "--cov-append",
-    "-s",
+    # Run the suite in parallel across all available cores. pytest-xdist is a
+    # declared test dependency; pytest-cov combines per-worker coverage data at the
+    # end, so coverage (enabled only on the designated cell via PYTEST_ADDOPTS in
+    # tox) still works under xdist.
+    #
+    # `--dist loadfile` keeps every test in a given file on the same worker and runs
+    # them in collection order. Several test modules mutate process-global state
+    # (e.g. swapping OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL via override_settings), so the
+    # suite relies on within-file ordering; loadfile preserves that while still
+    # parallelizing across files.
+    "-n", "auto",
+    "--dist", "loadfile",
     # The black-box end-to-end / compliance suite boots a live server and is run
     # separately via `tox -e e2e` (which clears addopts). Keep it out of the
     # in-process unit-test collection.
