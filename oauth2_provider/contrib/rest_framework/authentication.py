@@ -4,7 +4,7 @@ from django.core.exceptions import SuspiciousOperation
 from rest_framework.authentication import BaseAuthentication
 
 from ...oauth2_backends import get_oauthlib_core
-from ...settings import oauth2_settings
+from ...www_authenticate import build_bearer_challenge
 
 
 class OAuth2Authentication(BaseAuthentication):
@@ -68,8 +68,8 @@ class OAuth2ProtectedResourceAuthentication(OAuth2Authentication):
     """
 
     def authenticate_header(self, request):
-        header = super().authenticate_header(request)
-        metadata_url = oauth2_settings.oauth2_resource_metadata_url(request)
-        if metadata_url:
-            header = '{header},resource_metadata="{url}"'.format(header=header, url=metadata_url)
-        return header
+        # Delegate to the shared builder so every Bearer challenge is rendered
+        # consistently and with proper quoted-string escaping. It appends
+        # ``resource_metadata`` only when the metadata route is registered.
+        oauth2_error = getattr(request, "oauth2_error", {})
+        return build_bearer_challenge(request, oauth2_error=oauth2_error, realm=self.www_authenticate_realm)

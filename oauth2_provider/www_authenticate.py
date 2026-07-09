@@ -12,6 +12,17 @@ from collections import OrderedDict
 from .settings import oauth2_settings
 
 
+def _quote(value):
+    """Escape a value for inclusion in an RFC 7230 ``quoted-string``.
+
+    Backslashes and double quotes are escaped with a backslash, and CR/LF are
+    stripped, so an ``error_description`` (or any other value) cannot break out of
+    the quoted string or inject additional header content.
+    """
+    value = str(value).replace("\r", "").replace("\n", "")
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def build_bearer_challenge(request, oauth2_error=None, realm=None):
     """Build a ``WWW-Authenticate: Bearer`` challenge value.
 
@@ -20,8 +31,10 @@ def build_bearer_challenge(request, oauth2_error=None, realm=None):
     the RFC 9728 metadata route is registered, a ``resource_metadata`` parameter
     pointing at the protected-resource metadata document is appended.
 
-    Parameters are rendered as RFC 6750 comma-separated ``key="value"`` auth-params;
-    a bare ``Bearer`` is returned when there is nothing to advertise.
+    Parameters are rendered as comma-separated ``key="value"`` auth-params (no
+    space after the comma, matching the DRF header builder), with values escaped
+    for the quoted-string form; a bare ``Bearer`` is returned when there is nothing
+    to advertise.
     """
     attributes = OrderedDict()
     if realm:
@@ -33,4 +46,4 @@ def build_bearer_challenge(request, oauth2_error=None, realm=None):
         attributes["resource_metadata"] = metadata_url
     if not attributes:
         return "Bearer"
-    return "Bearer " + ", ".join('{}="{}"'.format(key, value) for key, value in attributes.items())
+    return "Bearer " + ",".join('{}="{}"'.format(key, _quote(value)) for key, value in attributes.items())

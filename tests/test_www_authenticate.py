@@ -27,3 +27,15 @@ class TestBuildBearerChallenge(TestCase):
         assert 'error="invalid_token"' in challenge
         assert 'error_description="nope"' in challenge
         assert 'resource_metadata="http://testserver/o/.well-known/oauth-protected-resource"' in challenge
+        # auth-params are comma-separated with no following space (matches the DRF builder).
+        assert ", " not in challenge
+
+    @override_settings(ROOT_URLCONF="tests.urls_oidc_discovery_only")
+    def test_quoted_string_values_are_escaped(self):
+        """Quotes/backslashes are escaped and CR/LF stripped so a value cannot break
+        out of the quoted string or inject header content."""
+        challenge = build_bearer_challenge(
+            self.request,
+            oauth2_error={"error_description": 'bad " \\ value\r\ninjected: x'},
+        )
+        assert challenge == r'Bearer error_description="bad \" \\ valueinjected: x"'
