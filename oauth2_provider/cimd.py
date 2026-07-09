@@ -158,16 +158,20 @@ def _ip_is_public(ip_str):
     the 169.254.169.254 cloud-metadata address), CGNAT, multicast, reserved and
     unspecified ranges. But several IPv6 forms embed an IPv4 address that
     ``is_global`` can misjudge — IPv4-mapped ``::ffff:0:0/96`` (only fixed in
-    newer CPython patch levels), 6to4, and the NAT64 well-known prefix
-    ``64:ff9b::/96`` — so decode the embedded IPv4 and judge that instead.
-    Otherwise a crafted AAAA record could smuggle an internal IPv4 (e.g. the
-    cloud-metadata address) past the allowlist.
+    newer CPython patch levels), 6to4, Teredo ``2001::/32``, and the NAT64
+    well-known prefix ``64:ff9b::/96`` — so decode the embedded IPv4 and judge
+    that instead. Otherwise a crafted AAAA record could smuggle an internal
+    IPv4 (e.g. the cloud-metadata address) past the allowlist.
     """
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return False
     if isinstance(ip, ipaddress.IPv6Address):
+        teredo = ip.teredo
+        if teredo is not None:
+            # (server, de-obfuscated client) IPv4 pair; both must be public.
+            return all(part.is_global for part in teredo)
         embedded = ip.ipv4_mapped or ip.sixtofour
         if embedded is None and ip in NAT64_PREFIX:
             # The low 32 bits of a 64:ff9b::/96 address are the embedded IPv4.

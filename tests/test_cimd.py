@@ -184,6 +184,12 @@ def test_validate_client_id_url_accepted():
         ("::ffff:169.254.169.254", False),  # IPv4-mapped cloud metadata
         ("::ffff:10.0.0.1", False),  # IPv4-mapped private
         ("64:ff9b::5db8:d822", True),  # NAT64 wrapping a public 93.184.216.34
+        # Teredo (2001::/32) embeds a server IPv4 and a bit-inverted client
+        # IPv4; both must be public. 3f57:fefe de-obfuscates to 192.168.1.1,
+        # a247:27dd to 93.184.216.34.
+        ("2001:0:4136:e378::3f57:fefe", False),  # private client behind public server
+        ("2001:0:a00:1::a247:27dd", False),  # private server 10.0.0.1
+        ("2001:0:4136:e378::a247:27dd", True),  # public server and client
     ],
 )
 def test_ip_is_public(ip, public):
