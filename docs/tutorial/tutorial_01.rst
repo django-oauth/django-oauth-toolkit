@@ -7,8 +7,8 @@ You want to make your own :term:`Authorization Server` to issue access tokens to
 
 Start Your App
 --------------
-During this tutorial you will make an XHR POST from a Heroku deployed app to your localhost instance.
-Since the domain that will originate the request (the app on Heroku) is different from the destination domain (your local instance),
+During this tutorial you will make an XHR POST from a web app hosted on a different domain to your localhost instance.
+Since the domain that originates the request is different from the destination domain (your local instance),
 you will need to install the `django-cors-headers <https://github.com/adamchainz/django-cors-headers>`_ app.
 These "cross-domain" requests are by default forbidden by web browsers unless you use `CORS <http://en.wikipedia.org/wiki/Cross-origin_resource_sharing>`_.
 

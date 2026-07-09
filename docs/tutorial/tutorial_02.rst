@@ -82,11 +82,13 @@ Time to make requests to your API.
 
 For a quick test, try accessing your app at the url ``/api/hello`` with your browser
 and verify that it responds with a ``403`` (in fact no ``HTTP_AUTHORIZATION`` header was provided).
-You can test your API with anything that can perform HTTP requests, but for this tutorial you can use the online
-`consumer client <http://django-oauth-toolkit.herokuapp.com/consumer/client>`_.
-Just fill the form with the URL of the API endpoint (i.e. http://localhost:8000/api/hello if you're on localhost) and
-the access token coming from the :doc:`part 1 of the tutorial <tutorial_01>`. Going in the Django admin and get the
-token from there is not considered cheating, so it's an option.
+You can test your API with anything that can perform HTTP requests, such as ``curl`` or a GUI client like Postman.
+Send a request to the API endpoint (i.e. http://localhost:8000/api/hello if you're on localhost) with the access token
+coming from the :doc:`part 1 of the tutorial <tutorial_01>` in the ``Authorization`` header, for example::
+
+    curl -H "Authorization: Bearer <your_access_token>" http://localhost:8000/api/hello
+
+Going into the Django admin and getting the token from there is not considered cheating, so it's an option.
 
 Try performing a request and check that your :term:`Resource Server` aka :term:`Authorization Server` correctly responds with
 an HTTP 200.
