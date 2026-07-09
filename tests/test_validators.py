@@ -179,6 +179,10 @@ class TestAllowedURIValidator(TestCase):
             "https://*-partial.example.com",
             "https://*.partial.example.com",
             "https://*-partial.valid.example.com",
+            # Netlify deploy-preview hostnames use a double dash, e.g.
+            # deploy-preview-42--sitename.netlify.app, so the corresponding
+            # wildcard has two leading dashes after the "*". See issue #1619.
+            "https://*--sitename.netlify.app",
         ]
         for uri in good_uris:
             # Check ValidationError not thrown

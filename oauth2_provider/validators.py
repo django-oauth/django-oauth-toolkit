@@ -114,9 +114,10 @@ class AllowedURIValidator(URIValidator):
                 netloc = netloc[1:]
 
             # domains cannot start with a hyphen, but can have them in the middle, so we strip hyphens
-            # after the wildcard so the final domain is valid and will succeed in URIVAlidator
-            if netloc.startswith("-"):
-                netloc = netloc[1:]
+            # after the wildcard so the final domain is valid and will succeed in URIVAlidator.
+            # Netlify deploy previews use a double dash (e.g. *--sitename.netlify.app), so strip all
+            # leading hyphens rather than a single one.
+            netloc = netloc.lstrip("-")
 
         # we stripped the wildcard from the netloc and path if they were allowed and present since they would
         # fail validation we'll reassamble the URI to pass to the URIValidator
