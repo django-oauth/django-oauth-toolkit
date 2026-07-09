@@ -58,4 +58,5 @@ def build_bearer_challenge(request, oauth2_error=None, realm=None, resource_meta
         attributes["resource_metadata"] = resource_metadata_url
     if not attributes:
         return "Bearer"
-    return "Bearer " + ",".join('{}="{}"'.format(key, _quote(value)) for key, value in attributes.items())
+    params = ",".join('{}="{}"'.format(key, _quote(value)) for key, value in attributes.items())
+    return "Bearer " + params

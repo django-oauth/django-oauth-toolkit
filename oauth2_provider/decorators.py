@@ -11,7 +11,7 @@ from .settings import oauth2_settings
 from .www_authenticate import build_bearer_challenge
 
 
-def _unauthenticated_response(request, oauthlib_request, advertise_metadata, resource_metadata_url=None):
+def _denied_response(request, oauthlib_request, advertise_metadata, resource_metadata_url=None):
     """Failure response for the protected-resource decorators.
 
     Returns a bare ``403`` by default; when ``advertise_metadata`` is set, returns
@@ -64,7 +64,7 @@ def protected_resource(
             if valid:
                 request.resource_owner = oauthlib_req.user
                 return view_func(request, *args, **kwargs)
-            return _unauthenticated_response(request, oauthlib_req, advertise_metadata, resource_metadata_url)
+            return _denied_response(request, oauthlib_req, advertise_metadata, resource_metadata_url)
 
         return _validate
 
@@ -141,7 +141,7 @@ def rw_protected_resource(
             if valid:
                 request.resource_owner = oauthlib_req.user
                 return view_func(request, *args, **kwargs)
-            return _unauthenticated_response(request, oauthlib_req, advertise_metadata, resource_metadata_url)
+            return _denied_response(request, oauthlib_req, advertise_metadata, resource_metadata_url)
 
         return _validate
 
