@@ -106,13 +106,13 @@ class AbstractApplication(models.Model):
                                   for manually created Applications, ``dcr`` for
                                   those registered via Dynamic Client
                                   Registration (RFC 7591), ``cimd`` for Client
-                                  Initiated Metadata Discovery
+                                  ID Metadata Document
     """
 
     class RegistrationSource(models.TextChoices):
         MANUAL = "manual", _("Manual")
         DCR = "dcr", _("Dynamic Client Registration")
-        CIMD = "cimd", _("Client Initiated Metadata Discovery")
+        CIMD = "cimd", _("Client ID Metadata Document")
         # FEDERATION (OpenID Federation) reserved for future use
 
     CLIENT_CONFIDENTIAL = "confidential"

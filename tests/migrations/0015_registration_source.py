@@ -19,7 +19,7 @@ REGISTRATION_SOURCE_FIELD = models.CharField(
     choices=[
         ("manual", "Manual"),
         ("dcr", "Dynamic Client Registration"),
-        ("cimd", "Client Initiated Metadata Discovery"),
+        ("cimd", "Client ID Metadata Document"),
     ],
     default="manual",
     help_text="How this application was registered (manual, DCR per RFC 7591, or CIMD)",
