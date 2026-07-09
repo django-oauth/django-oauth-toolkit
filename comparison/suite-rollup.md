@@ -27,7 +27,7 @@ Column keys: **DOT** · **oalib** = oauthlib · **Alib** = Authlib · **Autk** =
 | **OIDC** (Core+Discovery) | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Native apps** (RFC 8252) | ◑ | ◑ | ◑ | ◑ | ◑ | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **FAPI 2.0** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ◑ | ❌ | 🧩 | ❌ | ✅ |
-| **MCP authorization** | ❌ | ❌ | ❌ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ |
+| **MCP authorization** | ◑ | ❌ | ❌ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ |
 | **RS** (resource-server role) | ✅ | ◑ | ✅ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 | **RP** (client role) | N/A | N/A | ◑ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 
@@ -60,14 +60,17 @@ N/A — see [Table 4](./rp-comparison.md).*
 - **MCP authorization** — OAuth 2.1 + Protected Resource Metadata (9728) + resource
   indicators (8707) + AS metadata, DCR recommended. **Nascent industry-wide**: 9728 is
   barely implemented anywhere, so the best anyone scores today is ◑ (has resource
-  indicators and/or experimental MCP resource-server support). **DOT is ❌** — it implements
-  neither 9728 nor 8707.
+  indicators and/or experimental MCP resource-server support). **DOT is now ◑** — it recently
+  shipped both 9728 (protected-resource metadata) and 8707 (resource indicators) alongside its
+  existing 8414 metadata, PKCE, and DCR, so it can act as an MCP resource server; only a named
+  OAuth 2.1 posture is still missing.
 
 ## The one-line story for DOT
 
 DOT is **strong on OAuth 2.0 and OIDC** (the two suites most projects actually need), **near
 on OAuth 2.1** (defaults already aligned — closing it is mostly a config-profile question),
-and **absent on FAPI 2.0 and MCP** (which need the modern-security specs it hasn't
-implemented yet). That's a coherent, defensible position for a general-purpose Django
-provider — and it makes the roadmap obvious: an OAuth-2.1 mode is low-hanging; FAPI/MCP are
-the larger investments.
+**partway on MCP** (it just added the 9728 + 8707 resource-server pieces; a named OAuth 2.1
+posture is the remaining gap), and **absent on FAPI 2.0** (which needs sender-constrained
+tokens and PAR). That's a coherent, defensible position for a general-purpose Django
+provider — and it makes the roadmap obvious: an OAuth-2.1 mode is low-hanging; FAPI is the
+larger investment.

@@ -61,8 +61,9 @@ OAuth 2.0 and extensions
        introspects against a remote AS.
    * - `RFC 8252 <https://www.rfc-editor.org/rfc/rfc8252>`_ — OAuth 2.0 for native apps
      - Partial
-     - Loopback and custom-scheme redirect handling via
-       ``ALLOWED_REDIRECT_URI_SCHEMES``; no separate endpoint.
+     - Custom-scheme redirect handling via ``ALLOWED_REDIRECT_URI_SCHEMES``, plus the
+       RFC 8252 §7.3 any-port loopback exemption (extendable to ``http://localhost`` with
+       ``ALLOW_LOCALHOST_LOOPBACK``); no separate endpoint.
    * - `RFC 8414 <https://www.rfc-editor.org/rfc/rfc8414>`_ — Authorization server metadata
      - Supported
      - ``/.well-known/oauth-authorization-server`` (see
@@ -105,14 +106,18 @@ OAuth 2.0 and extensions
      - Not supported
      -
    * - `RFC 8707 <https://www.rfc-editor.org/rfc/rfc8707>`_ — Resource indicators
-     - Not supported
-     -
+     - Supported
+     - Clients may pass ``resource``; the binding is stored on the grant/token and the
+       introspection response returns the ``aud`` claim.
    * - `RFC 8705 <https://www.rfc-editor.org/rfc/rfc8705>`_ — mTLS client authentication
      - Not supported
      -
    * - `RFC 9728 <https://www.rfc-editor.org/rfc/rfc9728>`_ — Protected resource metadata
-     - Not supported
-     -
+     - Opt-in
+     - ``/.well-known/oauth-protected-resource`` plus ``ProtectedResourceMetadataMixin`` /
+       ``protected_resource_metadata`` and the ``OAuth2ProtectedResourceAuthentication`` DRF
+       authenticator, which advertises it via the ``resource_metadata`` ``WWW-Authenticate``
+       challenge parameter.
    * - OAuth 1.0 / 1.0a
      - Not supported
      - DOT is an OAuth 2.0 toolkit; only ``oauthlib.oauth2`` / ``oauthlib.openid``
@@ -172,13 +177,14 @@ common profiles:
   compatibility rather than being disabled.
 * **FAPI 2.0** — Not supported. Requires sender-constrained tokens (mTLS or DPoP),
   PAR, and ``at+jwt``, none of which are implemented.
-* **MCP authorization** — Not supported. Requires protected-resource metadata
-  (RFC 9728) and resource indicators (RFC 8707), which are not implemented.
+* **MCP authorization** — Partial. The resource-server building blocks are now present —
+  protected-resource metadata (RFC 9728), resource indicators (RFC 8707), authorization-server
+  metadata (RFC 8414), PKCE, and Dynamic Client Registration — so DOT can act as an MCP
+  resource server; a named OAuth 2.1 posture is the main remaining gap.
 
 Gaps that block the advanced profiles, in rough priority order: ``private_key_jwt``
-(RFC 7523), JWT access tokens (RFC 9068), PAR (RFC 9126), DPoP (RFC 9449), resource
-indicators (RFC 8707), protected-resource metadata (RFC 9728), and OIDC back-channel
-logout.
+(RFC 7523), JWT access tokens (RFC 9068), PAR (RFC 9126), DPoP (RFC 9449), and OIDC
+back-channel logout.
 
 Verifying at runtime
 --------------------

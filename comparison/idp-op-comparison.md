@@ -46,8 +46,8 @@ or paid tier · ❌ None · ❓ Unverified
 | RFC 9396 — RAR | ❌ | ❌ | ❌ | ❌ |
 | RFC 9449 — DPoP | ❌ | ❌ | ❌ | ❌ |
 | RFC 8705 — mTLS client auth | ❌ | ❌ | ❌ | ❌ |
-| RFC 8707 — Resource indicators | ❌ | ❌ | ❌ | ❌ |
-| RFC 9728 — Protected resource metadata | ❌ | ❌ | ❌ | ❌ |
+| RFC 8707 — Resource indicators | ✅ | ❌ | ❌ | ❌ |
+| RFC 9728 — Protected resource metadata | ✅ | ❌ | ❌ | ❌ |
 | RFC 9700 — Security BCP | ◑ | ◑ | ◑ | ◑ |
 | OIDC Core | ⚙ | ◑ | ✅ | ✅ |
 | OIDC Discovery | ⚙ | ❌ | ✅ | ✅ |
@@ -90,8 +90,8 @@ a framework you assemble, not a Django-native app. None in this tier is OpenID-c
 | RFC 9396 — RAR | ❌ | ❌ | ❌ | ✅ | ❓ | ✅ |
 | RFC 9449 — DPoP | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ |
 | RFC 8705 — mTLS client auth | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ |
-| RFC 8707 — Resource indicators | ❌ | ◑ | ❌ | ❓ | ❌ | ❌ |
-| RFC 9728 — Protected resource metadata | ❌ | ◑ | ❌ | ❓ | ❓ | ❓ |
+| RFC 8707 — Resource indicators | ✅ | ◑ | ❌ | ❓ | ❌ | ❌ |
+| RFC 9728 — Protected resource metadata | ✅ | ◑ | ❌ | ❓ | ❓ | ❓ |
 | RFC 9700 — Security BCP | ◑ | ◑ | ◑ | ◑ | ◑ | ❓ |
 | OIDC Core | ⚙ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | OIDC Discovery | ⚙ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -137,8 +137,8 @@ back-channel logout.**
 | RFC 9396 — RAR | ❌ | ❓ | 🧩 | ❌ | ✅ |
 | RFC 9449 — DPoP | ❌ | ✅ | ✅ | ❌ | ✅ |
 | RFC 8705 — mTLS client auth | ❌ | ❌ | 🧩 | ◑ | ✅ |
-| RFC 8707 — Resource indicators | ❌ | ❌ | ◑ | ◑ | ✅ |
-| RFC 9728 — Protected resource metadata | ❌ | ❓ | ◑ | ❓ | ❓ |
+| RFC 8707 — Resource indicators | ✅ | ❌ | ◑ | ◑ | ✅ |
+| RFC 9728 — Protected resource metadata | ✅ | ❓ | ◑ | ❓ | ❓ |
 | RFC 9700 — Security BCP | ◑ | ◑ | ◑ | ◑ | ◑ |
 | OIDC Core | ⚙ | ✅ | ✅ | ✅ | ✅ |
 | OIDC Discovery | ⚙ | ✅ | ✅ | ✅ | ✅ |
@@ -166,14 +166,17 @@ standard revocation or introspection endpoint, no DCR, and several proprietary s
 
 DOT is a **solid, secure OAuth 2.0 core + opt-in OIDC** — competitive with the leaner
 open-source servers on the classic feature set (all five grants, PKCE-by-default,
-revocation, introspection, device flow, DCR, AS metadata). Its consistent deltas versus the
-broader field, in rough priority order:
+revocation, introspection, device flow, DCR, AS metadata). It has recently added
+**resource indicators (RFC 8707)** and **protected-resource metadata (RFC 9728)** — the two
+distinctive MCP resource-server pieces — which materially closes its MCP gap (see
+[Table 3](./suite-rollup.md)). Its remaining deltas versus the broader field, in rough
+priority order:
 
 1. **OIDC certification** — every dedicated server/SaaS here is OpenID-certified; DOT is not.
 2. **Modern security specs** — DPoP (9449), mTLS (8705), private_key_jwt (7523), at+jwt (9068).
-3. **Advanced authorization** — PAR (9126), RAR (9396), resource indicators (8707).
+3. **Advanced authorization** — PAR (9126) and RAR (9396) (resource indicators 8707 now landed).
 4. **Logout completeness** — back-channel and front-channel logout, session management.
-5. **Profiles** — FAPI and MCP, which the above gaps block (see [Table 3](./suite-rollup.md)).
+5. **OAuth 2.1 / FAPI** — no named 2.1 mode; FAPI still blocked by the modern-security gaps.
 
 These are the natural roadmap candidates if DOT wants to close the gap with the certified
 open-source servers.

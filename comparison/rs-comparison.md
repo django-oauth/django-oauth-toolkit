@@ -12,9 +12,13 @@ middleware and gateways) and its own capability rows.
 > **Django OAuth Toolkit is a real Resource Server** (unlike the RP role, where it's N/A).
 > DOT protects Django/DRF APIs out of the box: it accepts bearer tokens, enforces scopes
 > (`TokenHasScope`), and can validate tokens against a remote authorization server by
-> introspection (`RESOURCE_SERVER_INTROSPECTION_URL`). Its gaps mirror its provider side —
-> no local JWT/`at+jwt` validation (DOT tokens are opaque), no DPoP/mTLS sender-constraining,
-> no protected-resource metadata. See [`docs/resource_server.rst`](../docs/resource_server.rst).
+> introspection (`RESOURCE_SERVER_INTROSPECTION_URL`). It **now publishes protected-resource
+> metadata (RFC 9728)** — the `/.well-known/oauth-protected-resource` endpoint plus
+> `ProtectedResourceMetadataMixin` / `OAuth2ProtectedResourceAuthentication` that advertise it
+> in the `resource_metadata` `WWW-Authenticate` challenge — and understands resource-bound
+> tokens (RFC 8707). Its remaining gaps mirror its provider side: no local JWT/`at+jwt`
+> validation (DOT tokens are opaque) and no DPoP/mTLS sender-constraining. See
+> [`docs/resource_server.rst`](../docs/resource_server.rst).
 
 ## Legend
 
@@ -39,11 +43,11 @@ benchmark. Other columns are sourced from official docs/source — see
 | Token introspection client (RFC 7662) | ✅ | ✅ | ❌ | ❌ |
 | Scope enforcement | ✅ | ✅ | ◑ | ◑ |
 | Audience validation | ◑ | ✅ | ✅ | ❌ |
-| Resource indicators (RFC 8707) | ❌ | ❌ | ❌ | ❌ |
+| Resource indicators (RFC 8707) | ◑ | ❌ | ❌ | ❌ |
 | DPoP-bound tokens (RFC 9449) | ❌ | ❌ | ❌ | ❌ |
 | mTLS certificate-bound tokens (RFC 8705) | ❌ | ❌ | ❌ | ❌ |
-| Protected resource metadata (RFC 9728) | ❌ | ❌ | ❌ | ❌ |
-| WWW-Authenticate 401 challenge (RFC 6750) | ◑ | ✅ | ◑ | ✅ |
+| Protected resource metadata (RFC 9728) | ✅ | ❌ | ❌ | ❌ |
+| WWW-Authenticate 401 challenge (RFC 6750) | ✅ | ✅ | ◑ | ✅ |
 | AS metadata / discovery auto-config (RFC 8414) | ❌ | ◑ | ❌ | ❌ |
 
 *Read:* **Authlib** is the most complete Python RS — the only one here covering both JWT
@@ -68,11 +72,11 @@ best JWKS caching, but everything else is hand-wired.
 | Token introspection client (RFC 7662) | ✅ | ✅ | ❌ | ❌ |
 | Scope enforcement | ✅ | ✅ | ◑ | ✅ |
 | Audience validation | ◑ | ✅ | ✅ | ✅ |
-| Resource indicators (RFC 8707) | ❌ | ❌ | ❌ | ❌ |
+| Resource indicators (RFC 8707) | ◑ | ❌ | ❌ | ❌ |
 | DPoP-bound tokens (RFC 9449) | ❌ | ✅ | 🧩 | ✅ |
 | mTLS certificate-bound tokens (RFC 8705) | ❌ | ✅ | 🧩 | ❌ |
-| Protected resource metadata (RFC 9728) | ❌ | ◑ | 🧩 | ❌ |
-| WWW-Authenticate 401 challenge (RFC 6750) | ◑ | ✅ | ✅ | ◑ |
+| Protected resource metadata (RFC 9728) | ✅ | ◑ | 🧩 | ❌ |
+| WWW-Authenticate 401 challenge (RFC 6750) | ✅ | ✅ | ✅ | ◑ |
 | AS metadata / discovery auto-config (RFC 8414) | ❌ | ✅ | ✅ | ✅ |
 
 *Read:* **Spring Security Resource Server** is the standard-bearer — native DPoP (6.5+),
@@ -93,11 +97,11 @@ JWT but pushes introspection, DPoP, mTLS, and PRM to add-ons.
 | Token introspection client (RFC 7662) | ✅ | ❌ | ✅ | 🧩 | ◑ | 🧩 |
 | Scope enforcement | ✅ | ◑ | ✅ | 🧩 | ◑ | ◑ |
 | Audience validation | ◑ | ◑ | ✅ | 🧩 | ✅ | ◑ |
-| Resource indicators (RFC 8707) | ❌ | ❌ | ❌ | 🧩 | ❌ | ❌ |
+| Resource indicators (RFC 8707) | ◑ | ❌ | ❌ | 🧩 | ❌ | ❌ |
 | DPoP-bound tokens (RFC 9449) | ❌ | ❌ | ❌ | 🧩 | ❌ | ❌ |
 | mTLS certificate-bound tokens (RFC 8705) | ❌ | ❌ | ❌ | 🧩 | ◑ | ❌ |
-| Protected resource metadata (RFC 9728) | ❌ | ❌ | ❌ | 🧩 | ❌ | ❌ |
-| WWW-Authenticate 401 challenge (RFC 6750) | ◑ | ❌ | ◑ | 🧩 | ◑ | ◑ |
+| Protected resource metadata (RFC 9728) | ✅ | ❌ | ❌ | 🧩 | ❌ | ❌ |
+| WWW-Authenticate 401 challenge (RFC 6750) | ✅ | ❌ | ◑ | 🧩 | ◑ | ◑ |
 | AS metadata / discovery auto-config (RFC 8414) | ❌ | ✅ | ◑ | 🧩 | ❌ | 🧩 |
 
 *Read:* **Kong** (OIDC + AI-MCP-OAuth2 plugins) is the most complete edge enforcer — the only
@@ -113,9 +117,10 @@ OpenResty/Plus modules.
 ## Where DOT stands as a Resource Server
 
 DOT is a **capable opaque-token / introspection RS with the best Django-native ergonomics**,
-and it's the natural choice when DOT is *also* your authorization server. Its RS gaps are the
-same modern-security specs it lacks on the provider side: **local JWT / `at+jwt` validation,
-DPoP and mTLS sender-constraining, and protected-resource metadata (RFC 9728)** — the last of
-which is what an MCP resource server must publish. If you need those today, Authlib (Python),
-Spring Security (Java), or Kong (edge) lead; DOT covers the common bearer-plus-scopes API case
+and it's the natural choice when DOT is *also* your authorization server. With
+**protected-resource metadata (RFC 9728)** now shipped — exactly what an MCP resource server
+must publish — DOT can front an MCP-style protected API. Its remaining RS gaps are the
+modern-security specs it also lacks on the provider side: **local JWT / `at+jwt` validation
+and DPoP / mTLS sender-constraining**. If you need those today, Authlib (Python), Spring
+Security (Java), or Kong (edge) lead; DOT now covers the bearer-plus-scopes-plus-PRM API case
 cleanly.
