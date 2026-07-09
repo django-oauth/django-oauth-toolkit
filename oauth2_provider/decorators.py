@@ -14,9 +14,10 @@ from .www_authenticate import build_bearer_challenge, challenge_status
 def _denied_response(request, oauthlib_request, advertise_metadata, resource_metadata_url=None):
     """Failure response for the protected-resource decorators.
 
-    Returns a bare ``403`` by default; when ``advertise_metadata`` is set, returns
-    an RFC 6750 ``401`` with a ``WWW-Authenticate: Bearer`` challenge carrying the
-    RFC 9728 ``resource_metadata`` parameter. ``resource_metadata_url`` overrides the
+    Returns a bare ``403`` by default; when ``advertise_metadata`` is set, returns a
+    ``WWW-Authenticate: Bearer`` challenge carrying the RFC 9728 ``resource_metadata``
+    parameter, with an RFC 6750 status of ``401`` for a missing/invalid token or
+    ``403`` for ``insufficient_scope``. ``resource_metadata_url`` overrides the
     advertised document (default: this server's root metadata route).
     """
     if not advertise_metadata:
@@ -48,10 +49,11 @@ def protected_resource(
             pass
 
     Pass ``advertise_metadata=True`` (or use :func:`protected_resource_metadata`) to
-    return an RFC 6750 ``401`` with an RFC 9728 ``resource_metadata``
-    ``WWW-Authenticate`` challenge on failure instead of a bare ``403``.
-    ``resource_metadata_url`` advertises a specific metadata document (e.g. the RFC
-    9728 path-component form) instead of the server's root route.
+    return an RFC 9728 ``resource_metadata`` ``WWW-Authenticate`` challenge on failure
+    instead of a bare ``403`` — as an RFC 6750 ``401`` (missing/invalid token) or
+    ``403`` (``insufficient_scope``). ``resource_metadata_url`` advertises a specific
+    metadata document (e.g. the RFC 9728 path-component form) instead of the server's
+    root route.
     """
     _scopes = scopes or []
 
@@ -107,8 +109,9 @@ def rw_protected_resource(
             pass
 
     Pass ``advertise_metadata=True`` (or use :func:`rw_protected_resource_metadata`) to
-    return an RFC 6750 ``401`` with an RFC 9728 ``resource_metadata``
-    ``WWW-Authenticate`` challenge on failure instead of a bare ``403``.
+    return an RFC 9728 ``resource_metadata`` ``WWW-Authenticate`` challenge on failure
+    instead of a bare ``403`` — as an RFC 6750 ``401`` (missing/invalid token) or
+    ``403`` (``insufficient_scope``).
     """
     _scopes = scopes or []
 

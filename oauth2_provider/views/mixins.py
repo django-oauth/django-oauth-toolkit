@@ -330,11 +330,12 @@ class ProtectedResourceMetadataMixin(OAuthLibMixin):
 
     Mix this in *before* a protected-resource view/mixin
     (:class:`ProtectedResourceMixin`, :class:`ClientProtectedResourceMixin`, …) to
-    turn the default bare ``403 Forbidden`` denial into an RFC 6750 ``401
-    Unauthorized`` carrying a ``WWW-Authenticate: Bearer`` challenge with the RFC
-    9728 ``resource_metadata`` parameter pointing at
-    ``/.well-known/oauth-protected-resource``. Opting in explicitly (rather than
-    via a global flag) keeps the default views' behaviour unchanged.
+    replace the default bare ``403 Forbidden`` denial with a response carrying a
+    ``WWW-Authenticate: Bearer`` challenge and the RFC 9728 ``resource_metadata``
+    parameter pointing at ``/.well-known/oauth-protected-resource``. Per RFC 6750
+    the status is ``401 Unauthorized`` for a missing/invalid token and ``403
+    Forbidden`` for ``insufficient_scope``. Opting in explicitly (rather than via a
+    global flag) keeps the default views' behaviour unchanged.
 
     It subclasses :class:`OAuthLibMixin` so that its ``unauthenticated_response``
     is an unambiguous override of the base hook (rather than a value from an

@@ -76,10 +76,11 @@ Advertising metadata in ``WWW-Authenticate`` challenges
 
 RFC 9728 §5.1 lets a protected resource point clients at its metadata document by
 adding a ``resource_metadata`` parameter to the ``WWW-Authenticate: Bearer`` challenge
-it returns on a ``401 Unauthorized``. This behaviour is **opt-in** so the toolkit's
-existing resource-protection views, decorators and authenticator keep their current
-behaviour unchanged. Opt in explicitly per resource by using the dedicated RFC 9728
-constructs:
+it returns on an authentication failure (per RFC 6750, a ``401 Unauthorized`` for a
+missing/invalid token or a ``403 Forbidden`` for ``insufficient_scope``). This
+behaviour is **opt-in** so the toolkit's existing resource-protection views,
+decorators and authenticator keep their current behaviour unchanged. Opt in
+explicitly per resource by using the dedicated RFC 9728 constructs:
 
 * **Class-based views / mixin** —
   :class:`~oauth2_provider.views.mixins.ProtectedResourceMetadataMixin` and the
@@ -95,9 +96,10 @@ constructs:
   ``oauth2_provider.contrib.rest_framework``), a subclass of ``OAuth2Authentication``.
   List it in a view's ``authentication_classes``.
 
-Each of these returns a ``401`` whose ``WWW-Authenticate`` header carries a
-``resource_metadata`` parameter pointing at the metadata document. The parameter is
-omitted automatically when the metadata route cannot be resolved.
+Each of these returns a ``WWW-Authenticate`` header carrying a ``resource_metadata``
+parameter pointing at the metadata document (with the RFC 6750 status described
+above — ``401`` for a missing/invalid token, ``403`` for ``insufficient_scope``). The
+parameter is omitted automatically when the metadata route cannot be resolved.
 
 By default the advertised URL is derived by reversing the toolkit's
 ``oauth-resource-metadata`` route, so it points at wherever ``oauth2_provider.urls``
