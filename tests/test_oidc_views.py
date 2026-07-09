@@ -1402,3 +1402,17 @@ class TestOAuthProtectedResourceMetadataView(TestCase):
         response = self.client.get("/.well-known/oauth-protected-resource/tenant1")
         self.assertEqual(response.status_code, 200)
         assert response.json()["resource"] == "http://testserver/tenant1"
+
+    @override_settings(ROOT_URLCONF="tests.urls_oidc_discovery_only")
+    def test_authorization_servers_omitted_when_route_unregistered(self):
+        """authorization_servers is [] when neither OIDC_ISS_ENDPOINT nor the RFC 8414
+        route can supply an issuer (NoReverseMatch)."""
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = None
+        request = RequestFactory().get("/whatever")
+        assert self.oauth2_settings.oauth2_resource_authorization_servers(request) == []
+
+    @override_settings(ROOT_URLCONF="tests.urls_oidc_discovery_only")
+    def test_resource_metadata_url_none_when_route_unregistered(self):
+        """oauth2_resource_metadata_url is None when the metadata route is not mounted."""
+        request = RequestFactory().get("/whatever")
+        assert self.oauth2_settings.oauth2_resource_metadata_url(request) is None
