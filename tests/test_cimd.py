@@ -799,8 +799,11 @@ def _stored_app(host, *, source=None, expires_delta=timedelta(hours=-1)):
     )
 
 
+# batch_size=1 exercises the batched-transaction loop across prune and survive
+# outcomes; None exercises the default.
+@pytest.mark.parametrize("batch_size", [None, 1])
 @pytest.mark.django_db(databases="__all__")
-def test_clearcimdapplications_prunes_only_dead_expired_cimd_rows(django_user_model, capsys):
+def test_clearcimdapplications_prunes_only_dead_expired_cimd_rows(django_user_model, capsys, batch_size):
     from django.core.management import call_command
 
     from oauth2_provider.models import (
@@ -841,7 +844,7 @@ def test_clearcimdapplications_prunes_only_dead_expired_cimd_rows(django_user_mo
     live_idtoken = _stored_app("live-idtoken.example.com")
     get_id_token_model().objects.create(expires=now + timedelta(hours=1), application=live_idtoken)
 
-    call_command("clearcimdapplications")
+    call_command("clearcimdapplications", **({} if batch_size is None else {"batch_size": batch_size}))
 
     survivors = set(Application.objects.values_list("pk", flat=True))
     assert survivors == {fresh.pk, manual.pk, live_access.pk, live_refresh.pk, live_grant.pk, live_idtoken.pk}

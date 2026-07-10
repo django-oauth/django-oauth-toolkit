@@ -47,6 +47,11 @@ returns — deleting them only reclaims storage. Run it regularly (eg: via cron,
 ``cleartokens``) when CIMD is enabled, since the application store is otherwise attacker-mintable
 (see :ref:`the CIMD security model <cimd-security>`).
 
+Deletion is batched (``--batch-size``, default 1000). Each batch's liveness check and delete run in
+one transaction with the application rows locked, so a token minted concurrently cannot slip in
+between the check and the delete and be cascade-deleted with its application; batching keeps the
+number of rows locked at once bounded.
+
 .. _createapplication:
 
 createapplication
