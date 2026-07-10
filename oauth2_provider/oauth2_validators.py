@@ -350,7 +350,7 @@ class OAuth2Validator(RequestValidator):
         try:
             # cache not hit, loading application from database for client_id %r
             client = Application.objects.get(client_id=client_id)
-            client = cimd.refresh_if_stale(client)
+            client = cimd.refresh_if_stale(client, request=request)
             if not client.is_usable(request):
                 # Failed to load application: Application %r is not usable
                 return None
@@ -361,7 +361,7 @@ class OAuth2Validator(RequestValidator):
             # Not stored yet: the client_id may be a Client ID Metadata Document
             # URL we can fetch and persist on first sight. Returns None when CIMD
             # is disabled or the id is not a resolvable CIMD URL.
-            client = cimd.resolve_cimd_application(client_id)
+            client = cimd.resolve_cimd_application(client_id, request=request)
             if client is not None and client.is_usable(request):
                 request.client = client
                 return request.client

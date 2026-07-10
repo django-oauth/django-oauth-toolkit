@@ -93,9 +93,14 @@ class AllowAllCIMDPermission:
 
     Registration happens on the pre-auth authorize/token path, where no
     authenticated user exists, so unlike DCR the default is open.
+
+    The interface mirrors DCR's request-first ``has_permission``. *request* is
+    the oauthlib request the client_id arrived on (its ``headers`` carry the
+    HTTP headers, for e.g. IP-bound policies), or None when resolution is
+    invoked outside the OAuth flow.
     """
 
-    def has_permission(self, client_id) -> bool:
+    def has_permission(self, request, client_id) -> bool:
         return True
 
 
@@ -107,12 +112,12 @@ class HostAllowlistCIMDPermission:
     An empty allowlist denies every host.
     """
 
-    def has_permission(self, client_id) -> bool:
+    def has_permission(self, request, client_id) -> bool:
         host = urlparse(client_id).hostname
         return bool(host) and validate_host(host, oauth2_settings.CIMD_ALLOWED_HOSTS or [])
 
 
-def _registration_permitted(client_id):
+def _registration_permitted(request, client_id):
     """Run all CIMD_REGISTRATION_PERMISSION_CLASSES; return True if all pass.
 
     Fails closed: an empty setting denies all registration, matching the DCR
@@ -121,7 +126,7 @@ def _registration_permitted(client_id):
     permission_classes = oauth2_settings.CIMD_REGISTRATION_PERMISSION_CLASSES
     if not permission_classes:
         return False
-    return all(cls().has_permission(client_id) for cls in permission_classes)
+    return all(cls().has_permission(request, client_id) for cls in permission_classes)
 
 
 def _validate_client_id_url(client_id):
@@ -449,12 +454,15 @@ def _backoff_cache_key(client_id):
     return BACKOFF_CACHE_PREFIX + digest
 
 
-def resolve_cimd_application(client_id):
+def resolve_cimd_application(client_id, request=None):
     """Resolve a CIMD *client_id* URL to a persisted Application, or None.
 
     Returns None (the caller then treats the client as unknown) when CIMD is
-    disabled, the id is not a CIMD URL, the URL is in failure backoff, the
-    in-flight cap is reached, or the document is missing or invalid.
+    disabled, the id is not a CIMD URL, registration is refused by the
+    permission classes, the URL is in failure backoff, the in-flight cap is
+    reached, or the document is missing or invalid. *request* is the oauthlib
+    request the client_id arrived on; it is forwarded to the permission
+    classes.
     """
     if not oauth2_settings.CIMD_ENABLED or not is_cimd_client_id(client_id):
         return None
@@ -462,7 +470,7 @@ def resolve_cimd_application(client_id):
     # Policy gate, checked before any fetch. A denial is not a fetch failure,
     # so it does not set the backoff: adding a host to the allowlist takes
     # effect on the very next request.
-    if not _registration_permitted(client_id):
+    if not _registration_permitted(request, client_id):
         log.info("CIMD registration refused by permission classes for %r", client_id)
         return None
 
@@ -490,7 +498,7 @@ def resolve_cimd_application(client_id):
             return None
 
 
-def refresh_if_stale(application):
+def refresh_if_stale(application, request=None):
     """Re-fetch a CIMD Application's metadata when its cache has expired.
 
     Returns the refreshed Application, or the original unchanged when it is not
@@ -505,5 +513,5 @@ def refresh_if_stale(application):
         return application
     if timezone.now() <= application.cimd_expires_at:
         return application
-    refreshed = resolve_cimd_application(application.client_id)
+    refreshed = resolve_cimd_application(application.client_id, request=request)
     return refreshed if refreshed is not None else application

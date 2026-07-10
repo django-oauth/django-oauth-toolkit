@@ -400,7 +400,7 @@ def test_get_fetch_semaphore_disabled(oauth2_settings):
 
 
 class _DenyAllPermission:
-    def has_permission(self, client_id):
+    def has_permission(self, request, client_id):
         return False
 
 
@@ -435,12 +435,12 @@ def test_resolve_empty_permission_classes_fail_closed(cimd_enabled):
 )
 def test_host_allowlist_permission(oauth2_settings, allowed_hosts, permitted):
     oauth2_settings.CIMD_ALLOWED_HOSTS = allowed_hosts
-    assert HostAllowlistCIMDPermission().has_permission(CLIENT_URL) is permitted
+    assert HostAllowlistCIMDPermission().has_permission(None, CLIENT_URL) is permitted
 
 
 def test_host_allowlist_permission_rejects_hostless_url(oauth2_settings):
     oauth2_settings.CIMD_ALLOWED_HOSTS = ["*"]
-    assert HostAllowlistCIMDPermission().has_permission("https:///path-only") is False
+    assert HostAllowlistCIMDPermission().has_permission(None, "https:///path-only") is False
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -448,6 +448,26 @@ def test_resolve_with_host_allowlist(cimd_enabled):
     cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (HostAllowlistCIMDPermission,)
     cimd_enabled.CIMD_ALLOWED_HOSTS = ["client.example.com"]
     assert resolve_cimd_application(CLIENT_URL) is not None
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_permission_classes_receive_the_oauthlib_request(cimd_enabled):
+    from oauthlib.common import Request
+
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    seen = []
+
+    class _RecordingPermission:
+        def has_permission(self, request, client_id):
+            seen.append((request, client_id))
+            return True
+
+    cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (_RecordingPermission,)
+    request = Request("https://example.com/authorize")
+    request.client = None
+    assert OAuth2Validator().validate_client_id(CLIENT_URL, request) is True
+    assert seen == [(request, CLIENT_URL)]
 
 
 @pytest.mark.django_db(databases="__all__")
