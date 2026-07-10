@@ -19,6 +19,13 @@ CIMD is disabled by default. Enable it with:
 When enabled, the RFC 8414 metadata document advertises
 ``"client_id_metadata_document_supported": true``.
 
+Native and desktop clients (a primary CIMD audience) usually listen on a loopback redirect whose
+port is assigned at runtime. A metadata document is static, so such a client registers a portless
+loopback redirect URI (e.g. ``http://localhost/callback``) and relies on the RFC 8252 §7.3 any-port
+exemption at authorization time. That exemption covers the ``127.0.0.1`` / ``[::1]`` literals out of
+the box, but the ``localhost`` spelling additionally requires ``ALLOW_LOCALHOST_LOOPBACK``, so
+deployments enabling CIMD for such clients will usually want that setting too.
+
 How it works
 ------------
 
