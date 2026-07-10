@@ -53,9 +53,9 @@ Settings
     Permission classes run before any fetch; each must implement
     ``has_permission(request, client_id) -> bool`` and all must pass, an empty value denies
     everything. ``request`` is the *oauthlib* request the client_id arrived on (not a Django
-    ``HttpRequest``; its ``headers`` carry the HTTP headers, for e.g. IP-bound policies), or ``None``
-    when resolution is invoked outside the OAuth flow. The default allows any URL, because resolution
-    happens on the pre-auth authorize/token path where no authenticated user exists. Configure
+    ``HttpRequest``; its ``headers`` carry the HTTP headers, for e.g. IP-bound policies). The
+    default allows any URL, because resolution happens on the pre-auth authorize/token path where no
+    authenticated user exists. Configure
     :class:`~oauth2_provider.cimd.HostAllowlistCIMDPermission` to restrict registration to known
     hosts.
 

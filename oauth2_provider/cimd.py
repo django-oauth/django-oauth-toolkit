@@ -95,9 +95,8 @@ class AllowAllCIMDPermission:
     authenticated user exists, so unlike DCR the default is open.
 
     The interface mirrors DCR's request-first ``has_permission``. *request* is
-    the oauthlib request the client_id arrived on (its ``headers`` carry the
-    HTTP headers, for e.g. IP-bound policies), or None when resolution is
-    invoked outside the OAuth flow.
+    the oauthlib request the client_id arrived on; its ``headers`` carry the
+    HTTP headers, for e.g. IP-bound policies.
     """
 
     def has_permission(self, request, client_id) -> bool:
@@ -462,7 +461,7 @@ def _backoff_cache_key(client_id):
     return BACKOFF_CACHE_PREFIX + digest
 
 
-def resolve_cimd_application(client_id, request=None):
+def resolve_cimd_application(client_id, request):
     """Resolve a CIMD *client_id* URL to a persisted Application, or None.
 
     Returns None (the caller then treats the client as unknown) when CIMD is
@@ -506,7 +505,7 @@ def resolve_cimd_application(client_id, request=None):
             return None
 
 
-def refresh_if_stale(application, request=None):
+def refresh_if_stale(application, request):
     """Re-fetch a CIMD Application's metadata when its cache has expired.
 
     Returns the refreshed Application, or the original unchanged when it is not
@@ -521,5 +520,5 @@ def refresh_if_stale(application, request=None):
         return application
     if timezone.now() <= application.cimd_expires_at:
         return application
-    refreshed = resolve_cimd_application(application.client_id, request=request)
+    refreshed = resolve_cimd_application(application.client_id, request)
     return refreshed if refreshed is not None else application

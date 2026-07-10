@@ -13,6 +13,7 @@ from django.core.cache import cache
 from django.db import IntegrityError
 from django.urls import reverse
 from django.utils import timezone
+from oauthlib.common import Request as OAuthlibRequest
 
 from oauth2_provider import cimd
 from oauth2_provider.cimd import (
@@ -35,6 +36,12 @@ from oauth2_provider.models import get_application_model
 Application = get_application_model()
 
 CLIENT_URL = "https://client.example.com/oauth/metadata.json"
+
+
+def _oauthlib_request():
+    request = OAuthlibRequest("https://example.com/authorize")
+    request.client = None
+    return request
 
 
 def _document(**overrides):
@@ -305,18 +312,18 @@ def test_effective_max_age(oauth2_settings):
 def test_resolve_disabled_returns_none(oauth2_settings):
     oauth2_settings.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
     # CIMD_ENABLED defaults to False
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert not Application.objects.filter(client_id=CLIENT_URL).exists()
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_non_url_returns_none(cimd_enabled):
-    assert resolve_cimd_application("plain-client-id") is None
+    assert resolve_cimd_application("plain-client-id", _oauthlib_request()) is None
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_creates_public_application(cimd_enabled):
-    app = resolve_cimd_application(CLIENT_URL)
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
     assert app is not None
     assert app.client_id == CLIENT_URL
     assert app.registration_source == Application.RegistrationSource.CIMD
@@ -332,25 +339,25 @@ def test_resolve_creates_public_application(cimd_enabled):
 def test_resolve_client_id_mismatch_rejected_and_backed_off(cimd_enabled, mocker):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_MismatchFetcher)
     fetch = mocker.spy(_MismatchFetcher, "fetch")
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert not Application.objects.filter(client_id=CLIENT_URL).exists()
     # Backed off: a second attempt must not fetch again.
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert fetch.call_count == 1
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_confidential_document_rejected(cimd_enabled):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ConfidentialFetcher)
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_fetch_failure_backs_off(cimd_enabled, mocker):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_FailingFetcher)
     fetch = mocker.spy(_FailingFetcher, "fetch")
-    assert resolve_cimd_application(CLIENT_URL) is None
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert fetch.call_count == 1  # second call short-circuited by backoff
 
 
@@ -363,7 +370,7 @@ def test_resolve_refuses_to_hijack_non_cimd_application(cimd_enabled):
         authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
         redirect_uris="https://manual.example.com/callback",
     )
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     app = Application.objects.get(client_id=CLIENT_URL)
     assert app.registration_source == Application.RegistrationSource.MANUAL
     assert app.client_type == Application.CLIENT_CONFIDENTIAL
@@ -371,9 +378,9 @@ def test_resolve_refuses_to_hijack_non_cimd_application(cimd_enabled):
 
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_updates_existing_cimd_application(cimd_enabled):
-    first = resolve_cimd_application(CLIENT_URL)
+    first = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_UpdatedFetcher)
-    second = resolve_cimd_application(CLIENT_URL)
+    second = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
     assert second.pk == first.pk
     assert Application.objects.filter(client_id=CLIENT_URL).count() == 1
     assert second.redirect_uris == "https://client.example.com/new-callback"
@@ -385,7 +392,7 @@ def test_resolve_concurrency_cap_fails_fast(cimd_enabled):
     semaphore = cimd._get_fetch_semaphore()
     assert semaphore.acquire(blocking=False)
     try:
-        assert resolve_cimd_application(CLIENT_URL) is None
+        assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
         assert not Application.objects.filter(client_id=CLIENT_URL).exists()
     finally:
         semaphore.release()
@@ -410,19 +417,19 @@ class _DenyAllPermission:
 def test_resolve_denied_by_permission_skips_fetch_without_backoff(cimd_enabled, mocker):
     fetch = mocker.spy(_GoodFetcher, "fetch")
     cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (_DenyAllPermission,)
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert fetch.call_count == 0
     assert not Application.objects.filter(client_id=CLIENT_URL).exists()
     # A policy denial must not back the URL off: allowing the host takes
     # effect on the very next request.
     cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (cimd.AllowAllCIMDPermission,)
-    assert resolve_cimd_application(CLIENT_URL) is not None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is not None
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_empty_permission_classes_fail_closed(cimd_enabled):
     cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = ()
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
 
 
 @pytest.mark.parametrize(
@@ -449,7 +456,7 @@ def test_host_allowlist_permission_rejects_hostless_url(oauth2_settings):
 def test_resolve_with_host_allowlist(cimd_enabled):
     cimd_enabled.CIMD_REGISTRATION_PERMISSION_CLASSES = (HostAllowlistCIMDPermission,)
     cimd_enabled.CIMD_ALLOWED_HOSTS = ["client.example.com"]
-    assert resolve_cimd_application(CLIENT_URL) is not None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is not None
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -487,7 +494,7 @@ def test_resolve_recovers_from_concurrent_insert_race(cimd_enabled, mocker):
     mocker.patch.object(Application.objects, "get", side_effect=[Application.DoesNotExist, winner])
     mocker.patch.object(Application, "save", side_effect=IntegrityError("duplicate client_id"))
 
-    resolved = resolve_cimd_application(CLIENT_URL)
+    resolved = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
     assert resolved.pk == winner.pk
 
 
@@ -497,7 +504,7 @@ def test_resolve_race_with_vanished_row_fails_closed(cimd_enabled, mocker):
     # we re-load it (e.g. rolled back): treat the client as unknown.
     mocker.patch.object(Application.objects, "get", side_effect=Application.DoesNotExist)
     mocker.patch.object(Application, "save", side_effect=IntegrityError("duplicate client_id"))
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -512,13 +519,13 @@ def test_resolve_race_with_non_cimd_winner_is_refused(cimd_enabled, mocker):
     )
     mocker.patch.object(Application.objects, "get", side_effect=[Application.DoesNotExist, winner])
     mocker.patch.object(Application, "save", side_effect=IntegrityError("duplicate client_id"))
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_resolve_rejects_metadata_failing_model_validation(cimd_enabled):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_OverlongNameFetcher)
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert not Application.objects.filter(client_id=CLIENT_URL).exists()
 
 
@@ -526,8 +533,8 @@ def test_resolve_rejects_metadata_failing_model_validation(cimd_enabled):
 def test_resolve_degrades_unexpected_errors_and_backs_off(cimd_enabled, mocker):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ExplodingFetcher)
     fetch = mocker.spy(_ExplodingFetcher, "fetch")
-    assert resolve_cimd_application(CLIENT_URL) is None
-    assert resolve_cimd_application(CLIENT_URL) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert fetch.call_count == 1  # second call short-circuited by backoff
 
 
@@ -538,36 +545,36 @@ def test_resolve_degrades_unexpected_errors_and_backs_off(cimd_enabled, mocker):
 
 @pytest.mark.django_db(databases="__all__")
 def test_refresh_if_stale_noop_for_fresh(cimd_enabled):
-    app = resolve_cimd_application(CLIENT_URL)
-    returned = refresh_if_stale(app)
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    returned = refresh_if_stale(app, _oauthlib_request())
     assert returned.redirect_uris == "https://client.example.com/callback"
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_refresh_if_stale_refetches_when_expired(cimd_enabled):
-    app = resolve_cimd_application(CLIENT_URL)
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
     Application.objects.filter(pk=app.pk).update(cimd_expires_at=timezone.now() - timedelta(seconds=1))
     app.refresh_from_db()
 
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_UpdatedFetcher)
-    refreshed = refresh_if_stale(app)
+    refreshed = refresh_if_stale(app, _oauthlib_request())
     assert refreshed.redirect_uris == "https://client.example.com/new-callback"
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_refresh_if_stale_keeps_last_good_on_failure(cimd_enabled):
-    app = resolve_cimd_application(CLIENT_URL)
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
     Application.objects.filter(pk=app.pk).update(cimd_expires_at=timezone.now() - timedelta(seconds=1))
     app.refresh_from_db()
 
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_FailingFetcher)
-    refreshed = refresh_if_stale(app)
+    refreshed = refresh_if_stale(app, _oauthlib_request())
     assert refreshed.redirect_uris == "https://client.example.com/callback"
 
 
 @pytest.mark.django_db(databases="__all__")
 def test_refresh_if_stale_ignores_non_cimd(application):
-    assert refresh_if_stale(application) is application
+    assert refresh_if_stale(application, _oauthlib_request()) is application
 
 
 # ---------------------------------------------------------------------------
