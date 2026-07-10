@@ -328,8 +328,9 @@ def _build_application_kwargs(metadata):
 
     Requires ``token_endpoint_auth_method`` ``"none"`` — the spec forbids
     shared-secret methods, and asymmetric ones such as ``private_key_jwt``
-    are not implemented — and rejects any ``client_secret`` property. Returns
-    kwargs; raises :class:`CIMDError` on invalid metadata.
+    are not implemented — rejects any ``client_secret`` property, and requires
+    at least one redirect URI. Returns kwargs; raises :class:`CIMDError` on
+    invalid metadata.
     """
     auth_method = metadata.get("token_endpoint_auth_method", "none")
     if auth_method != "none":
@@ -338,9 +339,16 @@ def _build_application_kwargs(metadata):
     if "client_secret" in metadata or "client_secret_expires_at" in metadata:
         raise CIMDError("CIMD client metadata must not include client_secret or client_secret_expires_at")
 
-    redirect_uris = metadata.get("redirect_uris", [])
-    if not isinstance(redirect_uris, list) or not all(isinstance(u, str) for u in redirect_uris):
-        raise CIMDError("redirect_uris must be an array of strings")
+    # Only redirect-based grants are supported, and those require registered
+    # redirect URIs (RFC 7591 section 2), so an empty list would persist an
+    # unusable Application row.
+    redirect_uris = metadata.get("redirect_uris")
+    if (
+        not isinstance(redirect_uris, list)
+        or not redirect_uris
+        or not all(isinstance(u, str) for u in redirect_uris)
+    ):
+        raise CIMDError("redirect_uris must be a non-empty array of strings")
 
     grant_types = metadata.get("grant_types", ["authorization_code"])
     if not isinstance(grant_types, list) or not all(isinstance(g, str) for g in grant_types):

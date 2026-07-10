@@ -262,6 +262,8 @@ def test_build_application_kwargs_public():
         _document(client_secret_expires_at=0),  # spec: MUST NOT be present
         _document(redirect_uris="not-a-list"),
         _document(redirect_uris=[123]),
+        _document(redirect_uris=[]),  # redirect-based grants need at least one
+        {k: v for k, v in _document().items() if k != "redirect_uris"},
         _document(grant_types="authorization_code"),  # not a list
         _document(grant_types=[123]),
         _document(grant_types=["client_credentials"]),  # not a public/known grant
