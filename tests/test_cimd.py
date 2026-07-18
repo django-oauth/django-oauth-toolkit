@@ -859,3 +859,11 @@ def test_clearcimdapplications_prunes_only_dead_expired_cimd_rows(django_user_mo
     survivors = set(Application.objects.values_list("pk", flat=True))
     assert survivors == {fresh.pk, manual.pk, live_access.pk, live_refresh.pk, live_grant.pk, live_idtoken.pk}
     assert "Deleted 2 expired CIMD application(s)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("batch_size", [0, -1])
+def test_clearcimdapplications_rejects_non_positive_batch_size(batch_size):
+    from django.core.management import CommandError, call_command
+
+    with pytest.raises(CommandError, match="--batch-size"):
+        call_command("clearcimdapplications", batch_size=batch_size)

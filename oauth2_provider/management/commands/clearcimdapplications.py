@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -27,18 +27,26 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        Application = get_application_model()
         batch_size = options["batch_size"]
+        if batch_size < 1:
+            raise CommandError("--batch-size must be a positive integer.")
+        Application = get_application_model()
         now = timezone.now()
-        candidate_ids = list(
-            Application.objects.filter(
-                registration_source=Application.RegistrationSource.CIMD,
-                cimd_expires_at__lt=now,
-            ).values_list("pk", flat=True)
-        )
+        expired = Application.objects.filter(
+            registration_source=Application.RegistrationSource.CIMD,
+            cimd_expires_at__lt=now,
+        ).order_by("pk")
         deleted = 0
-        for start in range(0, len(candidate_ids), batch_size):
-            batch = candidate_ids[start : start + batch_size]
+        last_pk = None
+        while True:
+            # Page with a pk cursor instead of materializing every candidate id:
+            # the expired set can be attacker-sized, and the cursor also skips
+            # past rows kept alive by live tokens instead of re-scanning them.
+            page = expired if last_pk is None else expired.filter(pk__gt=last_pk)
+            batch = list(page.values_list("pk", flat=True)[:batch_size])
+            if not batch:
+                break
+            last_pk = batch[-1]
             with transaction.atomic():
                 # Lock the batch so the liveness check and the delete are one
                 # atomic unit: inserting a token takes a share lock on its
