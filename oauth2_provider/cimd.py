@@ -247,7 +247,10 @@ class SafeMetadataFetcher:
         path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
         # parsed.netloc is the authority minus userinfo (already rejected), so it
         # carries the port and IPv6 brackets that the Host header needs.
-        headers = {"Host": parsed.netloc, "Accept": "application/json"}
+        # The structured-suffix range is advertised because _read_document
+        # accepts application/<subtype>+json, and a server honouring Accept
+        # strictly could otherwise answer 406.
+        headers = {"Host": parsed.netloc, "Accept": "application/json, application/*+json"}
         ssl_context = ssl.create_default_context()
 
         last_exc = None

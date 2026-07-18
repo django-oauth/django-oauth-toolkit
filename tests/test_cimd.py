@@ -625,6 +625,7 @@ def test_fetcher_pins_validated_ip(oauth2_settings, mocker):
     assert captured["server_hostname"] == "client.example.com"
     assert captured["urlopen_kwargs"]["redirect"] is False
     assert captured["urlopen_kwargs"]["headers"]["Host"] == "client.example.com"
+    assert captured["urlopen_kwargs"]["headers"]["Accept"] == "application/json, application/*+json"
 
 
 def test_fetcher_rejects_non_200():
