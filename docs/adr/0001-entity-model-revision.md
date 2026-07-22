@@ -499,6 +499,11 @@ designed them.
   `client_id` + kind, not collapsed into `application IS NULL`.
 - **Authorization ≠ Session (ADR 0001's own line).** The client-axis split adds no
   temptation to merge these; keep the ADR's logout/revocation boundary intact.
+- **The `Session` does not own the login (session axis — deferred).** Keep
+  `Session.authenticated_at` sourceable from an external SSO, keep the Django-session
+  correlation optional, and keep a pure introspecting resource server free of the new
+  models. The full external-SSO modelling is out of scope here; the three guards that
+  keep it from becoming a later breaking change are in §9.
 - **Do not let "the FK exists" invent scope.** Same caution the ADR raises about
   `Authorization` growing session-ish behaviour applies to a client principal: it is an
   attribution anchor, not a place to hang policy that belongs on the registration or the
@@ -506,7 +511,51 @@ designed them.
 
 ---
 
-## 9. Open questions
+## 9. Session axis — out of scope here, but do not foreclose it
+
+This revision is about the *client* axis. The parallel *session* axis — modelling an OP
+authentication session that is established and owned by an **external SSO** (a Shibboleth
+IdP session, a CAS ticket-granting ticket) rather than by the Django login — is
+**deferred, not adopted here**. It surfaced in review (n2ygk, on #1723): "the concept of
+a web SSO session [must not be] directly tied to a django session … if I perform a web
+sso with … Shibboleth or CAS, that session can be used for a variety of Oauth2/OIDC and
+non-oauth2 services." It is the session-axis twin of this document's client-axis argument
+— an externally-established principal vs. a locally-owned record — and mature SSO systems
+already model it as a protocol-agnostic session with per-service sub-sessions (Shibboleth
+IdP session → per-SP sessions; CAS TGT → service tickets; cf. Keycloak's
+`USER_SESSION → AUTHENTICATED_CLIENT_SESSION` and node-oidc-provider's per-client
+`Session.authorizations` in Grounding B).
+
+Building that is out of scope. But three cheap guards keep the door open so ADR 0001's
+`Session` does not have to be redesigned later. None adds a feature; each only forbids a
+shortcut that would turn the eventual external-SSO work into a *breaking* change instead
+of an additive one.
+
+- **`Session.authenticated_at` must be sourceable from an external authority**, not
+  hard-wired to the Django login instant. In a federated deployment the real
+  authentication happens upstream (e.g. at SAML assertion consumption), and today's
+  `user.last_login`-derived `auth_time` is often *closer* to it than a DOT-minted session
+  timestamp would be. Sourcing `authenticated_at` only from the local login would be a
+  silent `auth_time` / `max_age` regression for SSO-fronted OPs — the opposite of the
+  ADR's stated goal for that claim.
+- **The Django-session ⇄ OP-`Session` correlation must stay optional, never
+  definitional** (ADR 0001 Open Question 3). "The Django session was destroyed" is one
+  possible signal that an OP session ended; it must not *be* the definition of the OP
+  session, or a deployment whose authoritative session lives in Shibboleth/CAS inherits a
+  session concept that is not the real one.
+- **A resource-server-only deployment must not be forced to adopt the new models.** DOT's
+  most common role in SSO shops (Columbia among them) is a pure RFC 7662 **introspecting
+  resource server**, which mints no login session and issues no grants — the Phase-1
+  introspection path already writes `application=NULL` and sets no `Authorization`.
+  `Authorization` and `Session` (and their FKs) must ship as **inert, nullable defaults**
+  that such a deployment neither configures nor populates. Carrying two swappable models
+  it never uses is acceptable; being *required* to wire them up — or losing the
+  resource-server path if it does not — is not. This is a Phase-1 packaging constraint,
+  not a session-design one.
+
+---
+
+## 10. Open questions
 
 1. **Table or column?** Is a literal `Client` principal table (Model 2) worth the
    swappable-model churn in 4.0, or is `client_id`-on-`Authorization` + optional
@@ -529,3 +578,8 @@ designed them.
 6. **Reconcile the §6 `on_delete` graph** explicitly: is client deletion meant to
    preserve token history (→ `SET_NULL` + durable `client_id`) or to be blocked while
    tokens live (→ current `CASCADE`/`RESTRICT`)? Pick one and write it down.
+7. **Resource-server packaging (§9).** Confirm a pure introspecting resource server can
+   run on the Phase-1 schema without configuring `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` /
+   `OAUTH2_PROVIDER_SESSION_MODEL`, and that the new entities are genuinely inert for that
+   role. If they are not, that is a stronger argument for deferring the schema than any
+   client-axis concern here.
