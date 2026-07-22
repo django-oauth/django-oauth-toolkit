@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tokens. Dynamically registered applications are flagged with `AbstractApplication.registration_source`
   set to `"dcr"` and can be filtered in the Django admin.
 * #1739 `ALLOW_LOCALHOST_LOOPBACK` setting to extend the RFC 8252 §7.3 any-port loopback exemption to `http://localhost` redirect URIs (opt-in, default `False`)
+* #1626 RFC 8707 "Resource Indicators" support
+  - clients can optionally specify `resource` parameter during authorization or access token requests
+  - Resource binding stored in Grant, AccessToken and RefreshToken models
+  - Token introspection endpoint returns `aud` claim for tokens with resource indicators
 
 ### Changed
 * Replaced the unreleased `AbstractApplication.dcr_created` `BooleanField` (added in #670) with a
@@ -216,10 +220,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Support for Django 5.2
 * Support for Python 3.14 (Django >= 5.2.8)
 * #1539 Add device authorization grant support
-* RFC 8707 "Resource Indicators" support
-  - clients can optionally specify `resource` parameter during authorization or access token requests
-  - Resource binding stored in Grant, AccessToken and RefreshToken models
-  - Token introspection endpoint returns `aud` claim for tokens with resource indicators
 
 ### Fixed
 * #1252 Fix crash  when 'client' is in token request body
