@@ -379,6 +379,67 @@ According to `OAuth 2.0 Security Best Current Practice <https://oauth.net/2/oaut
 - Public clients MUST use PKCE `RFC7636 <https://datatracker.ietf.org/doc/html/rfc7636>`_
 - For confidential clients, the use of PKCE `RFC7636 <https://datatracker.ietf.org/doc/html/rfc7636>`_ is RECOMMENDED.
 
+RFC 9700 gates (``COMPLIANT_BCP_RFC9700_*``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each of these booleans covers one `RFC 9700 <https://datatracker.ietf.org/doc/html/rfc9700>`_
+(OAuth 2.0 Security Best Current Practice) recommendation: ``True`` enforces the
+compliant behavior, ``False`` (the current default) preserves the legacy behavior. The
+request-time gates emit a ``DeprecationWarning`` each time the discouraged behavior is
+used while the gate is ``False``; the two ambient gates
+(``COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`` and ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE``)
+would fire on every request and are instead surfaced by ``manage.py check --deploy``.
+The defaults are scheduled to flip to ``True`` in the 4.0 release. See :doc:`security`
+for the full mapping and a copy/paste compliant settings block.
+
+``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT``
+    Default: ``False``. When ``True``, the implicit grant (``token`` / ``id_token``
+    response types) is rejected and no longer advertised (RFC 9700 §2.1.2).
+
+``COMPLIANT_BCP_RFC9700_PASSWORD_GRANT``
+    Default: ``False``. When ``True``, the resource owner password credentials grant
+    is rejected and no longer advertised (RFC 9700 §2.4).
+
+``COMPLIANT_BCP_RFC9700_PKCE_METHOD``
+    Default: ``False``. When ``True``, the PKCE ``plain`` ``code_challenge_method`` is
+    rejected and dropped from metadata; only ``S256`` is accepted (RFC 9700 §2.1.1).
+
+``COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT``
+    Default: ``False``. When ``True``, access tokens presented in the URI query
+    string are rejected at the resource server (RFC 9700 §4.3.2).
+
+``COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS``
+    Default: ``False``. When ``True``, the
+    `RFC 9207 <https://datatracker.ietf.org/doc/html/rfc9207>`_ ``iss`` parameter is
+    added to the authorization response and advertised in metadata (RFC 9700 §4.4).
+
+``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE``
+    Default: ``False``. When ``True``, access and refresh tokens are stored hashed
+    rather than in cleartext (RFC 9700 §4). Incompatible with a non-zero
+    ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` (``manage.py check --deploy`` raises
+    ``oauth2_provider.E001``).
+
+The remaining gates are *config-validation* gates: they do not change runtime behavior
+or replace the settings they cover — the canonical setting stays in control. They set
+the severity of the ``manage.py check --deploy`` message when the covered setting is on
+a non-compliant value: ``False`` (default) → Warning, ``True`` → Error.
+
+``COMPLIANT_BCP_RFC9700_REFRESH_TOKEN``
+    Default: ``False``. Flags ``REFRESH_TOKEN_REUSE_PROTECTION = False``
+    (RFC 9700 §4.14.2) as ``W007`` / ``E002``.
+
+``COMPLIANT_BCP_RFC9700_REDIRECT_URI_SCHEME``
+    Default: ``False``. Flags ``"http"`` in ``ALLOWED_REDIRECT_URI_SCHEMES``
+    (RFC 9700 §2.1) as ``W008`` / ``E003``.
+
+``COMPLIANT_BCP_RFC9700_REDIRECT_URI_MATCHING``
+    Default: ``False``. Flags ``ALLOW_URI_WILDCARDS = True`` (RFC 9700 §4.1.1) as
+    ``W009`` / ``E004``.
+
+``COMPLIANT_BCP_RFC9700_PKCE_REQUIRED``
+    Default: ``False``. Flags ``PKCE_REQUIRED = False`` (RFC 9700 §2.1.1) as ``W010`` /
+    ``E005``. A callable ``PKCE_REQUIRED`` (per-client policy) is not flagged.
+
 OIDC_ENABLED
 ~~~~~~~~~~~~
 Default: ``False``

@@ -1,5 +1,6 @@
 import json
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlparse, urlunparse
+from urllib.parse import urlencode as stdlib_urlencode
 
 from django.http import HttpRequest
 from oauthlib import oauth2
@@ -7,8 +8,31 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.common import quote, urlencode, urlencoded
 from oauthlib.oauth2 import OAuth2Error
 
+from .bcp import bcp_compliant
 from .exceptions import FatalClientError, OAuthToolkitError
 from .settings import oauth2_settings
+
+
+def _add_iss_to_redirect(uri, issuer):
+    """
+    Append the RFC 9207 ``iss`` parameter to an authorization-response redirect URI.
+
+    The parameter is added to the fragment for implicit responses (which carry their
+    parameters in the fragment) and to the query component otherwise.
+    """
+    parts = list(urlparse(uri))
+    # RFC 9207 requires a single, unambiguous issuer, so drop any pre-existing `iss`
+    # from BOTH the query and the fragment (e.g. one carried in the registered redirect
+    # URI) before adding the server's value to whichever component carries the response.
+    query = [(k, v) for k, v in parse_qsl(parts[4], keep_blank_values=True) if k != "iss"]
+    fragment = [(k, v) for k, v in parse_qsl(parts[5], keep_blank_values=True) if k != "iss"]
+    if parts[5]:  # fragment present -> implicit/hybrid front-channel response
+        fragment.append(("iss", issuer))
+    else:
+        query.append(("iss", issuer))
+    parts[4] = stdlib_urlencode(query)
+    parts[5] = stdlib_urlencode(fragment)
+    return urlunparse(parts)
 
 
 class OAuthLibCore:
@@ -153,6 +177,16 @@ class OAuthLibCore:
             )
             uri = headers.get("Location", None)
 
+            # RFC 9207 / RFC 9700 §4.4: include the `iss` authorization-response
+            # parameter so clients can detect mix-up attacks. Gated by
+            # COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS. Omission is an ambient config
+            # posture (it would apply to every authorization response), so it is surfaced
+            # by the `--deploy` system check W005 rather than a per-response warning.
+            if uri is not None and oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
+                issuer = oauth2_settings.oauth2_authorization_server_issuer(request)
+                uri = _add_iss_to_redirect(uri, issuer)
+                headers["Location"] = uri
+
             return uri, headers, body, status
 
         except oauth2.FatalClientError as error:
@@ -225,6 +259,15 @@ class OAuthLibCore:
         :param scopes: A list of scopes required to verify so that request is verified
         """
         uri, http_method, body, headers = self._extract_params(request)
+
+        # RFC 9700 §4.3.2 / RFC 6750 §5.3: access tokens MUST NOT be transmitted in
+        # the URI query string. Gated by COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT.
+        if "access_token" in request.GET and bcp_compliant(
+            "COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT",
+            "Presenting an OAuth 2.0 access token in the URI query string",
+        ):
+            return False, None
+
         # RFC 8707: audience validation compares the token's resource indicators
         # against the request URI, so the URI must be absolute. build_absolute_uri
         # honors SECURE_PROXY_SSL_HEADER / USE_X_FORWARDED_HOST when deployed
