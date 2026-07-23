@@ -158,6 +158,28 @@ class TestReadWriteScopedResourceMixin(BaseTest):
 
         TestView(some_kwarg="value")  # Just checking no crash.
 
+    def test_instantiation_with_positional_and_keyword_arguments(self):
+        """
+        The originally reported reproduction (issue #694) instantiated
+        a subclass defining its own ``__init__(self, *args, **kwargs)``
+        with *both* a positional and a keyword argument. Django's
+        ``View.__init__`` does not accept positional arguments, so cover
+        that case directly with a view that does, ensuring ``__new__()``
+        forwards nothing to ``object.__new__()``.
+        """
+
+        class TestView(ReadWriteScopedResourceMixin, View):
+            required_scopes = ["read"]
+
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+                super().__init__()
+
+        test_view = TestView(True, some_kwarg="value")  # Just checking no crash.
+        self.assertEqual(test_view.args, (True,))
+        self.assertEqual(test_view.kwargs, {"some_kwarg": "value"})
+
 
 class TestProtectedResourceMixin(BaseTest):
     def test_options_shall_pass(self):
