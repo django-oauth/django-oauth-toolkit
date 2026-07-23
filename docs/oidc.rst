@@ -387,6 +387,36 @@ token, so you will probably want to reuse that::
             claims["color_scheme"] = get_color_scheme(request.user)
             return claims
 
+
+Adding more information to the request object passed to the authentication backends
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, ``build_http_request`` creates a new Django ``HttpRequest`` for the
+``authenticate()`` call that only carries a subset of the incoming request's
+attributes (path, method, body and headers).
+
+If your authentication backends need more, override ``build_http_request`` to
+copy the extra attributes onto the Django ``HttpRequest`` it returns.
+
+Note that the ``request`` argument is the oauthlib ``Request``, **not** the
+original Django ``HttpRequest``. Attributes attached to the Django request by
+middleware (for example a ``tenant_id`` set by a multi-tenant middleware) are
+not automatically present on the oauthlib request, so make sure the value you
+need has been made available on it -- or forward it there yourself -- and read
+it with ``getattr`` and a default to avoid an ``AttributeError`` when it is
+missing::
+
+    class CustomOAuth2Validator(OAuth2Validator):
+
+        def build_http_request(self, request):
+            # ``request`` is the oauthlib Request; ``tenant_id`` must already
+            # have been set on it (e.g. by a custom OAuthLibCore that forwards
+            # it from the Django request).
+            new_request = super().build_http_request(request)
+            new_request.tenant_id = getattr(request, "tenant_id", None)
+            return new_request
+
+
 Customizing the login flow
 ==========================
 

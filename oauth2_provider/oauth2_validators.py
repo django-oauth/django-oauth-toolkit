@@ -27,6 +27,7 @@ from django.utils.translation import gettext_lazy as _
 from jwcrypto import jws, jwt
 from jwcrypto.common import JWException
 from jwcrypto.jwt import JWTExpired
+from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
@@ -1123,18 +1124,25 @@ class OAuth2Validator(RequestValidator):
         for t in tokens:
             t.revoke()
 
-    def validate_user(self, username, password, client, request, *args, **kwargs):
+    def build_http_request(self, request: OauthlibRequest) -> HttpRequest:
         """
-        Check username and password correspond to a valid and active User
+        Build a Django ``HttpRequest`` from the oauthlib ``Request`` for Django's
+        ``authenticate()``. Override to pass extra attributes to your auth backends.
         """
-        # Passing the optional HttpRequest adds compatibility for backends
-        # which depend on its presence. Create one with attributes likely
-        # to be used.
         http_request = HttpRequest()
         http_request.path = request.uri
         http_request.method = request.http_method
         getattr(http_request, request.http_method).update(dict(request.decoded_body))
         http_request.META = request.headers
+        return http_request
+
+    def validate_user(self, username, password, client, request, *args, **kwargs):
+        """
+        Check username and password correspond to a valid and active User
+        """
+        # Passing the optional HttpRequest adds compatibility for backends
+        # which depend on its presence.
+        http_request = self.build_http_request(request)
         u = authenticate(http_request, username=username, password=password)
         if u is not None and u.is_active:
             request.user = u

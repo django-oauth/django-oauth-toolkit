@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * New `docs/security.rst` page mapping each RFC 9700 recommendation to the corresponding setting. The demo IdP
   exposes every gate as an `OAUTH2_PROVIDER_COMPLIANT_BCP_RFC9700_*` environment variable so the Docker image and the
   e2e suite can exercise both gate positions.
+* #1660 Extract the `HttpRequest` creation in `OAuth2Validator.validate_user` into an overridable
+  `build_http_request` method, so subclasses can pass extra attributes through to their authentication backends.
 
 ### Deprecated
 * Using the OAuth 2.0 implicit grant, the resource owner password credentials grant, the PKCE `plain`
