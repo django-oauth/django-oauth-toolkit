@@ -8,6 +8,11 @@ Registration Management Protocol (`RFC 7592 <https://datatracker.ietf.org/doc/ht
 These views are automatically available when you use
 ``include("oauth2_provider.urls")``.
 
+When ``DCR_ENABLED`` is on, the registration endpoint is advertised as
+``registration_endpoint`` in the :doc:`RFC 8414 authorization server metadata
+document </oauth2_server_metadata>`, so clients can discover it without
+out-of-band configuration.
+
 
 Endpoints
 ---------

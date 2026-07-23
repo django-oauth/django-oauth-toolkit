@@ -72,6 +72,14 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             if url:
                 data[key] = url
 
+        # The DCR URL pattern is always registered while the view itself 404s
+        # when DCR is off, so gate the advertisement on the setting rather
+        # than on reverse() succeeding.
+        if oauth2_settings.DCR_ENABLED:
+            registration_url = self._get_endpoint_url(request, "dcr-register")
+            if registration_url:
+                data["registration_endpoint"] = registration_url
+
         # Capability fields describe a specific endpoint, so only advertise them
         # when that endpoint is actually present.
         if "authorization_endpoint" in data:

@@ -104,6 +104,11 @@ Example response::
 configured (see :ref:`OIDC_RSA_PRIVATE_KEY <oidc-rsa-private-key>`). When OIDC
 is disabled, ``jwks_uri`` is omitted since the JWKS endpoint is not reachable.
 
+``registration_endpoint`` (the :doc:`Dynamic Client Registration
+<views/dynamic_client_registration>` endpoint, RFC 7591) is only included when
+``DCR_ENABLED`` is on; while disabled the endpoint returns 404, so it is not
+advertised.
+
 The issuer URL is derived from the incoming request by default, by splitting the
 request URL around the ``/.well-known/oauth-authorization-server`` marker:
 

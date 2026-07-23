@@ -54,3 +54,10 @@ def test_metadata_advertises_response_types_and_pkce(metadata):
 @pytest.mark.compliance("RFC 8414", "2", "scopes_supported")
 def test_metadata_advertises_configured_scopes(metadata):
     assert set(c.E2E_SCOPES) <= set(metadata["scopes_supported"])
+
+
+@pytest.mark.compliance("RFC 8414", "2", "registration_endpoint")
+def test_metadata_advertises_registration_endpoint(metadata):
+    # The demo IdP runs with DCR enabled, so the RFC 7591 registration
+    # endpoint must be discoverable from the metadata document.
+    assert metadata["registration_endpoint"].endswith("/o/register/")
