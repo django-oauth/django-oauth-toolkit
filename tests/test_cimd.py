@@ -867,3 +867,35 @@ def test_clearcimdapplications_rejects_non_positive_batch_size(batch_size):
 
     with pytest.raises(CommandError, match="--batch-size"):
         call_command("clearcimdapplications", batch_size=batch_size)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_clearcimdapplications_skips_row_whose_source_changed_mid_run(mocker):
+    """A row that stops being CIMD between the candidate scan and the locked
+    re-check must not be deleted: the locked query re-applies the
+    registration_source filter, not just cimd_expires_at.
+    """
+    from django.core.management import call_command
+    from django.db import transaction as real_transaction
+
+    app = _stored_app("mutated.example.com")  # CIMD + expired, no live tokens
+
+    real_atomic = real_transaction.atomic
+
+    def flip_then_atomic(*args, **kwargs):
+        # Simulate registration_source changing (data correction / custom code)
+        # after the candidate query selected this row but before the lock.
+        Application.objects.filter(pk=app.pk).update(
+            registration_source=Application.RegistrationSource.MANUAL
+        )
+        return real_atomic(*args, **kwargs)
+
+    mocker.patch(
+        "oauth2_provider.management.commands.clearcimdapplications.transaction.atomic",
+        side_effect=flip_then_atomic,
+    )
+
+    call_command("clearcimdapplications")
+
+    # The row is no longer CIMD by lock time, so it is left untouched.
+    assert Application.objects.filter(pk=app.pk).exists()

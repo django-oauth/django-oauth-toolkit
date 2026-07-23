@@ -54,12 +54,18 @@ class Command(BaseCommand):
                 # exclusive lock. A concurrently minted token is therefore
                 # either already visible to the check below or its insert
                 # waits until this transaction ends — it can never be silently
-                # cascade-deleted in between. Re-checking cimd_expires_at
-                # drops candidates whose registration was refreshed since the
-                # collection query above.
+                # cascade-deleted in between. Re-checking registration_source
+                # and cimd_expires_at under the lock drops candidates whose
+                # provenance changed or whose registration was refreshed since
+                # the collection query above, so only rows that are still CIMD
+                # and still expired are ever deleted.
                 locked = set(
                     Application.objects.select_for_update()
-                    .filter(pk__in=batch, cimd_expires_at__lt=now)
+                    .filter(
+                        pk__in=batch,
+                        registration_source=Application.RegistrationSource.CIMD,
+                        cimd_expires_at__lt=now,
+                    )
                     .values_list("pk", flat=True)
                 )
                 # Queried from the token side (forward FK) because the reverse
