@@ -715,6 +715,46 @@ def test_fetcher_raises_when_all_ips_fail(oauth2_settings, mocker):
         SafeMetadataFetcher().fetch(CLIENT_URL)
 
 
+def test_fetcher_shares_one_deadline_across_ips(oauth2_settings, mocker):
+    # A hostname resolving to many IPs must not multiply the time budget: the
+    # deadline is shared, so each attempt gets only the remaining time and the
+    # loop stops once the budget is spent instead of trying every address for a
+    # fresh timeout each.
+    oauth2_settings.CIMD_FETCH_TIMEOUT_SECONDS = 5
+    mocker.patch(
+        "oauth2_provider.cimd.socket.getaddrinfo",
+        return_value=[
+            (2, 1, 6, "", ("93.184.216.34", 443)),
+            (2, 1, 6, "", ("93.184.216.35", 443)),
+            (2, 1, 6, "", ("93.184.216.36", 443)),
+        ],
+    )
+    # deadline = 0 + 5; iter1 remaining=5 (now=0), iter2 remaining=2 (now=3),
+    # iter3 remaining=-1 (now=6) -> break before the third IP is attempted.
+    mocker.patch("oauth2_provider.cimd.time.monotonic", side_effect=[0, 0, 3, 6])
+
+    attempts = []
+
+    class _SlowPool:
+        def __init__(self, **kwargs):
+            attempts.append((kwargs["host"], kwargs["timeout"].total))
+
+        def urlopen(self, method, path, **kwargs):
+            raise urllib3.exceptions.HTTPError("timed out")
+
+        def close(self):
+            pass
+
+    mocker.patch("oauth2_provider.cimd.urllib3.HTTPSConnectionPool", _SlowPool)
+
+    with pytest.raises(CIMDError):
+        SafeMetadataFetcher().fetch(CLIENT_URL)
+
+    # The third IP is never tried once the shared deadline passes, and each
+    # attempt's total budget is the remaining time (5, then 2), not a fresh 5s.
+    assert attempts == [("93.184.216.34", 5), ("93.184.216.35", 2)]
+
+
 def test_fetcher_includes_port_and_query(oauth2_settings, mocker):
     mocker.patch(
         "oauth2_provider.cimd.socket.getaddrinfo",

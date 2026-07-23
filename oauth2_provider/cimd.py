@@ -24,6 +24,7 @@ import re
 import socket
 import ssl
 import threading
+import time
 from datetime import timedelta
 from urllib.parse import urlparse
 
@@ -253,18 +254,27 @@ class SafeMetadataFetcher:
         headers = {"Host": parsed.netloc, "Accept": "application/json, application/*+json"}
         ssl_context = ssl.create_default_context()
 
+        # One deadline shared across every IP attempt. A hostname can resolve to
+        # many public IPs; giving each attempt its own total=timeout would let N
+        # addresses hold a worker for N × timeout on the pre-auth path. Each
+        # attempt instead gets only the remaining budget, so the whole fetch
+        # stays bounded by CIMD_FETCH_TIMEOUT_SECONDS regardless of address count.
+        deadline = time.monotonic() + timeout
+
         last_exc = None
         for ip in ips:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             # Connect to the validated IP (host=ip) while SNI, certificate
             # verification and the Host header all use the real hostname, so a
             # second DNS lookup can't rebind the connection to another address.
-            # total= bounds the whole fetch (connect + all reads) so a slow-drip
-            # body can't hold the worker past the timeout, which per-operation
-            # connect/read timeouts alone would allow.
+            # total=remaining bounds this attempt (connect + all reads) to the
+            # shared deadline, so a slow-drip body can't hold the worker past it.
             pool = urllib3.HTTPSConnectionPool(
                 host=ip,
                 port=port,
-                timeout=urllib3.Timeout(connect=timeout, read=timeout, total=timeout),
+                timeout=urllib3.Timeout(connect=remaining, read=remaining, total=remaining),
                 retries=False,
                 maxsize=1,
                 ssl_context=ssl_context,

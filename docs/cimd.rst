@@ -49,7 +49,11 @@ Settings
 --------
 
 ``CIMD_ENABLED`` (default ``False``)
-    Master switch. When ``False`` a URL ``client_id`` is treated as an unknown client.
+    Master switch for CIMD *resolution*: when ``False``, a URL ``client_id`` that is not already
+    stored is treated as an unknown client — no document is fetched and no application is
+    auto-registered. It does not disable URL ``client_id`` values wholesale: an application already
+    stored with a URL ``client_id`` (for example one created manually, or persisted while CIMD was
+    enabled) keeps working as an ordinary stored client.
 
 ``CIMD_METADATA_FETCHER`` (default ``"oauth2_provider.cimd.SafeMetadataFetcher"``)
     Import path to the fetcher. Override it to route fetches through an egress proxy or to apply
@@ -113,8 +117,10 @@ Server-Side Request Forgery (SSRF)
     - connects to the validated IP while using the hostname only for TLS SNI, certificate verification
       and the ``Host`` header, so a second DNS lookup cannot rebind the connection to another address
       after validation;
-    - does not follow redirects, bounds the whole fetch with a total-time deadline (so a slow-drip body
-      cannot hold a worker past the timeout), caps the response size, and requires a JSON content type.
+    - does not follow redirects, bounds the whole fetch — every connection attempt across all resolved
+      addresses — with a single total-time deadline (so neither a slow-drip body nor a hostname that
+      resolves to many IPs can hold a worker past ``CIMD_FETCH_TIMEOUT_SECONDS``), caps the response
+      size, and requires a JSON content type.
 
 Denial of service
     Because a fetch happens on first sight of a URL, a flood of distinct bad URLs could otherwise tie
