@@ -74,8 +74,25 @@ class ClientSecretField(models.CharField):
 
 class TokenChecksumField(models.CharField):
     def pre_save(self, model_instance, add):
-        token = getattr(model_instance, "token")
-        checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        # RFC 9700 token storage: when the plaintext token is redacted at rest (see
+        # COMPLIANT_BCP_RFC9700_TOKEN_STORAGE) the raw token is stashed
+        # on ``_raw_token`` and the ``token`` column is left blank. The lookup checksum
+        # is then computed from ``_raw_token``, which is cleared afterwards to minimize
+        # the in-memory lifetime of a usable token value.
+        raw_token = getattr(model_instance, "_raw_token", None)
+        if raw_token is None:
+            # No raw token available. On the plaintext-storage path the ``token``
+            # column holds the raw token, so (re)derive the checksum from it. On the
+            # hashed-at-rest path the column is blank on later saves (e.g.
+            # ``RefreshToken.revoke()``); there is nothing to recompute, so the
+            # existing checksum is kept instead of being hashed a second time.
+            token = getattr(model_instance, "token")
+            if not token:
+                return super().pre_save(model_instance, add)
+            raw_token = token
+        else:
+            model_instance._raw_token = None
+        checksum = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         setattr(model_instance, self.attname, checksum)
         return super().pre_save(model_instance, add)
 

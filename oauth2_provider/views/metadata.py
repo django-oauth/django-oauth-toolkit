@@ -10,6 +10,40 @@ from ..models import AbstractGrant
 from ..settings import oauth2_settings
 
 
+def _is_implicit_response_type(response_type):
+    """
+    Whether a response type is an implicit-grant (front-channel) response type per
+    RFC 9700 §2.1.2: it issues a ``token``/``id_token`` directly without an
+    authorization ``code``. Response types are space-separated *sets*, so the token
+    order does not matter (``"id_token token"`` == ``"token id_token"``); hybrid
+    response types (which include ``code``) are not implicit.
+    """
+    values = set(response_type.split())
+    return "code" not in values and bool(values & {"token", "id_token"})
+
+
+def bcp_filter_response_types(response_types):
+    """
+    Drop implicit response types from a discovery list when the implicit-grant gate
+    (``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT``) is enabled, so discovery matches
+    what the server will actually accept. Shared by the RFC 8414 and OIDC discovery
+    documents.
+    """
+    if not oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT:
+        return list(response_types)
+    return [rt for rt in response_types if not _is_implicit_response_type(rt)]
+
+
+def bcp_filter_code_challenge_methods(methods):
+    """
+    Drop the ``plain`` PKCE method when its gate
+    (``COMPLIANT_BCP_RFC9700_PKCE_METHOD``) is enabled.
+    """
+    if not oauth2_settings.COMPLIANT_BCP_RFC9700_PKCE_METHOD:
+        return list(methods)
+    return [m for m in methods if m != "plain"]
+
+
 class ServerMetadataViewMixin:
     """
     Shared URL-building logic for server metadata discovery views.
@@ -54,15 +88,29 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
 
         auth_methods = oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
 
+        # RFC 9700: stop advertising grant/response types that the corresponding
+        # COMPLIANT_BCP_RFC9700_* gate has enabled, so discovery reflects what
+        # the server will actually accept.
+        response_types = bcp_filter_response_types(oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED)
+        grant_types = list(oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED)
+        if oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT:
+            grant_types = [gt for gt in grant_types if gt != "implicit"]
+        if oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT:
+            grant_types = [gt for gt in grant_types if gt != "password"]
+
         data = {
             "issuer": issuer_url,
-            "response_types_supported": oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED,
-            "grant_types_supported": oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED,
+            "response_types_supported": response_types,
+            "grant_types_supported": grant_types,
             "scopes_supported": sorted(scopes.get_available_scopes()),
             # draft-ietf-oauth-client-id-metadata-document: signal whether a
             # client may use its metadata-document URL as its client_id.
             "client_id_metadata_document_supported": oauth2_settings.CIMD_ENABLED,
         }
+        # RFC 9207: advertise that we set the `iss` authorization-response parameter
+        # once the mix-up defense is enforced (gate enabled).
+        if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
+            data["authorization_response_iss_parameter_supported"] = True
 
         # Endpoint URLs are resolved via reverse() and omitted if not registered
         for key, view_name in [
@@ -75,12 +123,21 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             if url:
                 data[key] = url
 
+        # The DCR URL pattern is always registered while the view itself 404s
+        # when DCR is off, so gate the advertisement on the setting rather
+        # than on reverse() succeeding.
+        if oauth2_settings.DCR_ENABLED:
+            registration_url = self._get_endpoint_url(request, "dcr-register")
+            if registration_url:
+                data["registration_endpoint"] = registration_url
+
         # Capability fields describe a specific endpoint, so only advertise them
         # when that endpoint is actually present.
         if "authorization_endpoint" in data:
-            data["code_challenge_methods_supported"] = [
-                key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS
-            ]
+            # RFC 9700 §2.1.1: drop "plain" from discovery when it is no longer accepted.
+            data["code_challenge_methods_supported"] = bcp_filter_code_challenge_methods(
+                [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS]
+            )
         if "token_endpoint" in data:
             data["token_endpoint_auth_methods_supported"] = auth_methods
         if "revocation_endpoint" in data:

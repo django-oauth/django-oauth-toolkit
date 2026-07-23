@@ -1252,6 +1252,18 @@ class TestOAuthServerMetadataView(TestCase):
         self.assertEqual(response.status_code, 200)
         assert response["Access-Control-Allow-Origin"] == "*"
 
+    def test_get_oauth_server_metadata_advertises_registration_endpoint(self):
+        self.oauth2_settings.DCR_ENABLED = True
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert response.json()["registration_endpoint"] == "http://localhost/o/register/"
+
+    def test_get_oauth_server_metadata_omits_registration_endpoint_when_dcr_disabled(self):
+        # DCR_ENABLED defaults to False; the endpoint 404s, so it must not be advertised.
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertEqual(response.status_code, 200)
+        assert "registration_endpoint" not in response.json()
+
     def test_get_oauth_server_metadata_oidc_disabled(self):
         """RFC 8414 metadata endpoint is available even when OIDC is disabled."""
         self.oauth2_settings.OIDC_ENABLED = False

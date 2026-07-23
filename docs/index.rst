@@ -41,6 +41,7 @@ Index
    views/details
    models
    advanced_topics
+   security
    oidc
    oauth2_server_metadata
    protected_resource_metadata

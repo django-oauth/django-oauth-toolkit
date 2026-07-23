@@ -38,6 +38,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HostAllowlistCIMDPermission` restricts it to `CIMD_ALLOWED_HOSTS`), and the
   `clearcimdapplications` management command prunes expired CIMD applications that hold no live
   tokens. See `docs/cimd.rst`.
+* #1751 Advertise the Dynamic Client Registration endpoint as `registration_endpoint` in the RFC 8414
+  authorization server metadata document when `DCR_ENABLED` is on
+* #1626 RFC 8707 "Resource Indicators" support
+  - clients can optionally specify `resource` parameter during authorization or access token requests
+  - Resource binding stored in Grant, AccessToken and RefreshToken models
+  - Token introspection endpoint returns `aud` claim for tokens with resource indicators
+* [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700) (OAuth 2.0 Security Best Current Practice) compliance
+  gates, each controlled by a `COMPLIANT_BCP_RFC9700_<topic>` setting that defaults to `False` (current behavior,
+  warns when the discouraged behavior is used) and is scheduled to default to `True` in 4.0 (enforces the
+  compliant behavior): `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` (§2.1.2),
+  `COMPLIANT_BCP_RFC9700_PASSWORD_GRANT` (§2.4), `COMPLIANT_BCP_RFC9700_PKCE_METHOD` (§2.1.1),
+  `COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT` (§4.3.2), `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS` (§4.4),
+  and `COMPLIANT_BCP_RFC9700_TOKEN_STORAGE` (§4). Enforced behaviors are also removed from the RFC 8414
+  authorization-server metadata and the OIDC discovery document, so both stay consistent with what the
+  server accepts.
+* [RFC 9207](https://datatracker.ietf.org/doc/html/rfc9207) `iss` authorization-response parameter and the
+  `authorization_response_iss_parameter_supported` metadata field (mix-up defense), gated by
+  `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`.
+* Config-validation gates for the RFC 9700 recommendations expressed through existing settings (the settings stay
+  canonical; the gate only sets validation severity — insecure value → check Warning while the gate is `False`,
+  check Error once it is `True`): `COMPLIANT_BCP_RFC9700_REFRESH_TOKEN`
+  (`REFRESH_TOKEN_REUSE_PROTECTION`, §4.14.2), `COMPLIANT_BCP_RFC9700_REDIRECT_URI_SCHEME`
+  (`ALLOWED_REDIRECT_URI_SCHEMES`, §2.1), `COMPLIANT_BCP_RFC9700_REDIRECT_URI_MATCHING`
+  (`ALLOW_URI_WILDCARDS`, §4.1.1), and `COMPLIANT_BCP_RFC9700_PKCE_REQUIRED` (`PKCE_REQUIRED`, §2.1.1).
+* A `--deploy` security system check that flags every RFC 9700 recommendation currently on a non-compliant value
+  (warnings `oauth2_provider.W001`–`W010`, errors `oauth2_provider.E002`–`E005` when the corresponding
+  config-validation gate is enabled), plus an error (`oauth2_provider.E001`) for the incompatible combination of
+  hashed token storage and a non-zero `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`.
+* New `docs/security.rst` page mapping each RFC 9700 recommendation to the corresponding setting. The demo IdP
+  exposes every gate as an `OAUTH2_PROVIDER_COMPLIANT_BCP_RFC9700_*` environment variable so the Docker image and the
+  e2e suite can exercise both gate positions.
+
+### Deprecated
+* Using the OAuth 2.0 implicit grant, the resource owner password credentials grant, the PKCE `plain`
+  `code_challenge_method`, or an access token in the URI query string now emits a `DeprecationWarning`, per
+  [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700). Each is gated by the corresponding
+  `COMPLIANT_BCP_RFC9700_*` setting, whose default is scheduled to flip to `True` (enforcing rejection) in 4.0.
 
 ### Changed
 * Replaced the unreleased `AbstractApplication.dcr_created` `BooleanField` (added in #670) with a
@@ -230,10 +267,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Support for Django 5.2
 * Support for Python 3.14 (Django >= 5.2.8)
 * #1539 Add device authorization grant support
-* RFC 8707 "Resource Indicators" support
-  - clients can optionally specify `resource` parameter during authorization or access token requests
-  - Resource binding stored in Grant, AccessToken and RefreshToken models
-  - Token introspection endpoint returns `aud` claim for tokens with resource indicators
 
 ### Fixed
 * #1252 Fix crash  when 'client' is in token request body
