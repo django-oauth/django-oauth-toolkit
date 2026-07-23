@@ -97,6 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Netlify deploy-preview URLs (`https://*--sitename.netlify.app`). The validator previously stripped
   only a single leading hyphen after removing the `*`, leaving a hostname that began with `-` and was
   rejected by `URIValidator`; it now strips up to two leading hyphens while rejecting longer runs.
+* #694 `ReadWriteScopedResourceMixin.__new__()` no longer forwards positional/keyword arguments to
+  `object.__new__()`, which raised `TypeError: object.__new__() takes exactly one argument` when
+  instantiating any view mixing this in with any argument at all — notably breaking Django REST
+  Framework's `cls(**initkwargs)` view instantiation.
 
 ### Security
 * Generate device-flow `user_code` values with the cryptographically secure `secrets` module

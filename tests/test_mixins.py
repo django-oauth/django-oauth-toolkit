@@ -15,6 +15,7 @@ from oauth2_provider.views.mixins import (
     OIDCOnlyMixin,
     ProtectedResourceMetadataMixin,
     ProtectedResourceMixin,
+    ReadWriteScopedResourceMixin,
     ScopedResourceMixin,
 )
 
@@ -125,6 +126,37 @@ class TestScopedResourceMixin(BaseTest):
         test_view = TestView()
 
         self.assertEqual(test_view.get_scopes(), ["scope1", "scope2"])
+
+
+class TestReadWriteScopedResourceMixin(BaseTest):
+    """
+    Regression tests for
+    https://github.com/django-oauth/django-oauth-toolkit/issues/694
+    """
+
+    def test_instantiation_with_no_arguments_still_works(self):
+        class TestView(ReadWriteScopedResourceMixin, View):
+            required_scopes = ["read"]
+
+        TestView()  # Just checking no crash.
+
+    def test_instantiation_with_keyword_arguments(self):
+        """
+        __new__() must not forward extra keyword arguments down to
+        object.__new__() -- object.__new__() only tolerates them when
+        the class also overrides __init__ itself, which this mixin
+        does not. Passing them through broke instantiation with any
+        argument at all for classes mixing this in (notably Django
+        REST Framework's cls(**initkwargs) view instantiation, which
+        Django's own View.as_view() also uses), raising
+        "object.__new__() takes exactly one argument" instead of
+        constructing the instance normally.
+        """
+
+        class TestView(ReadWriteScopedResourceMixin, View):
+            required_scopes = ["read"]
+
+        TestView(some_kwarg="value")  # Just checking no crash.
 
 
 class TestProtectedResourceMixin(BaseTest):

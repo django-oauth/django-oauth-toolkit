@@ -283,7 +283,16 @@ class ReadWriteScopedResourceMixin(ScopedResourceMixin, OAuthLibMixin):
                 ' to be in OAUTH2_PROVIDER["SCOPES"] list in settings'.format(read_write_scopes)
             )
 
-        return super().__new__(cls, *args, **kwargs)
+        # __new__ here only exists to run the validation above; it has
+        # no state of its own to construct, so it must not forward
+        # *args/**kwargs on to object.__new__() (via the MRO chain).
+        # object.__new__() only tolerates extra arguments when the
+        # instantiated class also overrides __init__ itself -- which
+        # this mixin does not -- so passing them through breaks
+        # instantiation with any positional or keyword argument for
+        # any class that mixes this in without its own __init__.
+        # See GH #694.
+        return super().__new__(cls)
 
     def dispatch(self, request, *args, **kwargs):
         if request.method.upper() in SAFE_HTTP_METHODS:
