@@ -27,7 +27,7 @@ Column keys: **DOT** · **oalib** = oauthlib · **Alib** = Authlib · **Autk** =
 | **OIDC** (Core+Discovery) | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Native apps** (RFC 8252) | ◑ | ◑ | ◑ | ◑ | ◑ | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **FAPI 2.0** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ◑ | ❌ | 🧩 | ❌ | ✅ |
-| **MCP authorization** | ◑ | ❌ | ❌ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ |
+| **MCP authorization** | ✅ | ❌ | ❌ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ |
 | **RS** (resource-server role) | ✅ | ◑ | ✅ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 | **RP** (client role) | N/A | N/A | ◑ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 
@@ -61,18 +61,21 @@ N/A — see [Table 4](./rp-comparison.md).*
 - **MCP authorization** — OAuth 2.1 + Protected Resource Metadata (9728) + resource
   indicators (8707) + AS metadata, DCR recommended. **Nascent industry-wide**: 9728 is
   barely implemented anywhere, so the best anyone scores today is ◑ (has resource
-  indicators and/or experimental MCP resource-server support). **DOT is now ◑** — it recently
-  shipped both 9728 (protected-resource metadata) and 8707 (resource indicators) alongside its
-  existing 8414 metadata, PKCE, and DCR, so it can act as an MCP resource server; only a named
-  OAuth 2.1 posture is still missing.
+  indicators and/or experimental MCP resource-server support). **DOT is now ✅** — it ships
+  every required MCP spec: 9728 (protected-resource metadata), 8707 (resource indicators),
+  8414 (AS metadata), PKCE, DCR, and — via the new RFC 9700 gates — an OAuth 2.1 posture.
+  It has the most complete *confirmed* 9728 + 8707 coverage in this table; several ◑
+  competitors are unverified on those. (Compliant behavior is opt-in: enable the 9700 gates
+  and add the protected-resource-metadata mixin/authenticator to your resource server.)
 
 ## The one-line story for DOT
 
 DOT is **strong on OAuth 2.0 and OIDC** (the two suites most projects actually need),
 **configurably compliant on OAuth 2.1** (its RFC 9700 Security-BCP gates can reject the
 legacy grants and enforce S256 PKCE + the `iss` parameter — legacy by default in 3.4,
-compliant by default in 4.0), **partway on MCP** (it added the 9728 + 8707 resource-server
-pieces), and **absent on FAPI 2.0** (which needs sender-constrained tokens and PAR). That's a
-coherent, defensible position for a general-purpose Django
+compliant by default in 4.0), **MCP-ready** (it now ships every required MCP spec — 9728,
+8707, 8414, PKCE, DCR, and the 2.1 gates), and **absent on FAPI 2.0** (which needs
+sender-constrained tokens and PAR). That's a coherent, defensible position for a
+general-purpose Django
 provider — and it makes the roadmap obvious: an OAuth-2.1 mode is low-hanging; FAPI is the
 larger investment.

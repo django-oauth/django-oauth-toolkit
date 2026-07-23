@@ -181,10 +181,12 @@ common profiles:
   deprecation warnings) and flip to compliant in 4.0.
 * **FAPI 2.0** — Not supported. Requires sender-constrained tokens (mTLS or DPoP),
   PAR, and ``at+jwt``, none of which are implemented.
-* **MCP authorization** — Partial. The resource-server building blocks are now present —
-  protected-resource metadata (RFC 9728), resource indicators (RFC 8707), authorization-server
-  metadata (RFC 8414), PKCE, and Dynamic Client Registration — so DOT can act as an MCP
-  resource server; a named OAuth 2.1 posture is the main remaining gap.
+* **MCP authorization** — Supported (configurable). DOT ships every spec the MCP
+  authorization profile requires — protected-resource metadata (RFC 9728), resource
+  indicators (RFC 8707), authorization-server metadata (RFC 8414), PKCE, Dynamic Client
+  Registration, and, through the RFC 9700 gates above, an OAuth 2.1 posture. To run an
+  MCP-compliant deployment, enable the RFC 9700 gates and add the protected-resource-metadata
+  mixin / DRF authenticator to your resource server.
 
 Gaps that block the advanced profiles, in rough priority order: ``private_key_jwt``
 (RFC 7523), JWT access tokens (RFC 9068), PAR (RFC 9126), DPoP (RFC 9449), and OIDC
