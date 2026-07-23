@@ -543,15 +543,30 @@ of an additive one.
   possible signal that an OP session ended; it must not *be* the definition of the OP
   session, or a deployment whose authoritative session lives in Shibboleth/CAS inherits a
   session concept that is not the real one.
-- **A resource-server-only deployment must not be forced to adopt the new models.** DOT's
-  most common role in SSO shops (Columbia among them) is a pure RFC 7662 **introspecting
-  resource server**, which mints no login session and issues no grants — the Phase-1
-  introspection path already writes `application=NULL` and sets no `Authorization`.
-  `Authorization` and `Session` (and their FKs) must ship as **inert, nullable defaults**
-  that such a deployment neither configures nor populates. Carrying two swappable models
-  it never uses is acceptable; being *required* to wire them up — or losing the
-  resource-server path if it does not — is not. This is a Phase-1 packaging constraint,
-  not a session-design one.
+- **A resource-server deployment must not be forced to adopt the new *models*, and its
+  token-table migration must be held to a single nullable column.** DOT's most common role
+  in SSO shops (Columbia among them) is a pure RFC 7662 **introspecting resource server**:
+  it mints no login session and issues no grants, but it **does store tokens** — the
+  introspection cache writes each token into the `AccessToken` model (with
+  `application=NULL`, and the Phase-1 path sets no `Authorization`). Two consequences the
+  ADR must respect, because the "it's just a resource server, the schema won't touch it"
+  intuition is only half true:
+  - **The token-base FK column does reach them, and that is the unavoidable part.** Because
+    the RS materialises `AccessToken` rows — and such deployments typically *swap* the
+    concrete model (Columbia's `MyAccessToken` adds a `userinfo` field) — the new nullable
+    `authorization` FK on `AbstractAccessToken` will appear on their model and force one
+    migration. It must stay exactly that: a **nullable** column that is **NULL for
+    introspected tokens**, never a required value and never a behavioural change on the
+    introspection path.
+  - **Being forced to define the new swappable models is the avoidable part, and it is a
+    real risk, not a hypothetical.** Columbia already swaps *all four* token/application
+    models and records in its own `models.py` that DOT's swappable-model interdependency
+    *"seems to require creating swappable models even when no changes are needed to them."*
+    If `Authorization` and `Session` inherit that same interdependency, a pure RS is dragged
+    into defining two more swapped models (`OAUTH2_PROVIDER_AUTHORIZATION_MODEL` /
+    `_SESSION_MODEL`) for zero benefit. The acceptance criterion is that it is not: the new
+    models ship as inert defaults a resource server neither configures nor swaps.
+  This is a Phase-1 packaging constraint, not a session-design one.
 
 ---
 
@@ -579,7 +594,10 @@ of an additive one.
    preserve token history (→ `SET_NULL` + durable `client_id`) or to be blocked while
    tokens live (→ current `CASCADE`/`RESTRICT`)? Pick one and write it down.
 7. **Resource-server packaging (§9).** Confirm a pure introspecting resource server can
-   run on the Phase-1 schema without configuring `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` /
-   `OAUTH2_PROVIDER_SESSION_MODEL`, and that the new entities are genuinely inert for that
-   role. If they are not, that is a stronger argument for deferring the schema than any
-   client-axis concern here.
+   run on the Phase-1 schema without being *forced* to define
+   `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` / `OAUTH2_PROVIDER_SESSION_MODEL` — specifically
+   that the swappable-model interdependency which today forces swapping unchanged models
+   (per Columbia's `models.py`) does **not** extend to the two new models — and that the
+   only schema such a deployment inherits is the nullable, stays-NULL `authorization` FK
+   column on the token tables it already stores into (the introspection cache). If it
+   forces more than that column, defer the schema.
