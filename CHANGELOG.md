@@ -101,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `object.__new__()`, which raised `TypeError: object.__new__() takes exactly one argument` when
   instantiating any view mixing this in with any argument at all — notably breaking Django REST
   Framework's `cls(**initkwargs)` view instantiation.
+* #1006 A `client_id` or `username` containing a NUL (`\x00`) byte no longer causes a 500 error
+  on database backends (e.g. PostgreSQL) that raise `ValueError` instead of executing the query;
+  such values are now correctly treated as not matching any client/user.
 
 ### Security
 * Generate device-flow `user_code` values with the cryptographically secure `secrets` module

@@ -305,6 +305,42 @@ class TestOAuth2Validator(TransactionTestCase):
         self.assertIsNone(application)
         self.assertIsNone(self.request.client)
 
+    def test_load_application_returns_none_for_client_id_containing_nul_byte(self):
+        """
+        Regression test for
+        https://github.com/django-oauth/django-oauth-toolkit/issues/1006
+
+        Some database backends (e.g. PostgreSQL) raise ValueError
+        rather than executing the query at all when a string
+        parameter contains a NUL (0x00) byte. A client_id containing
+        one can never match a real Application, so this must return
+        None (same as "not found") instead of letting the ValueError
+        propagate into a 500 error.
+        """
+        self.request.client = None
+        application = self.validator._load_application("client_id\x00", self.request)
+        self.assertIsNone(application)
+        self.assertIsNone(self.request.client)
+
+    def test_validate_user_returns_false_for_username_containing_nul_byte(self):
+        """
+        Regression test for
+        https://github.com/django-oauth/django-oauth-toolkit/issues/1006
+
+        Some database backends (e.g. PostgreSQL) raise ValueError from
+        within Django's own authenticate() when a username contains a
+        NUL (0x00) byte, rather than the usual "no matching user"
+        outcome. A username containing one can never match a real
+        user, so this must return False (authentication failed)
+        instead of letting the ValueError propagate into a 500 error.
+        """
+        oauthlib_request = Request("/o/token/")
+        oauthlib_request.decoded_body = []
+        result = self.validator.validate_user(
+            "someuser\x00", "somepassword", self.application, oauthlib_request
+        )
+        self.assertFalse(result)
+
     def test_rotate_refresh_token__is_true(self):
         self.assertTrue(self.validator.rotate_refresh_token(mock.MagicMock()))
 

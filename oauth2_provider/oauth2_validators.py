@@ -368,6 +368,16 @@ class OAuth2Validator(RequestValidator):
                 request.client = client
                 return request.client
             return None
+        except ValueError:
+            # Some database backends (e.g. PostgreSQL via psycopg2)
+            # raise ValueError instead of executing the query at all
+            # when client_id contains characters they can't represent
+            # in a string literal (most notably a NUL/0x00 byte). No
+            # legitimate client_id could ever contain such a byte, so
+            # treat this the same as "no matching Application found"
+            # rather than letting it propagate into a 500 error.
+            # See GH #1006.
+            return None
 
     def _set_oauth2_error_on_request(self, request, access_token, scopes):
         if access_token is None:
@@ -1143,7 +1153,20 @@ class OAuth2Validator(RequestValidator):
         # Passing the optional HttpRequest adds compatibility for backends
         # which depend on its presence.
         http_request = self.build_http_request(request)
-        u = authenticate(http_request, username=username, password=password)
+        u = None
+        try:
+            u = authenticate(http_request, username=username, password=password)
+        except ValueError:
+            # Some database backends (e.g. PostgreSQL via psycopg2)
+            # raise ValueError instead of executing the underlying
+            # user lookup query at all when username contains
+            # characters they can't represent in a string literal
+            # (most notably a NUL/0x00 byte), rather than the usual
+            # "no matching user" outcome authenticate() otherwise
+            # returns as None. Treat it the same way: authentication
+            # simply failed, rather than letting it propagate into a
+            # 500 error. See GH #1006.
+            pass
         if u is not None and u.is_active:
             request.user = u
             return True
