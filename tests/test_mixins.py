@@ -143,14 +143,14 @@ class TestReadWriteScopedResourceMixin(BaseTest):
     def test_instantiation_with_keyword_arguments(self):
         """
         __new__() must not forward extra keyword arguments down to
-        object.__new__() -- object.__new__() only tolerates them when
-        the class also overrides __init__ itself, which this mixin
-        does not. Passing them through broke instantiation with any
-        argument at all for classes mixing this in (notably Django
-        REST Framework's cls(**initkwargs) view instantiation, which
-        Django's own View.as_view() also uses), raising
-        "object.__new__() takes exactly one argument" instead of
-        constructing the instance normally.
+        object.__new__(). Because the mixin overrides __new__(),
+        object.__new__() rejects any extra argument outright, so
+        forwarding them broke instantiation with any argument at all
+        for classes mixing this in (notably Django REST Framework's
+        cls(**initkwargs) view instantiation, which Django's own
+        View.as_view() also uses), raising "object.__new__() takes
+        exactly one argument" instead of constructing the instance
+        normally.
         """
 
         class TestView(ReadWriteScopedResourceMixin, View):
