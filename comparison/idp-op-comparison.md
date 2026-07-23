@@ -48,7 +48,7 @@ or paid tier · ❌ None · ❓ Unverified
 | RFC 8705 — mTLS client auth | ❌ | ❌ | ❌ | ❌ |
 | RFC 8707 — Resource indicators | ✅ | ❌ | ❌ | ❌ |
 | RFC 9728 — Protected resource metadata | ✅ | ❌ | ❌ | ❌ |
-| RFC 9700 — Security BCP | ◑ | ◑ | ◑ | ◑ |
+| RFC 9700 — Security BCP | ✅ | ◑ | ◑ | ◑ |
 | OIDC Core | ⚙ | ◑ | ✅ | ✅ |
 | OIDC Discovery | ⚙ | ❌ | ✅ | ✅ |
 | OIDC Dynamic Registration | ◑ | ❌ | ✅ | ❌ |
@@ -92,7 +92,7 @@ a framework you assemble, not a Django-native app. None in this tier is OpenID-c
 | RFC 8705 — mTLS client auth | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ |
 | RFC 8707 — Resource indicators | ✅ | ◑ | ❌ | ❓ | ❌ | ❌ |
 | RFC 9728 — Protected resource metadata | ✅ | ◑ | ❌ | ❓ | ❓ | ❓ |
-| RFC 9700 — Security BCP | ◑ | ◑ | ◑ | ◑ | ◑ | ❓ |
+| RFC 9700 — Security BCP | ✅ | ◑ | ◑ | ◑ | ◑ | ❓ |
 | OIDC Core | ⚙ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | OIDC Discovery | ⚙ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | OIDC Dynamic Registration | ◑ | ✅ | ✅ | ✅ | ❌ | ✅ |
@@ -139,7 +139,7 @@ back-channel logout.**
 | RFC 8705 — mTLS client auth | ❌ | ❌ | 🧩 | ◑ | ✅ |
 | RFC 8707 — Resource indicators | ✅ | ❌ | ◑ | ◑ | ✅ |
 | RFC 9728 — Protected resource metadata | ✅ | ❓ | ◑ | ❓ | ❓ |
-| RFC 9700 — Security BCP | ◑ | ◑ | ◑ | ◑ | ◑ |
+| RFC 9700 — Security BCP | ✅ | ◑ | ◑ | ◑ | ◑ |
 | OIDC Core | ⚙ | ✅ | ✅ | ✅ | ✅ |
 | OIDC Discovery | ⚙ | ✅ | ✅ | ✅ | ✅ |
 | OIDC Dynamic Registration | ◑ | ✅ | ✅ | ❌ | ✅ |

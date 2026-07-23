@@ -83,9 +83,12 @@ OAuth 2.0 and extensions
      - Used internally for OIDC ID tokens and JWT handling (via jwcrypto); not a
        standalone user feature.
    * - `RFC 9700 <https://www.rfc-editor.org/rfc/rfc9700>`_ — OAuth 2.0 Security BCP
-     - Partial
-     - Bundled as guidance in ``rfcs/``; secure defaults (PKCE on, exact redirect
-       matching) align with the BCP.
+     - Supported
+     - Per-recommendation ``COMPLIANT_BCP_RFC9700_*`` gates (reject implicit/password
+       grants, S256-only PKCE, no query-string tokens, RFC 9207 ``iss`` in authorization
+       responses, hashed token storage, refresh-token reuse protection, redirect-URI
+       matching), a ``--deploy`` security system check, and :doc:`security`. Gates default
+       to legacy behavior (with warnings) and flip to enforcing in 4.0.
    * - `RFC 7523 <https://www.rfc-editor.org/rfc/rfc7523>`_ — JWT client assertions
        (``private_key_jwt``)
      - Not supported
@@ -171,10 +174,11 @@ common profiles:
   (revocation, introspection, PKCE, device grant, metadata).
 * **OpenID Connect (Basic/Core)** — Supported (opt-in). Core, Discovery, and
   RP-Initiated Logout.
-* **OAuth 2.1** (draft) — Partial. DOT's defaults already align with 2.1 (PKCE
-  required, exact redirect-URI matching, the Security BCP as guidance). The legacy
-  implicit and password grants that 2.1 removes remain available for backward
-  compatibility rather than being disabled.
+* **OAuth 2.1** (draft) — Configurable. DOT's defaults already align with 2.1 (PKCE
+  required, exact redirect-URI matching), and the RFC 9700 gates above let you reject the
+  implicit and password grants, enforce S256-only PKCE, and add the ``iss`` parameter — the
+  defining 2.1 behaviors. The gates preserve the legacy grants by default in 3.4 (with
+  deprecation warnings) and flip to compliant in 4.0.
 * **FAPI 2.0** — Not supported. Requires sender-constrained tokens (mTLS or DPoP),
   PAR, and ``at+jwt``, none of which are implemented.
 * **MCP authorization** — Partial. The resource-server building blocks are now present —

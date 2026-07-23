@@ -23,7 +23,7 @@ Column keys: **DOT** · **oalib** = oauthlib · **Alib** = Authlib · **Autk** =
 | Suite | DOT | oalib | Alib | Autk | KC | Hyd | WSO2 | Zit | Jans | Okta | Au0 | Entra | Ping |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | **OAuth 2.0** (classic) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ◑ | ✅ |
-| **OAuth 2.1** (draft) | ◑ | ◑ | ◑ | ◑ | ✅ | ✅ | ◑ | ✅ | ◑ | ◑ | ◑ | ◑ | ◑ |
+| **OAuth 2.1** (draft) | ✅ | ◑ | ◑ | ◑ | ✅ | ✅ | ◑ | ✅ | ◑ | ◑ | ◑ | ◑ | ◑ |
 | **OIDC** (Core+Discovery) | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Native apps** (RFC 8252) | ◑ | ◑ | ◑ | ◑ | ◑ | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **FAPI 2.0** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ◑ | ❌ | 🧩 | ❌ | ✅ |
@@ -44,10 +44,11 @@ N/A — see [Table 4](./rp-comparison.md).*
   standard revocation and introspection endpoints.
 - **OAuth 2.1** — PKCE mandatory + the implicit/password grants removable + Security-BCP
   alignment. ✅ goes to servers with an explicit 2.1 posture (Keycloak's 2.1 client profile,
-  Hydra's OAuth-2.1 mode, Zitadel's no-ROPC/PKCE-first design). Everyone else is ◑: PKCE is
-  on, but the legacy grants remain available and there's no named 2.1 mode. **DOT is ◑** —
-  its defaults already align (PKCE required by default), but implicit and password grants
-  ship enabled and there is no 2.1 switch.
+  Hydra's OAuth-2.1 mode, Zitadel's no-ROPC/PKCE-first design). The remaining ◑ servers have
+  PKCE on but leave the legacy grants available with no named 2.1 switch. **DOT is now ✅** —
+  its RFC 9700 Security-BCP compliance gates let you reject the implicit and password grants,
+  enforce S256-only PKCE, and add the RFC 9207 `iss` parameter, giving it a configurable 2.1
+  posture (the gate defaults are legacy in 3.4 and flip to compliant in 4.0).
 - **OIDC** — OIDC Core + Discovery (+ JWT ID tokens). Every dedicated server/SaaS is
   OpenID-certified here; **DOT is ✅ but opt-in and *not* certified**, oauthlib is ◑
   (flows only, no discovery).
@@ -67,10 +68,11 @@ N/A — see [Table 4](./rp-comparison.md).*
 
 ## The one-line story for DOT
 
-DOT is **strong on OAuth 2.0 and OIDC** (the two suites most projects actually need), **near
-on OAuth 2.1** (defaults already aligned — closing it is mostly a config-profile question),
-**partway on MCP** (it just added the 9728 + 8707 resource-server pieces; a named OAuth 2.1
-posture is the remaining gap), and **absent on FAPI 2.0** (which needs sender-constrained
-tokens and PAR). That's a coherent, defensible position for a general-purpose Django
+DOT is **strong on OAuth 2.0 and OIDC** (the two suites most projects actually need),
+**configurably compliant on OAuth 2.1** (its RFC 9700 Security-BCP gates can reject the
+legacy grants and enforce S256 PKCE + the `iss` parameter — legacy by default in 3.4,
+compliant by default in 4.0), **partway on MCP** (it added the 9728 + 8707 resource-server
+pieces), and **absent on FAPI 2.0** (which needs sender-constrained tokens and PAR). That's a
+coherent, defensible position for a general-purpose Django
 provider — and it makes the roadmap obvious: an OAuth-2.1 mode is low-hanging; FAPI is the
 larger investment.
