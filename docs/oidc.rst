@@ -391,20 +391,29 @@ token, so you will probably want to reuse that::
 Adding more information to the request object passed to the authentication backends
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-By default, a new ``HttpRequest`` object is created for the authenticate method
-which does not have all the attributes of the original request.
+By default, ``build_http_request`` creates a new Django ``HttpRequest`` for the
+``authenticate()`` call that only carries a subset of the incoming request's
+attributes (path, method, body and headers).
 
-If you need to add more information to the request object passed to the
-authentication backends, you can override the ``create_a_new_request`` method.
-For example, if you have a multi-tenant middleware that adds a ``tenant_id``
-attribute to the request, you can include it in the request object passed to
-the authentication backends by overriding the ``create_a_new_request`` method::
+If your authentication backends need more, override ``build_http_request`` to
+copy the extra attributes onto the Django ``HttpRequest`` it returns.
+
+Note that the ``request`` argument is the oauthlib ``Request``, **not** the
+original Django ``HttpRequest``. Attributes attached to the Django request by
+middleware (for example a ``tenant_id`` set by a multi-tenant middleware) are
+not automatically present on the oauthlib request, so make sure the value you
+need has been made available on it -- or forward it there yourself -- and read
+it with ``getattr`` and a default to avoid an ``AttributeError`` when it is
+missing::
 
     class CustomOAuth2Validator(OAuth2Validator):
 
-        def create_a_new_request(self, request):
-            new_request = super().create_a_new_request(request)
-            setattr(new_request, "tenant_id", request.tenant_id)
+        def build_http_request(self, request):
+            # ``request`` is the oauthlib Request; ``tenant_id`` must already
+            # have been set on it (e.g. by a custom OAuthLibCore that forwards
+            # it from the Django request).
+            new_request = super().build_http_request(request)
+            new_request.tenant_id = getattr(request, "tenant_id", None)
             return new_request
 
 

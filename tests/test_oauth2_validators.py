@@ -521,7 +521,7 @@ class TestOAuth2Validator(TransactionTestCase):
         self.assertIsNotNone(user)
         self.assertEqual(content["username"], user.username)
 
-    def test_validate_user_uses_default_create_a_new_request(self):
+    def test_validate_user_uses_default_build_http_request(self):
         password = secrets.token_hex(16)
         request = mock.MagicMock(
             wraps=Request,
@@ -535,18 +535,25 @@ class TestOAuth2Validator(TransactionTestCase):
             success = self.validator.validate_user(self.user.username, password, self.application, request)
         self.assertTrue(success)
         self.assertEqual(request.user, self.user, "Successfully authenticated user is set to the request")
-        call_with_original_request = mock.call(request, username="user", password=password)
+        # authenticate() should receive a Django HttpRequest built from the oauthlib
+        # request, with the key attributes copied over.
+        built_request = mock_authenticate.call_args.args[0]
+        self.assertIsInstance(built_request, HttpRequest)
+        self.assertEqual(built_request.path, request.uri)
+        self.assertEqual(built_request.method, request.http_method)
+        self.assertEqual(built_request.META, request.headers)
+        call_with_original_request = mock.call(request, username=self.user.username, password=password)
         self.assertNotIn(
             call_with_original_request,
             mock_authenticate.mock_calls,
             "The request should not be passed directly to the authenticate method",
         )
 
-    def test_validate_user_with_overridden_create_a_new_request(self):
-        copy_of_request = mock.MagicMock(wraps=HttpRequest)
+    def test_validate_user_with_overridden_build_http_request(self):
+        copy_of_request = HttpRequest()
 
         class TestOAuth2Validator(OAuth2Validator):
-            def create_a_new_request(self, request):
+            def build_http_request(self, request):
                 return copy_of_request
 
         validator = TestOAuth2Validator()

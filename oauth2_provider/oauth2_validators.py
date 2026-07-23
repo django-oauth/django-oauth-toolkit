@@ -27,6 +27,7 @@ from django.utils.translation import gettext_lazy as _
 from jwcrypto import jws, jwt
 from jwcrypto.common import JWException
 from jwcrypto.jwt import JWTExpired
+from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
@@ -1123,12 +1124,10 @@ class OAuth2Validator(RequestValidator):
         for t in tokens:
             t.revoke()
 
-    def create_a_new_request(self, request) -> HttpRequest:
+    def build_http_request(self, request: OauthlibRequest) -> HttpRequest:
         """
-        Copy the request object to a new HttpRequest object.
-        Create one with attributes likely to be used.
-        Override this method to customize the request object which
-        is passed to the authenticate method.
+        Build a Django ``HttpRequest`` from the oauthlib ``Request`` for Django's
+        ``authenticate()``. Override to pass extra attributes to your auth backends.
         """
         http_request = HttpRequest()
         http_request.path = request.uri
@@ -1143,7 +1142,7 @@ class OAuth2Validator(RequestValidator):
         """
         # Passing the optional HttpRequest adds compatibility for backends
         # which depend on its presence.
-        http_request = self.create_a_new_request(request)
+        http_request = self.build_http_request(request)
         u = authenticate(http_request, username=username, password=password)
         if u is not None and u.is_active:
             request.user = u
