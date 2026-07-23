@@ -91,10 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client secret is — or will be — hashed, instead of only surfacing the error on save.
 
 ### Fixed
-* #1619 Accept wildcard `redirect_uris` whose hostname has multiple leading dashes after the
-  wildcard, such as Netlify deploy-preview URLs (`https://*--sitename.netlify.app`). The validator
-  previously stripped only a single leading hyphen after removing the `*`, leaving a hostname that
-  began with `-` and was rejected by `URIValidator`; it now strips all leading hyphens.
+* #1619 Accept wildcard `redirect_uris` whose hostname uses the double-dash form required for
+  Netlify deploy-preview URLs (`https://*--sitename.netlify.app`). The validator previously stripped
+  only a single leading hyphen after removing the `*`, leaving a hostname that began with `-` and was
+  rejected by `URIValidator`; it now strips up to two leading hyphens while rejecting longer runs.
 
 ### Security
 * Generate device-flow `user_code` values with the cryptographically secure `secrets` module

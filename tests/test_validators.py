@@ -193,6 +193,7 @@ class TestAllowedURIValidator(TestCase):
             "https://*-partial",
             "https://*.com",
             "https://*-partial.com",
+            "https://*---sitename.netlify.app",
             "https://*.*.example.com",
             "https://invalid.*.example.com",
         ]

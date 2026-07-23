@@ -1105,6 +1105,7 @@ valid_wildcard_redirect_to_params = [
     ("https://valid.valid.example.com", ["https://*.example.com"]),
     ("https://valid-partial.example.com", ["https://*-partial.example.com"]),
     ("https://valid.valid-partial.example.com", ["https://*-partial.example.com"]),
+    ("https://deploy-preview-42--sitename.netlify.app", ["https://*--sitename.netlify.app"]),
 ]
 
 
@@ -1117,6 +1118,8 @@ def test_wildcard_redirect_to_uri_allowed_valid(uri, allowed_uri, oauth2_setting
 invalid_wildcard_redirect_to_params = [
     ("https://invalid.com", ["https://*.example.com"]),
     ("https://invalid.example.com", ["https://*-partial.example.com"]),
+    ("https://x-sitename.netlify.app", ["https://*--sitename.netlify.app"]),
+    ("https://evil--othersite.netlify.app", ["https://*--sitename.netlify.app"]),
 ]
 
 
