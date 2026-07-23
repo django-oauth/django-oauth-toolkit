@@ -75,9 +75,9 @@ endsWith check.
 
 For example,
 ``https://*.example.com`` is allowed,
+``https://*.sub.example.com`` is allowed,
 ``https://*-myproject.example.com`` is allowed,
 ``https://*--sitename.netlify.app`` is allowed for Netlify deploy previews,
-``https://*.sub.example.com`` is not allowed,
 ``https://*.com`` is not allowed, and
 ``https://example.*.com`` is not allowed.
 
