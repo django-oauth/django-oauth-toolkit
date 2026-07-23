@@ -504,6 +504,10 @@ designed them.
   correlation optional, and keep a pure introspecting resource server free of the new
   models. The full external-SSO modelling is out of scope here; the three guards that
   keep it from becoming a later breaking change are in §9.
+- **AS-issued tokens ≠ RS cache entries (§10).** An RFC 7662 introspection result cached
+  by a resource server is another AS's fact with a TTL, not a token this deployment
+  issued. Do not let the new `authorization` FK acquire meaning on those rows, and do
+  not let DOT's own introspection endpoint assert them as locally-issued.
 - **Do not let "the FK exists" invent scope.** Same caution the ADR raises about
   `Authorization` growing session-ish behaviour applies to a client principal: it is an
   attribution anchor, not a place to hang policy that belongs on the registration or the
@@ -570,7 +574,83 @@ of an additive one.
 
 ---
 
-## 10. Open questions
+## 10. The RS introspection cache — same pattern, must be resolved before the schema is final
+
+**Status: in scope as a consideration.** No design is committed here, but the 4.0 schema
+must not be finalised without answering it, because it is the third instance of the
+pattern this document exists to name — an externally-owned, evictable fact stored in a
+durable authoritative table:
+
+| Externally-owned fact | Table it squats in | Overloaded marker |
+|---|---|---|
+| CIMD / federation client metadata | `Application` | `registration_source`, `cimd_expires_at` |
+| Derived client identity | `Application` (forced row) | `application IS NULL` after deletion |
+| **RFC 7662 introspection result** | **`AccessToken`** | `application IS NULL` |
+
+### Provenance — this was a known workaround, not a design
+
+The introspection cache landed in PR #477 (2017, closing #342). The record is explicit:
+
+- The author, on why the RS writes into `AccessToken`: "the Resource Server doesn't know
+  about the applications on the Authentication Server, but creating an Access Token
+  required an Application. Therefore I made `AccessToken.application` nullable so the RS
+  can create Tokens without application," and "I'm using the existing DOT infrastructure
+  to create Tokens (without Applications)."
+- The reviewing maintainer, at merge: "this sounds like a **workaround rather than a
+  solution** … I want to land this, but the AccessToken change is giving me pause."
+
+So `application IS NULL` — the ambiguity §5 flags — is the direct sediment of that 2017
+shortcut, and the concurrent first-sight race later patched in #611 is the same race
+CIMD re-fought in its `IntegrityError` handler. The pattern reproduces its bugs.
+
+### Scope of impact if split into a separate pipeline (surveyed, not assumed)
+
+The consumer surface divides cleanly into two groups:
+
+- **Interface-coupled (unaffected by a split, if the duck type is preserved).** DRF
+  `OAuth2Authentication` returns `(r.user, r.access_token)`; the DRF permission classes
+  (`TokenHasScope` and family) call only `is_valid()` / `is_expired()` /
+  `allow_scopes()` on `request.auth`; `OAuth2Backend`, the `ProtectedResourceView`
+  mixins and the decorators all consume the token via `verify_request` →
+  `request.access_token`. None of these care which table — or whether any table — the
+  object came from. A separate RS representation satisfying the same small interface
+  slots in untouched.
+- **Table-coupled (the real migration surface).** (a) The cache lookup itself
+  (`_load_access_token` by `token_checksum`); (b) `clear_expired()`, which currently
+  garbage-collects cache entries for free; (c) swapped-model extensions that hang data
+  on the row — Columbia's `MyAccessToken.userinfo` is the live example, and it queries
+  `AccessToken.objects` directly; (d) any deployment code that assumes introspected
+  tokens appear in `AccessToken`.
+
+**A finding that strengthens the split, found while surveying:** in a **dual AS+RS
+deployment**, DOT's own introspection endpoint (`views/introspect.py`) looks up tokens
+by `token_checksum` alone, with no filter on origin. Cached *external* tokens are
+therefore served by DOT's introspection endpoint as if DOT had issued them — one
+authorization server re-asserting another AS's token as "active" under its own
+authority, with `application`/audience information missing. Sharing the table does not
+just overload a NULL; it **conflates token authority** the moment a deployment wears
+both hats.
+
+### What must be decided before the schema is final
+
+1. Whether the introspection result becomes its own evictable representation (cache
+   entity or non-persisted object behind the existing duck type), or stays in
+   `AccessToken` with its inapplicability to `authorization` explicitly documented.
+2. If it stays: the new `authorization` FK must never acquire a meaning on RS rows —
+   NULL there means "not applicable," and that is a *fourth* fact riding on the row.
+3. If it splits: an extension point for RS-side per-token state (the Columbia `userinfo`
+   pattern) must move with it, and `clear_expired()`'s cleanup duty must be reassigned.
+4. Either way: the dual-role introspection leak above needs a decision — served,
+   filtered, or documented — independent of where the cache lives.
+
+The governing principle is the one this document applies to CIMD: **an externally-owned
+cache is not an authoritative record, and must not be stored as one.** Whether the RS
+cache is carved out in 4.0 or explicitly grandfathered, the schema should say which — by
+decision, not by inheritance from a 2017 workaround its own reviewer flagged.
+
+---
+
+## 11. Open questions
 
 1. **Table or column?** Is a literal `Client` principal table (Model 2) worth the
    swappable-model churn in 4.0, or is `client_id`-on-`Authorization` + optional
@@ -593,7 +673,14 @@ of an additive one.
 6. **Reconcile the §6 `on_delete` graph** explicitly: is client deletion meant to
    preserve token history (→ `SET_NULL` + durable `client_id`) or to be blocked while
    tokens live (→ current `CASCADE`/`RESTRICT`)? Pick one and write it down.
-7. **Resource-server packaging (§9).** Confirm a pure introspecting resource server can
+7. **AS-issued token ≠ RS cache entry (§10).** Decide before the schema is final whether
+   the RFC 7662 introspection result stays in `AccessToken` (grandfathered, with
+   `authorization` documented as never-applicable there) or becomes a separate evictable
+   representation behind the existing token duck type. Survey says the DRF/backends
+   surface is interface-coupled and safe; the migration cost is `_load_access_token`,
+   `clear_expired()`, and swapped-model extensions like Columbia's `userinfo`. The
+   dual-role introspection leak (§10) needs a ruling either way.
+8. **Resource-server packaging (§9).** Confirm a pure introspecting resource server can
    run on the Phase-1 schema without being *forced* to define
    `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` / `OAUTH2_PROVIDER_SESSION_MODEL` — specifically
    that the swappable-model interdependency which today forces swapping unchanged models
