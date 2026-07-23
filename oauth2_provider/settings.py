@@ -168,6 +168,17 @@ DEFAULTS = {
     "DCR_REGISTRATION_SCOPE": "oauth2_provider:registration",
     "DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS": None,  # None = year 9999 (no expiry)
     "DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE": True,
+    # Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
+    "CIMD_ENABLED": False,
+    "CIMD_METADATA_FETCHER": "oauth2_provider.cimd.SafeMetadataFetcher",
+    "CIMD_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.cimd.AllowAllCIMDPermission",),
+    "CIMD_ALLOWED_HOSTS": [],  # used by HostAllowlistCIMDPermission; ALLOWED_HOSTS syntax
+    "CIMD_FETCH_TIMEOUT_SECONDS": 5,
+    "CIMD_MAX_DOCUMENT_SIZE": 16 * 1024,  # draft §6.6 recommends ~5 KB; headroom, still bounded
+    "CIMD_METADATA_MIN_AGE_SECONDS": 300,
+    "CIMD_METADATA_MAX_AGE_SECONDS": 86400,
+    "CIMD_FAILURE_BACKOFF_SECONDS": 60,
+    "CIMD_MAX_CONCURRENT_FETCHES": 10,  # 0 or None disables the in-flight cap
     # RFC 8414 Authorization Server Metadata
     "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code", "token"],
     "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
@@ -223,6 +234,8 @@ IMPORT_STRINGS = (
     "REFRESH_TOKEN_ADMIN_CLASS",
     "DCR_REGISTRATION_PERMISSION_CLASSES",
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR",
+    "CIMD_METADATA_FETCHER",
+    "CIMD_REGISTRATION_PERMISSION_CLASSES",
 )
 
 

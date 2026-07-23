@@ -30,6 +30,7 @@ from jwcrypto.jwt import JWTExpired
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
+from . import cimd
 from .bcp import bcp_compliant
 from .exceptions import FatalClientError
 from .models import (
@@ -324,6 +325,11 @@ class OAuth2Validator(RequestValidator):
         """
         If request.client was not set, load application instance for given
         client_id and store it in request.client
+
+        When CIMD is enabled and client_id is a metadata-document URL, this may
+        additionally fetch that URL and persist an Application on first sight (or
+        re-fetch a stale one), so a lookup here can perform network I/O and a
+        write to the default database.
         """
         if request.client:
             # check for cached client, to save the db hit if this has already been loaded
@@ -345,6 +351,7 @@ class OAuth2Validator(RequestValidator):
         try:
             # cache not hit, loading application from database for client_id %r
             client = Application.objects.get(client_id=client_id)
+            client = cimd.refresh_if_stale(client, request=request)
             if not client.is_usable(request):
                 # Failed to load application: Application %r is not usable
                 return None
@@ -352,7 +359,13 @@ class OAuth2Validator(RequestValidator):
             # Loaded application with client_id %r from database
             return request.client
         except Application.DoesNotExist:
-            # Failed to load application: Application with client_id %r does not exist
+            # Not stored yet: the client_id may be a Client ID Metadata Document
+            # URL we can fetch and persist on first sight. Returns None when CIMD
+            # is disabled or the id is not a resolvable CIMD URL.
+            client = cimd.resolve_cimd_application(client_id, request=request)
+            if client is not None and client.is_usable(request):
+                request.client = client
+                return request.client
             return None
 
     def _set_oauth2_error_on_request(self, request, access_token, scopes):

@@ -61,6 +61,7 @@ tests/e2e/
   rfc7636_pkce/  rfc7009_revocation/  rfc7662_introspection/
   rfc8414_as_metadata/  rfc8628_device_grant/
   rfc7591_dynamic_client_registration/
+  cimd_client_id_metadata_document/   # CIMD-enabled IdP + loopback document server
   oidc_core/  oidc_discovery/  oidc_rp_initiated_logout/
   browser_rp/          # Playwright over the real SvelteKit RP
 ```
@@ -75,6 +76,12 @@ client-credentials, password, implicit, and hybrid clients) plus a claims-rich
 (`read`/`write`/`email`/`profile`/`introspection`) via the environment variables
 it already reads, so no provider defaults change for maintainers running the app
 by hand.
+
+The CIMD package registers no fixture clients: its clients *are* metadata
+documents, served from a per-session loopback HTTP server and fetched by a
+dedicated IdP instance launched with `CIMD_ENABLED` and the demo project's
+`idp.cimd.LoopbackMetadataFetcher` (the production fetcher refuses loopback
+addresses and requires CA-verified TLS, so it cannot run self-contained).
 
 ## Compliance matrix
 

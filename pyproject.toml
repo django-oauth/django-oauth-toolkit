@@ -38,6 +38,7 @@ classifiers = [
 dependencies = [
 	"django >= 4.2",
 	"requests >= 2.13.0",
+	"urllib3 >= 1.26",
 	"oauthlib >= 3.3.0",
 	"jwcrypto >= 1.5.0",
 ]
@@ -134,6 +135,7 @@ markers = [
     "spec_rfc9728: RFC 9728 (protected resource metadata)",
     "spec_rfc8628: RFC 8628 (device authorization grant)",
     "spec_rfc7591: RFC 7591/7592 (dynamic client registration)",
+    "spec_cimd: OAuth Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)",
     "spec_oidc_core: OpenID Connect Core 1.0",
     "spec_oidc_discovery: OpenID Connect Discovery 1.0",
     "spec_oidc_rp_logout: OpenID Connect RP-Initiated Logout 1.0",

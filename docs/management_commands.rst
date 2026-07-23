@@ -34,6 +34,24 @@ until they expire per ``REFRESH_TOKEN_EXPIRE_SECONDS``.
 Note: Refresh tokens need to expire before AccessTokens can be removed from the
 database. Using ``cleartokens`` without ``REFRESH_TOKEN_EXPIRE_SECONDS`` has limited effect.
 
+.. _clearcimdapplications:
+
+clearcimdapplications
+~~~~~~~~~~~~~~~~~~~~~
+
+The ``clearcimdapplications`` management command deletes :doc:`CIMD-registered <cimd>` applications
+(``registration_source="cimd"``) whose cached metadata has expired (``cimd_expires_at`` in the past)
+and that hold no live access token, ID token, grant, or unrevoked refresh token. Because CIMD rows
+are created automatically on first sight of a client URL — and re-created the same way if the client
+returns — deleting them only reclaims storage. Run it regularly (eg: via cron, alongside
+``cleartokens``) when CIMD is enabled, since the application store is otherwise attacker-mintable
+(see :ref:`the CIMD security model <cimd-security>`).
+
+Deletion is batched (``--batch-size``, default 1000). Each batch's liveness check and delete run in
+one transaction with the application rows locked, so a token minted concurrently cannot slip in
+between the check and the delete and be cascade-deleted with its application; batching keeps the
+number of rows locked at once bounded.
+
 .. _createapplication:
 
 createapplication

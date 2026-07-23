@@ -90,6 +90,9 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             ),
             "claims_supported": oidc_claims,
             "prompt_values_supported": ["none", "login"],
+            # draft-ietf-oauth-client-id-metadata-document: kept in sync with the
+            # RFC 8414 metadata endpoint so the two discovery documents agree.
+            "client_id_metadata_document_supported": oauth2_settings.CIMD_ENABLED,
         }
         if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
             data["authorization_response_iss_parameter_supported"] = True

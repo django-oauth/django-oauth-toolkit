@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tokens. Dynamically registered applications are flagged with `AbstractApplication.registration_source`
   set to `"dcr"` and can be filtered in the Django admin.
 * #1739 `ALLOW_LOCALHOST_LOOPBACK` setting to extend the RFC 8252 §7.3 any-port loopback exemption to `http://localhost` redirect URIs (opt-in, default `False`)
+* #1742 Support for OAuth Client ID Metadata Documents (CIMD,
+  `draft-ietf-oauth-client-id-metadata-document`). A client may present an `https` URL as its
+  `client_id`; when `CIMD_ENABLED` is on the server fetches, validates and persists the metadata
+  document as a public application (SSRF-hardened fetch, failure backoff and an in-flight fetch cap).
+  Applications resolved this way carry `AbstractApplication.registration_source` set to `"cimd"`.
+  Registration can be gated with `CIMD_REGISTRATION_PERMISSION_CLASSES` (default allow-all;
+  `HostAllowlistCIMDPermission` restricts it to `CIMD_ALLOWED_HOSTS`), and the
+  `clearcimdapplications` management command prunes expired CIMD applications that hold no live
+  tokens. See `docs/cimd.rst`.
 * #1751 Advertise the Dynamic Client Registration endpoint as `registration_endpoint` in the RFC 8414
   authorization server metadata document when `DCR_ENABLED` is on
 * #1626 RFC 8707 "Resource Indicators" support
@@ -146,6 +155,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   how an application was registered — for example via Dynamic Client Registration (#670). This
   replaces the never-released `dcr_created` `BooleanField`. Installs using the built-in Application
   model just need `manage.py migrate` (migration `0019`).
+* If you use a swapped application model (`OAUTH2_PROVIDER_APPLICATION_MODEL`), run
+  `manage.py makemigrations` after upgrading: for CIMD (#1742) `AbstractApplication` gained a
+  nullable `cimd_expires_at` `DateTimeField`, and `client_id` widened from `max_length=100` to
+  `255` so a metadata-document URL fits. Installs using the built-in Application model just need
+  `manage.py migrate` (migration `0020`).
 * If you use a swapped device grant model (`OAUTH2_PROVIDER_DEVICE_GRANT_MODEL`), run
   `manage.py makemigrations` after upgrading: the redundant field-level `unique=True` was removed
   from `AbstractDeviceGrant.device_code` (#1656), and `AbstractDeviceGrant.scope` changed from

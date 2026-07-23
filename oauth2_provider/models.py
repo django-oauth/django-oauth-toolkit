@@ -124,6 +124,8 @@ class AbstractApplication(models.Model):
                                   those registered via Dynamic Client
                                   Registration (RFC 7591), ``cimd`` for Client
                                   ID Metadata Document
+    * :attr:`cimd_expires_at` When the cached metadata document should be
+                              re-fetched, for CIMD applications
     """
 
     class RegistrationSource(models.TextChoices):
@@ -164,7 +166,9 @@ class AbstractApplication(models.Model):
     )
 
     id = models.BigAutoField(primary_key=True)
-    client_id = models.CharField(max_length=100, unique=True, default=generate_client_id, db_index=True)
+    # 255 rather than 100 so a Client ID Metadata Document URL fits (CIMD uses
+    # the client's https URL as its client_id).
+    client_id = models.CharField(max_length=255, unique=True, default=generate_client_id, db_index=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="%(app_label)s_%(class)s",
@@ -208,6 +212,12 @@ class AbstractApplication(models.Model):
         choices=RegistrationSource.choices,
         default=RegistrationSource.MANUAL,
         help_text=_("How this application was registered (manual, DCR per RFC 7591, or CIMD)"),
+    )
+    cimd_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text=_("When the cached Client ID Metadata Document should be re-fetched"),
     )
 
     class Meta:

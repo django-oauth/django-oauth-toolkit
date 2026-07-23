@@ -70,10 +70,12 @@ class ApplicationAdmin(admin.ModelAdmin):
     search_fields = ("name",) + (("user__email",) if has_email else ())
     raw_id_fields = ("user",)
     # registration_source is a security boundary: the RFC 7592 management endpoint
-    # only operates on applications registered via DCR. It reflects how the client
-    # was created and must not be editable in the admin, or a manually provisioned
-    # application could be made manageable by flipping it to "dcr".
-    readonly_fields = ("registration_source",)
+    # only operates on applications registered via DCR, and the CIMD resolver only
+    # refreshes applications registered via CIMD. It reflects how the client was
+    # created and must not be editable in the admin, or a manually provisioned
+    # application could be handed over to those code paths (e.g. by flipping it
+    # to "dcr"). cimd_expires_at is maintained by the CIMD resolver.
+    readonly_fields = ("registration_source", "cimd_expires_at")
 
 
 class AccessTokenAdmin(admin.ModelAdmin):

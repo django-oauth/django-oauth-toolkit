@@ -103,6 +103,9 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             "response_types_supported": response_types,
             "grant_types_supported": grant_types,
             "scopes_supported": sorted(scopes.get_available_scopes()),
+            # draft-ietf-oauth-client-id-metadata-document: signal whether a
+            # client may use its metadata-document URL as its client_id.
+            "client_id_metadata_document_supported": oauth2_settings.CIMD_ENABLED,
         }
         # RFC 9207: advertise that we set the `iss` authorization-response parameter
         # once the mix-up defense is enforced (gate enabled).
