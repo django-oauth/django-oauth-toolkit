@@ -163,6 +163,14 @@ test a data migration that runs after ``0011_refreshtoken_token_family``:
     executor = MigrationExecutor(connection)
     executor.migrate([target])
 
+.. note::
+
+    Because the example applies real migrations, it must run outside the implicit
+    transaction that ``TestCase`` (and pytest's ``db`` fixture) wraps around each
+    test; otherwise the schema changes can fail or be rolled back unexpectedly.
+    Run it from a ``TransactionTestCase`` (or with pytest's ``transactional_db``
+    fixture), as ``tests/test_migration_0012_hang.py`` does.
+
 If you would rather not hand-roll this boilerplate, the
 `django-test-migrations <https://github.com/wemake-services/django-test-migrations>`_
 package wraps the same recipe (apply the previous migration, set up the data,
