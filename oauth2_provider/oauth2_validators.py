@@ -352,13 +352,6 @@ class OAuth2Validator(RequestValidator):
         try:
             # cache not hit, loading application from database for client_id %r
             client = Application.objects.get(client_id=client_id)
-            client = cimd.refresh_if_stale(client, request=request)
-            if not client.is_usable(request):
-                # Failed to load application: Application %r is not usable
-                return None
-            request.client = client
-            # Loaded application with client_id %r from database
-            return request.client
         except Application.DoesNotExist:
             # Not stored yet: the client_id may be a Client ID Metadata Document
             # URL we can fetch and persist on first sight. Returns None when CIMD
@@ -378,6 +371,13 @@ class OAuth2Validator(RequestValidator):
             # rather than letting it propagate into a 500 error.
             # See GH #1006.
             return None
+        client = cimd.refresh_if_stale(client, request=request)
+        if not client.is_usable(request):
+            # Failed to load application: Application %r is not usable
+            return None
+        request.client = client
+        # Loaded application with client_id %r from database
+        return request.client
 
     def _set_oauth2_error_on_request(self, request, access_token, scopes):
         if access_token is None:
@@ -1159,14 +1159,17 @@ class OAuth2Validator(RequestValidator):
         except ValueError:
             # Some database backends (e.g. PostgreSQL via psycopg2)
             # raise ValueError instead of executing the underlying
-            # user lookup query at all when username contains
-            # characters they can't represent in a string literal
-            # (most notably a NUL/0x00 byte), rather than the usual
-            # "no matching user" outcome authenticate() otherwise
-            # returns as None. Treat it the same way: authentication
-            # simply failed, rather than letting it propagate into a
-            # 500 error. See GH #1006.
-            pass
+            # user lookup query at all when username contains a NUL/0x00
+            # byte, rather than the usual "no matching user" outcome
+            # authenticate() otherwise returns as None. No legitimate
+            # username can contain a NUL byte, so treat it the same way:
+            # authentication simply failed, rather than letting it
+            # propagate into a 500 error. Any other ValueError (e.g.
+            # raised by a custom authentication backend for an unrelated
+            # reason) is re-raised so genuine errors are not silently
+            # masked. See GH #1006.
+            if "\x00" not in username:
+                raise
         if u is not None and u.is_active:
             request.user = u
             return True
