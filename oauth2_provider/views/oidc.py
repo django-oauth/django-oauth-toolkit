@@ -33,7 +33,11 @@ from ..models import (
 )
 from ..settings import oauth2_settings
 from ..utils import jwk_from_pem
-from .metadata import ServerMetadataViewMixin
+from .metadata import (
+    ServerMetadataViewMixin,
+    bcp_filter_code_challenge_methods,
+    bcp_filter_response_types,
+)
 from .mixins import OAuthLibMixin, OIDCLogoutOnlyMixin, OIDCOnlyMixin
 
 
@@ -71,16 +75,24 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             "userinfo_endpoint": userinfo_endpoint,
             "jwks_uri": self._get_endpoint_url(request, "jwks-info", required=True),
             "scopes_supported": scopes_supported,
-            "response_types_supported": oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED,
+            # RFC 9700: mirror the RFC 8414 metadata gating so both discovery documents
+            # agree with what the server actually accepts.
+            "response_types_supported": bcp_filter_response_types(
+                oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED
+            ),
             "subject_types_supported": oauth2_settings.OIDC_SUBJECT_TYPES_SUPPORTED,
             "id_token_signing_alg_values_supported": signing_algorithms,
             "token_endpoint_auth_methods_supported": (
                 oauth2_settings.OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
             ),
-            "code_challenge_methods_supported": [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS],
+            "code_challenge_methods_supported": bcp_filter_code_challenge_methods(
+                [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS]
+            ),
             "claims_supported": oidc_claims,
             "prompt_values_supported": ["none", "login"],
         }
+        if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
+            data["authorization_response_iss_parameter_supported"] = True
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
             data["prompt_values_supported"].append("create")
 
