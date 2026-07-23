@@ -309,7 +309,8 @@ client-side distinction gives a complete set:
 3. **Client metadata cache** — for CIMD/federation, the fetched/derived document with a
    freshness bound. *Not* a registration, *not* a referent. Evictable without touching
    any token.
-4. **`Authorization`** — durable consent + lineage anchor. **(ADR 0001 — correct, keep.)**
+4. **`Authorization`** — durable consent + lineage anchor. **(ADR 0001 — correct, keep**,
+   but its "what was granted" representation must be RAR-ready — see §11.)
 5. **`Session`** — OP authentication session per user agent, `sid`. **(ADR 0001 —
    correct, keep.)**
 6. **`Grant` / `DeviceGrant`** — transient flow credentials. **(Keep.)**
@@ -650,7 +651,29 @@ decision, not by inheritance from a 2017 workaround its own reviewer flagged.
 
 ---
 
-## 11. Open questions
+## 11. Interplay with planned specs (7523, 9068, 9126, 9396, 9449, 8705)
+
+These are on the roadmap; five of them touch the entity model, and the schema should be
+shaped so their later arrival is additive.
+
+| Spec | Entity-model interplay |
+|---|---|
+| **RFC 9396 RAR** | `authorization_details` changes the shape of consent. `Authorization.scope` (space-separated text) cannot carry it; the consent record needs an `authorization_details` representation alongside scope, and consent-coverage checks (`allow_scopes`, `require_approval="auto"`) become richer than subset-of-scopes. Precedent: node-oidc-provider's `Grant` stores `rar` (Grounding B). **Decide before freezing `Authorization`.** |
+| **RFC 9068 at+jwt** | Two direct alignments. It **mandates a `client_id` claim in every access token** — external spec pressure for exactly Model 4's durable principal identifier. And stateless RS validation needs a **non-persisted token object behind the existing duck type** (`is_valid`/`allow_scopes`) — the same interface as §10's proposed RS representation; implementing 9068 builds that pipeline once for both. Revocation of self-contained tokens works by `jti` → lineage via `Authorization` is the natural revocation channel. |
+| **RFC 7523 + RFC 8705** | Client authentication becomes **multi-modal**: shared secret, JWK set (`jwks`/`jwks_uri`), mTLS cert/subject-DN. The confidential/public boolean plus a single `client_secret` field stops being an adequate model of invariant I3 ("can this client authenticate?") — the registration should model an enumerable set of auth methods. Since CIMD documents may carry `jwks`, a **derived client can be confidential** (Grounding A.2), reinforcing that auth material belongs to the registration/metadata layer, not the principal. 7523's jwt-bearer grant also means `Authorization.grant_type` and the per-flow creation hooks must stay open to new grant types (today `_resolve_authorization` silently returns None for unknown ones). |
+| **RFC 9126 PAR** | A new **credential-tier entity** (pushed request: payload, TTL, one-time use) alongside `Grant`/`DeviceGrant`. It should follow the `DeviceGrant` precedent and reference the client by **`client_id` string**, since derived clients can PAR. Bonus for I6: PAR moves first client contact off the unauthenticated GET `/authorize` onto a POST — the right place for a CIMD fetch to happen. |
+| **RFC 9449 DPoP** (+ 8705 cert-bound tokens) | Sender-constraining puts a **`cnf` binding (jkt / x5t#S256) on token rows** — one column shape serving both DPoP and mTLS. Introspection must surface `cnf`, so an RS introspection cache entry must mirror it — further evidence for §10 that the RS entry is a projection of another AS's facts. Proof-`jti` replay windows (7523 assertions, DPoP proofs) are ephemeral cache-tier state, not schema. |
+| **RFC 7519 JWT** | Foundational only; no interplay beyond what 9068/7523 imply. |
+
+Three schema gates fall out: (1) `Authorization` represents "what was granted" as scope
+**+ `authorization_details`**, not scope alone; (2) tokens get a **`cnf`/binding slot**
+shared by DPoP and mTLS, surfaced through introspection; (3) client authentication
+capability is modelled as an **enumerable set of methods on the registration**, not the
+confidential/public boolean — and derived clients can hold keys.
+
+---
+
+## 12. Open questions
 
 1. **Table or column?** Is a literal `Client` principal table (Model 2) worth the
    swappable-model churn in 4.0, or is `client_id`-on-`Authorization` + optional
@@ -680,7 +703,12 @@ decision, not by inheritance from a 2017 workaround its own reviewer flagged.
    surface is interface-coupled and safe; the migration cost is `_load_access_token`,
    `clear_expired()`, and swapped-model extensions like Columbia's `userinfo`. The
    dual-role introspection leak (§10) needs a ruling either way.
-8. **Resource-server packaging (§9).** Confirm a pure introspecting resource server can
+8. **Spec-readiness gates (§11).** Does the 4.0 wave ship `Authorization` with an
+   `authorization_details` representation (RAR), a `cnf` binding slot on tokens
+   (DPoP/mTLS), and multi-modal auth methods on the registration — or are those deferred
+   with the schema shaped so they land additively? Deferring the *features* is fine;
+   deferring the *shape decisions* re-opens the consent entity mid-cycle.
+9. **Resource-server packaging (§9).** Confirm a pure introspecting resource server can
    run on the Phase-1 schema without being *forced* to define
    `OAUTH2_PROVIDER_AUTHORIZATION_MODEL` / `OAUTH2_PROVIDER_SESSION_MODEL` — specifically
    that the swappable-model interdependency which today forces swapping unchanged models
