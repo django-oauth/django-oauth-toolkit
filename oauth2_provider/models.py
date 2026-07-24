@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, urlparse
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.hashers import identify_hasher, make_password
-from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist, ValidationError
 from django.db import models, router, transaction
 from django.urls import reverse
 from django.utils import timezone
@@ -612,7 +612,15 @@ class AbstractAccessToken(models.Model):
         # token), not the reverse, so deleting the access token on its own -- e.g. when
         # rotating it out on refresh -- would orphan its ID token and let those rows
         # accumulate until they expire and ``cleartokens`` reclaims them (#1604).
-        id_token = self.id_token
+        #
+        # A swapped access token model may drop ID token support entirely
+        # (``id_token = None``), so ``self.id_token`` -- not ``self.id_token_id`` -- is the
+        # field-agnostic accessor. Under cross-database routing the FK is not enforced, so
+        # the reference may dangle; treat a missing row as "nothing to clean up".
+        try:
+            id_token = self.id_token
+        except ObjectDoesNotExist:
+            id_token = None
         self.delete()
         if id_token is not None:
             id_token.delete()
