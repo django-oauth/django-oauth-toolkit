@@ -50,8 +50,8 @@ DEFAULTS = {
     "OAUTH_PRE_TOKEN_VALIDATION": [set_oauthlib_user_to_device_request_user],
     "REFRESH_TOKEN_GENERATOR": None,
     "EXTRA_SERVER_KWARGS": {},
-    "OAUTH2_SERVER_CLASS": "oauthlib.oauth2.Server",
-    "OIDC_SERVER_CLASS": "oauthlib.openid.Server",
+    "OAUTH2_SERVER_CLASS": "oauth2_provider.oauth2_servers.OAuth2Server",
+    "OIDC_SERVER_CLASS": "oauth2_provider.oauth2_servers.OIDCServer",
     "OAUTH2_VALIDATOR_CLASS": "oauth2_provider.oauth2_validators.OAuth2Validator",
     "OAUTH2_BACKEND_CLASS": "oauth2_provider.oauth2_backends.OAuthLibCore",
     "SCOPES": {"read": "Reading scope", "write": "Writing scope"},
@@ -209,6 +209,16 @@ DEFAULTS = {
     "CLIENT_ASSERTION_JWKS_FETCH_TIMEOUT_SECONDS": 5,
     "CLIENT_ASSERTION_JWKS_MAX_SIZE": 64 * 1024,
     "CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS": 60,
+    # RFC 7523 §2.1 JWT bearer authorization grant. Reuses the shared
+    # CLIENT_ASSERTION_* knobs (leeway, JWK Set fetch) for the low-level
+    # assertion machinery; the settings below are grant-specific policy.
+    "JWT_BEARER_GRANT_ENABLED": False,
+    "JWT_BEARER_SUBJECT_RESOLVER": "oauth2_provider.rfc7523.resolve_subject_by_username",
+    "JWT_BEARER_TRUSTED_ISSUERS": {},
+    "JWT_BEARER_AUDIENCES": [],
+    "JWT_BEARER_ISSUE_REFRESH_TOKENS": False,
+    "JWT_BEARER_MAX_ASSERTION_LIFETIME_SECONDS": 3600,
+    "JWT_BEARER_REQUIRE_JTI": True,
     # RFC 8414 Authorization Server Metadata
     "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code", "token"],
     "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
@@ -266,6 +276,7 @@ IMPORT_STRINGS = (
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR",
     "CIMD_METADATA_FETCHER",
     "CIMD_REGISTRATION_PERMISSION_CLASSES",
+    "JWT_BEARER_SUBJECT_RESOLVER",
 )
 
 

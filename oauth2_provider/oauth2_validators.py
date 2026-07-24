@@ -31,7 +31,7 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
-from . import cimd, client_assertions
+from . import cimd, client_assertions, rfc7523
 from .bcp import bcp_compliant
 from .exceptions import FatalClientError
 from .models import (
@@ -169,6 +169,7 @@ GRANT_TYPE_MAPPING = {
         AbstractApplication.GRANT_OPENID_HYBRID,
     ),
     "urn:ietf:params:oauth:grant-type:device_code": (AbstractApplication.GRANT_DEVICE_CODE,),
+    "urn:ietf:params:oauth:grant-type:jwt-bearer": (AbstractApplication.GRANT_JWT_BEARER,),
 }
 
 Application = get_application_model()
@@ -813,6 +814,104 @@ class OAuth2Validator(RequestValidator):
         ):
             return False
         return allowed
+
+    def validate_jwt_bearer_assertion(self, request):
+        """
+        Validate an RFC 7523 §2.1 JWT bearer grant ``assertion``.
+
+        Not to be confused with :meth:`validate_jwt_bearer_token`, which is an
+        oauthlib OpenID hook for using an ``id_token`` as a bearer token; nor with
+        :mod:`oauth2_provider.client_assertions`, which handles RFC 7523 §2.2 JWT
+        *client authentication*. This is the *authorization grant*.
+
+        Verifies the assertion's signature against the issuer's keys, checks the
+        RFC 7523 §3 registered claims, guards against ``jti`` replay, and resolves
+        the ``sub`` claim to a Django user. On success ``request.user`` is set and
+        ``True`` is returned; on failure an oauthlib ``OAuth2Error`` is raised
+        (which the grant renders as the token error response).
+        """
+        assertion = getattr(request, "assertion", None)
+        if not assertion:
+            raise errors.InvalidGrantError(description="Missing assertion.", request=request)
+
+        leeway = oauth2_settings.CLIENT_ASSERTION_LEEWAY
+        try:
+            unverified = rfc7523.peek_unverified_claims(assertion)
+            issuer = unverified.get("iss")
+            keys = self.get_jwt_bearer_assertion_keys(issuer, request)
+            claims = rfc7523.verify_assertion(
+                assertion, keys, allowed_algs=self.get_jwt_bearer_allowed_algorithms(request)
+            )
+            rfc7523.validate_assertion_claims(
+                claims,
+                expected_audiences=self.get_jwt_bearer_audiences(request),
+                require_jti=oauth2_settings.JWT_BEARER_REQUIRE_JTI,
+                leeway=leeway,
+                max_lifetime=oauth2_settings.JWT_BEARER_MAX_ASSERTION_LIFETIME_SECONDS,
+            )
+            if claims.get("jti"):
+                rfc7523.check_and_record_jti(claims["iss"], claims["jti"], int(claims["exp"]), leeway=leeway)
+        except rfc7523.JWTBearerAssertionError as exc:
+            if exc.error == "invalid_client":
+                raise errors.InvalidClientError(description=exc.description, request=request) from exc
+            raise errors.InvalidGrantError(description=exc.description, request=request) from exc
+
+        user = self.resolve_jwt_bearer_subject(claims, request.client, request)
+        if user is None:
+            raise errors.InvalidGrantError(
+                description="Assertion subject could not be resolved to a user.", request=request
+            )
+        request.user = user
+        return True
+
+    def get_jwt_bearer_assertion_keys(self, issuer, request):
+        """
+        Return the ``jwk.JWKSet`` trusted to sign assertions from *issuer*.
+
+        Resolution order: a client-issued assertion (``iss`` equal to the
+        authenticated client's ``client_id``) is verified with that Application's
+        registered keys (``client_jwks`` / ``client_jwks_uri``); otherwise *issuer*
+        must be listed in ``JWT_BEARER_TRUSTED_ISSUERS``. Unknown issuers are
+        rejected.
+        """
+        client = request.client
+        if client is not None and issuer and issuer == client.client_id:
+            keys = rfc7523.load_application_keys(client)
+            if keys is not None:
+                return keys
+        trusted = oauth2_settings.JWT_BEARER_TRUSTED_ISSUERS or {}
+        if issuer in trusted:
+            return rfc7523.load_issuer_keys(trusted[issuer])
+        raise rfc7523.JWTBearerAssertionError("invalid_grant", "assertion issuer is not trusted")
+
+    def get_jwt_bearer_allowed_algorithms(self, request):
+        """Signature algorithms accepted for JWT bearer assertions."""
+        return rfc7523.DEFAULT_ALLOWED_ALGS
+
+    def get_jwt_bearer_audiences(self, request):
+        """
+        Return the set of ``aud`` values this server accepts in an assertion.
+
+        RFC 7523 §3 requires the assertion audience to identify the authorization
+        server. The set is the configured ``JWT_BEARER_AUDIENCES`` plus the OIDC
+        issuer (when set) and a best-effort derivation of the token endpoint URL
+        from the request. Deployments behind a TLS-terminating proxy should set
+        ``JWT_BEARER_AUDIENCES`` explicitly.
+        """
+        audiences = set(oauth2_settings.JWT_BEARER_AUDIENCES or [])
+        if oauth2_settings.OIDC_ISS_ENDPOINT:
+            audiences.add(oauth2_settings.OIDC_ISS_ENDPOINT)
+        try:
+            http_request = self.build_http_request(request)
+            audiences.add(http_request.build_absolute_uri(http_request.path))
+        except Exception:  # noqa: BLE001 - audience derivation is best-effort
+            pass
+        return audiences
+
+    def resolve_jwt_bearer_subject(self, claims, client, request):
+        """Map the assertion ``sub`` to a Django user via ``JWT_BEARER_SUBJECT_RESOLVER``."""
+        resolver = oauth2_settings.JWT_BEARER_SUBJECT_RESOLVER
+        return resolver(claims, client, request)
 
     def validate_response_type(self, client_id, response_type, client, request, *args, **kwargs):
         """

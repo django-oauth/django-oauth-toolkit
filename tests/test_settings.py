@@ -201,10 +201,15 @@ def test_oidc_server_class_user_override_used_when_oidc_enabled():
 
 def test_oidc_server_class_default_used_when_neither_overridden():
     """When OIDC is enabled and neither *_SERVER_CLASS is overridden, fall back to OIDC default."""
-    from oauthlib.openid import Server as OIDCServer
+    from oauthlib.openid import Server as OIDCLibServer
+
+    from oauth2_provider.oauth2_servers import OIDCServer
 
     settings = OAuth2ProviderSettings(user_settings={"OIDC_ENABLED": True})
+    # The default is DOT's OIDCServer, a drop-in subclass of the oauthlib class
+    # that also registers DOT's custom grant handlers.
     assert settings.OAUTH2_SERVER_CLASS is OIDCServer
+    assert issubclass(settings.OAUTH2_SERVER_CLASS, OIDCLibServer)
 
 
 class TestRefreshTokenAdminSelectRelated(TestCase):

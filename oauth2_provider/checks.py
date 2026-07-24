@@ -199,3 +199,46 @@ def validate_token_configuration(app_configs, **kwargs):
         return [checks.Error("The token models are expected to be stored in the same database.")]
 
     return []
+
+
+@checks.register(checks.Tags.security)
+def validate_jwt_bearer_grant_configuration(app_configs, **kwargs):
+    """
+    Warn when the RFC 7523 JWT bearer grant is enabled but no way to trust an
+    assertion issuer is configured, which makes the grant unusable: every request
+    would be rejected because no issuer's keys can be resolved.
+    """
+    messages = []
+    if not oauth2_settings.JWT_BEARER_GRANT_ENABLED:
+        return messages
+
+    has_trusted_issuers = bool(oauth2_settings.JWT_BEARER_TRUSTED_ISSUERS)
+    has_application_keys = False
+    application_model = apps.get_model(oauth2_settings.APPLICATION_MODEL)
+    db = router.db_for_read(application_model)
+    try:
+        has_application_keys = (
+            application_model._default_manager.using(db)
+            .filter(authorization_grant_type=application_model.GRANT_JWT_BEARER)
+            .exclude(client_jwks="", client_jwks_uri="")
+            .exists()
+        )
+    except Exception:  # noqa: BLE001 - the database may be unavailable at check time
+        # Can't inspect applications (e.g. before migrate); fall back to the
+        # settings-only signal so the check never crashes system startup.
+        has_application_keys = False
+
+    if not has_trusted_issuers and not has_application_keys:
+        messages.append(
+            checks.Warning(
+                "JWT_BEARER_GRANT_ENABLED is True but no assertion issuer can be trusted: "
+                "no application registered for the jwt-bearer grant has client_jwks / "
+                "client_jwks_uri set, and JWT_BEARER_TRUSTED_ISSUERS is empty.",
+                hint=(
+                    "Configure client_jwks (or client_jwks_uri) on the applications that use "
+                    "the grant, or add entries to OAUTH2_PROVIDER['JWT_BEARER_TRUSTED_ISSUERS']."
+                ),
+                id="oauth2_provider.W011",
+            )
+        )
+    return messages
