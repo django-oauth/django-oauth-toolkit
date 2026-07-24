@@ -17,7 +17,7 @@ One issue → one branch → one PR. Drive to green CI with no open review threa
 
 ## On each CI / review event
 - **Fix** if confident and small; **rebut** if the suggestion is wrong; **skip** duplicates/no-ops.
-- Push the fix (no force-push; use a follow-up commit).
+- Push the fix (prefer a follow-up commit; only force-push when you intentionally rebased, and always use `--force-with-lease`).
 - **Reply on each review thread, then resolve it** — not a PR-level comment.
 - Re-request Copilot review. Repeat until **CI green and Copilot has no comments**.
 
