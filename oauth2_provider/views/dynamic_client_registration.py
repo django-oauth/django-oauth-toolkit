@@ -328,7 +328,9 @@ def _stored_jwks_for_response(application):
         return None
     public_keys = []
     for key in keys:
-        if isinstance(key, dict) and _PRIVATE_JWK_MEMBERS.intersection(key):
+        if not isinstance(key, dict):
+            continue
+        if _PRIVATE_JWK_MEMBERS.intersection(key):
             log.warning(
                 "Stored client_jwks for application %s contains private key material; "
                 "omitting that key from the registration response",

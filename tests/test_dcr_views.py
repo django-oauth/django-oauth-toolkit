@@ -1243,6 +1243,17 @@ class TestDCRJwtAuthMethods(TestCase):
         assert response.status_code == 200
         assert "jwks" not in response.json()
 
+        # Non-dict entries in the keys list are dropped, not echoed.
+        Application.objects.filter(client_id=body["client_id"]).update(
+            client_jwks=json.dumps({"keys": ["not-a-jwk", public_key]})
+        )
+        response = self.client.get(
+            _management_url(body["client_id"]),
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200
+        assert response.json()["jwks"]["keys"] == [public_key]
+
         # Valid JSON but not a JWK Set shape -> omitted as well.
         Application.objects.filter(client_id=body["client_id"]).update(client_jwks='{"kty": "EC"}')
         response = self.client.get(
