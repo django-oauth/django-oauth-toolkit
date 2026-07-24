@@ -114,6 +114,38 @@ class TestPAREndpoint(PARBaseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(json.loads(response.content)["error"], "invalid_request")
 
+    def test_reject_request_uri_in_query_string(self):
+        # The guard must also catch request_uri supplied via the query string, which
+        # oauthlib would otherwise merge into the request (RFC 9126 §2.1).
+        headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        response = self.client.post(
+            self.par_url + f"?request_uri={REQUEST_URI_PREFIX}abc",
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "http://example.org",
+                "scope": "read write",
+            },
+            **headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content)["error"], "invalid_request")
+
+    def test_reject_request_object_in_query_string(self):
+        headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        response = self.client.post(
+            self.par_url + "?request=eyJ.abc.def",
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "http://example.org",
+                "scope": "read write",
+            },
+            **headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content)["error"], "invalid_request")
+
     def test_client_authentication_required(self):
         response = self.push(auth=False)
         self.assertEqual(response.status_code, 401)

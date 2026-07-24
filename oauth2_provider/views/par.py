@@ -40,10 +40,16 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
 
     # Keep client-authentication credentials out of Django error reports / debug
     # pages, mirroring the token endpoint's protection of client_secret.
+    @staticmethod
+    def _has_param(request, name):
+        # oauthlib merges the query string and the body, so a parameter must be
+        # rejected wherever it appears, not just in the POST body.
+        return name in request.POST or name in request.GET
+
     @method_decorator(sensitive_post_parameters("client_secret", "client_assertion"))
     def post(self, request, *args, **kwargs):
         # RFC 9126 §2.1 step 2: a pushed request must not itself carry a request_uri.
-        if "request_uri" in request.POST:
+        if self._has_param(request, "request_uri"):
             return self._error_response(
                 "invalid_request",
                 "The request_uri parameter must not be provided to the PAR endpoint.",
@@ -52,7 +58,7 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
 
         # JWT-Secured Authorization Request objects (RFC 9126 §3 / RFC 9101) are not
         # supported yet; reject rather than silently ignore a signed request.
-        if "request" in request.POST:
+        if self._has_param(request, "request"):
             return self._error_response(
                 "invalid_request",
                 "Request objects (the 'request' parameter) are not supported.",
