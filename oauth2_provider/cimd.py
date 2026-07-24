@@ -255,7 +255,8 @@ def _build_application_kwargs(metadata):
 
     Requires ``token_endpoint_auth_method`` ``"none"`` — the spec forbids
     shared-secret methods, and asymmetric ones such as ``private_key_jwt``
-    are not implemented — rejects any ``client_secret`` property, and requires
+    (implemented in :mod:`oauth2_provider.client_assertions`) are not yet
+    wired to CIMD — rejects any ``client_secret`` property, and requires
     at least one redirect URI. Returns kwargs; raises :class:`CIMDError` on
     invalid metadata.
     """

@@ -183,8 +183,14 @@ def _build_application_kwargs(data):
             f"redirect_uris is required for grant type {rfc_grant!r}",
         )
 
-    # token_endpoint_auth_method → client_type
-    SUPPORTED_AUTH_METHODS = ("none", "client_secret_basic", "client_secret_post")
+    # token_endpoint_auth_method → client_type (+ token_endpoint_auth_method field)
+    SUPPORTED_AUTH_METHODS = (
+        "none",
+        "client_secret_basic",
+        "client_secret_post",
+        "client_secret_jwt",
+        "private_key_jwt",
+    )
     auth_method = data.get("token_endpoint_auth_method", "client_secret_basic")
     if auth_method not in SUPPORTED_AUTH_METHODS:
         return None, _error_response(
@@ -192,10 +198,36 @@ def _build_application_kwargs(data):
             f"Unsupported token_endpoint_auth_method: {auth_method!r}. "
             f"Supported values: {', '.join(SUPPORTED_AUTH_METHODS)}",
         )
+    kwargs["token_endpoint_auth_method"] = auth_method
     if auth_method == "none":
         kwargs["client_type"] = "public"
     else:
         kwargs["client_type"] = "confidential"
+
+    # jwks / jwks_uri (RFC 7591 section 2: mutually exclusive). Always set both
+    # kwargs so a PUT without them resets the fields (full-replacement
+    # semantics, RFC 7592 section 2.2), like client_name above.
+    jwks = data.get("jwks")
+    jwks_uri = data.get("jwks_uri")
+    if jwks is not None and jwks_uri is not None:
+        return None, _error_response("invalid_client_metadata", "jwks and jwks_uri are mutually exclusive")
+    if jwks is not None and (not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list)):
+        return None, _error_response(
+            "invalid_client_metadata", 'jwks must be a JWK Set object with a "keys" array'
+        )
+    if jwks_uri is not None and not isinstance(jwks_uri, str):
+        return None, _error_response("invalid_client_metadata", "jwks_uri must be a string")
+    kwargs["client_jwks"] = json.dumps(jwks) if jwks is not None else ""
+    kwargs["client_jwks_uri"] = jwks_uri or ""
+
+    # Fail early with the RFC 7591 field names; Application.clean() re-checks
+    # with model-level wording.
+    if auth_method == "private_key_jwt" and jwks is None and jwks_uri is None:
+        return None, _error_response("invalid_client_metadata", "private_key_jwt requires jwks or jwks_uri")
+    # For client_secret_jwt the secret is the HMAC key, so it must be stored in
+    # plaintext (the raw secret is returned in the registration response either
+    # way); every other method keeps the hashed-at-rest default.
+    kwargs["hash_client_secret"] = auth_method != "client_secret_jwt"
 
     return kwargs, None
 
@@ -230,13 +262,16 @@ def _issue_registration_token(application, user):
 
 def _application_to_response(application, registration_token, request):
     """Build the RFC 7591 response dict for *application*."""
+    # Registrations persist the method explicitly; legacy rows (blank field)
+    # keep the old client_type-based inference.
+    auth_method = application.token_endpoint_auth_method or (
+        "none" if application.client_type == "public" else "client_secret_basic"
+    )
     data = {
         "client_id": application.client_id,
         "redirect_uris": application.redirect_uris.split() if application.redirect_uris else [],
         "grant_types": _dot_grant_to_rfc_grant_types(application.authorization_grant_type),
-        "token_endpoint_auth_method": (
-            "none" if application.client_type == "public" else "client_secret_basic"
-        ),
+        "token_endpoint_auth_method": auth_method,
         "registration_access_token": registration_token.token,
         "registration_client_uri": request.build_absolute_uri(
             reverse("oauth2_provider:dcr-register-management", kwargs={"client_id": application.client_id})
@@ -244,6 +279,10 @@ def _application_to_response(application, registration_token, request):
     }
     if application.name:
         data["client_name"] = application.name
+    if application.client_jwks:
+        data["jwks"] = json.loads(application.client_jwks)
+    if application.client_jwks_uri:
+        data["jwks_uri"] = application.client_jwks_uri
     return data
 
 
@@ -304,8 +343,14 @@ class DynamicClientRegistrationView(View):
             **app_kwargs,
         )
 
-        # Capture the raw secret before save() hashes it
-        raw_secret = application.client_secret if application.client_type == "confidential" else None
+        # Capture the raw secret before save() hashes it. A private_key_jwt
+        # client authenticates with its key, never the secret, so none is
+        # returned for it (RFC 7591 section 3.2.1 makes client_secret optional).
+        include_secret = (
+            application.client_type == "confidential"
+            and application.token_endpoint_auth_method != Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+        )
+        raw_secret = application.client_secret if include_secret else None
 
         try:
             application.full_clean()
