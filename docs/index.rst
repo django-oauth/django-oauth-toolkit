@@ -46,6 +46,7 @@ Index
 
 .. toctree::
    :maxdepth: 2
+   :caption: Getting started
 
    install
    upgrade
@@ -53,25 +54,46 @@ Index
    tutorial/tutorial
    rest-framework/rest-framework
    ninja
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Using the toolkit
+
    views/views
-   templates
    views/details
+   templates
    models
+   signals
+   management_commands
    advanced_topics
    security
    security_process
-   oidc
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Authorization Server
+
    oauth2_server_metadata
-   protected_resource_metadata
    cimd
-   signals
-   settings
+   oidc
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Resource Server
+
    resource_server
-   management_commands
+   protected_resource_metadata
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Reference
+
+   settings
    glossary
 
 .. toctree::
    :maxdepth: 1
+   :caption: Project
 
    contributing
    changelog

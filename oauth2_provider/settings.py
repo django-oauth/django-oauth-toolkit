@@ -38,96 +38,90 @@ ID_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ID_TOKEN_MODEL", "oauth2_pro
 GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_GRANT_MODEL", "oauth2_provider.Grant")
 REFRESH_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL", "oauth2_provider.RefreshToken")
 
+# Settings are grouped by the OAuth2/OIDC role they configure so related knobs
+# live together:
+#
+#   * Core / shared         - server plumbing, scopes, swappable models/admin.
+#   * Authorization Server  - the provider side: issuing authorization/tokens,
+#                             client registration, grant behavior, RFC 9700
+#                             gates, DCR, CIMD, RFC 8414 metadata, and the
+#                             OpenID Connect Provider (OP) identity layer. The
+#                             OP's RP-Initiated Registration/Logout settings are
+#                             provider endpoints that *serve* external relying
+#                             parties; this library is the OP, not a relying
+#                             party/client itself.
+#   * Resource Server       - validating bearer tokens via remote introspection
+#                             (RFC 7662), RFC 8707 audience binding, and
+#                             advertising RFC 9728 protected-resource metadata.
+#
+# This ordering is purely organizational: settings are always looked up by key,
+# never by position, so moving an entry between groups changes nothing at runtime.
 DEFAULTS = {
-    "CLIENT_ID_GENERATOR_CLASS": "oauth2_provider.generators.ClientIdGenerator",
-    "CLIENT_SECRET_GENERATOR_CLASS": "oauth2_provider.generators.ClientSecretGenerator",
-    "CLIENT_SECRET_GENERATOR_LENGTH": 128,
-    "CLIENT_SECRET_HASHER": "default",
-    "ACCESS_TOKEN_GENERATOR": None,
-    "OAUTH_DEVICE_VERIFICATION_URI": None,
-    "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE": None,
-    "OAUTH_DEVICE_USER_CODE_GENERATOR": user_code_generator,
-    "OAUTH_PRE_TOKEN_VALIDATION": [set_oauthlib_user_to_device_request_user],
-    "REFRESH_TOKEN_GENERATOR": None,
-    "EXTRA_SERVER_KWARGS": {},
+    # =====================================================================
+    # Core / shared
+    # =====================================================================
     "OAUTH2_SERVER_CLASS": "oauthlib.oauth2.Server",
-    "OIDC_SERVER_CLASS": "oauthlib.openid.Server",
     "OAUTH2_VALIDATOR_CLASS": "oauth2_provider.oauth2_validators.OAuth2Validator",
     "OAUTH2_BACKEND_CLASS": "oauth2_provider.oauth2_backends.OAuthLibCore",
+    "EXTRA_SERVER_KWARGS": {},
+    # Whether to re-create OAuthlibCore on every request.
+    # Should only be required in testing.
+    "ALWAYS_RELOAD_OAUTHLIB_CORE": False,
+    # Scopes
     "SCOPES": {"read": "Reading scope", "write": "Writing scope"},
     "DEFAULT_SCOPES": ["__all__"],
     "SCOPES_BACKEND_CLASS": "oauth2_provider.scopes.SettingsScopes",
     "READ_SCOPE": "read",
     "WRITE_SCOPE": "write",
-    "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60,
-    "ACCESS_TOKEN_EXPIRE_SECONDS": 36000,
-    "ID_TOKEN_EXPIRE_SECONDS": 36000,
-    "REFRESH_TOKEN_EXPIRE_SECONDS": None,
-    "REFRESH_TOKEN_GRACE_PERIOD_SECONDS": 0,
-    "REFRESH_TOKEN_REUSE_PROTECTION": False,
-    "ROTATE_REFRESH_TOKEN": True,
-    "ERROR_RESPONSE_WITH_SCOPES": False,
+    # Special settings that will be evaluated at runtime
+    "_SCOPES": [],
+    "_DEFAULT_SCOPES": [],
+    # Swappable models
     "APPLICATION_MODEL": APPLICATION_MODEL,
     "ACCESS_TOKEN_MODEL": ACCESS_TOKEN_MODEL,
     "ID_TOKEN_MODEL": ID_TOKEN_MODEL,
     "DEVICE_GRANT_MODEL": DEVICE_GRANT_MODEL,
-    "DEVICE_FLOW_INTERVAL": 5,
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
+    # Admin classes
     "APPLICATION_ADMIN_CLASS": "oauth2_provider.admin.ApplicationAdmin",
     "ACCESS_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.AccessTokenAdmin",
     "GRANT_ADMIN_CLASS": "oauth2_provider.admin.GrantAdmin",
     "ID_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.IDTokenAdmin",
     "REFRESH_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.RefreshTokenAdmin",
+    # Expired-token cleanup (manage.py cleartokens)
+    "CLEAR_EXPIRED_TOKENS_BATCH_SIZE": 10000,
+    "CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL": 0,
+    # =====================================================================
+    # Authorization Server (provider side)
+    # =====================================================================
+    # Client credentials
+    "CLIENT_ID_GENERATOR_CLASS": "oauth2_provider.generators.ClientIdGenerator",
+    "CLIENT_SECRET_GENERATOR_CLASS": "oauth2_provider.generators.ClientSecretGenerator",
+    "CLIENT_SECRET_GENERATOR_LENGTH": 128,
+    "CLIENT_SECRET_HASHER": "default",
+    # Token/code generation and lifetimes
+    "ACCESS_TOKEN_GENERATOR": None,
+    "REFRESH_TOKEN_GENERATOR": None,
+    "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60,
+    "ACCESS_TOKEN_EXPIRE_SECONDS": 36000,
+    "REFRESH_TOKEN_EXPIRE_SECONDS": None,
+    "REFRESH_TOKEN_GRACE_PERIOD_SECONDS": 0,
+    "REFRESH_TOKEN_REUSE_PROTECTION": False,
+    "ROTATE_REFRESH_TOKEN": True,
+    "ERROR_RESPONSE_WITH_SCOPES": False,
     "REQUEST_APPROVAL_PROMPT": "force",
+    # Redirect URI / scheme validation
     "ALLOWED_REDIRECT_URI_SCHEMES": ["http", "https"],
     "ALLOWED_SCHEMES": ["https"],
     "ALLOW_URI_WILDCARDS": False,
     "ALLOW_LOCALHOST_LOOPBACK": False,
-    "OIDC_ENABLED": False,
-    "OIDC_ISS_ENDPOINT": "",
-    "OIDC_USERINFO_ENDPOINT": "",
-    "OIDC_RSA_PRIVATE_KEY": "",
-    "OIDC_RSA_PRIVATE_KEYS_INACTIVE": [],
-    "OIDC_JWKS_MAX_AGE_SECONDS": 3600,
-    "OIDC_RESPONSE_TYPES_SUPPORTED": [
-        "code",
-        "token",
-        "id_token",
-        "id_token token",
-        "code token",
-        "code id_token",
-        "code id_token token",
-    ],
-    "OIDC_SUBJECT_TYPES_SUPPORTED": ["public"],
-    "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
-        "client_secret_post",
-        "client_secret_basic",
-    ],
-    "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
-    "OIDC_RP_INITIATED_REGISTRATION_URL": None,
-    "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
-    "OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT": True,
-    "OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS": False,
-    "OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS": True,
-    "OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS": True,
-    # Special settings that will be evaluated at runtime
-    "_SCOPES": [],
-    "_DEFAULT_SCOPES": [],
-    # Resource Server with Token Introspection
-    "RESOURCE_SERVER_INTROSPECTION_URL": None,
-    "RESOURCE_SERVER_AUTH_TOKEN": None,
-    "RESOURCE_SERVER_INTROSPECTION_CREDENTIALS": None,
-    "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
-    # Resource Server Token Resource Validator (RFC 8707)
-    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
-        "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
-    ),
-    # Deprecated: introspection ``exp`` values are Unix timestamps interpreted as UTC per RFC 7662/
-    # RFC 7519. Setting a non-UTC time zone re-enables the legacy workaround of reinterpreting the
-    # ``exp`` wall-clock time in the configured time zone. Configuring it emits a DeprecationWarning
-    # and the workaround will be removed in a future release.
-    "AUTHENTICATION_SERVER_EXP_TIME_ZONE": "UTC",
+    # Device Authorization Grant (RFC 8628)
+    "OAUTH_DEVICE_VERIFICATION_URI": None,
+    "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE": None,
+    "OAUTH_DEVICE_USER_CODE_GENERATOR": user_code_generator,
+    "OAUTH_PRE_TOKEN_VALIDATION": [set_oauthlib_user_to_device_request_user],
+    "DEVICE_FLOW_INTERVAL": 5,
     # Whether or not PKCE is required
     "PKCE_REQUIRED": True,
     # RFC 9700 (OAuth 2.0 Security Best Current Practice) gates.
@@ -157,11 +151,6 @@ DEFAULTS = {
     "COMPLIANT_BCP_RFC9700_REDIRECT_URI_SCHEME": False,
     "COMPLIANT_BCP_RFC9700_REDIRECT_URI_MATCHING": False,
     "COMPLIANT_BCP_RFC9700_PKCE_REQUIRED": False,
-    # Whether to re-create OAuthlibCore on every request.
-    # Should only be required in testing.
-    "ALWAYS_RELOAD_OAUTHLIB_CORE": False,
-    "CLEAR_EXPIRED_TOKENS_BATCH_SIZE": 10000,
-    "CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL": 0,
     # Dynamic Client Registration (RFC 7591/7592)
     "DCR_ENABLED": False,
     "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.IsAuthenticatedDCRPermission",),
@@ -193,6 +182,55 @@ DEFAULTS = {
         "refresh_token",
         "urn:ietf:params:oauth:grant-type:device_code",
     ],
+    # --- OpenID Connect Provider (identity layer on the Authorization Server) ---
+    "OIDC_SERVER_CLASS": "oauthlib.openid.Server",
+    "ID_TOKEN_EXPIRE_SECONDS": 36000,
+    "OIDC_ENABLED": False,
+    "OIDC_ISS_ENDPOINT": "",
+    "OIDC_USERINFO_ENDPOINT": "",
+    "OIDC_RSA_PRIVATE_KEY": "",
+    "OIDC_RSA_PRIVATE_KEYS_INACTIVE": [],
+    "OIDC_JWKS_MAX_AGE_SECONDS": 3600,
+    "OIDC_RESPONSE_TYPES_SUPPORTED": [
+        "code",
+        "token",
+        "id_token",
+        "id_token token",
+        "code token",
+        "code id_token",
+        "code id_token token",
+    ],
+    "OIDC_SUBJECT_TYPES_SUPPORTED": ["public"],
+    "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+        "client_secret_post",
+        "client_secret_basic",
+    ],
+    # RP-Initiated Registration (OP endpoint serving external relying parties)
+    "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
+    "OIDC_RP_INITIATED_REGISTRATION_URL": None,
+    # RP-Initiated Logout (OP endpoint serving external relying parties)
+    "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
+    "OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT": True,
+    "OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS": False,
+    "OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS": True,
+    "OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS": True,
+    # =====================================================================
+    # Resource Server
+    # =====================================================================
+    # Token introspection (RFC 7662)
+    "RESOURCE_SERVER_INTROSPECTION_URL": None,
+    "RESOURCE_SERVER_AUTH_TOKEN": None,
+    "RESOURCE_SERVER_INTROSPECTION_CREDENTIALS": None,
+    "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
+    # Resource Server Token Resource Validator (RFC 8707)
+    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
+        "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
+    ),
+    # Deprecated: introspection ``exp`` values are Unix timestamps interpreted as UTC per RFC 7662/
+    # RFC 7519. Setting a non-UTC time zone re-enables the legacy workaround of reinterpreting the
+    # ``exp`` wall-clock time in the configured time zone. Configuring it emits a DeprecationWarning
+    # and the workaround will be removed in a future release.
+    "AUTHENTICATION_SERVER_EXP_TIME_ZONE": "UTC",
     # RFC 9728 Protected Resource Metadata
     "OAUTH2_PROTECTED_RESOURCE_IDENTIFIER": "",
     "OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS": [],
@@ -395,6 +433,8 @@ class OAuth2ProviderSettings:
             delattr(self, "_user_settings")
         self._warn_deprecated_settings()
 
+    # --- Authorization Server / OpenID Connect Provider metadata helpers ---
+
     def oauth2_metadata_issuer(self, request):
         """
         Get the OAuth2 authorization server metadata issuer URL.
@@ -478,6 +518,8 @@ class OAuth2ProviderSettings:
             raise TypeError("request must be a django or oauthlib request: got %r" % request)
         abs_url = django_request.build_absolute_uri(reverse("oauth2_provider:oidc-connect-discovery-info"))
         return abs_url[: -len("/.well-known/openid-configuration")]
+
+    # --- Resource Server metadata helpers ---
 
     def oauth2_resource_identifier(self, request):
         """
