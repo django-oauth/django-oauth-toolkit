@@ -67,3 +67,4 @@ venv/
 /compliance-matrix.json
 /.rp-server.log
 /tests/e2e/reports/
+/.venv/
