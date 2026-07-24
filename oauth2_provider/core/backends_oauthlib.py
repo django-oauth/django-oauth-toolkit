@@ -8,7 +8,7 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.common import quote, urlencode, urlencoded
 from oauthlib.oauth2 import OAuth2Error
 
-from oauth2_provider.authorization_server.bcp import bcp_compliant
+from oauth2_provider.core.bcp import bcp_compliant
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
 from oauth2_provider.settings import oauth2_settings
 

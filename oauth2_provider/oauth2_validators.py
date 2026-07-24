@@ -28,7 +28,7 @@ from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
 from .authorization_server import cimd
-from .authorization_server.bcp import bcp_compliant
+from .core.bcp import bcp_compliant
 from .core.exceptions import FatalClientError
 from .core.scopes import get_scopes_backend
 from .models import (
@@ -781,7 +781,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         Plaintext storage is an ambient config posture exercised on every token
         issuance, so (unlike the request-time gates) it is surfaced by the ``--deploy``
         system check ``W006`` rather than a per-token warning here. See
-        :mod:`oauth2_provider.authorization_server.bcp`.
+        :mod:`oauth2_provider.core.bcp`.
         """
         if oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE:
             token_instance._raw_token = raw_token

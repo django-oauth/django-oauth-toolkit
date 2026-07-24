@@ -24,7 +24,7 @@ MOVED_MODULES = {
     "oauth2_provider.scopes": "oauth2_provider.core.scopes",
     "oauth2_provider.checks": "oauth2_provider.core.checks",
     "oauth2_provider.oauth2_backends": "oauth2_provider.core.backends_oauthlib",
-    "oauth2_provider.bcp": "oauth2_provider.authorization_server.bcp",
+    "oauth2_provider.bcp": "oauth2_provider.core.bcp",
     "oauth2_provider.dcr": "oauth2_provider.authorization_server.dcr",
     "oauth2_provider.cimd": "oauth2_provider.authorization_server.cimd",
     "oauth2_provider.forms": "oauth2_provider.authorization_server.forms",

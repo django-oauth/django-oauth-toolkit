@@ -79,9 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `COMPLIANT_BCP_RFC9700_*` setting, whose default is scheduled to flip to `True` (enforcing rejection) in 4.0.
 * Several modules moved into role-based subpackages (see Changed below). The old top-level import paths
   still work but now emit a `DeprecationWarning` and will be removed in 4.0. Update imports as follows:
-  `oauth2_provider.{compat,exceptions,http,scopes,signals,utils,checks}` →
+  `oauth2_provider.{compat,exceptions,http,scopes,signals,utils,checks,bcp}` →
   `oauth2_provider.core.*`; `oauth2_provider.oauth2_backends` →
-  `oauth2_provider.core.backends_oauthlib`; `oauth2_provider.{bcp,dcr,cimd,forms,admin}` →
+  `oauth2_provider.core.backends_oauthlib`; `oauth2_provider.{dcr,cimd,forms,admin}` →
   `oauth2_provider.authorization_server.*`;
   `oauth2_provider.{www_authenticate,backends,decorators,middleware}` →
   `oauth2_provider.resource_server.*`. `oauth2_provider.admin` keeps working silently (no warning) so
