@@ -46,6 +46,7 @@ Index
    oauth2_server_metadata
    protected_resource_metadata
    rfc7523
+   jwt_bearer_grant
    cimd
    signals
    settings

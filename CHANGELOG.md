@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`RESOURCE_SERVER_INTROSPECTION_JWT_*` settings), Dynamic Client Registration support for both methods with
   `jwks`/`jwks_uri` metadata, and `*_auth_signing_alg_values_supported` advertisement in the discovery documents.
   Note that `client_secret_jwt` requires the client secret to be stored unhashed (it is the HMAC key), like HS256.
+* RFC 7523 §2.1 JWT bearer authorization grant (`urn:ietf:params:oauth:grant-type:jwt-bearer`): a client can
+  exchange a signed JWT assertion at the token endpoint for an access token. Opt-in via `JWT_BEARER_GRANT_ENABLED`;
+  trust is established per application (reusing the `client_jwks` / `client_jwks_uri` fields) or via
+  `JWT_BEARER_TRUSTED_ISSUERS`, and the assertion subject is mapped to a user through the swappable
+  `JWT_BEARER_SUBJECT_RESOLVER`. Shares the assertion machinery (SSRF-hardened JWK Set fetch, `CLIENT_ASSERTION_*`
+  low-level settings) with the JWT client-authentication profile. Includes a library-only
+  `oauth2_provider.rfc7523.build_jwt_bearer_assertion()` client helper. See `docs/jwt_bearer_grant.rst`.
 * #1373 Integration and docs for Django Ninja authentication
 * #1546 Support for RP-Initiated Registration
 * #1099 Add RFC 8414 OAuth 2.0 Authorization Server Metadata endpoint (`/.well-known/oauth-authorization-server`)

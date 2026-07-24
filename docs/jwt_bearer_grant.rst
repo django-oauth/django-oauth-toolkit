@@ -12,7 +12,9 @@ trusted-issuer (STS / federation) token exchange.
 .. note::
    This is the *authorization grant* profile (RFC 7523 §2.1). The separate
    *client authentication* profile (RFC 7523 §2.2, ``private_key_jwt`` /
-   ``client_secret_jwt``) is a different feature.
+   ``client_secret_jwt``) is documented in :doc:`rfc7523`. The two share the
+   ``client_jwks`` / ``client_jwks_uri`` application fields and the
+   ``CLIENT_ASSERTION_*`` low-level settings.
 
 The grant is disabled by default. Enable it with:
 
@@ -52,7 +54,7 @@ The authorization server then:
    (``RS*``/``ES*``/``PS*``); ``none`` and HMAC are rejected.
 3. **Validates the registered claims** (RFC 7523 §3): ``iss``, ``sub``, ``aud``
    and ``exp`` are required; ``exp`` must be in the future and ``nbf`` (if
-   present) not in the future, within ``JWT_ASSERTION_LEEWAY_SECONDS`` of clock
+   present) not in the future, within ``CLIENT_ASSERTION_LEEWAY`` of clock
    skew; ``aud`` must identify this server (see `Audience`_); the validity period
    must not exceed ``JWT_BEARER_MAX_ASSERTION_LIFETIME_SECONDS``; and ``jti`` is
    required (``JWT_BEARER_REQUIRE_JTI``) and checked against a replay cache.
@@ -142,7 +144,7 @@ Replay protection
 -----------------
 
 Each accepted assertion's ``(iss, jti)`` is recorded in the Django cache named by
-``JWT_ASSERTION_JTI_CACHE`` until the assertion expires; a second presentation is
+the default Django cache until the assertion expires; a second presentation is
 rejected as ``invalid_grant``. Replay protection is only as strong as the cache:
 a per-process backend (e.g. ``LocMemCache``) does **not** detect replays across
 worker processes. **Use a shared cache (Redis / memcached) in production.**
@@ -201,6 +203,7 @@ Security considerations
 Settings
 --------
 
-See :doc:`settings` for the full list. The grant adds ``JWT_BEARER_*`` (grant
-policy) and the shared ``JWT_ASSERTION_*`` (leeway, replay cache, JWK Set fetch)
-settings.
+See :doc:`settings` for the full list. The grant adds the ``JWT_BEARER_*``
+policy settings and reuses the shared ``CLIENT_ASSERTION_*`` knobs (clock-skew
+leeway and JWK Set fetch timeout/size/cache) that also back RFC 7523 §2.2 JWT
+client authentication (see :doc:`rfc7523`).
