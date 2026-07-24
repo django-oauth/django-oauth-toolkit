@@ -17,24 +17,28 @@ concurrency cap. See ``docs/cimd.rst`` for the threat model.
 
 import contextlib
 import hashlib
-import ipaddress
 import json
 import logging
 import re
-import socket
-import ssl
+
+# socket, time and urllib3 are kept imported so existing patch targets like
+# ``oauth2_provider.cimd.socket.getaddrinfo`` keep resolving now that the
+# fetch internals live in ``safe_fetch`` (module attributes are shared
+# globals, so patching them here still affects the moved code).
+import socket  # noqa: F401  (patch-target compatibility)
 import threading
-import time
+import time  # noqa: F401  (patch-target compatibility)
 from datetime import timedelta
 from urllib.parse import urlparse
 
-import urllib3
+import urllib3  # noqa: F401  (patch-target compatibility)
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.http.request import validate_host
 from django.utils import timezone
 
+from . import safe_fetch
 from .models import get_application_model
 from .settings import oauth2_settings
 
@@ -58,9 +62,6 @@ IGNORED_GRANT_TYPES = {"refresh_token"}
 # cache under this prefix.
 BACKOFF_CACHE_PREFIX = "oauth2_provider:cimd:backoff:"
 MAX_AGE_RE = re.compile(r"max-age\s*=\s*(\d+)", re.IGNORECASE)
-# NAT64 well-known prefix (RFC 6052): 64:ff9b::/96 addresses embed an IPv4 in
-# their low 32 bits, so they must be decoded before the public-IP check.
-NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
 
 # The in-flight cap is a per-process BoundedSemaphore, rebuilt when the
 # configured size changes (e.g. between tests). Across N server processes the
@@ -157,55 +158,17 @@ def _validate_client_id_url(client_id):
 
 
 def _ip_is_public(ip_str):
-    """Return True only for a globally routable address.
-
-    ``ipaddress.is_global`` excludes private, loopback, link-local (including
-    the 169.254.169.254 cloud-metadata address), CGNAT, multicast, reserved and
-    unspecified ranges. But several IPv6 forms embed an IPv4 address that
-    ``is_global`` can misjudge — IPv4-mapped ``::ffff:0:0/96`` (only fixed in
-    newer CPython patch levels), 6to4, Teredo ``2001::/32``, and the NAT64
-    well-known prefix ``64:ff9b::/96`` — so decode the embedded IPv4 and judge
-    that instead. Otherwise a crafted AAAA record could smuggle an internal
-    IPv4 (e.g. the cloud-metadata address) past the allowlist.
-    """
-    try:
-        ip = ipaddress.ip_address(ip_str)
-    except ValueError:
-        return False
-    if isinstance(ip, ipaddress.IPv6Address):
-        teredo = ip.teredo
-        if teredo is not None:
-            # (server, de-obfuscated client) IPv4 pair; both must be public.
-            return all(part.is_global for part in teredo)
-        embedded = ip.ipv4_mapped or ip.sixtofour
-        if embedded is None and ip in NAT64_PREFIX:
-            # The low 32 bits of a 64:ff9b::/96 address are the embedded IPv4.
-            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
-        if embedded is not None:
-            ip = embedded
-    return ip.is_global
+    """Return True only for a globally routable address (see safe_fetch)."""
+    return safe_fetch.ip_is_public(ip_str)
 
 
 def _resolve_and_validate(hostname, port):
     """Resolve *hostname* and return its validated IPs, or raise CIMDError.
 
-    Every resolved address must be public; if any is internal we refuse the
-    whole host rather than cherry-pick a good one, so a split public/private
-    result can't smuggle a connection to an internal service.
+    Every resolved address must be public; if any is internal the whole host
+    is refused. See :func:`safe_fetch.resolve_and_validate`.
     """
-    try:
-        infos = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise CIMDError(f"could not resolve client_id host: {exc}") from exc
-    ips = []
-    for info in infos:
-        ip = info[4][0]
-        if not _ip_is_public(ip):
-            raise CIMDError(f"client_id host resolves to a non-public address ({ip})")
-        ips.append(ip)
-    if not ips:
-        raise CIMDError("client_id host did not resolve to any address")
-    return ips
+    return safe_fetch.resolve_and_validate(hostname, port, exc_class=CIMDError)
 
 
 def _effective_max_age(cache_control):
@@ -240,73 +203,25 @@ class SafeMetadataFetcher:
     """
 
     def fetch(self, client_id):
-        parsed = _validate_client_id_url(client_id)
-        port = parsed.port or 443
-        ips = _resolve_and_validate(parsed.hostname, port)
-
-        timeout = oauth2_settings.CIMD_FETCH_TIMEOUT_SECONDS
-        path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
-        # parsed.netloc is the authority minus userinfo (already rejected), so it
-        # carries the port and IPv6 brackets that the Host header needs.
-        # The structured-suffix range is advertised because _read_document
-        # accepts application/<subtype>+json, and a server honouring Accept
-        # strictly could otherwise answer 406.
-        headers = {"Host": parsed.netloc, "Accept": "application/json, application/*+json"}
-        ssl_context = ssl.create_default_context()
-
-        # One deadline shared across every IP attempt. A hostname can resolve to
-        # many public IPs; giving each attempt its own total=timeout would let N
-        # addresses hold a worker for N × timeout on the pre-auth path. Each
-        # attempt instead gets only the remaining budget, so the whole fetch
-        # stays bounded by CIMD_FETCH_TIMEOUT_SECONDS regardless of address count.
-        deadline = time.monotonic() + timeout
-
-        last_exc = None
-        for ip in ips:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            # Connect to the validated IP (host=ip) while SNI, certificate
-            # verification and the Host header all use the real hostname, so a
-            # second DNS lookup can't rebind the connection to another address.
-            # total=remaining bounds this attempt (connect + all reads) to the
-            # shared deadline, so a slow-drip body can't hold the worker past it.
-            pool = urllib3.HTTPSConnectionPool(
-                host=ip,
-                port=port,
-                timeout=urllib3.Timeout(connect=remaining, read=remaining, total=remaining),
-                retries=False,
-                maxsize=1,
-                ssl_context=ssl_context,
-                server_hostname=parsed.hostname,
-            )
-            try:
-                response = pool.urlopen(
-                    "GET",
-                    path,
-                    headers=headers,
-                    redirect=False,
-                    preload_content=False,
-                )
-                try:
-                    return self._read_document(response)
-                finally:
-                    response.release_conn()
-            except urllib3.exceptions.HTTPError as exc:
-                last_exc = exc
-            finally:
-                pool.close()
-        raise CIMDError(f"could not fetch client_id document: {last_exc}")
+        _validate_client_id_url(client_id)
+        # The SSRF hardening (IP validation and pinning, no redirects, shared
+        # deadline across every resolved address) lives in safe_fetch; the
+        # CIMD-specific pieces are the URL validation above and the response
+        # handling (size cap, Cache-Control-derived max_age) in _read_document.
+        return safe_fetch.fetch_https_document(
+            client_id,
+            timeout=oauth2_settings.CIMD_FETCH_TIMEOUT_SECONDS,
+            read_response=self._read_document,
+            exc_class=CIMDError,
+        )
 
     def _read_document(self, response):
         if response.status != 200:
             raise CIMDError(f"client_id document returned HTTP {response.status}")
         # Accept application/json and the RFC 6839 structured suffix
         # application/<subtype>+json (the spec permits AS-defined JSON types).
-        media_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
-        if media_type != "application/json" and not (
-            media_type.startswith("application/") and media_type.endswith("+json")
-        ):
+        if not safe_fetch.media_type_is_json(response.headers.get("Content-Type", "")):
+            media_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
             raise CIMDError(f"client_id document is not JSON (Content-Type: {media_type!r})")
 
         max_size = oauth2_settings.CIMD_MAX_DOCUMENT_SIZE
