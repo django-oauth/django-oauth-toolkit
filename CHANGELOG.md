@@ -34,7 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its ID token orphaned, and those rows accumulated until they expired and `cleartokens`
   reclaimed them. `AccessToken.revoke()` now removes the ID token too, keeping the ID
   token count aligned with the access token count. (The RP-initiated logout flow, which
-  previously deleted the ID token itself, now relies on this.)
+  previously deleted the ID token itself, now relies on this.) **Behavior change:** because
+  a rotated-out ID token is deleted immediately rather than lingering until it expires, an
+  `id_token_hint` for RP-initiated logout must be the client's *current* ID token; a
+  superseded one is no longer accepted.
 * #1687 Reusing a refresh token within `REFRESH_TOKEN_GRACE_PERIOD_SECONDS` no longer
   raises `AttributeError: 'NoneType' object has no attribute 'token'` (HTTP 500) when the
   access token previously minted from that refresh token still exists but its own refresh

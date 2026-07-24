@@ -623,7 +623,7 @@ class AbstractAccessToken(models.Model):
             id_token = None
         self.delete()
         if id_token is not None:
-            id_token.delete()
+            id_token.revoke()
 
     @property
     def scopes(self):
