@@ -1273,7 +1273,8 @@ class TestDCRJwtAuthMethods(TestCase):
         }
         private_key = json.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="p1").export_private())
         enc_key = dict(_public_jwks()["keys"][0], use="enc")
-        for jwks in ({"keys": []}, {"keys": [private_key]}, {"keys": [enc_key]}):
+        mixed = {"keys": ["not-a-jwk", _public_jwks()["keys"][0]]}
+        for jwks in ({"keys": []}, {"keys": [private_key]}, {"keys": [enc_key]}, mixed):
             response = _post_register(self.client, dict(base, jwks=jwks))
             assert response.status_code == 400, response.content
             body = response.json()
