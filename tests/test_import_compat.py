@@ -130,6 +130,11 @@ def test_combined_oauthlib_mixin_warns_on_subclass():
         class _LegacyView(OAuthLibMixin, View):
             pass
 
+    # The combined mixin still yields the full API to legacy subclasses.
+    assert issubclass(_LegacyView, OAuthLibMixin)
+    assert hasattr(_LegacyView, "create_token_response")
+    assert hasattr(_LegacyView, "verify_request")
+
 
 def test_private_names_resolve_via_old_path():
     # Regression: the shims must re-export private, underscore-prefixed names

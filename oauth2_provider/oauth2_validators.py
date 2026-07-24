@@ -47,10 +47,22 @@ from .models import (
 from .resource_server.validators import (
     ResourceServerValidatorMixin,
     _parse_and_validate_uri,
-    is_valid_resource_uri,  # noqa: F401
-    validate_resource_as_url_prefix,  # noqa: F401
+    is_valid_resource_uri,
+    validate_resource_as_url_prefix,
 )
 from .settings import oauth2_settings
+
+
+# Public API of this module. ``is_valid_resource_uri`` and
+# ``validate_resource_as_url_prefix`` are re-exported from
+# ``resource_server.validators`` for backward compatibility (listing them here
+# also marks the re-export imports above as intentional public API).
+__all__ = [
+    "OAuth2Validator",
+    "GRANT_TYPE_MAPPING",
+    "is_valid_resource_uri",
+    "validate_resource_as_url_prefix",
+]
 
 
 log = logging.getLogger("oauth2_provider")
