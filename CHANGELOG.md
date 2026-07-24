@@ -42,8 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`AuthorizedTokenDeleteView`) now also revokes the refresh token issued
   alongside it. Previously only the access token was deleted, leaving the
   refresh token usable to mint a fresh access token and defeating the
-  revocation (a regression from 2.3.0). Per :rfc:`7009#section-2.1` an access
-  token revocation may also revoke the respective refresh token; for a
+  revocation (a regression from 2.3.0). Per
+  [RFC 7009 §2.1](https://datatracker.ietf.org/doc/html/rfc7009#section-2.1) an
+  access token revocation may also revoke the respective refresh token; for a
   user-initiated revocation that is now the behavior.
 
 ## [3.4.0] - 2026-07-23
