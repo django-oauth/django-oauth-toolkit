@@ -1040,3 +1040,29 @@ def test_rs_introspection_unusable_key_is_ignored(oauth2_settings, mocker):
 
     assert result is False
     assert post.call_count == 0
+
+
+def test_key_ops_without_verify_is_skipped():
+    # RFC 7517 key_ops constrains a key just like use does: a key that does
+    # not permit "verify" must never be tried for JWS verification.
+    enc_ops_key = dict(json.loads(RSA_KEY.export_public()), key_ops=["encrypt"])
+    app = pkj_app(client_jwks=json.dumps({"keys": [enc_ops_key]}))
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is False
+
+    verify_ops_key = dict(json.loads(RSA_KEY.export_public()), key_ops=["verify"])
+    app = pkj_app(client_jwks=json.dumps({"keys": [verify_ops_key]}))
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is True
+
+
+def test_empty_accepted_audiences_list_rejects_everything(oauth2_settings):
+    # An explicitly configured empty list is authoritative (fail closed), not
+    # a signal to fall back to the derived audience set.
+    oauth2_settings.CLIENT_ASSERTION_ACCEPTED_AUDIENCES = []
+    app = pkj_app()
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is False
