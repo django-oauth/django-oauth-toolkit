@@ -231,6 +231,8 @@ def _build_application_kwargs(data):
         keys = jwks["keys"]
         if not keys:
             return None, _error_response("invalid_client_metadata", "jwks must contain at least one key")
+        if not all(isinstance(key, dict) for key in keys):
+            return None, _error_response("invalid_client_metadata", "each key in jwks must be a JSON object")
         if any(isinstance(key, dict) and _PRIVATE_JWK_MEMBERS.intersection(key) for key in keys):
             return None, _error_response(
                 "invalid_client_metadata", "jwks must contain public keys only, never private keys"
