@@ -22,7 +22,7 @@ One issue → one branch → one PR. Drive to green CI with no open review threa
 - Re-request Copilot review. Repeat until **CI green and Copilot has no comments**.
 
 ## When master advances
-If the base moves while the PR is open — a merge-conflict or base-recovered notice, or CI that ran against a stale base — rebase onto the latest master and force-push with lease:
+When the branch falls behind master while the PR is open — it shows merge conflicts against the base, or CI ran against a now-stale base — rebase onto the latest master and force-push with lease:
 
 ```
 git fetch upstream
@@ -33,6 +33,6 @@ git push --force-with-lease
 
 ## Rules
 - Reply on threads only; no PR-level status comments.
-- Never `git add -A` (it swept a `.venv` in once) — stage explicit paths.
+- Never `git add -A` — stage explicit paths, so stray untracked files (local venvs, build output, editor scratch) are never committed.
 - Don't poll with sleep; events + the fallback check-in wake you. Re-arm it silently if nothing changed.
 - Don't self-merge. A subscription ends only when the PR is merged/closed.
