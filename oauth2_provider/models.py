@@ -237,11 +237,11 @@ class AbstractApplication(models.Model):
                 return self.redirect_uris.split().pop(0)
             raise errors.MissingRedirectURIError()
 
-        assert False, (
-            "If you are using implicit, authorization_code "
-            "or all-in-one grant_type, you must define "
-            "redirect_uris field in your Application model"
-        )
+        # No redirect_uris registered (e.g. a client_credentials application used
+        # in a flow that requires one). Raise an oauthlib error so the endpoint
+        # returns a spec-compliant 400 instead of an uncaught AssertionError/500
+        # (the assert would also be stripped entirely under `python -O`). See #958.
+        raise errors.MissingRedirectURIError()
 
     def redirect_uri_allowed(self, uri):
         """

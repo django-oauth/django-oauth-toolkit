@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Fixed -->
 <!-- ### Security -->
 
+## [unreleased]
+### Fixed
+* #958 Return a spec-compliant 400 instead of raising an uncaught `AssertionError`
+  (HTTP 500) when an application without any registered `redirect_uris` (e.g. a
+  `client_credentials` application) is driven through a flow that needs a default
+  redirect URI. `Application.default_redirect_uri` now raises
+  `oauthlib`'s `MissingRedirectURIError`, consistent with the multiple-URI case.
+
 ## [3.4.0] - 2026-07-23
 
 The headline of this release is first-class support for the **Model Context Protocol (MCP)**
