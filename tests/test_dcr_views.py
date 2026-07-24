@@ -1169,3 +1169,34 @@ class TestDCRJwtAuthMethods(TestCase):
         # RFC 7591 field naming, not the internal client_jwks_uri model field.
         assert "jwks_uri" in body["error_description"]
         assert "client_jwks_uri" not in body["error_description"]
+
+    def test_register_private_key_jwt_with_blank_jwks_uri_uses_rfc_wording(self):
+        for blank in ("", "   "):
+            data = {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks_uri": blank,
+            }
+            response = _post_register(self.client, data)
+            assert response.status_code == 400
+            body = response.json()
+            assert body["error"] == "invalid_client_metadata"
+            # RFC 7591 field names, not the internal model field names.
+            assert "jwks or jwks_uri" in body["error_description"]
+            assert "client_jwks" not in body["error_description"]
+
+    def test_register_jwks_with_blank_jwks_uri_is_accepted(self):
+        # A blank jwks_uri counts as absent, so it does not trip the
+        # mutual-exclusion check when a real jwks is supplied.
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks": _public_jwks(),
+            "jwks_uri": "",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201, response.content
+        application = Application.objects.get(client_id=response.json()["client_id"])
+        assert application.client_jwks_uri == ""

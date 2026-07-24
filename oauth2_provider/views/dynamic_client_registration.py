@@ -212,18 +212,23 @@ def _build_application_kwargs(data):
     # semantics, RFC 7592 section 2.2), like client_name above.
     jwks = data.get("jwks")
     jwks_uri = data.get("jwks_uri")
+    if jwks_uri is not None and not isinstance(jwks_uri, str):
+        return None, _error_response("invalid_client_metadata", "jwks_uri must be a string")
+    if jwks_uri is not None:
+        # An empty or whitespace-only jwks_uri counts as absent, so the
+        # RFC-named checks below apply instead of Application.clean()'s
+        # model-field wording surfacing later.
+        jwks_uri = jwks_uri.strip() or None
     if jwks is not None and jwks_uri is not None:
         return None, _error_response("invalid_client_metadata", "jwks and jwks_uri are mutually exclusive")
     if jwks is not None and (not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list)):
         return None, _error_response(
             "invalid_client_metadata", 'jwks must be a JWK Set object with a "keys" array'
         )
-    if jwks_uri is not None and not isinstance(jwks_uri, str):
-        return None, _error_response("invalid_client_metadata", "jwks_uri must be a string")
     # Validate here with the RFC 7591 field name; deferring to
     # Application.clean() would surface the internal client_jwks_uri field
     # name in the error_description.
-    if jwks_uri and not jwks_uri.lower().startswith("https://"):
+    if jwks_uri is not None and not jwks_uri.lower().startswith("https://"):
         return None, _error_response("invalid_client_metadata", "jwks_uri must use the https scheme")
     kwargs["client_jwks"] = json.dumps(jwks) if jwks is not None else ""
     kwargs["client_jwks_uri"] = jwks_uri or ""
