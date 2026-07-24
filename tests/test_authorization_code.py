@@ -1463,10 +1463,14 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         )
         self.assertEqual(response.status_code, 200)
         body = json.loads(response.content.decode("utf-8"))
-        self.assertIn("access_token", body)
-        self.assertIn("refresh_token", body)
-        # The returned refresh token must actually exist (be usable), not be a dangling value.
-        self.assertTrue(RefreshToken.objects.filter(token=body["refresh_token"]).exists())
+        # Grace-period idempotency: the surviving previously-minted access token (AT2) is
+        # returned, not a freshly minted one.
+        self.assertEqual(body["access_token"], access_token_2)
+        # ...and the re-issued refresh token must actually exist (be usable) and be bound to
+        # that same surviving access token row.
+        returned_refresh_token = RefreshToken.objects.filter(token=body["refresh_token"]).first()
+        self.assertIsNotNone(returned_refresh_token)
+        self.assertEqual(returned_refresh_token.access_token_id, access_token_2_obj.pk)
 
     def test_refresh_repeating_requests_non_rotating_tokens(self):
         """
