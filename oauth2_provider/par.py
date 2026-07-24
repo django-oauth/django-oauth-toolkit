@@ -6,16 +6,23 @@ business logic they delegate to, independent of the view/response layer.
 """
 
 import secrets
+from typing import TYPE_CHECKING, Optional
 
 from django.db import transaction
+from django.http import HttpRequest
 from oauthlib.common import Request as OAuthlibRequest
 
 from .models import (
+    AbstractApplication,
     create_pushed_authorization_request,
     get_application_model,
     get_par_request_model,
 )
 from .settings import oauth2_settings
+
+
+if TYPE_CHECKING:
+    from .oauth2_backends import OAuthLibCore
 
 
 # Request URIs use the IANA-registered URN sub-namespace (RFC 9126 §2.2 / §9.3).
@@ -41,13 +48,13 @@ class PushedAuthorizationError(Exception):
     non-redirecting authorization error at the authorization endpoint.
     """
 
-    def __init__(self, description, error="invalid_request"):
+    def __init__(self, description: str, error: str = "invalid_request") -> None:
         super().__init__(description)
         self.error = error
         self.description = description
 
 
-def authenticate_par_client(core, request):
+def authenticate_par_client(core: "OAuthLibCore", request: HttpRequest) -> Optional[AbstractApplication]:
     """Authenticate the PAR request's client, returning the client or ``None``.
 
     Confidential clients are authenticated with their credentials; public clients
@@ -68,7 +75,7 @@ def authenticate_par_client(core, request):
     return None
 
 
-def collect_pushed_parameters(request):
+def collect_pushed_parameters(request: HttpRequest) -> dict:
     """Build the JSON-serialisable mapping of authorization-request parameters to
     store, dropping client-authentication parameters. Repeated ``resource`` values
     (RFC 8707) are preserved as a list; all other parameters keep their last value,
@@ -83,7 +90,7 @@ def collect_pushed_parameters(request):
     return parameters
 
 
-def store_pushed_request(client_id, parameters):
+def store_pushed_request(client_id: str, parameters: dict) -> tuple[str, int]:
     """Persist a pushed authorization request and return ``(request_uri, expires_in)``.
 
     The ``request_uri`` contains a cryptographically strong random component so it
@@ -100,7 +107,7 @@ def store_pushed_request(client_id, parameters):
     return request_uri, expires_in
 
 
-def pushed_authorization_required(client_id):
+def pushed_authorization_required(client_id: Optional[str]) -> bool:
     """Whether an authorization request for ``client_id`` must go through PAR.
 
     True when the server-wide setting requires PAR, or when the client's
@@ -115,7 +122,7 @@ def pushed_authorization_required(client_id):
     return bool(application and application.require_pushed_authorization_requests)
 
 
-def consume_pushed_request(request_uri, client_id):
+def consume_pushed_request(request_uri: str, client_id: Optional[str]) -> dict:
     """Atomically consume a ``request_uri`` and return its stored parameters.
 
     One-time use (RFC 9126 §4 / §7.3): the record is read and deleted under a row
