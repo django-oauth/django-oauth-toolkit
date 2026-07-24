@@ -37,13 +37,14 @@ _LAZY = {
     "ScopedProtectedResourceMetadataView": "oauth2_provider.views.generic",
     "ReadWriteScopedProtectedResourceMetadataView": "oauth2_provider.views.generic",
     "ClientProtectedResourceMetadataView": "oauth2_provider.views.generic",
-    "OAuthProtectedResourceMetadataView": "oauth2_provider.views.metadata",
-    # Mixins (bodies remain in oauth2_provider.views.mixins).
-    "ProtectedResourceMixin": "oauth2_provider.views.mixins",
-    "ScopedResourceMixin": "oauth2_provider.views.mixins",
-    "ReadWriteScopedResourceMixin": "oauth2_provider.views.mixins",
-    "ClientProtectedResourceMixin": "oauth2_provider.views.mixins",
-    "ProtectedResourceMetadataMixin": "oauth2_provider.views.mixins",
+    "OAuthProtectedResourceMetadataView": "oauth2_provider.resource_server.views.metadata",
+    # Protected-resource mixins.
+    "ResourceServerViewMixin": "oauth2_provider.resource_server.mixins",
+    "ProtectedResourceMixin": "oauth2_provider.resource_server.mixins",
+    "ScopedResourceMixin": "oauth2_provider.resource_server.mixins",
+    "ReadWriteScopedResourceMixin": "oauth2_provider.resource_server.mixins",
+    "ClientProtectedResourceMixin": "oauth2_provider.resource_server.mixins",
+    "ProtectedResourceMetadataMixin": "oauth2_provider.resource_server.mixins",
 }
 
 __all__ = ["build_bearer_challenge", "challenge_status", *sorted(_LAZY)]
