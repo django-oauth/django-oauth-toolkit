@@ -45,10 +45,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-	"m2r>=0.2.1",
-	"mistune<2",
+	"m2r2>=0.3.4",
 	"sphinx==7.2.6",
-	"sphinx-rtd-theme==1.3.0",
+	"sphinx-rtd-theme==2.0.0",
 	"djangorestframework",
 	"django-ninja",
 	"coverage",
@@ -60,10 +59,9 @@ dev = [
 	"ruff",
 ]
 docs = [
-	"m2r>=0.2.1",
-	"mistune<2",
+	"m2r2>=0.3.4",
 	"sphinx==7.2.6",
-	"sphinx-rtd-theme==1.3.0",
+	"sphinx-rtd-theme==2.0.0",
 ]
 test = [
 	"djangorestframework",
