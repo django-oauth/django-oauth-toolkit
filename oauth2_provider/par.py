@@ -2,7 +2,7 @@
 
 The HTTP surface lives in :mod:`oauth2_provider.views` (the PAR endpoint and the
 authorization endpoint's ``request_uri`` handling); this module holds the
-role logic they delegate to, independent of the view/response layer.
+business logic they delegate to, independent of the view/response layer.
 """
 
 import secrets
