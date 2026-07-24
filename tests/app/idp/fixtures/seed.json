@@ -74,7 +74,7 @@
     "algorithm": "",
     "allowed_origins": "",
     "token_endpoint_auth_method": "private_key_jwt",
-    "client_jwks": "{\"keys\": [{\"crv\": \"P-256\", \"kid\": \"idp-demo-ec-1\", \"kty\": \"EC\", \"x\": \"Dd9KypdJvHq3oJurUkaPC4_zGpx31ilMK5dNFQhp34U\", \"y\": \"52-0MkV25JXLeK8O4Cpl7fRAERGW76Bh1mYcKhh2NAo\"}]}",
+    "client_jwks": "{\"keys\": [{\"crv\":\"P-256\",\"kid\":\"idp-demo-ec-1\",\"kty\":\"EC\",\"x\":\"0TDB4KuoPV7TRUCRv1VjFZiXiWPAHziSpDHwqc4BfuE\",\"y\":\"OFl8_mtENF2ZxURiJE2UMj8lxxWO3fXkl7Vsa9dyBK8\"}]}",
     "client_jwks_uri": ""
   }
 }
