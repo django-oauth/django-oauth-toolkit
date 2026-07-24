@@ -1,4 +1,6 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ObjectDoesNotExist
+from django.http import HttpResponseRedirect
 from django.urls import reverse_lazy
 from django.views.generic import DeleteView, ListView
 
@@ -32,3 +34,28 @@ class AuthorizedTokenDeleteView(LoginRequiredMixin, DeleteView):
 
     def get_queryset(self):
         return super().get_queryset().filter(user=self.request.user)
+
+    def form_valid(self, form):
+        """
+        Revoke the access token and its associated refresh token.
+
+        Deleting the access token on its own leaves the refresh token usable
+        (the ``RefreshToken.access_token`` FK is ``SET_NULL``), so it can still be
+        exchanged for a fresh access token, defeating the revocation. Per
+        :rfc:`7009#section-2.1` revoking an access token may also revoke the
+        respective refresh token; for a user-initiated "revoke access" action that
+        is the only unsurprising behavior. Revoking the refresh token also deletes
+        the bound access token, so it covers both.
+        """
+        access_token = self.get_object()
+        try:
+            refresh_token = access_token.refresh_token
+        except ObjectDoesNotExist:
+            refresh_token = None
+
+        if refresh_token is not None:
+            refresh_token.revoke()
+        else:
+            access_token.revoke()
+
+        return HttpResponseRedirect(self.get_success_url())

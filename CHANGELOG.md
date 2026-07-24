@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RefreshToken` models are swapped into different apps, and a new
   "Extending the token models" documentation section explaining how to swap the
   interrelated token models together.
+
 ### Fixed
 * #958 Return a spec-compliant 400 instead of raising an uncaught `AssertionError`
   (HTTP 500) when an application without any registered `redirect_uris` (e.g. a
@@ -35,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (HTTP 500), when `request.auth` is not an OAuth2 access token. This lets them be
   composed with other permission classes (e.g. OR-ed) without a non-OAuth2 token
   turning into a server error.
+
+### Security
+* #1510 Revoking an access token from the authorized-tokens page
+  (`AuthorizedTokenDeleteView`) now also revokes the refresh token issued
+  alongside it. Previously only the access token was deleted, leaving the
+  refresh token usable to mint a fresh access token and defeating the
+  revocation (a regression from 2.3.0). Per :rfc:`7009#section-2.1` an access
+  token revocation may also revoke the respective refresh token; for a
+  user-initiated revocation that is now the behavior.
 
 ## [3.4.0] - 2026-07-23
 
