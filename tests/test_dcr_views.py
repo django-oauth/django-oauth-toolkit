@@ -1154,3 +1154,18 @@ class TestDCRJwtAuthMethods(TestCase):
         )
         assert response.status_code == 200, response.content
         assert "jwks" not in response.json()
+
+    def test_register_non_https_jwks_uri_is_400_with_rfc_field_name(self):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks_uri": "http://client.example.com/jwks.json",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        # RFC 7591 field naming, not the internal client_jwks_uri model field.
+        assert "jwks_uri" in body["error_description"]
+        assert "client_jwks_uri" not in body["error_description"]

@@ -415,6 +415,10 @@ def _build_public_jwks(data):
             # never store or use it.
             log.warning("Client JWKS contains private key material; skipping that key")
             continue
+        if not _key_allows_verification(key):
+            # Keep the cached set to what the docstring promises: keys usable
+            # for signature verification (use=sig / key_ops with "verify").
+            continue
         key_set.add(key)
     if not key_set["keys"]:
         raise ClientAssertionError("client jwks_uri document contains no usable public keys")

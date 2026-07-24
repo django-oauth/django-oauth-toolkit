@@ -1105,3 +1105,34 @@ def test_partial_assertion_parameters_still_require_client_authentication():
     )
     assert validator.client_authentication_required(only_type) is True
     assert validator.authenticate_client(only_type) is False
+
+
+def test_debug_mode_allows_localhost_hosts(settings):
+    # With DEBUG on and ALLOWED_HOSTS empty, get_host()'s localhost allowances
+    # apply to the derived audience too.
+    settings.DEBUG = True
+    settings.ALLOWED_HOSTS = []
+    app = pkj_app()
+    claims = default_claims(aud="http://127.0.0.1/o/token/")
+    assertion = build_assertion(RSA_KEY, claims, kid="unit-rsa")
+    ok, _ = authenticate(assertion, app, headers={"HTTP_HOST": "127.0.0.1"})
+    assert ok is True
+
+    claims = default_claims(aud="http://evil.example/o/token/")
+    assertion = build_assertion(RSA_KEY, claims, kid="unit-rsa")
+    ok, _ = authenticate(assertion, app, headers={"HTTP_HOST": "evil.example"})
+    assert ok is False
+
+
+def test_remote_jwks_excludes_non_verification_keys():
+    # The cached remote set holds only signature-verification keys, as the
+    # fetch_remote_jwks docstring promises.
+    document = {
+        "keys": [
+            dict(json.loads(RSA_KEY.export_public()), use="enc"),
+            dict(json.loads(EC_KEY.export_public()), key_ops=["encrypt"]),
+            json.loads(EC_KEY.export_public()),
+        ]
+    }
+    key_set = client_assertions._build_public_jwks(document)
+    assert [key.get("kid") for key in key_set["keys"]] == ["unit-ec"]
