@@ -45,6 +45,7 @@ Index
    oidc
    oauth2_server_metadata
    protected_resource_metadata
+   rfc7523
    cimd
    signals
    settings

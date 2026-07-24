@@ -1,0 +1,214 @@
+JWT client authentication (RFC 7523)
+====================================
+
+`RFC 7523 <https://www.rfc-editor.org/rfc/rfc7523.html>`_ (building on the assertion framework of
+`RFC 7521 <https://www.rfc-editor.org/rfc/rfc7521.html>`_) lets a client authenticate to the
+authorization server with a signed JWT — a *client assertion* — instead of a client secret. Copies
+of both specs are vendored at ``rfcs/rfc7523.txt`` and ``rfcs/rfc7521.txt``.
+
+django-oauth-toolkit implements the two methods OpenID Connect names for this:
+
+``private_key_jwt``
+    The client signs the assertion with its own private key (RS/ES/PS algorithms) and registers the
+    matching public keys with the server, either as an inline JWK Set or as a ``jwks_uri`` the
+    server fetches. The client's secret plays no role, so nothing bearer-like crosses the wire.
+
+``client_secret_jwt``
+    The client signs the assertion with an HMAC (HS algorithms) keyed by the client secret. Both
+    sides must know the plaintext secret, so — exactly like ``HS256`` ID-token signing — the secret
+    must be stored unhashed (``hash_client_secret=False``). Prefer ``private_key_jwt`` where you
+    can.
+
+The client posts two extra form parameters instead of its secret::
+
+    client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+    client_assertion=<signed JWT>
+
+Assertions are accepted wherever the client authenticates: the token endpoint, the introspection
+endpoint and the revocation endpoint.
+
+.. note::
+   Only RFC 7523 *client authentication* (section 2.2) is implemented. The authorization grant
+   ``urn:ietf:params:oauth:grant-type:jwt-bearer`` (section 2.1) is not supported.
+
+Registering a client
+--------------------
+
+Set the application's ``token_endpoint_auth_method`` — in the Django admin, via your own
+provisioning code, or through :doc:`Dynamic Client Registration <views/dynamic_client_registration>`
+if enabled. JWT methods are
+strictly opt-in per client and fail closed in both directions:
+
+* an application whose ``token_endpoint_auth_method`` is blank (the default) or a secret-based
+  method **cannot** authenticate with an assertion, and
+* an application registered for a JWT method **cannot** authenticate with its secret anymore
+  (`RFC 9700 <https://www.rfc-editor.org/rfc/rfc9700.html>`_ section 2.5) — a leaked secret must
+  not open a weaker side door.
+
+For ``private_key_jwt``, register the client's public keys on the application:
+
+``client_jwks``
+    An inline JWK Set (RFC 7517), e.g. ``{"keys": [{"kty": "EC", "crv": "P-256", ...}]}``.
+    Public keys only — the server never needs (and refuses to store) private key material.
+
+``client_jwks_uri``
+    An ``https`` URL serving the client's JWK Set. The server fetches it with the same SSRF
+    hardening used for :doc:`CIMD <cimd>` (public-IP validation and pinning, no redirects, size and
+    timeout caps) and caches it for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` seconds. When an
+    assertion arrives with an unknown ``kid``, the set is re-fetched once — so key rotation works
+    without manual intervention — and fetch failures back off for
+    ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS``.
+
+The two fields are mutually exclusive. Both are validated by ``Application.clean()``.
+
+Dynamic Client Registration accepts ``token_endpoint_auth_method`` values ``private_key_jwt`` (with
+``jwks`` or ``jwks_uri`` metadata) and ``client_secret_jwt``; a ``client_secret_jwt`` registration
+stores its secret unhashed and returns it in the response, while a ``private_key_jwt`` registration
+receives no ``client_secret`` at all.
+
+What the server validates
+-------------------------
+
+Each assertion is checked per RFC 7523 section 3 before the client is authenticated. All checks
+fail closed and any failure surfaces to the client as a plain ``invalid_client`` error:
+
+* ``client_assertion_type`` must be exactly the jwt-bearer URN, and no second authentication
+  method (Basic header or ``client_secret`` parameter) may accompany the assertion.
+* ``iss`` and ``sub`` must both equal the ``client_id`` of a registered application whose
+  ``token_endpoint_auth_method`` is the matching JWT method.
+* The JWS ``alg`` must be in the per-method allowlist (``CLIENT_ASSERTION_PRIVATE_KEY_JWT_ALGS`` /
+  ``CLIENT_ASSERTION_CLIENT_SECRET_JWT_ALGS``); ``none`` is structurally impossible.
+* The signature must verify against the registered key material (``kid`` selects the key when
+  present).
+* ``exp`` is required, bounded by ``CLIENT_ASSERTION_MAX_LIFETIME``, and ``nbf``/``iat`` must not
+  lie in the future; all time checks tolerate ``CLIENT_ASSERTION_LEEWAY`` seconds of skew.
+* ``aud`` must identify this server (see below).
+* ``jti`` is required and remembered until the assertion expires: a replayed assertion is
+  rejected.
+
+.. warning::
+   Replay protection stores seen ``jti`` values in the *default Django cache*. With the local-memory
+   cache backend each process keeps its own memory, so a replayed assertion could be accepted by a
+   different worker. Multi-instance deployments must configure a shared cache backend (Redis,
+   Memcached, database) for cross-instance replay protection.
+
+Audiences and reverse proxies
+-----------------------------
+
+By default the server accepts an ``aud`` naming either its OIDC issuer (``OIDC_ISS_ENDPOINT`` or the
+request-derived issuer) or the exact URL of the endpoint the assertion was posted to (trailing
+slashes are ignored). The request-derived URL is built from the ``Host`` header, so behind a
+reverse proxy make sure Django sees the external host (``USE_X_FORWARDED_HOST``,
+``SECURE_PROXY_SSL_HEADER``).
+
+When the externally visible URL cannot be derived — a path-rewriting proxy, multiple public
+hostnames — set ``CLIENT_ASSERTION_ACCEPTED_AUDIENCES`` explicitly; when set, that list is the only
+accepted audience set:
+
+.. code-block:: python
+
+    OAUTH2_PROVIDER = {
+        "CLIENT_ASSERTION_ACCEPTED_AUDIENCES": [
+            "https://id.example.com",
+            "https://id.example.com/o/token/",
+        ],
+    }
+
+Advertising the methods
+-----------------------
+
+The defaults of ``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` and
+``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` are unchanged, so discovery documents do not
+advertise JWT methods until you opt in:
+
+.. code-block:: python
+
+    OAUTH2_PROVIDER = {
+        "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+            "client_secret_post",
+            "client_secret_basic",
+            "private_key_jwt",
+            "client_secret_jwt",
+        ],
+        "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+            "client_secret_post",
+            "client_secret_basic",
+            "private_key_jwt",
+            "client_secret_jwt",
+        ],
+    }
+
+Once a JWT method is advertised, the OIDC discovery and RFC 8414 metadata documents automatically
+include the matching ``*_auth_signing_alg_values_supported`` values.
+
+Acting as the client (RP side)
+------------------------------
+
+For Django applications on the *other* side of the exchange — authenticating to some remote
+authorization server — :func:`oauth2_provider.client_assertions.make_client_assertion` builds a
+correctly shaped assertion. It accepts a ``jwcrypto.jwk.JWK``, a private-key PEM string, a JWK JSON
+string, or (for HS algorithms) the raw client secret, and generates a fresh ``jti`` per call:
+
+.. code-block:: python
+
+    import requests
+    from oauth2_provider.client_assertions import (
+        JWT_BEARER_CLIENT_ASSERTION_TYPE,
+        make_client_assertion,
+    )
+
+    assertion = make_client_assertion(
+        client_id="my-client-id",
+        key=PRIVATE_KEY_PEM,                  # or a jwk.JWK / JWK JSON string
+        audience="https://as.example.com",    # the AS issuer or token endpoint URL
+    )
+    response = requests.post(
+        "https://as.example.com/o/token/",
+        data={
+            "grant_type": "client_credentials",
+            "client_assertion_type": JWT_BEARER_CLIENT_ASSERTION_TYPE,
+            "client_assertion": assertion,
+        },
+    )
+
+Build a new assertion for every request instead of reusing one: servers (including this one) reject
+replayed ``jti`` values.
+
+A resource server that validates tokens against a remote introspection endpoint can likewise
+authenticate to that endpoint with ``private_key_jwt`` — see :doc:`resource_server`.
+
+Settings
+--------
+
+``CLIENT_ASSERTION_LEEWAY`` (default ``60``)
+    Seconds of clock skew tolerated when checking ``exp``, ``nbf`` and ``iat``.
+
+``CLIENT_ASSERTION_MAX_LIFETIME`` (default ``300``)
+    Assertions whose ``exp`` lies further in the future than this are rejected. RFC 7523 tells
+    servers to reject unreasonably long-lived assertions; the bound also caps how long the ``jti``
+    replay cache must remember each assertion.
+
+``CLIENT_ASSERTION_ACCEPTED_AUDIENCES`` (default ``None``)
+    Explicit list of accepted ``aud`` values. When ``None`` the accepted set is derived from the
+    OIDC issuer and the URL of the endpoint the assertion was posted to.
+
+``CLIENT_ASSERTION_PRIVATE_KEY_JWT_ALGS`` (default: the RS/ES/PS algorithms)
+    JWS algorithms accepted for ``private_key_jwt`` assertions.
+
+``CLIENT_ASSERTION_CLIENT_SECRET_JWT_ALGS`` (default ``["HS256", "HS384", "HS512"]``)
+    JWS algorithms accepted for ``client_secret_jwt`` assertions.
+
+``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` (default ``3600``)
+    Seconds a fetched ``client_jwks_uri`` document is cached (in the default Django cache).
+
+``CLIENT_ASSERTION_JWKS_FETCH_TIMEOUT_SECONDS`` (default ``5``)
+    Total time budget for one JWK Set fetch, shared across all addresses the host resolves to.
+
+``CLIENT_ASSERTION_JWKS_MAX_SIZE`` (default ``65536``)
+    Maximum size in bytes of a fetched JWK Set document.
+
+``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS`` (default ``60``)
+    After a failed fetch, no re-fetch of that URL is attempted for this long.
+
+The resource-server settings (``RESOURCE_SERVER_INTROSPECTION_JWT_*``) are documented in
+:doc:`settings`.

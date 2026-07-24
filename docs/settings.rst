@@ -305,9 +305,10 @@ Only applicable when used with `Django REST Framework <http://django-rest-framew
 
 RESOURCE_SERVER_INTROSPECTION_URL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The introspection endpoint for validating token remotely (RFC7662). This URL requires either an authorization
-token (``RESOURCE_SERVER_AUTH_TOKEN``)
-or HTTP Basic Auth client credentials (``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS``).
+The introspection endpoint for validating token remotely (RFC7662). This URL requires an
+authorization token (``RESOURCE_SERVER_AUTH_TOKEN``), HTTP Basic Auth client credentials
+(``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS``), or an RFC 7523 client assertion configuration
+(``RESOURCE_SERVER_INTROSPECTION_JWT_*``).
 
 RESOURCE_SERVER_AUTH_TOKEN
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -317,6 +318,50 @@ RESOURCE_SERVER_INTROSPECTION_CREDENTIALS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The HTTP Basic Auth Client_ID and Client_Secret to authenticate the introspection request
 towards the introspect endpoint (RFC7662) as a tuple: ``(client_id, client_secret)``.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The client_id to authenticate the introspection request with an RFC 7523 ``private_key_jwt``
+client assertion (see :doc:`rfc7523`). All of ``RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID``,
+``RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY`` and ``RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE``
+must be set; ``RESOURCE_SERVER_AUTH_TOKEN`` and ``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS`` take
+precedence when configured. A fresh assertion (new ``jti``, short expiry) is generated per request.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The signing key for the introspection client assertion: a private-key PEM string or a JWK JSON
+string.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The ``aud`` claim for the introspection client assertion — the remote authorization server's
+issuer or its introspection endpoint URL, per the remote server's policy.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_ALG
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The JWS algorithm for the introspection client assertion. ``None`` infers it from the key type
+(RSA → ``RS256``, EC → ``ES256``/``ES384``/``ES512`` by curve).
+
+RESOURCE_SERVER_INTROSPECTION_JWT_LIFETIME
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``60``
+
+Lifetime in seconds of each generated introspection client assertion.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_KID
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+Optional ``kid`` header for the introspection client assertion; defaults to the signing key's own
+``kid`` when it has one.
 
 RESOURCE_SERVER_TOKEN_CACHING_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -613,7 +658,10 @@ OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``["client_secret_post", "client_secret_basic"]``
 
-The authentication methods that are advertised to be supported by this server.
+The authentication methods that are advertised to be supported by this server. Add
+``"private_key_jwt"`` and/or ``"client_secret_jwt"`` to advertise :doc:`RFC 7523 JWT client
+authentication <rfc7523>`; the discovery document then also emits
+``token_endpoint_auth_signing_alg_values_supported``.
 
 OAUTH2_RESPONSE_TYPES_SUPPORTED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -641,6 +689,9 @@ OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
 Default: ``["client_secret_post", "client_secret_basic"]``
 
 The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
+Add ``"private_key_jwt"`` and/or ``"client_secret_jwt"`` to advertise :doc:`RFC 7523 JWT client
+authentication <rfc7523>`; the metadata document then also emits the matching
+``*_auth_signing_alg_values_supported`` fields.
 
 OAUTH2_PROTECTED_RESOURCE_IDENTIFIER
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
