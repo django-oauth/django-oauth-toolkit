@@ -26,6 +26,10 @@ This directory contains plain-text standards documents used by this repository.
   - Source: https://www.rfc-editor.org/rfc/rfc7009.txt
 - `rfc7519.txt` - JSON Web Token (JWT)
   - Source: https://www.rfc-editor.org/rfc/rfc7519.txt
+- `rfc7521.txt` - Assertion Framework for OAuth 2.0 Client Authentication and Authorization Grants
+  - Source: https://www.rfc-editor.org/rfc/rfc7521.txt
+- `rfc7523.txt` - JSON Web Token (JWT) Profile for OAuth 2.0 Client Authentication and Authorization Grants
+  - Source: https://www.rfc-editor.org/rfc/rfc7523.txt
 - `rfc7591.txt` - OAuth 2.0 Dynamic Client Registration Protocol
   - Source: https://www.rfc-editor.org/rfc/rfc7591.txt
 - `rfc7592.txt` - OAuth 2.0 Dynamic Client Registration Management Protocol
