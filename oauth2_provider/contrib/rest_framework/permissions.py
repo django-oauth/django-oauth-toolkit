@@ -52,7 +52,7 @@ class TokenHasScope(BasePermission):
         # uncaught AssertionError / HTTP 500. See #1169.
         log.warning(
             "TokenHasScope requires the "
-            "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
+            "`oauth2_provider.contrib.rest_framework.OAuth2Authentication` authentication "
             "class to be used."
         )
         return False
@@ -177,7 +177,7 @@ class TokenMatchesOASRequirements(BasePermission):
         # is not an OAuth2 access token, so this permission composes cleanly.
         log.warning(
             "TokenMatchesOASRequirements requires the "
-            "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
+            "`oauth2_provider.contrib.rest_framework.OAuth2Authentication` authentication "
             "class to be used."
         )
         return False

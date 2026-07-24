@@ -264,7 +264,7 @@ class TestOAuth2Authentication(TestCase):
             response = self.client.get("/oauth2-scoped-missing-auth/", HTTP_AUTHORIZATION=auth)
         self.assertEqual(response.status_code, 403)
         self.assertTrue(
-            any("`oauth2_provider.rest_framework.OAuth2Authentication`" in msg for msg in logs.output)
+            any("`oauth2_provider.contrib.rest_framework.OAuth2Authentication`" in msg for msg in logs.output)
         )
 
     def test_authenticated_or_scoped_permission_allow(self):
@@ -473,7 +473,7 @@ class TestOAuth2Authentication(TestCase):
             response = self.client.get("/oauth2-method-scope-missing-auth/", HTTP_AUTHORIZATION=auth)
         self.assertEqual(response.status_code, 403)
         self.assertTrue(
-            any("`oauth2_provider.rest_framework.OAuth2Authentication`" in msg for msg in logs.output)
+            any("`oauth2_provider.contrib.rest_framework.OAuth2Authentication`" in msg for msg in logs.output)
         )
 
     def test_authentication_none(self):
