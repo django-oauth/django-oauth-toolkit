@@ -4,13 +4,18 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from oauth2_provider.models import get_access_token_model, get_application_model
+from oauth2_provider.models import (
+    get_access_token_model,
+    get_application_model,
+    get_refresh_token_model,
+)
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 
 
 Application = get_application_model()
 AccessToken = get_access_token_model()
+RefreshToken = get_refresh_token_model()
 UserModel = get_user_model()
 
 
@@ -208,3 +213,52 @@ class TestAuthorizedTokenDeleteView(TestAuthorizedTokenViews):
         response = self.client.post(url)
         self.assertTrue(AccessToken.objects.exists())
         self.assertEqual(response.status_code, 404)
+
+    def test_delete_view_also_revokes_refresh_token(self):
+        """
+        Revoking an access token from this view must also revoke the refresh token
+        issued alongside it, otherwise the refresh token can still be exchanged for a
+        new access token (regression, see issue #1510).
+        """
+        self.token = AccessToken.objects.create(
+            user=self.foo_user,
+            token="1234567890",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+        refresh_token = RefreshToken.objects.create(
+            user=self.foo_user,
+            token="abcdefghij",
+            application=self.application,
+            access_token=self.token,
+        )
+
+        self.client.login(username="foo_user", password="123456")
+        url = reverse("oauth2_provider:authorized-token-delete", kwargs={"pk": self.token.pk})
+        response = self.client.post(url)
+        self.assertRedirects(response, reverse("oauth2_provider:authorized-token-list"))
+
+        self.assertFalse(AccessToken.objects.filter(pk=self.token.pk).exists())
+        refresh_token.refresh_from_db()
+        self.assertIsNotNone(refresh_token.revoked)
+        self.assertIsNone(refresh_token.access_token)
+
+    def test_delete_view_without_refresh_token_still_deletes(self):
+        """
+        Tokens without an associated refresh token (e.g. client-credentials) are still
+        deleted when revoked from this view.
+        """
+        self.token = AccessToken.objects.create(
+            user=self.foo_user,
+            token="1234567890",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+
+        self.client.login(username="foo_user", password="123456")
+        url = reverse("oauth2_provider:authorized-token-delete", kwargs={"pk": self.token.pk})
+        response = self.client.post(url)
+        self.assertRedirects(response, reverse("oauth2_provider:authorized-token-list"))
+        self.assertFalse(AccessToken.objects.filter(pk=self.token.pk).exists())
