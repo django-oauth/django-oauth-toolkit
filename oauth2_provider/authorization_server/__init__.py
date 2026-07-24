@@ -18,19 +18,22 @@ import importlib
 
 
 # name -> canonical module that defines it (loaded on first access)
+_VIEWS = "oauth2_provider.authorization_server.views"
+_DCR = f"{_VIEWS}.dynamic_client_registration"
+
 _LAZY = {
     "OAuth2Validator": "oauth2_provider.oauth2_validators",
-    "AuthorizationView": "oauth2_provider.views.base",
-    "TokenView": "oauth2_provider.views.base",
-    "RevokeTokenView": "oauth2_provider.views.base",
-    "IntrospectTokenView": "oauth2_provider.views.introspect",
-    "OAuthServerMetadataView": "oauth2_provider.authorization_server.views.metadata",
-    "DeviceAuthorizationView": "oauth2_provider.views.device",
-    "DeviceUserCodeView": "oauth2_provider.views.device",
-    "DeviceConfirmView": "oauth2_provider.views.device",
-    "DeviceGrantStatusView": "oauth2_provider.views.device",
-    "DynamicClientRegistrationView": "oauth2_provider.views.dynamic_client_registration",
-    "DynamicClientRegistrationManagementView": "oauth2_provider.views.dynamic_client_registration",
+    "AuthorizationView": f"{_VIEWS}.base",
+    "TokenView": f"{_VIEWS}.base",
+    "RevokeTokenView": f"{_VIEWS}.base",
+    "IntrospectTokenView": f"{_VIEWS}.introspect",
+    "OAuthServerMetadataView": f"{_VIEWS}.metadata",
+    "DeviceAuthorizationView": f"{_VIEWS}.device",
+    "DeviceUserCodeView": f"{_VIEWS}.device",
+    "DeviceConfirmView": f"{_VIEWS}.device",
+    "DeviceGrantStatusView": f"{_VIEWS}.device",
+    "DynamicClientRegistrationView": _DCR,
+    "DynamicClientRegistrationManagementView": _DCR,
 }
 
 __all__ = sorted(_LAZY)
