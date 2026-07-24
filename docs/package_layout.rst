@@ -50,6 +50,9 @@ Package map
         validators.py (ResourceServerValidatorMixin + RFC 8707 helpers),
         mixins.py (protected-resource mixins), urls.py
         views/                  generic (protected-resource views), metadata (RFC 9728)
+      contrib/                  third-party framework integrations (see below)
+        rest_framework/         DRF authentication + scope permissions
+        ninja/                  Django Ninja bearer-token security
       settings.py, models.py, generators.py, validators.py, oauth2_validators.py
                                 stay at the top level (see below)
 
@@ -58,6 +61,26 @@ e.g. ``from oauth2_provider.resource_server import ProtectedResourceView`` or
 ``from oauth2_provider.authorization_server import AuthorizationView``. View- and
 model-backed names are re-exported lazily (PEP 562) so importing a role package
 never touches the app registry before ``django.setup()``.
+
+Framework integrations (``contrib/``)
+=====================================
+
+``oauth2_provider/contrib/`` holds optional integrations with **third-party web
+frameworks** — Django REST Framework (``contrib/rest_framework``: the
+``OAuth2Authentication`` authenticators and the ``TokenHasScope`` family of
+permissions) and Django Ninja (``contrib/ninja``: bearer-token security). By
+*role* these are all **Resource Server** functionality — they let a DRF/Ninja app
+act as an OAuth2-protected resource server — and their internal imports use the
+canonical resource-server / core paths.
+
+They are deliberately **not** moved under ``resource_server/``. ``contrib`` is the
+established Django-ecosystem location for optional per-framework integrations, so
+it is organized by **framework** — an axis orthogonal to the AS/RS/core role split
+(much like ``views/`` is split by view type). It is also the most heavily-imported
+public surface (``from oauth2_provider.contrib.rest_framework import
+OAuth2Authentication, TokenHasScope``), so keeping it stable avoids a disruptive
+deprecation for the least structural gain. A new integration for another framework
+goes under ``contrib/<framework>/``.
 
 Where new code goes
 ===================
