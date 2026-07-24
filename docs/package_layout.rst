@@ -35,10 +35,10 @@ Package map
 
     oauth2_provider/
       core/                     shared plumbing
-        settings, scopes, exceptions, utils, http, compat, signals, checks,
+        scopes, exceptions, utils, http, compat, signals, checks,
         backends_oauthlib, views.py (OAuthLibCoreMixin — shared view base)
       authorization_server/     provider side
-        dcr, cimd, bcp, forms, admin, oauth2_validators is composed here,
+        dcr, cimd, bcp, forms, admin,
         urls.py (server-metadata / base / management / DCR patterns)
         views/                  base, introspect, device,
                                 dynamic_client_registration, application, token,
@@ -50,7 +50,8 @@ Package map
         validators.py (ResourceServerValidatorMixin + RFC 8707 helpers),
         mixins.py (protected-resource mixins), urls.py
         views/                  generic (protected-resource views), metadata (RFC 9728)
-      models.py, generators.py, validators.py   stay at the top level (see below)
+      settings.py, models.py, generators.py, validators.py, oauth2_validators.py
+                                stay at the top level (see below)
 
 Some role packages **re-export their public API** so it can be imported by role,
 e.g. ``from oauth2_provider.resource_server import ProtectedResourceView`` or
@@ -77,9 +78,9 @@ Where new code goes
 * **URLs** are defined per role (``<role>/urls.py`` / ``authorization_server/oidc/urls.py``)
   and aggregated by ``oauth2_provider/urls.py``; keep ``include("oauth2_provider.urls")``
   and the public ``*_urlpatterns`` names working.
-* **Settings** in ``core/settings.py`` ``DEFAULTS`` are grouped by role; add new
-  settings to the matching group, and point dotted-string defaults at canonical
-  module paths.
+* **Settings** in ``oauth2_provider/settings.py`` ``DEFAULTS`` are grouped by
+  role; add new settings to the matching group, and point dotted-string defaults
+  at canonical module paths.
 
 What stays at the top level (do not move)
 =========================================
@@ -87,6 +88,10 @@ What stays at the top level (do not move)
 These are intentionally **not** relocated, because moving them is unsafe or
 breaking:
 
+* ``settings.py`` — ``oauth2_settings`` is imported almost everywhere (first-party
+  and downstream), so relocating it would maximize churn and make nearly every
+  project see a deprecation. It stays at ``oauth2_provider/settings.py``; the
+  ``DEFAULTS`` dict is only reorganized *internally* by role.
 * ``models.py`` — swappable models rely on the ``oauth2_provider`` app label, and
   historical migrations import ``oauth2_provider.models``.
 * ``generators.py`` and ``validators.py`` — referenced as model-field

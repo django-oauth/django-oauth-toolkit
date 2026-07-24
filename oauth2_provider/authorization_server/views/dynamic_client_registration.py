@@ -271,7 +271,7 @@ class DynamicClientRegistrationView(View):
     CSRF protection for session-cookie-authenticated requests is enforced by
     ``IsAuthenticatedDCRPermission`` in the permission layer instead; custom
     permission classes that rely on Django's session authentication should do
-    the same (see ``oauth2_provider.dcr.enforce_csrf``).
+    the same (see ``oauth2_provider.authorization_server.dcr.enforce_csrf``).
     """
 
     def dispatch(self, request, *args, **kwargs):
