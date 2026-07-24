@@ -308,7 +308,10 @@ class JSONOAuthLibCore(OAuthLibCore):
             "introspection, and revocation endpoints are defined to use "
             "application/x-www-form-urlencoded request bodies (RFC 6749, RFC 7662, RFC 7009); "
             "reading application/json on them is non-standard and breaks interoperability "
-            "with spec-compliant clients.",
+            "with spec-compliant clients. To migrate, remove the "
+            "OAUTH2_PROVIDER['OAUTH2_BACKEND_CLASS'] override (the default "
+            "'oauth2_provider.oauth2_backends.OAuthLibCore' reads form-encoded bodies) and "
+            "have clients send application/x-www-form-urlencoded request bodies.",
             DeprecationWarning,
             stacklevel=2,
         )
