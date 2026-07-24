@@ -112,3 +112,12 @@ def test_media_type_is_json():
     assert safe_fetch.media_type_is_json("application/jwk-set+json; charset=utf-8") is True
     assert safe_fetch.media_type_is_json("text/html") is False
     assert safe_fetch.media_type_is_json(None) is False
+
+
+def test_exhausted_timeout_reports_explicit_message(mocker):
+    mocker.patch(
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
+        return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+    with pytest.raises(SafeFetchError, match="timeout budget exhausted"):
+        fetch_https_json("https://example.com/jwks.json", timeout=0, max_size=1024)
