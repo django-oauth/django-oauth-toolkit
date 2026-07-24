@@ -285,9 +285,12 @@ class OAuth2Validator(RequestValidator):
             # RFC 9700 section 2.5: a client registered for JWT client
             # authentication (RFC 7523) must use it; a leaked secret must not
             # open a weaker side door.
+            # request.client.client_id (from the loaded Application) rather than
+            # the credential-derived client_id, so nothing tainted by the
+            # Authorization header reaches the log.
             log.debug(
                 "Failed basic auth: client %s is registered for %s and must use a client assertion",
-                client_id,
+                request.client.client_id,
                 request.client.token_endpoint_auth_method,
             )
             return False
@@ -326,7 +329,7 @@ class OAuth2Validator(RequestValidator):
             # authenticate with a client assertion.
             log.debug(
                 "Failed body auth: client %s is registered for %s and must use a client assertion",
-                client_id,
+                request.client.client_id,
                 request.client.token_endpoint_auth_method,
             )
             return False
