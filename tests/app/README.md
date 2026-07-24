@@ -65,6 +65,39 @@ curl --location 'http://localhost:8000/o/token/' \
 
 The response should include the access token.
 
+### Pushed Authorization Request (PAR) example
+
+The IDP serves the RFC 9126 PAR endpoint at `/o/par/` out of the box (it is advertised as
+`pushed_authorization_request_endpoint` in `/.well-known/oauth-authorization-server`). Using the
+seeded public "OIDC - Authorization Code" application, push an authorization request (a public
+client authenticates with PKCE rather than a secret):
+
+```sh
+curl --location 'http://127.0.0.1:8000/o/par/' \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode 'client_id=2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm' \
+    --data-urlencode 'response_type=code' \
+    --data-urlencode 'redirect_uri=http://localhost:5173' \
+    --data-urlencode 'scope=openid' \
+    --data-urlencode 'state=some_state' \
+    --data-urlencode 'code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM' \
+    --data-urlencode 'code_challenge_method=S256'
+```
+
+The response is a `201` carrying a single-use `request_uri`, e.g.
+
+```json
+{"request_uri": "urn:ietf:params:oauth:request_uri:...", "expires_in": 60}
+```
+
+Then open the authorization endpoint in a browser with only the `client_id` and `request_uri`
+(the code verifier for the `code_challenge` above is
+`dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk`, used later at the token endpoint):
+
+```
+http://127.0.0.1:8000/o/authorize/?client_id=2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm&request_uri=urn:ietf:params:oauth:request_uri:...
+```
+
 ## /test/app/rp
 
 This is an example RP. It is a SPA built with Svelte.

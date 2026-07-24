@@ -45,6 +45,7 @@ Index
    oidc
    oauth2_server_metadata
    protected_resource_metadata
+   pushed_authorization_requests
    cimd
    signals
    settings

@@ -7,7 +7,7 @@ from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, QueryDict
 from django.shortcuts import resolve_url
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
@@ -19,10 +19,15 @@ from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
 from ..compat import login_not_required
-from ..exceptions import OAuthToolkitError
+from ..exceptions import FatalClientError, OAuthToolkitError
 from ..forms import AllowForm
 from ..http import OAuth2ResponseRedirect
-from ..models import get_access_token_model, get_application_model, get_device_grant_model
+from ..models import (
+    get_access_token_model,
+    get_application_model,
+    get_device_grant_model,
+    get_par_request_model,
+)
 from ..oauth2_validators import is_valid_resource_uri
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
@@ -176,7 +181,76 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         log.debug("Success url for the request: {0}".format(self.success_url))
         return self.redirect(self.success_url, application)
 
+    def _fatal_par_error(self, description):
+        """Render a non-redirecting authorization error (RFC 9126).
+
+        Used for request_uri and PAR-enforcement failures: there is no validated
+        redirect_uri to trust, so the error is shown to the resource owner rather
+        than redirected (which would risk an open redirect).
+        """
+        error = FatalClientError(error=CustomOAuth2Error(error="invalid_request", description=description))
+        return self.error_response(error, application=None)
+
+    def _pushed_authorization_required(self, request):
+        """Whether this authorization request must go through the PAR endpoint.
+
+        True when the server-wide setting requires PAR, or when the client's
+        ``require_pushed_authorization_requests`` flag is set (RFC 9126 §4 / §6).
+        The server-wide setting is a floor; a per-client value never relaxes it.
+        """
+        if oauth2_settings.REQUIRE_PUSHED_AUTHORIZATION_REQUESTS:
+            return True
+        client_id = request.GET.get("client_id")
+        if not client_id:
+            return False
+        application = get_application_model().objects.filter(client_id=client_id).first()
+        return bool(application and application.require_pushed_authorization_requests)
+
+    def _resolve_pushed_request_uri(self, request, request_uri):
+        """Replace an incoming ``request_uri`` with the parameters pushed to the PAR
+        endpoint (RFC 9126 §4), or return an error response.
+        """
+        par_model = get_par_request_model()
+        try:
+            par = par_model.objects.get(request_uri=request_uri)
+        except par_model.DoesNotExist:
+            return self._fatal_par_error("The request_uri is invalid or has already been used.")
+        # One-time use (RFC 9126 §4 / §7.3): consume the record immediately. The pushed
+        # parameters are carried through the rest of the flow via the request query
+        # string and the consent form's hidden fields, so it is not needed again.
+        expired = par.is_expired()
+        par.delete()
+        if expired:
+            return self._fatal_par_error("The request_uri has expired.")
+        # The request_uri is bound to the client that pushed it (RFC 9126 §2.2).
+        client_id = request.GET.get("client_id")
+        if client_id and client_id != par.client_id:
+            return self._fatal_par_error("The request_uri was not issued to this client.")
+        # Re-inject the pushed parameters so the existing authorization flow, which
+        # reads from the query string, proceeds unchanged.
+        query_string = urlencode(par.parameters, doseq=True)
+        request.GET = QueryDict(query_string, mutable=False)
+        request.META["QUERY_STRING"] = query_string
+        return None
+
+    def _handle_pushed_authorization_request(self, request):
+        """Resolve a pushed ``request_uri`` or enforce mandatory PAR (RFC 9126).
+
+        Returns an error response to short-circuit the view, or ``None`` to continue
+        with the (possibly rewritten) request.
+        """
+        request_uri = request.GET.get("request_uri")
+        if request_uri:
+            return self._resolve_pushed_request_uri(request, request_uri)
+        if self._pushed_authorization_required(request):
+            return self._fatal_par_error("Pushed authorization requests are required for this client.")
+        return None
+
     def get(self, request, *args, **kwargs):
+        par_response = self._handle_pushed_authorization_request(request)
+        if par_response is not None:
+            return par_response
+
         try:
             scopes, credentials = self.validate_authorization_request(request)
         except OAuthToolkitError as error:

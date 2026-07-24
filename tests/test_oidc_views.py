@@ -1206,6 +1206,7 @@ class TestOAuthServerMetadataView(TestCase):
             "revocation_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "introspection_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
+            "pushed_authorization_request_endpoint": "http://localhost/o/par/",
             "jwks_uri": "http://localhost/o/.well-known/jwks.json",
         }
         response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
@@ -1235,6 +1236,7 @@ class TestOAuthServerMetadataView(TestCase):
             "revocation_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "introspection_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
+            "pushed_authorization_request_endpoint": "http://testserver/o/par/",
             "jwks_uri": "http://testserver/o/.well-known/jwks.json",
         }
         response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))

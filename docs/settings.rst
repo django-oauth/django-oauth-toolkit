@@ -384,6 +384,31 @@ According to `OAuth 2.0 Security Best Current Practice <https://oauth.net/2/oaut
 - Public clients MUST use PKCE `RFC7636 <https://datatracker.ietf.org/doc/html/rfc7636>`_
 - For confidential clients, the use of PKCE `RFC7636 <https://datatracker.ietf.org/doc/html/rfc7636>`_ is RECOMMENDED.
 
+PAR_ENABLED
+~~~~~~~~~~~
+Default: ``True``
+
+Whether the `RFC 9126 <https://www.rfc-editor.org/rfc/rfc9126>`_ Pushed Authorization Request
+endpoint (``par/``) accepts requests and is advertised in the server metadata document. See
+:doc:`pushed_authorization_requests`.
+
+PAR_REQUEST_URI_LIFETIME_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``60``
+
+The lifetime, in seconds, of a ``request_uri`` issued by the PAR endpoint. RFC 9126 §2.2 suggests a
+relatively short value (typically between 5 and 600 seconds).
+
+REQUIRE_PUSHED_AUTHORIZATION_REQUESTS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When ``True``, the authorization endpoint only accepts requests that were pushed to the PAR
+endpoint (i.e. that carry a ``request_uri``), and the metadata document advertises
+``require_pushed_authorization_requests``. Enforcement can also be required per client via the
+application's ``require_pushed_authorization_requests`` field; the server-wide setting is a floor
+that a per-client value never relaxes.
+
 RFC 9700 gates (``COMPLIANT_BCP_RFC9700_*``)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -757,6 +782,18 @@ OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL
 The import string of the class (model) representing your refresh tokens.
 Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.RefreshToken``).
+
+OAUTH2_PROVIDER_PAR_REQUEST_MODEL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your RFC 9126 pushed authorization requests.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.models.AbstractPushedAuthorizationRequest``).
+
+.. note:: ``request_uri`` uniqueness is enforced by the named ``UniqueConstraint``
+    ``<app_label>_<class>_unique_request_uri`` inherited from
+    ``AbstractPushedAuthorizationRequest.Meta.constraints``. Do not add ``unique=True`` to the field
+    in your swapped model, for the same reason described under
+    ``OAUTH2_PROVIDER_DEVICE_GRANT_MODEL``.
 
 Settings imported from Django project
 -------------------------------------
