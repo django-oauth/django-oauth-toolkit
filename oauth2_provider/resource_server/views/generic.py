@@ -44,7 +44,7 @@ class ClientProtectedResourceView(ClientProtectedResourceMixin, View):
 
 
 class ClientProtectedScopedResourceView(ScopedResourceMixin, ClientProtectedResourceView):
-    """Impose scope restrictions if client protection fallsback to access token."""
+    """Impose scope restrictions if client protection falls back to access token."""
 
     pass
 
