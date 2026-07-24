@@ -98,6 +98,11 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             grant_types = [gt for gt in grant_types if gt != "implicit"]
         if oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT:
             grant_types = [gt for gt in grant_types if gt != "password"]
+        # RFC 7523: advertise the jwt-bearer grant only when it is actually
+        # accepted at the token endpoint (the grant is off by default).
+        jwt_bearer = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+        if oauth2_settings.JWT_BEARER_GRANT_ENABLED and jwt_bearer not in grant_types:
+            grant_types.append(jwt_bearer)
 
         data = {
             "issuer": issuer_url,

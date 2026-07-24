@@ -1212,6 +1212,15 @@ class TestOAuthServerMetadataView(TestCase):
         self.assertEqual(response.status_code, 200)
         assert response.json() == expected_response
 
+    def test_jwt_bearer_grant_advertised_only_when_enabled(self):
+        jwt_bearer = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertNotIn(jwt_bearer, response.json()["grant_types_supported"])
+
+        self.oauth2_settings.JWT_BEARER_GRANT_ENABLED = True
+        response = self.client.get(reverse("oauth2_provider:oauth-server-metadata"))
+        self.assertIn(jwt_bearer, response.json()["grant_types_supported"])
+
     def test_get_oauth_server_metadata_without_issuer_url(self):
         self.oauth2_settings.OIDC_ISS_ENDPOINT = None
         expected_response = {
