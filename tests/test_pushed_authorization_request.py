@@ -118,6 +118,8 @@ class TestPAREndpoint(PARBaseTestCase):
         response = self.push(auth=False)
         self.assertEqual(response.status_code, 401)
         self.assertEqual(json.loads(response.content)["error"], "invalid_client")
+        # RFC 6749 §5.2: a 401 client-authentication failure carries a WWW-Authenticate header.
+        self.assertIn('error="invalid_client"', response["WWW-Authenticate"])
 
     def test_wrong_client_secret_rejected(self):
         headers = get_basic_auth_header(self.application.client_id, "wrong-secret")

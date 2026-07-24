@@ -94,7 +94,15 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
         body = {"error": error}
         if description:
             body["error_description"] = description
-        return self._json_response(body, status=status)
+        response = self._json_response(body, status=status)
+        if status == 401:
+            # RFC 6749 §5.2 / RFC 9126 §2.3: a 401 client-authentication failure must
+            # carry a WWW-Authenticate header. Match the token endpoint's oauthlib format.
+            challenge = 'Bearer error="{}"'.format(error)
+            if description:
+                challenge += ', error_description="{}"'.format(description)
+            response["WWW-Authenticate"] = challenge
+        return response
 
     def _json_response(self, data, status):
         response = http.JsonResponse(data, status=status)
