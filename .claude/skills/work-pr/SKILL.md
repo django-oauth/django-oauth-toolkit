@@ -25,7 +25,8 @@ One issue → one branch → one PR. Drive to green CI with no open review threa
 If the base moves while the PR is open — a merge-conflict or base-recovered notice, or CI that ran against a stale base — rebase onto the latest master and force-push with lease:
 
 ```
-git fetch origin master && git rebase origin/master
+git fetch upstream
+git rebase --autostash upstream/master
 # resolve conflicts, re-run the affected tests
 git push --force-with-lease
 ```
