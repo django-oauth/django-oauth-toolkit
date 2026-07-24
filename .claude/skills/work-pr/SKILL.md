@@ -32,7 +32,6 @@ git push --force-with-lease
 
 ## Rules
 - Reply on threads only; no PR-level status comments.
-- If your tooling requires an attribution footer on GitHub posts (e.g. Claude Code), include it; it's a tool requirement, not repo policy.
 - Never `git add -A` (it swept a `.venv` in once) — stage explicit paths.
 - Don't poll with sleep; events + the fallback check-in wake you. Re-arm it silently if nothing changed.
 - Don't self-merge. A subscription ends only when the PR is merged/closed.
