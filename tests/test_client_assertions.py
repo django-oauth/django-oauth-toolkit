@@ -1136,3 +1136,12 @@ def test_remote_jwks_excludes_non_verification_keys():
     }
     key_set = client_assertions._build_public_jwks(document)
     assert [key.get("kid") for key in key_set["keys"]] == ["unit-ec"]
+
+
+def test_empty_client_id_parameter_rejected():
+    # RFC 7521 section 4.2: a present client_id must identify the same client
+    # as the assertion; an empty client_id= is present but identifies nothing.
+    app = pkj_app()
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app, client_id="")
+    assert ok is False

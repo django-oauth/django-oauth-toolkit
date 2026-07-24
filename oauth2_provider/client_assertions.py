@@ -103,9 +103,10 @@ def _authenticate(request, load_application):
     if claims["iss"] != client_id:
         raise ClientAssertionError("client assertion 'iss' and 'sub' claims differ")
     # RFC 7521 section 4.2: a client_id parameter, when present, must identify
-    # the same client as the assertion.
+    # the same client as the assertion. Presence-based like the client_secret
+    # check above: an empty client_id= does not identify the same client.
     body_client_id = getattr(request, "client_id", None)
-    if body_client_id and body_client_id != client_id:
+    if body_client_id is not None and body_client_id != client_id:
         raise ClientAssertionError("client_id parameter does not match the client assertion 'sub'")
 
     application = load_application(client_id, request)
