@@ -292,7 +292,7 @@ class JSONOAuthLibCore(OAuthLibCore):
     """
     Extends the default OAuthLibCore to parse ``application/json`` request bodies.
 
-    .. deprecated:: 3.5
+    .. deprecated:: 3.4.1
         The OAuth token, introspection, and revocation endpoints are
         defined to use ``application/x-www-form-urlencoded`` request bodies
         (RFC 6749, RFC 7662, RFC 7009). Reading ``application/json`` on these

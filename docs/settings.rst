@@ -208,7 +208,7 @@ to get a ``Server`` instance. Defaults to
 ``oauth2_provider.oauth2_backends.OAuthLibCore``, which reads request bodies as
 ``application/x-www-form-urlencoded`` as required by the OAuth specifications.
 
-.. deprecated:: 3.5
+.. deprecated:: 3.4.1
     ``oauth2_provider.oauth2_backends.JSONOAuthLibCore`` is deprecated and will be removed
     in 4.0. It makes the OAuth token, introspection, and revocation endpoints
     read ``application/json`` request bodies, but those endpoints are defined to use
