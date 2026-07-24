@@ -291,6 +291,40 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
         )
         self.assertEqual(legit.status_code, 200)
 
+    def test_inline_parameters_are_ignored(self):
+        # Regression guard: the pushed request is authoritative, so authorization
+        # parameters supplied alongside request_uri must be ignored (never honored),
+        # which prevents parameter injection (RFC 9126).
+        par = self._make_par(
+            parameters={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "http://example.org",
+                "scope": "read write",
+                "state": "pushed_state",
+            }
+        )
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(
+            self.authorize_url,
+            {
+                "client_id": self.application.client_id,
+                "request_uri": par.request_uri,
+                # Inline overrides that must be ignored (both redirect URIs are
+                # registered, so example.com is dropped for being inline, not invalid):
+                "scope": "read",
+                "redirect_uri": "http://example.com",
+                "state": "injected_state",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        # Pushed "read write" wins over inline "read".
+        self.assertIn("write", response.context_data["scopes"])
+        form_initial = response.context_data["form"].initial
+        self.assertEqual(form_initial["scope"], "read write")
+        self.assertEqual(form_initial["redirect_uri"], "http://example.org")
+        self.assertEqual(form_initial["state"], "pushed_state")
+
     def test_request_uri_requires_client_id(self):
         par = self._make_par(client_id=self.application.client_id)
         self.client.login(username="test_user", password="123456")
