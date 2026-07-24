@@ -25,6 +25,9 @@
 		"vite": "^8.1.5"
 	},
 	"type": "module",
+	"engines": {
+		"node": ">=22.12.0"
+	},
 	"dependencies": {
 		"@dopry/svelte-oidc": "^1.2.0",
 		"jose": "^6.1.0"
