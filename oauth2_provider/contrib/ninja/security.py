@@ -4,8 +4,8 @@ from django.core.exceptions import SuspiciousOperation
 from django.http import HttpRequest
 from ninja.security.http import HttpAuthBase
 
-from ...models import AbstractAccessToken
 from ...core.backends_oauthlib import get_oauthlib_core
+from ...models import AbstractAccessToken
 
 
 # Don't inherit from `HttpBearer`, since we have our own header extraction logic

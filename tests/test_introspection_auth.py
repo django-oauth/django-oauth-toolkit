@@ -224,7 +224,7 @@ class TestTokenIntrospectionAuth(TestCase):
                 return local_naive_now
             return utc_now.astimezone(tz)
 
-        with mock.patch("oauth2_provider.oauth2_validators.datetime") as mocked_datetime:
+        with mock.patch("oauth2_provider.resource_server.validators.datetime") as mocked_datetime:
             mocked_datetime.now.side_effect = mocked_now
             mocked_datetime.fromtimestamp.side_effect = datetime.datetime.fromtimestamp
             access_token = self.validator._get_token_from_authentication_server(

@@ -21,10 +21,10 @@ from jwcrypto import jwk
 from jwcrypto.common import base64url_encode
 from oauthlib.oauth2.rfc6749 import errors
 
-from .generators import generate_client_id, generate_client_secret
 from .core.scopes import get_scopes_backend
-from .settings import oauth2_settings
 from .core.utils import jwk_from_pem
+from .generators import generate_client_id, generate_client_secret
+from .settings import oauth2_settings
 from .validators import AllowedURIValidator
 
 

@@ -1,8 +1,10 @@
 """Backward-compatible import shim.
 
-``oauth2_provider.www_authenticate`` moved to ``oauth2_provider.resource_server.www_authenticate`` when the package was reorganized
-by OAuth2 role. Importing from this old path still works but is deprecated and
-will be removed in django-oauth-toolkit 4.0.
+``oauth2_provider.www_authenticate`` has moved to
+``oauth2_provider.resource_server.www_authenticate``.
+
+Importing from this old path still works but is deprecated and will be removed
+in django-oauth-toolkit 4.0.
 """
 
 import sys
@@ -10,9 +12,11 @@ import warnings
 
 from oauth2_provider.resource_server import www_authenticate as _moved
 
+
 warnings.warn(
-    "oauth2_provider.www_authenticate has moved to oauth2_provider.resource_server.www_authenticate. The old import path is "
-    "deprecated and will be removed in django-oauth-toolkit 4.0.",
+    "oauth2_provider.www_authenticate has moved to oauth2_provider.resource_server.www_authenticate. "
+    "The old import path is deprecated and will be removed in "
+    "django-oauth-toolkit 4.0.",
     DeprecationWarning,
     stacklevel=2,
 )
