@@ -22,12 +22,20 @@ Django OAuth Toolkit
    :target: https://pypi.org/project/django-oauth-toolkit/
    :alt: Supported Django versions
 
-If you are facing one or more of the following:
- * Your Django app exposes a web API you want to protect with OAuth2 authentication,
- * You need to implement an OAuth2 authorization server to provide tokens management for your infrastructure,
+Django OAuth Toolkit is an OAuth 2.0 authorization server for teams already running Django.
+It provides, out of the box, the endpoints, models, and logic to issue and manage OAuth2 tokens
+from your existing Django project, instead of standing up and operating a separate service.
 
-Django OAuth Toolkit can help you providing out of the box all the endpoints, data and logic needed to add OAuth2
-capabilities to your Django projects. Django OAuth Toolkit makes extensive use of the excellent
+As of 3.4.0, Django OAuth Toolkit supports the authorization server role required by the
+Model Context Protocol (MCP) authorization specification: PKCE is required by default, and the
+authorization server metadata (RFC 8414) and protected resource metadata (RFC 9728) discovery
+endpoints are published out of the box. Dynamic Client Registration (RFC 7591/7592) and Client
+ID Metadata Documents can be enabled by setting. See the
+`3.4.0 release discussion <https://github.com/django-oauth/django-oauth-toolkit/discussions/1775>`_
+for the supported specifications and current gaps.
+
+Django OAuth Toolkit can also act as a resource server to protect a Django or Django REST
+Framework API with OAuth2. It makes extensive use of the excellent
 `OAuthLib <https://github.com/idan/oauthlib>`_, so that everything is
 `rfc-compliant <https://rfc-editor.org/rfc/rfc6749.html>`_.
 

@@ -1,12 +1,12 @@
 Getting started
 ===============
 
-Build a OAuth2 provider using Django, Django OAuth Toolkit, and OAuthLib.
+Build an OAuth 2.0 authorization server using Django, Django OAuth Toolkit, and OAuthLib.
 
 What we will build?
 -------------------
 
-The plan is to build an OAuth2 provider from ground up.
+The plan is to build an OAuth 2.0 authorization server from the ground up.
 
 On this getting started we will:
 

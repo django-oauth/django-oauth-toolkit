@@ -11,8 +11,8 @@ authors = [
   {name = "Massimiliano Pippi"},
   {email = "synasius@gmail.com"},
 ]
-description = "OAuth2 Provider for Django"
-keywords = ["django", "oauth", "oauth2", "oauthlib"]
+description = "OAuth 2.0 authorization server for Django"
+keywords = ["django", "oauth", "oauth2", "oauthlib", "authorization-server", "oidc", "mcp", "pkce"]
 license = {file = "LICENSE"}
 readme = "README.rst"
 classifiers = [
