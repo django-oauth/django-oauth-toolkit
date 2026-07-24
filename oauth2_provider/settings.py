@@ -119,6 +119,16 @@ DEFAULTS = {
     "RESOURCE_SERVER_AUTH_TOKEN": None,
     "RESOURCE_SERVER_INTROSPECTION_CREDENTIALS": None,
     "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
+    # RFC 7523 private_key_jwt authentication to the remote introspection
+    # endpoint. All of CLIENT_ID, PRIVATE_KEY and AUDIENCE must be set;
+    # RESOURCE_SERVER_AUTH_TOKEN and RESOURCE_SERVER_INTROSPECTION_CREDENTIALS
+    # take precedence when set.
+    "RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID": None,
+    "RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY": None,  # PEM or JWK JSON string
+    "RESOURCE_SERVER_INTROSPECTION_JWT_ALG": None,  # None = infer from the key type
+    "RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE": None,  # remote AS issuer or introspection URL
+    "RESOURCE_SERVER_INTROSPECTION_JWT_LIFETIME": 60,
+    "RESOURCE_SERVER_INTROSPECTION_JWT_KID": None,
     # Resource Server Token Resource Validator (RFC 8707)
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
         "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
