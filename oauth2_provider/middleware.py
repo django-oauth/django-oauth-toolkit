@@ -1,65 +1,21 @@
-import hashlib
-import logging
+"""Backward-compatible import shim.
 
-from django.contrib.auth import authenticate
-from django.utils.cache import patch_vary_headers
+``oauth2_provider.middleware`` moved to ``oauth2_provider.resource_server.middleware`` when
+the package was reorganized by OAuth2 role. Importing from this old path still
+works but is deprecated and will be removed in django-oauth-toolkit 4.0.
+"""
 
-from oauth2_provider.models import get_access_token_model
-from oauth2_provider.core.utils import parse_bearer_token
+import sys
+import warnings
 
+from oauth2_provider.resource_server import middleware as _moved
 
-log = logging.getLogger(__name__)
+warnings.warn(
+    "oauth2_provider.middleware has moved to oauth2_provider.resource_server.middleware. "
+    "The old import path is deprecated and will be removed in "
+    "django-oauth-toolkit 4.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-
-class OAuth2TokenMiddleware:
-    """
-    Middleware for OAuth2 user authentication
-
-    This middleware is able to work along with AuthenticationMiddleware and its behaviour depends
-    on the order it's processed with.
-
-    If it comes *after* AuthenticationMiddleware and request.user is valid, leave it as is and does
-    not proceed with token validation. If request.user is the Anonymous user proceeds and try to
-    authenticate the user using the OAuth2 access token.
-
-    If it comes *before* AuthenticationMiddleware, or AuthenticationMiddleware is not used at all,
-    tries to authenticate user with the OAuth2 access token and set request.user field. Setting
-    also request._cached_user field makes AuthenticationMiddleware use that instead of the one from
-    the session.
-
-    It also adds "Authorization" to the "Vary" header, so that django's cache middleware or a
-    reverse proxy can create proper cache keys.
-    """
-
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        # do something only if request contains a Bearer token
-        if parse_bearer_token(request.META.get("HTTP_AUTHORIZATION", "")):
-            if not hasattr(request, "user") or request.user.is_anonymous:
-                user = authenticate(request=request)
-                if user:
-                    request.user = request._cached_user = user
-
-        response = self.get_response(request)
-        patch_vary_headers(response, ("Authorization",))
-        return response
-
-
-class OAuth2ExtraTokenMiddleware:
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        tokenstring = parse_bearer_token(request.META.get("HTTP_AUTHORIZATION", ""))
-        if tokenstring:
-            AccessToken = get_access_token_model()
-            try:
-                token_checksum = hashlib.sha256(tokenstring.encode("utf-8")).hexdigest()
-                token = AccessToken.objects.get(token_checksum=token_checksum)
-                request.access_token = token
-            except AccessToken.DoesNotExist as e:
-                log.exception(e)
-        response = self.get_response(request)
-        return response
+sys.modules[__name__] = _moved
