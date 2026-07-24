@@ -24,7 +24,7 @@ from oauthlib.oauth2.rfc6749 import errors
 from .generators import generate_client_id, generate_client_secret
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
-from .utils import jwk_from_pem
+from .utils import jwk_allows_verification, jwk_from_pem
 from .validators import AllowedURIValidator
 
 
@@ -411,6 +411,16 @@ class AbstractApplication(models.Model):
             # here would put a client credential server-side by accident.
             if any(key.has_private for key in key_set["keys"]):
                 raise ValidationError(_("client_jwks must contain public keys only, never private keys."))
+            # A key set that permits no signature verification (e.g. use=enc
+            # everywhere, or key_ops without "verify") can never authenticate
+            # this client; fail at registration instead of at the first login.
+            if not any(jwk_allows_verification(key) for key in key_set["keys"]):
+                raise ValidationError(
+                    _(
+                        "client_jwks must contain at least one key usable for signature "
+                        'verification (use "sig", or key_ops including "verify").'
+                    )
+                )
         if self.client_jwks_uri and not self.client_jwks_uri.lower().startswith("https://"):
             raise ValidationError(_("client_jwks_uri must use the https scheme."))
 

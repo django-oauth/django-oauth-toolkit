@@ -1344,3 +1344,35 @@ invalid_localhost_loopback_params = [
 def test_localhost_loopback_redirect_rejected_when_enabled(uri, allowed_uri, oauth2_settings):
     oauth2_settings.ALLOW_LOCALHOST_LOOPBACK = True
     assert not redirect_to_uri_allowed(uri, allowed_uri)
+
+
+def test_application_clean_rejects_jwks_without_verification_keys():
+    # A key set that can never verify a signature (enc-only use, or key_ops
+    # without "verify") is a dead configuration; clean() fails fast.
+    import json as json_mod
+
+    enc_key = dict(
+        json_mod.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="e1").export_public()), use="enc"
+    )
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks=json_mod.dumps({"keys": [enc_key]}),
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "signature" in str(exc.value)
+
+    ops_key = dict(
+        json_mod.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="e2").export_public()),
+        key_ops=["encrypt"],
+    )
+    app.client_jwks = json_mod.dumps({"keys": [ops_key]})
+    with pytest.raises(ValidationError):
+        app.clean()
+
+    verify_key = dict(
+        json_mod.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="v1").export_public()),
+        key_ops=["verify"],
+    )
+    app.client_jwks = json_mod.dumps({"keys": [enc_key, verify_key]})
+    app.clean()

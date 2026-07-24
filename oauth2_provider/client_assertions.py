@@ -35,7 +35,7 @@ from jwcrypto.common import JWException, base64url_encode
 
 from . import safe_fetch
 from .settings import oauth2_settings
-from .utils import jwk_from_pem
+from .utils import jwk_allows_verification, jwk_from_pem
 
 
 log = logging.getLogger(__name__)
@@ -210,19 +210,9 @@ def _signing_keys(key_set, kid):
     return [key for key in keys if _key_allows_verification(key) and not key.has_private]
 
 
-def _key_allows_verification(key):
-    """True when the JWK's own restrictions permit signature verification.
-
-    RFC 7517: ``use`` and ``key_ops`` each constrain what a key may do; honor
-    whichever is present (a key declaring only e.g. encryption operations must
-    never be tried for JWS verification).
-    """
-    if key.get("use", "sig") != "sig":
-        return False
-    key_ops = key.get("key_ops")
-    if key_ops is not None and "verify" not in key_ops:
-        return False
-    return True
+# Shared with Application.clean(), which fails fast on key sets that could
+# never verify an assertion.
+_key_allows_verification = jwk_allows_verification
 
 
 def _verify_signature(assertion, application, header, allowed_algs):
