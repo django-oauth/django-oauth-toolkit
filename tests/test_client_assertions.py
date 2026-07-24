@@ -555,3 +555,161 @@ def test_token_endpoint_auth_signing_algs():
         ["client_secret_basic", "private_key_jwt", "client_secret_jwt"]
     )
     assert "RS256" in both and "HS256" in both
+
+
+# ---------------------------------------------------------------------------
+# Endpoint integration (token / introspection / revocation)
+# ---------------------------------------------------------------------------
+
+
+def _assertion_post_data(application, key, audience=TOKEN_AUDIENCE, **extra):
+    data = {
+        "client_assertion_type": client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
+        "client_assertion": client_assertions.make_client_assertion(application.client_id, key, audience),
+    }
+    data.update(extra)
+    return data
+
+
+@pytest.mark.django_db
+def test_token_endpoint_private_key_jwt(client, private_key_jwt_application, client_rsa_jwk):
+    from django.urls import reverse
+
+    data = _assertion_post_data(private_key_jwt_application, client_rsa_jwk, grant_type="client_credentials")
+    response = client.post(reverse("oauth2_provider:token"), data=data)
+    assert response.status_code == 200, response.content
+    payload = json.loads(response.content)
+    assert payload["token_type"].lower() == "bearer"
+    assert "access_token" in payload
+
+
+@pytest.mark.django_db
+def test_token_endpoint_private_key_jwt_es256(client, private_key_jwt_application, client_ec_jwk):
+    from django.urls import reverse
+
+    data = _assertion_post_data(private_key_jwt_application, client_ec_jwk, grant_type="client_credentials")
+    response = client.post(reverse("oauth2_provider:token"), data=data)
+    assert response.status_code == 200, response.content
+
+
+@pytest.mark.django_db
+def test_token_endpoint_client_secret_jwt(client, client_secret_jwt_application):
+    from django.urls import reverse
+
+    assertion = client_assertions.make_client_assertion(
+        client_secret_jwt_application.client_id, CLEARTEXT_SECRET, TOKEN_AUDIENCE, alg="HS256"
+    )
+    response = client.post(
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "client_credentials",
+            "client_assertion_type": client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
+            "client_assertion": assertion,
+        },
+    )
+    assert response.status_code == 200, response.content
+
+
+@pytest.mark.django_db
+def test_token_endpoint_replayed_assertion_rejected(client, private_key_jwt_application, client_rsa_jwk):
+    from django.urls import reverse
+
+    data = _assertion_post_data(private_key_jwt_application, client_rsa_jwk, grant_type="client_credentials")
+    first = client.post(reverse("oauth2_provider:token"), data=data)
+    assert first.status_code == 200, first.content
+    replay = client.post(reverse("oauth2_provider:token"), data=data)
+    assert replay.status_code == 401
+    assert json.loads(replay.content)["error"] == "invalid_client"
+
+
+@pytest.mark.django_db
+def test_token_endpoint_invalid_assertion_does_not_fall_back(client, private_key_jwt_application):
+    from django.urls import reverse
+
+    response = client.post(
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "client_credentials",
+            "client_assertion_type": client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
+            "client_assertion": "garbage",
+            # Even correct secret credentials must not rescue the request.
+            "client_id": private_key_jwt_application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+        },
+    )
+    assert response.status_code == 401
+    assert json.loads(response.content)["error"] == "invalid_client"
+
+
+@pytest.mark.django_db
+def test_token_endpoint_secret_auth_rejected_for_jwt_client(client, private_key_jwt_application):
+    from django.urls import reverse
+
+    response = client.post(
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "client_credentials",
+            "client_id": private_key_jwt_application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+        },
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_introspection_endpoint_accepts_client_assertion(
+    client, private_key_jwt_application, client_rsa_jwk, django_user_model
+):
+    from datetime import timedelta
+
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from oauth2_provider.models import get_access_token_model
+
+    token = get_access_token_model().objects.create(
+        user=django_user_model.objects.create_user("introspect_user"),
+        token="introspectable-token",
+        application=private_key_jwt_application,
+        expires=timezone.now() + timedelta(days=1),
+        scope="read",
+    )
+    data = _assertion_post_data(
+        private_key_jwt_application,
+        client_rsa_jwk,
+        audience="http://testserver" + reverse("oauth2_provider:introspect"),
+        token=token.token,
+    )
+    response = client.post(reverse("oauth2_provider:introspect"), data=data)
+    assert response.status_code == 200, response.content
+    assert json.loads(response.content)["active"] is True
+
+
+@pytest.mark.django_db
+def test_revocation_endpoint_accepts_client_assertion(
+    client, private_key_jwt_application, client_rsa_jwk, django_user_model
+):
+    from datetime import timedelta
+
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from oauth2_provider.models import get_access_token_model
+
+    AccessToken = get_access_token_model()
+    token = AccessToken.objects.create(
+        user=django_user_model.objects.create_user("revoke_user"),
+        token="revocable-token",
+        application=private_key_jwt_application,
+        expires=timezone.now() + timedelta(days=1),
+        scope="read",
+    )
+    data = _assertion_post_data(
+        private_key_jwt_application,
+        client_rsa_jwk,
+        audience="http://testserver" + reverse("oauth2_provider:revoke-token"),
+        token=token.token,
+    )
+    response = client.post(reverse("oauth2_provider:revoke-token"), data=data)
+    assert response.status_code == 200, response.content
+    assert not AccessToken.objects.filter(pk=token.pk).exists()

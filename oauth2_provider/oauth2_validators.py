@@ -31,7 +31,7 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
-from . import cimd
+from . import cimd, client_assertions
 from .bcp import bcp_compliant
 from .exceptions import FatalClientError
 from .models import (
@@ -281,6 +281,16 @@ class OAuth2Validator(RequestValidator):
         elif request.client.client_id != client_id:
             log.debug("Failed basic auth: wrong client id %s" % client_id)
             return False
+        elif request.client.token_endpoint_auth_method in AbstractApplication.JWT_AUTH_METHODS:
+            # RFC 9700 section 2.5: a client registered for JWT client
+            # authentication (RFC 7523) must use it; a leaked secret must not
+            # open a weaker side door.
+            log.debug(
+                "Failed basic auth: client %s is registered for %s and must use a client assertion",
+                client_id,
+                request.client.token_endpoint_auth_method,
+            )
+            return False
         elif (
             request.client.client_type == "public"
             and request.grant_type == "urn:ietf:params:oauth:grant-type:device_code"
@@ -310,6 +320,15 @@ class OAuth2Validator(RequestValidator):
 
         if self._load_application(client_id, request) is None:
             log.debug("Failed body auth: Application %s does not exists" % client_id)
+            return False
+        elif request.client.token_endpoint_auth_method in AbstractApplication.JWT_AUTH_METHODS:
+            # See _authenticate_basic_auth: JWT-registered clients may only
+            # authenticate with a client assertion.
+            log.debug(
+                "Failed body auth: client %s is registered for %s and must use a client assertion",
+                client_id,
+                request.client.token_endpoint_auth_method,
+            )
             return False
         elif (
             request.client.client_type == "public"
@@ -428,6 +447,10 @@ class OAuth2Validator(RequestValidator):
 
         If something goes wrong, call oauthlib implementation of the method.
         """
+        # An RFC 7523 client assertion is client authentication by definition.
+        if getattr(request, "client_assertion", None):
+            return True
+
         if self._extract_basic_auth(request):
             return True
 
@@ -454,14 +477,32 @@ class OAuth2Validator(RequestValidator):
         Whether this fails we support including the client credentials in the request-body,
         but this method is NOT RECOMMENDED and SHOULD be limited to clients unable to
         directly utilize the HTTP Basic authentication scheme.
-        See rfc:`2.3.1` for more details
+        See rfc:`2.3.1` for more details.
+
+        A request carrying an RFC 7523 JWT client assertion is authenticated by
+        that assertion alone: per RFC 7521 section 4.2 there is deliberately no
+        fallback to the secret-based methods when the assertion is invalid.
         """
+        if getattr(request, "client_assertion", None) or getattr(request, "client_assertion_type", None):
+            return self._authenticate_client_assertion(request)
+
         authenticated = self._authenticate_basic_auth(request)
 
         if not authenticated:
             authenticated = self._authenticate_request_body(request)
 
         return authenticated
+
+    def _authenticate_client_assertion(self, request):
+        """
+        Authenticate a client presenting an RFC 7523 JWT client assertion
+        (private_key_jwt / client_secret_jwt).
+
+        Not related to the ``get_jwt_bearer_token`` / ``validate_jwt_bearer_token``
+        methods below: despite the similar names, those are oauthlib's OpenID
+        hooks treating the OIDC id_token as a bearer token, not RFC 7523.
+        """
+        return client_assertions.authenticate_client_assertion(request, self._load_application)
 
     def authenticate_client_id(self, client_id, request, *args, **kwargs):
         """
@@ -1256,6 +1297,10 @@ class OAuth2Validator(RequestValidator):
         return len(inspect.signature(cls.get_additional_claims).parameters) == 1
 
     def get_jwt_bearer_token(self, token, token_handler, request):
+        # Despite the name, this is oauthlib's OpenID hook for issuing the OIDC
+        # id_token as a bearer token — not the RFC 7523 jwt-bearer grant (which
+        # is unimplemented) and unrelated to RFC 7523 client assertions (see
+        # _authenticate_client_assertion).
         return self.get_id_token(token, token_handler, request)
 
     def get_claim_dict(self, request):
