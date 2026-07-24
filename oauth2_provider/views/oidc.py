@@ -446,9 +446,8 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
                 RefreshToken.objects.filter(access_token__in=access_tokens_to_delete)
             )
             for token in access_tokens_to_delete:
-                # Delete the token and its corresponding refresh and IDTokens.
-                if token.id_token:
-                    token.id_token.revoke()
+                # Delete the token and its corresponding IDToken. AccessToken.revoke()
+                # removes the associated IDToken as well (see #1604).
                 token.revoke()
             for refresh_token in refresh_tokens_to_delete:
                 refresh_token.revoke()

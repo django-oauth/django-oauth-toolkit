@@ -29,6 +29,7 @@ from oauth2_provider.views.oidc import RPInitiatedLogoutView, _load_id_token, _v
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .conftest import CLEARTEXT_SECRET
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -1064,6 +1065,37 @@ def test_token_deletion_on_logout_disabled(oidc_tokens, logged_in_client, rp_set
     assert not any([token.is_expired() for token in IDToken.objects.all()])
     assert RefreshToken.objects.count() == 1
     assert not any([token.revoked is not None for token in RefreshToken.objects.all()])
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_id_token_not_orphaned_on_refresh(oidc_tokens, client):
+    """
+    Rotating an access token out on refresh must not leave its ID token orphaned.
+    A fresh ID token is issued on each refresh, so without cleanup the ID token count
+    grows unbounded while the access token count stays constant (#1604).
+    """
+    AccessToken = get_access_token_model()
+    IDToken = get_id_token_model()
+    RefreshToken = get_refresh_token_model()
+    assert AccessToken.objects.count() == 1
+    assert IDToken.objects.count() == 1
+
+    refresh_token = RefreshToken.objects.get().token
+    rsp = client.post(
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": oidc_tokens.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+            "scope": "openid",
+        },
+    )
+    assert rsp.status_code == 200
+    assert "id_token" in rsp.json()
+    # The rotated-out access token's ID token must be cleaned up, not left orphaned.
+    assert AccessToken.objects.count() == 1
+    assert IDToken.objects.count() == 1
 
 
 EXAMPLE_EMAIL = "example.email@example.com"

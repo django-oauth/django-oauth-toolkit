@@ -607,7 +607,15 @@ class AbstractAccessToken(models.Model):
         Convenience method to uniform tokens" interface, for now
         simply remove this token from the database in order to revoke it.
         """
+        # Also remove the associated ID token. The OneToOne ``AccessToken.id_token``
+        # cascade only fires when the *ID token* is deleted (which deletes its access
+        # token), not the reverse, so deleting the access token on its own -- e.g. when
+        # rotating it out on refresh -- would orphan its ID token and let those rows
+        # accumulate until they expire and ``cleartokens`` reclaims them (#1604).
+        id_token = self.id_token
         self.delete()
+        if id_token is not None:
+            id_token.delete()
 
     @property
     def scopes(self):
