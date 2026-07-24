@@ -994,9 +994,20 @@ class OAuth2Validator(RequestValidator):
                     )
                     request.refresh_token_instance = refresh_token_instance
 
-                    previous_access_token = AccessToken.objects.filter(
-                        source_refresh_token=refresh_token_instance
-                    ).first()
+                    # Lock the previously issued access token too: a concurrent rotation
+                    # may otherwise delete it (via ``AccessToken.revoke()``) between this
+                    # lookup and re-issuing its refresh token below, which would turn the FK
+                    # insert into an IntegrityError. Locking it holds it for this
+                    # transaction; if it was already deleted, ``first()`` returns ``None`` and
+                    # we fall through to minting a fresh pair (its OneToOne
+                    # ``source_refresh_token`` slot is then free). This only ever waits on the
+                    # access token, never on the other request's refresh token, so it cannot
+                    # deadlock with the concurrent rotation (#1687).
+                    previous_access_token = (
+                        AccessToken.objects.select_for_update()
+                        .filter(source_refresh_token=refresh_token_instance)
+                        .first()
+                    )
                     try:
                         refresh_token_instance.revoke()
                     except (AccessToken.DoesNotExist, RefreshToken.DoesNotExist):
@@ -1023,10 +1034,22 @@ class OAuth2Validator(RequestValidator):
                 else:
                     # make sure that the token data we're returning matches
                     # the existing token
+                    existing_refresh_token = RefreshToken.objects.filter(
+                        access_token=previous_access_token
+                    ).first()
+                    if existing_refresh_token is None:
+                        # The refresh token bound to the previously issued access token was
+                        # revoked/cleaned up (e.g. by ``clear_expired`` or a concurrent
+                        # rotation) while the access token itself survived. Re-issue a
+                        # refresh token for it instead of dereferencing ``None`` (#1687).
+                        # Creating a fresh *access* token here would violate the OneToOne
+                        # ``AccessToken.source_refresh_token`` constraint, since the surviving
+                        # access token already occupies that relation.
+                        existing_refresh_token = self._create_refresh_token(
+                            request, refresh_token_code, previous_access_token, refresh_token_instance
+                        )
                     token["access_token"] = previous_access_token.token
-                    token["refresh_token"] = (
-                        RefreshToken.objects.filter(access_token=previous_access_token).first().token
-                    )
+                    token["refresh_token"] = existing_refresh_token.token
                     token["scope"] = previous_access_token.scope
 
         # No refresh token should be created, just access token
