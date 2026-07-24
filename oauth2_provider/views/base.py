@@ -212,26 +212,27 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         endpoint (RFC 9126 §4), or return an error response.
         """
         par_model = get_par_request_model()
-        # One-time use (RFC 9126 §4 / §7.3): consume the record immediately. The pushed
-        # parameters are carried through the rest of the flow via the request query
-        # string and the consent form's hidden fields, so it is not needed again.
-        # Read and delete under a row lock in one transaction so two concurrent
-        # authorization requests cannot both consume the same request_uri.
+        # The request_uri is bound to the client that pushed it (RFC 9126 §2.2), so
+        # client_id is required in the authorization request (RFC 9126 §4 example).
+        client_id = request.GET.get("client_id")
+        # Read, verify the client binding, then delete under a row lock in one
+        # transaction. Two concurrent authorization requests cannot both consume the
+        # same request_uri (one-time use, RFC 9126 §4 / §7.3), and — crucially — the
+        # binding is checked *before* deletion so a party who merely obtained a leaked
+        # request_uri (and is not the bound client) cannot consume/invalidate it (DoS).
         try:
             with transaction.atomic():
                 par = par_model.objects.select_for_update().get(request_uri=request_uri)
+                if not client_id or client_id != par.client_id:
+                    # Leave the record intact so the legitimate client can still use it.
+                    return self._fatal_par_error("The request_uri was not issued to this client.")
                 parameters = par.parameters
-                bound_client_id = par.client_id
                 expired = par.is_expired()
                 par.delete()
         except par_model.DoesNotExist:
             return self._fatal_par_error("The request_uri is invalid or has already been used.")
         if expired:
             return self._fatal_par_error("The request_uri has expired.")
-        # The request_uri is bound to the client that pushed it (RFC 9126 §2.2).
-        client_id = request.GET.get("client_id")
-        if client_id and client_id != bound_client_id:
-            return self._fatal_par_error("The request_uri was not issued to this client.")
         # Re-inject the pushed parameters so the existing authorization flow, which
         # reads from the query string, proceeds unchanged. Any parameters supplied
         # alongside request_uri are intentionally ignored: the pushed request is

@@ -964,8 +964,7 @@ class AbstractPushedAuthorizationRequest(models.Model):
         """Whether the request URI has passed its ``expires`` deadline."""
         if not self.expires:
             return True
-        now = datetime.now(tz=dt_timezone.utc)
-        return now >= self.expires
+        return timezone.now() >= self.expires
 
     def __str__(self):
         # Never render the request_uri itself: __str__ appears in the admin
@@ -981,13 +980,11 @@ class PushedAuthorizationRequest(AbstractPushedAuthorizationRequest):
 def create_pushed_authorization_request(
     request_uri: str, client_id: str, parameters: dict, expires_in: int
 ) -> AbstractPushedAuthorizationRequest:
-    now = datetime.now(tz=dt_timezone.utc)
-
     return get_par_request_model().objects.create(
         request_uri=request_uri,
         client_id=client_id,
         parameters=parameters,
-        expires=now + timedelta(seconds=expires_in),
+        expires=timezone.now() + timedelta(seconds=expires_in),
     )
 
 

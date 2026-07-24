@@ -273,6 +273,22 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
             {"client_id": self.public_application.client_id, "request_uri": par.request_uri},
         )
         self.assertEqual(response.status_code, 400)
+        # A non-bound client must NOT be able to consume/invalidate the request_uri
+        # (RFC 9126 §2.2): the record survives, so the bound client can still use it.
+        self.assertTrue(PushedAuthorizationRequest.objects.filter(pk=par.pk).exists())
+        legit = self.client.get(
+            self.authorize_url,
+            {"client_id": self.application.client_id, "request_uri": par.request_uri},
+        )
+        self.assertEqual(legit.status_code, 200)
+
+    def test_request_uri_requires_client_id(self):
+        par = self._make_par(client_id=self.application.client_id)
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(self.authorize_url, {"request_uri": par.request_uri})
+        self.assertEqual(response.status_code, 400)
+        # Omitting client_id must not consume the record either.
+        self.assertTrue(PushedAuthorizationRequest.objects.filter(pk=par.pk).exists())
 
 
 class TestPAREnforcement(PARBaseTestCase):
