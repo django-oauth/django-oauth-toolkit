@@ -76,15 +76,19 @@ two constraints that make them different from ``Application``, and getting eithe
 of the long-standing confusion tracked in
 `issue #634 <https://github.com/django-oauth/django-oauth-toolkit/issues/634>`_.
 
-**1. Swap the interrelated models together.** ``AccessToken.source_refresh_token`` references
+**1. Swap AccessToken and RefreshToken together.** ``AccessToken.source_refresh_token`` references
 ``RefreshToken`` and ``RefreshToken.access_token`` references ``AccessToken`` -- a circular foreign
-key. ``AccessToken`` also references ``IDToken``. Because of this you cannot swap just one of them:
-pointing ``OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`` at a custom model while leaving ``RefreshToken`` on
-the default ``oauth2_provider.RefreshToken`` splits the circular reference across two apps, and
-Django cannot order the migrations for that graph. This surfaces as ``fields.E304``/``fields.E305``
-reverse-accessor clashes or ``lazy reference ... isn't installed`` errors. Django OAuth Toolkit ships
-a system check (``oauth2_provider.W011``) that warns when the ``AccessToken`` and ``RefreshToken``
-models are not defined in the same app.
+key. Because of this the two models must be swapped into the **same app**: pointing
+``OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`` at a custom model while leaving ``RefreshToken`` on the default
+``oauth2_provider.RefreshToken`` splits the circular reference across two apps, and Django cannot
+order the migrations for that graph. This surfaces as ``fields.E304``/``fields.E305`` reverse-accessor
+clashes or ``lazy reference ... isn't installed`` errors. Django OAuth Toolkit ships a system check
+(``oauth2_provider.W011``) that warns when the ``AccessToken`` and ``RefreshToken`` models are not
+defined in the same app.
+
+``AccessToken`` also references ``IDToken``, but only in one direction, so ``IDToken`` can in principle
+be swapped independently. In practice it is simplest to customize all of the token models together in
+one app, as shown below.
 
 **2. Declare the ``swappable`` Meta option.** Each concrete model must set the ``swappable`` Meta
 option to the corresponding setting name. This is what tells Django the model is a swap target rather
