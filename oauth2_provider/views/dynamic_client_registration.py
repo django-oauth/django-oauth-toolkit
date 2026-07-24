@@ -293,19 +293,52 @@ def _application_to_response(application, registration_token, request):
     if application.name:
         data["client_name"] = application.name
     if application.client_jwks:
-        # Registration validated this as JSON, but a corrupted stored value
-        # (e.g. a manual DB edit) must degrade to an omitted field, not a 500.
-        try:
-            data["jwks"] = json.loads(application.client_jwks)
-        except ValueError:
-            log.warning(
-                "Stored client_jwks for application %s is not valid JSON; omitting jwks "
-                "from the registration response",
-                application.client_id,
-            )
+        jwks = _stored_jwks_for_response(application)
+        if jwks is not None:
+            data["jwks"] = jwks
     if application.client_jwks_uri:
         data["jwks_uri"] = application.client_jwks_uri
     return data
+
+
+# RFC 7517/7518 private key members. Registration and Application.clean()
+# refuse private material, but a manually edited row must never be echoed
+# back through the management endpoint.
+_PRIVATE_JWK_MEMBERS = frozenset({"d", "k", "p", "q", "dp", "dq", "qi", "oth"})
+
+
+def _stored_jwks_for_response(application):
+    """The stored client JWKS as a response-safe object, or None to omit it.
+
+    Registration validated the value, but a corrupted or manually edited row
+    must degrade safely: unparseable JSON omits the field instead of raising a
+    500, and any key carrying private members is dropped rather than disclosed.
+    """
+    try:
+        parsed = json.loads(application.client_jwks)
+    except ValueError:
+        log.warning(
+            "Stored client_jwks for application %s is not valid JSON; omitting jwks "
+            "from the registration response",
+            application.client_id,
+        )
+        return None
+    keys = parsed.get("keys") if isinstance(parsed, dict) else None
+    if not isinstance(keys, list):
+        return None
+    public_keys = []
+    for key in keys:
+        if isinstance(key, dict) and _PRIVATE_JWK_MEMBERS.intersection(key):
+            log.warning(
+                "Stored client_jwks for application %s contains private key material; "
+                "omitting that key from the registration response",
+                application.client_id,
+            )
+            continue
+        public_keys.append(key)
+    if not public_keys:
+        return None
+    return {"keys": public_keys}
 
 
 def _dot_grant_to_rfc_grant_types(dot_grant):

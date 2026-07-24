@@ -1200,3 +1200,54 @@ class TestDCRJwtAuthMethods(TestCase):
         assert response.status_code == 201, response.content
         application = Application.objects.get(client_id=response.json()["client_id"])
         assert application.client_jwks_uri == ""
+
+    def test_private_key_material_never_echoed_in_response(self):
+        from jwcrypto import jwk
+
+        register = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": _public_jwks(),
+            },
+        )
+        assert register.status_code == 201
+        body = register.json()
+
+        # Simulate a manually edited row holding a private key alongside a
+        # public one: the private key must be dropped from the response.
+        private_key = json.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="leaked").export_private())
+        public_key = _public_jwks()["keys"][0]
+        Application.objects.filter(client_id=body["client_id"]).update(
+            client_jwks=json.dumps({"keys": [private_key, public_key]})
+        )
+        response = self.client.get(
+            _management_url(body["client_id"]),
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200, response.content
+        returned = response.json()["jwks"]["keys"]
+        assert returned == [public_key]
+        assert all("d" not in key for key in returned)
+
+        # All keys private -> the jwks field is omitted entirely.
+        Application.objects.filter(client_id=body["client_id"]).update(
+            client_jwks=json.dumps({"keys": [private_key]})
+        )
+        response = self.client.get(
+            _management_url(body["client_id"]),
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200
+        assert "jwks" not in response.json()
+
+        # Valid JSON but not a JWK Set shape -> omitted as well.
+        Application.objects.filter(client_id=body["client_id"]).update(client_jwks='{"kty": "EC"}')
+        response = self.client.get(
+            _management_url(body["client_id"]),
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200
+        assert "jwks" not in response.json()
