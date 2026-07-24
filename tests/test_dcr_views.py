@@ -1262,3 +1262,22 @@ class TestDCRJwtAuthMethods(TestCase):
         )
         assert response.status_code == 200
         assert "jwks" not in response.json()
+
+    def test_register_unusable_jwks_fails_with_rfc_wording(self):
+        from jwcrypto import jwk
+
+        base = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+        }
+        private_key = json.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="p1").export_private())
+        enc_key = dict(_public_jwks()["keys"][0], use="enc")
+        for jwks in ({"keys": []}, {"keys": [private_key]}, {"keys": [enc_key]}):
+            response = _post_register(self.client, dict(base, jwks=jwks))
+            assert response.status_code == 400, response.content
+            body = response.json()
+            assert body["error"] == "invalid_client_metadata"
+            # RFC 7591 field naming, never the internal model field name.
+            assert "jwks" in body["error_description"]
+            assert "client_jwks" not in body["error_description"]

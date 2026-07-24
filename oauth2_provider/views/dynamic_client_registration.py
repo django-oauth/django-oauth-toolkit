@@ -23,7 +23,7 @@ from django.views.decorators.csrf import csrf_exempt
 from ..compat import login_not_required
 from ..models import get_access_token_model, get_application_model
 from ..settings import oauth2_settings
-from ..utils import parse_bearer_token
+from ..utils import jwk_allows_verification, parse_bearer_token
 
 
 log = logging.getLogger(__name__)
@@ -225,6 +225,21 @@ def _build_application_kwargs(data):
         return None, _error_response(
             "invalid_client_metadata", 'jwks must be a JWK Set object with a "keys" array'
         )
+    if jwks is not None:
+        # Validate the key material here too, so every failure speaks RFC 7591
+        # ("jwks") instead of Application.clean()'s internal field wording.
+        keys = jwks["keys"]
+        if not keys:
+            return None, _error_response("invalid_client_metadata", "jwks must contain at least one key")
+        if any(isinstance(key, dict) and _PRIVATE_JWK_MEMBERS.intersection(key) for key in keys):
+            return None, _error_response(
+                "invalid_client_metadata", "jwks must contain public keys only, never private keys"
+            )
+        if not any(isinstance(key, dict) and jwk_allows_verification(key) for key in keys):
+            return None, _error_response(
+                "invalid_client_metadata",
+                "jwks must contain at least one key usable for signature verification",
+            )
     # Validate here with the RFC 7591 field name; deferring to
     # Application.clean() would surface the internal client_jwks_uri field
     # name in the error_description.
