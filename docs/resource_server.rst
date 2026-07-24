@@ -51,6 +51,11 @@ Example Response::
 The ``aud`` field (audience) is included when the token has resource binding per RFC 8707.
 Tokens without resource restrictions will not include this field.
 
+By default the endpoint reads the ``token`` parameter from an
+``application/x-www-form-urlencoded`` request body (or the URL query string). If
+``OAUTH2_BACKEND_CLASS`` is set to ``oauth2_provider.oauth2_backends.JSONOAuthLibCore``,
+the ``token`` may also be supplied in an ``application/json`` request body.
+
 Setup the Resource Server
 -------------------------
 Setup the :term:`Resource Server` like the :term:`Authorization Server` as described in the :doc:`tutorial/tutorial`.

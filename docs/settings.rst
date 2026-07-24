@@ -204,7 +204,12 @@ validates every step of the OAuth2 process.
 OAUTH2_BACKEND_CLASS
 ~~~~~~~~~~~~~~~~~~~~
 The import string for the ``oauthlib_backend_class`` used in the ``OAuthLibMixin``,
-to get a ``Server`` instance.
+to get a ``Server`` instance. The default
+``oauth2_provider.oauth2_backends.OAuthLibCore`` reads request bodies as
+``application/x-www-form-urlencoded``. Set it to
+``oauth2_provider.oauth2_backends.JSONOAuthLibCore`` to parse
+``application/json`` request bodies instead (for example, to send the token
+introspection ``token`` parameter as JSON).
 
 REFRESH_TOKEN_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
