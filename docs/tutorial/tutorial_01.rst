@@ -23,12 +23,12 @@ Start a Django project, add `oauth2_provider` and `corsheaders` to the installed
 
 .. code-block:: python
 
-    INSTALLED_APPS = {
+    INSTALLED_APPS = [
         'django.contrib.admin',
         # ...
         'oauth2_provider',
         'corsheaders',
-    }
+    ]
 
 Include the Django OAuth Toolkit urls in your `urls.py`, choosing the urlspace you prefer. For example:
 
@@ -45,7 +45,7 @@ Include the Django OAuth Toolkit urls in your `urls.py`, choosing the urlspace y
 
 Include the CORS middleware in your `settings.py`. ``CorsMiddleware`` should be placed as high as
 possible, especially before any middleware that can generate responses such as Django's
-``CommonMiddleware`` or Whitenoise's ``WhiteNoiseMiddleware``, otherwise it will not be able to add
+``CommonMiddleware`` or WhiteNoise's ``WhiteNoiseMiddleware``, otherwise it will not be able to add
 the CORS headers to those responses.
 
 .. code-block:: python
