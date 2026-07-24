@@ -8,7 +8,6 @@ from django.views.decorators.csrf import csrf_exempt
 
 from ..compat import login_not_required
 from ..models import get_access_token_model
-from ..oauth2_backends import get_oauthlib_core
 from ..views.generic import ClientProtectedScopedResourceView
 
 
@@ -89,5 +88,5 @@ class IntrospectTokenView(ClientProtectedScopedResourceView):
         :param kwargs:
         :return:
         """
-        body = dict(get_oauthlib_core().extract_body(request))
+        body = dict(self.get_oauthlib_core().extract_body(request))
         return self.get_token_response(body.get("token", None))
