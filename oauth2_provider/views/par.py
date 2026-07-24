@@ -31,7 +31,10 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
 
     def post(self, request, *args, **kwargs):
         if not oauth2_settings.PAR_ENABLED:
-            return self._error_response("invalid_request", "PAR is not enabled.", status=400)
+            # A disabled endpoint behaves as absent, matching the DCR endpoint when
+            # DCR_ENABLED is off, rather than returning an OAuth error from a
+            # supported endpoint.
+            return http.JsonResponse({"error": "not_found"}, status=404)
 
         # RFC 9126 §2.1 step 2: a pushed request must not itself carry a request_uri.
         if "request_uri" in request.POST:

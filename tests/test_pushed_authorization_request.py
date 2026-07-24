@@ -164,9 +164,10 @@ class TestPAREndpoint(PARBaseTestCase):
         self.assertEqual(json.loads(response.content)["error"], "invalid_request")
 
     def test_disabled_par_endpoint(self):
+        # A disabled endpoint behaves as absent (404), like DCR when DCR_ENABLED is off.
         self.oauth2_settings.PAR_ENABLED = False
         response = self.push()
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 404)
 
     def test_client_secret_post_excluded_from_stored_parameters(self):
         # Authenticate via client_secret_post (credentials in the body). The
