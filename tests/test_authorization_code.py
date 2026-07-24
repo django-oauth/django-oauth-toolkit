@@ -1349,6 +1349,73 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_reuse_protection_stale_token_within_grace_period_is_rejected(self):
+        """
+        With reuse protection, the grace period only covers the immediately preceding
+        refresh token (a client retrying because it did not receive the rotated token).
+        A token that is several generations old must be rejected -- and must trigger
+        family revocation -- even while its ``revoked`` timestamp is still inside the
+        grace window. See issue #1617.
+        """
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 1000
+        self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = True
+        self.client.login(username="test_user", password="123456")
+        authorization_code = self.get_auth()
+
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": authorization_code,
+                "redirect_uri": "http://example.org",
+            },
+            **auth_headers,
+        )
+        content = json.loads(response.content.decode("utf-8"))
+        refresh_token_1 = content["refresh_token"]
+        scope = content["scope"]
+
+        # R1 -> R2 (fresh, distinct token)
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token_1, "scope": scope},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        refresh_token_2 = json.loads(response.content.decode("utf-8"))["refresh_token"]
+        self.assertNotEqual(refresh_token_2, refresh_token_1)
+
+        # R2 -> R3 (fresh, distinct token): the chain has now advanced past R1
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token_2, "scope": scope},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        refresh_token_3 = json.loads(response.content.decode("utf-8"))["refresh_token"]
+        self.assertNotEqual(refresh_token_3, refresh_token_2)
+
+        # Reusing R1 -- now two generations old -- within the grace window must fail,
+        # not mint a new token pair. The scope is intentionally omitted here: with the
+        # scope present the request happened to fail for an unrelated reason (the stale
+        # token's original scopes resolve to empty); without it, the pre-fix code minted
+        # brand-new tokens.
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token_1},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 400)
+
+        # And the replay must revoke the whole family, so R3 is now unusable too.
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token_3, "scope": scope},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_refresh_repeating_requests_non_rotating_tokens(self):
         """
         Try refreshing an access token with the same refresh token more than once when not rotating tokens.
