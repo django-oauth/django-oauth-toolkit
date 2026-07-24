@@ -19,7 +19,8 @@ from .generic import (
     ScopedProtectedResourceView,
 )
 from .introspect import IntrospectTokenView
-from .metadata import OAuthProtectedResourceMetadataView, OAuthServerMetadataView
+from ..authorization_server.views.metadata import OAuthServerMetadataView
+from ..resource_server.views.metadata import OAuthProtectedResourceMetadataView
 from .oidc import ConnectDiscoveryInfoView, JwksInfoView, RPInitiatedLogoutView, UserInfoView
 from .token import AuthorizedTokenDeleteView, AuthorizedTokensListView
 from .device import DeviceAuthorizationView, DeviceUserCodeView, DeviceConfirmView, DeviceGrantStatusView

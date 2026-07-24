@@ -24,7 +24,7 @@ _LAZY = {
     "TokenView": "oauth2_provider.views.base",
     "RevokeTokenView": "oauth2_provider.views.base",
     "IntrospectTokenView": "oauth2_provider.views.introspect",
-    "OAuthServerMetadataView": "oauth2_provider.views.metadata",
+    "OAuthServerMetadataView": "oauth2_provider.authorization_server.views.metadata",
     "DeviceAuthorizationView": "oauth2_provider.views.device",
     "DeviceUserCodeView": "oauth2_provider.views.device",
     "DeviceConfirmView": "oauth2_provider.views.device",

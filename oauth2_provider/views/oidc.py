@@ -14,6 +14,11 @@ from jwcrypto.jwt import JWTExpired
 from oauthlib.common import add_params_to_uri
 
 from oauth2_provider.authorization_server.oidc.mixins import OIDCLogoutOnlyMixin, OIDCOnlyMixin
+from oauth2_provider.authorization_server.views.metadata import (
+    ServerMetadataViewMixin,
+    bcp_filter_code_challenge_methods,
+    bcp_filter_response_types,
+)
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 
 from ..authorization_server.forms import ConfirmLogoutForm
@@ -36,11 +41,6 @@ from ..models import (
     get_refresh_token_model,
 )
 from ..settings import oauth2_settings
-from .metadata import (
-    ServerMetadataViewMixin,
-    bcp_filter_code_challenge_methods,
-    bcp_filter_response_types,
-)
 
 
 Application = get_application_model()

@@ -32,6 +32,21 @@ from oauth2_provider.resource_server.mixins import (  # noqa: F401
 )
 
 
+__all__ = [
+    "OAuthLibMixin",
+    "OAuthLibCoreMixin",
+    "AuthorizationServerViewMixin",
+    "ResourceServerViewMixin",
+    "ScopedResourceMixin",
+    "ProtectedResourceMixin",
+    "ReadWriteScopedResourceMixin",
+    "ClientProtectedResourceMixin",
+    "ProtectedResourceMetadataMixin",
+    "OIDCOnlyMixin",
+    "OIDCLogoutOnlyMixin",
+]
+
+
 class OAuthLibMixin(AuthorizationServerViewMixin, ResourceServerViewMixin):
     """Deprecated combined authorization-server + resource-server view mixin.
 
