@@ -326,7 +326,7 @@ class TestDynamicClientRegistration(TestCase):
         data = {
             "redirect_uris": ["https://example.com/cb"],
             "grant_types": ["authorization_code"],
-            "token_endpoint_auth_method": "private_key_jwt",
+            "token_endpoint_auth_method": "tls_client_auth",
         }
         response = _post_register(self.client, data)
         assert response.status_code == 400
@@ -951,3 +951,172 @@ class TestDCRFullRoundtrip(TestCase):
         delete_response = self.client.delete(mgmt_url, **_bearer(new_token))
         assert delete_response.status_code == 204
         assert not Application.objects.filter(client_id=client_id).exists()
+
+
+# ---------------------------------------------------------------------------
+# RFC 7523 — JWT client authentication methods via DCR
+# ---------------------------------------------------------------------------
+
+
+def _public_jwks():
+    from jwcrypto import jwk
+
+    key = jwk.JWK.generate(kty="EC", crv="P-256", kid="dcr-ec-1")
+    return {"keys": [json.loads(key.export_public())]}
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.DCR_SETTINGS)
+class TestDCRJwtAuthMethods(TestCase):
+    def setUp(self):
+        self.user = UserModel.objects.create_user("dcr_jwt_user", "dcr_jwt@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def test_register_private_key_jwt_with_jwks(self):
+        jwks = _public_jwks()
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks": jwks,
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["token_endpoint_auth_method"] == "private_key_jwt"
+        assert body["jwks"] == jwks
+        # The client authenticates with its key; no secret is issued.
+        assert "client_secret" not in body
+
+        application = Application.objects.get(client_id=body["client_id"])
+        assert application.token_endpoint_auth_method == "private_key_jwt"
+        assert application.client_type == "confidential"
+        assert json.loads(application.client_jwks) == jwks
+        assert application.client_jwks_uri == ""
+
+    def test_register_private_key_jwt_with_jwks_uri(self):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks_uri": "https://client.example.com/jwks.json",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["jwks_uri"] == "https://client.example.com/jwks.json"
+        application = Application.objects.get(client_id=body["client_id"])
+        assert application.client_jwks_uri == "https://client.example.com/jwks.json"
+        assert application.client_jwks == ""
+
+    def test_register_jwks_and_jwks_uri_is_400(self):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks": _public_jwks(),
+            "jwks_uri": "https://client.example.com/jwks.json",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_private_key_jwt_without_keys_is_400(self):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_malformed_jwks_is_400(self):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks": {"not_keys": []},
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_client_secret_jwt(self):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "client_secret_jwt",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["token_endpoint_auth_method"] == "client_secret_jwt"
+        # The secret is the HMAC key: returned raw and stored unhashed.
+        assert body["client_secret"]
+        application = Application.objects.get(client_id=body["client_id"])
+        assert application.hash_client_secret is False
+        assert application.client_secret == body["client_secret"]
+
+    def test_put_replacement_resets_jwks(self):
+        jwks = _public_jwks()
+        register = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": jwks,
+            },
+        )
+        assert register.status_code == 201
+        body = register.json()
+
+        # Replace with a client_secret_basic registration omitting jwks: the
+        # stored key set must be cleared (RFC 7592 full-replacement semantics).
+        response = self.client.put(
+            _management_url(body["client_id"]),
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "token_endpoint_auth_method": "client_secret_basic",
+                }
+            ),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200, response.content
+        updated = response.json()
+        assert updated["token_endpoint_auth_method"] == "client_secret_basic"
+        assert "jwks" not in updated
+        application = Application.objects.get(client_id=body["client_id"])
+        assert application.client_jwks == ""
+        assert application.token_endpoint_auth_method == "client_secret_basic"
+
+    def test_put_private_key_jwt_without_keys_is_400(self):
+        register = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": _public_jwks(),
+            },
+        )
+        assert register.status_code == 201
+        body = register.json()
+        response = self.client.put(
+            _management_url(body["client_id"]),
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "token_endpoint_auth_method": "private_key_jwt",
+                }
+            ),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
