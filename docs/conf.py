@@ -41,7 +41,7 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.coverage",
     "rfc",
-    "m2r2",
+    "myst_parser",
     "sphinx_rtd_theme",
 ]
 

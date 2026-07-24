@@ -45,7 +45,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-	"m2r2>=0.3.4",
+	"myst-parser",
 	"sphinx==7.2.6",
 	"sphinx-rtd-theme==2.0.0",
 	"djangorestframework",
@@ -59,7 +59,7 @@ dev = [
 	"ruff",
 ]
 docs = [
-	"m2r2>=0.3.4",
+	"myst-parser",
 	"sphinx==7.2.6",
 	"sphinx-rtd-theme==2.0.0",
 ]
