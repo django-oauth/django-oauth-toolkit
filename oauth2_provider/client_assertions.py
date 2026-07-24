@@ -204,7 +204,22 @@ def _signing_keys(key_set, kid):
         keys = [key] if key is not None else []
     else:
         keys = list(key_set["keys"])
-    return [key for key in keys if key.get("use", "sig") == "sig" and not key.has_private]
+    return [key for key in keys if _key_allows_verification(key) and not key.has_private]
+
+
+def _key_allows_verification(key):
+    """True when the JWK's own restrictions permit signature verification.
+
+    RFC 7517: ``use`` and ``key_ops`` each constrain what a key may do; honor
+    whichever is present (a key declaring only e.g. encryption operations must
+    never be tried for JWS verification).
+    """
+    if key.get("use", "sig") != "sig":
+        return False
+    key_ops = key.get("key_ops")
+    if key_ops is not None and "verify" not in key_ops:
+        return False
+    return True
 
 
 def _verify_signature(assertion, application, header, allowed_algs):
@@ -263,8 +278,10 @@ def _accepted_audiences(request):
     Otherwise the accepted set is derived: the OIDC issuer (configured or
     request-derived) plus the URL of the endpoint the assertion was posted to.
     """
+    # Any non-None value is authoritative — including an empty list, which
+    # rejects every audience rather than silently falling back to derivation.
     configured = oauth2_settings.CLIENT_ASSERTION_ACCEPTED_AUDIENCES
-    if configured:
+    if configured is not None:
         return {_normalize_audience(audience) for audience in configured}
     accepted = set()
     try:

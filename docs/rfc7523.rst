@@ -190,7 +190,8 @@ Settings
 
 ``CLIENT_ASSERTION_ACCEPTED_AUDIENCES`` (default ``None``)
     Explicit list of accepted ``aud`` values. When ``None`` the accepted set is derived from the
-    OIDC issuer and the URL of the endpoint the assertion was posted to.
+    OIDC issuer and the URL of the endpoint the assertion was posted to. Any configured list is
+    authoritative — an empty list rejects every audience rather than falling back to derivation.
 
 ``CLIENT_ASSERTION_PRIVATE_KEY_JWT_ALGS`` (default: the RS/ES/PS algorithms)
     JWS algorithms accepted for ``private_key_jwt`` assertions.
