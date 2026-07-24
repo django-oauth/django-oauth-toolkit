@@ -7,6 +7,7 @@ RFC 7592 — GET/PUT/DELETE /register/{client_id}/
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
@@ -24,6 +25,8 @@ from ..models import get_access_token_model, get_application_model
 from ..settings import oauth2_settings
 from ..utils import parse_bearer_token
 
+
+log = logging.getLogger(__name__)
 
 # RFC 7591 grant type name → DOT AbstractApplication constant
 GRANT_TYPE_MAP = {
@@ -280,7 +283,16 @@ def _application_to_response(application, registration_token, request):
     if application.name:
         data["client_name"] = application.name
     if application.client_jwks:
-        data["jwks"] = json.loads(application.client_jwks)
+        # Registration validated this as JSON, but a corrupted stored value
+        # (e.g. a manual DB edit) must degrade to an omitted field, not a 500.
+        try:
+            data["jwks"] = json.loads(application.client_jwks)
+        except ValueError:
+            log.warning(
+                "Stored client_jwks for application %s is not valid JSON; omitting jwks "
+                "from the registration response",
+                application.client_id,
+            )
     if application.client_jwks_uri:
         data["jwks_uri"] = application.client_jwks_uri
     return data

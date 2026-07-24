@@ -1131,3 +1131,26 @@ class TestDCRJwtAuthMethods(TestCase):
         )
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_corrupted_stored_jwks_omitted_from_response(self):
+        register = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": _public_jwks(),
+            },
+        )
+        assert register.status_code == 201
+        body = register.json()
+
+        # Simulate a corrupted row (e.g. a manual DB edit): the management GET
+        # must degrade to omitting jwks, never 500.
+        Application.objects.filter(client_id=body["client_id"]).update(client_jwks="corrupted{")
+        response = self.client.get(
+            _management_url(body["client_id"]),
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200, response.content
+        assert "jwks" not in response.json()
