@@ -5,7 +5,7 @@ from django.http import HttpRequest
 from ninja.security.http import HttpAuthBase
 
 from ...models import AbstractAccessToken
-from ...oauth2_backends import get_oauthlib_core
+from ...core.backends_oauthlib import get_oauthlib_core
 
 
 # Don't inherit from `HttpBearer`, since we have our own header extraction logic

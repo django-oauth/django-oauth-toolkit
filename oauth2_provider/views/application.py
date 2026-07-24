@@ -3,7 +3,7 @@ from django.forms.models import modelform_factory
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from ..forms import ApplicationForm
+from ..authorization_server.forms import ApplicationForm
 from ..models import get_application_model
 
 

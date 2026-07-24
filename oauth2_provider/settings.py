@@ -62,7 +62,7 @@ DEFAULTS = {
     # =====================================================================
     "OAUTH2_SERVER_CLASS": "oauthlib.oauth2.Server",
     "OAUTH2_VALIDATOR_CLASS": "oauth2_provider.oauth2_validators.OAuth2Validator",
-    "OAUTH2_BACKEND_CLASS": "oauth2_provider.oauth2_backends.OAuthLibCore",
+    "OAUTH2_BACKEND_CLASS": "oauth2_provider.core.backends_oauthlib.OAuthLibCore",
     "EXTRA_SERVER_KWARGS": {},
     # Whether to re-create OAuthlibCore on every request.
     # Should only be required in testing.
@@ -84,11 +84,11 @@ DEFAULTS = {
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
     # Admin classes
-    "APPLICATION_ADMIN_CLASS": "oauth2_provider.admin.ApplicationAdmin",
-    "ACCESS_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.AccessTokenAdmin",
-    "GRANT_ADMIN_CLASS": "oauth2_provider.admin.GrantAdmin",
-    "ID_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.IDTokenAdmin",
-    "REFRESH_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.RefreshTokenAdmin",
+    "APPLICATION_ADMIN_CLASS": "oauth2_provider.authorization_server.admin.ApplicationAdmin",
+    "ACCESS_TOKEN_ADMIN_CLASS": "oauth2_provider.authorization_server.admin.AccessTokenAdmin",
+    "GRANT_ADMIN_CLASS": "oauth2_provider.authorization_server.admin.GrantAdmin",
+    "ID_TOKEN_ADMIN_CLASS": "oauth2_provider.authorization_server.admin.IDTokenAdmin",
+    "REFRESH_TOKEN_ADMIN_CLASS": "oauth2_provider.authorization_server.admin.RefreshTokenAdmin",
     # Expired-token cleanup (manage.py cleartokens)
     "CLEAR_EXPIRED_TOKENS_BATCH_SIZE": 10000,
     "CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL": 0,
@@ -153,14 +153,14 @@ DEFAULTS = {
     "COMPLIANT_BCP_RFC9700_PKCE_REQUIRED": False,
     # Dynamic Client Registration (RFC 7591/7592)
     "DCR_ENABLED": False,
-    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.IsAuthenticatedDCRPermission",),
+    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.authorization_server.dcr.IsAuthenticatedDCRPermission",),
     "DCR_REGISTRATION_SCOPE": "oauth2_provider:registration",
     "DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS": None,  # None = year 9999 (no expiry)
     "DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE": True,
     # Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
     "CIMD_ENABLED": False,
-    "CIMD_METADATA_FETCHER": "oauth2_provider.cimd.SafeMetadataFetcher",
-    "CIMD_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.cimd.AllowAllCIMDPermission",),
+    "CIMD_METADATA_FETCHER": "oauth2_provider.authorization_server.cimd.SafeMetadataFetcher",
+    "CIMD_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.authorization_server.cimd.AllowAllCIMDPermission",),
     "CIMD_ALLOWED_HOSTS": [],  # used by HostAllowlistCIMDPermission; ALLOWED_HOSTS syntax
     "CIMD_FETCH_TIMEOUT_SECONDS": 5,
     "CIMD_MAX_DOCUMENT_SIZE": 16 * 1024,  # draft §6.6 recommends ~5 KB; headroom, still bounded
