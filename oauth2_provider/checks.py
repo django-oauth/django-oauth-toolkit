@@ -224,15 +224,16 @@ def validate_swapped_model_consistency(app_configs, **kwargs):
     if access_app != refresh_app:
         return [
             checks.Warning(
-                "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL "
-                f"('{oauth2_settings.ACCESS_TOKEN_MODEL}') and "
-                "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL "
+                "The configured AccessToken model "
+                f"('{oauth2_settings.ACCESS_TOKEN_MODEL}') and RefreshToken model "
                 f"('{oauth2_settings.REFRESH_TOKEN_MODEL}') are defined in different apps, "
                 "but they reference each other with a circular foreign key.",
                 hint=(
-                    "Swap the AccessToken and RefreshToken models together in the same app "
-                    "(the IDToken model is usually customized alongside them). See "
-                    "'Extending the token models' in the advanced topics documentation."
+                    "Swap the AccessToken and RefreshToken models into the same app -- e.g. "
+                    "point OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL and "
+                    "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL at models in one app. The IDToken "
+                    "model is usually customized alongside them. See 'Extending the token "
+                    "models' in the advanced topics documentation."
                 ),
                 id="oauth2_provider.W011",
             )
