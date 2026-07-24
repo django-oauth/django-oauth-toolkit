@@ -520,14 +520,16 @@ class AbstractApplication(models.Model):
         """
         # An empty or hashed secret can never verify an HMAC the client computed
         # over the plaintext secret; fail loudly instead of silently rejecting.
+        # The hash_client_secret flag is checked too (mirroring clean()) so a
+        # row that slipped past model validation still fails closed here.
         if not self.client_secret:
             raise ImproperlyConfigured(
                 "client_secret_jwt requires a non-empty client secret to use as the HMAC key."
             )
-        if self._client_secret_is_hashed(self.client_secret):
+        if self.hash_client_secret or self._client_secret_is_hashed(self.client_secret):
             raise ImproperlyConfigured(
                 "client_secret_jwt requires the plaintext client secret as the HMAC key, but this "
-                "application's client secret is hashed. Set hash_client_secret=False and reset the "
+                "application hashes its client secret. Set hash_client_secret=False and reset the "
                 "client_secret so the plaintext secret is stored."
             )
         return jwk.JWK(kty="oct", k=base64url_encode(self.client_secret))

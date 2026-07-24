@@ -1257,6 +1257,15 @@ def test_get_client_secret_hmac_jwk():
     assert "non-empty client secret" in str(exc.value)
 
 
+def test_get_client_secret_hmac_jwk_rejects_hash_flag():
+    # Even with a plaintext stored secret, hash_client_secret=True marks the
+    # row as hashed-at-rest; fail closed like clean() does.
+    app = _client_assertion_application(hash_client_secret=True)
+    with pytest.raises(ImproperlyConfigured) as exc:
+        app.get_client_secret_hmac_jwk()
+    assert "hash_client_secret=False" in str(exc.value)
+
+
 @pytest.mark.django_db(databases="__all__")
 def test_get_client_secret_hmac_jwk_rejects_hashed_secret():
     app = _client_assertion_application(
@@ -1266,7 +1275,7 @@ def test_get_client_secret_hmac_jwk_rejects_hashed_secret():
     app.save()
     with pytest.raises(ImproperlyConfigured) as exc:
         app.get_client_secret_hmac_jwk()
-    assert "hashed" in str(exc.value)
+    assert "hash_client_secret=False" in str(exc.value)
 
 
 def _test_wildcard_redirect_uris_valid(oauth2_settings, application, uris):

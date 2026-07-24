@@ -86,7 +86,9 @@ def _authenticate(request, load_application):
     authorization = request.headers.get("HTTP_AUTHORIZATION", "") or request.headers.get("Authorization", "")
     if authorization.split(" ", 1)[0].lower() == "basic":
         raise ClientAssertionError("client_assertion combined with HTTP Basic authentication")
-    if getattr(request, "client_secret", None):
+    # Presence of the parameter is what matters, even with an empty value
+    # (oauthlib maps an absent parameter to None, an empty one to "").
+    if getattr(request, "client_secret", None) is not None:
         raise ClientAssertionError("client_assertion combined with a client_secret parameter")
 
     header, claims = _peek_assertion(assertion)

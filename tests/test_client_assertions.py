@@ -17,6 +17,8 @@ from jwcrypto.common import base64url_encode
 from oauth2_provider import client_assertions
 from oauth2_provider.models import get_application_model
 
+from . import presets
+
 
 Application = get_application_model()
 
@@ -227,6 +229,15 @@ def test_assertion_with_client_secret_rejected():
     app = pkj_app()
     assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
     ok, _ = authenticate(assertion, app, client_secret="topsecret")
+    assert ok is False
+
+
+def test_assertion_with_empty_client_secret_parameter_rejected():
+    # RFC 6749 section 2.3 forbids a second auth mechanism by presence, not by
+    # value: oauthlib maps client_secret= (empty) to "", absent to None.
+    app = pkj_app()
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app, client_secret="")
     assert ok is False
 
 
@@ -822,6 +833,207 @@ def test_rs_introspection_partial_jwt_config_is_ignored(oauth2_settings, mocker)
 
     oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL = "https://as.example.com/o/introspect/"
     oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID = "rs-client"  # key/audience missing
+    post = mocker.patch("requests.post")
+
+    result = OAuth2Validator().validate_bearer_token("remote-token", ["read"], OauthlibRequest("/"))
+
+    assert result is False
+    assert post.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Edge-case branches (coverage of individual validation helpers)
+# ---------------------------------------------------------------------------
+
+
+def test_non_string_sub_rejected():
+    claims = default_claims()
+    claims["iss"] = claims["sub"] = 12345
+    assertion = build_assertion(RSA_KEY, claims, kid="unit-rsa")
+    ok, _ = authenticate(assertion, pkj_app())
+    assert ok is False
+
+
+def test_non_object_claims_rejected():
+    from jwcrypto import jws as jws_mod
+
+    signature = jws_mod.JWS(b'["not", "an", "object"]')
+    signature.add_signature(RSA_KEY, alg="RS256", protected=json.dumps({"alg": "RS256"}))
+    ok, _ = authenticate(signature.serialize(compact=True), pkj_app())
+    assert ok is False
+
+
+def test_unparseable_stored_client_jwks_rejected():
+    app = pkj_app(client_jwks="not a jwks")
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is False
+
+
+def test_application_without_any_jwks_rejected():
+    app = pkj_app(client_jwks="", client_jwks_uri="")
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is False
+
+
+def test_remote_unknown_kid_falls_back_to_all_keys(mocker):
+    # Registered under a different kid label: after the forced refetch still
+    # finds no kid match, all registered keys are tried and the signature wins.
+    document = {"keys": [dict(json.loads(RSA_KEY.export_public()), kid="other-label")]}
+    fetch = mocker.patch.object(client_assertions.safe_fetch, "fetch_https_json", return_value=(document, {}))
+    app = pkj_app(client_jwks_uri="https://client.example.com/jwks.json")
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is True
+    assert fetch.call_count == 2
+
+
+def test_check_times_rejects_non_numeric_claims():
+    now = time.time()
+    with pytest.raises(client_assertions.ClientAssertionError):
+        client_assertions._check_times({"exp": "tomorrow"})
+    with pytest.raises(client_assertions.ClientAssertionError):
+        client_assertions._check_times({"exp": now + 60, "iat": "yesterday"})
+
+
+def test_check_jti_replay_rejects_bad_jti_and_expired():
+    now = time.time()
+    with pytest.raises(client_assertions.ClientAssertionError):
+        client_assertions._check_jti_replay("client", {"jti": 123, "exp": now + 60})
+    with pytest.raises(client_assertions.ClientAssertionError):
+        client_assertions._check_jti_replay("client", {"jti": "x", "exp": now - 3600})
+
+
+def test_request_host_fallbacks():
+    assert client_assertions._request_host({}) is None
+    assert client_assertions._request_host({"SERVER_NAME": "h", "SERVER_PORT": "8443"}) == "h:8443"
+    assert client_assertions._request_host({"SERVER_NAME": "h", "SERVER_PORT": "443"}) == "h"
+
+
+def test_corrupted_jwks_cache_entry_is_refetched(mocker):
+    import hashlib as hashlib_mod
+
+    uri = "https://client.example.com/jwks.json"
+    digest = hashlib_mod.sha256(uri.encode()).hexdigest()
+    cache.set(client_assertions.JWKS_CACHE_PREFIX + digest, "corrupted, not a JWKS", 300)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(RSA_KEY), {}),
+    )
+    key_set = client_assertions.fetch_remote_jwks(pkj_app(client_jwks_uri=uri))
+    assert key_set.get_key("unit-rsa") is not None
+    assert fetch.call_count == 1
+
+
+def test_remote_jwks_skips_non_dict_entries():
+    document = {"keys": ["a string", json.loads(EC_KEY.export_public())]}
+    key_set = client_assertions._build_public_jwks(document)
+    assert {key.get("kid") for key in key_set["keys"]} == {"unit-ec"}
+
+
+def test_make_client_assertion_accepts_pem_bytes():
+    pem = RSA_KEY.export_to_pem(private_key=True, password=None)
+    assert isinstance(pem, bytes)
+    assertion = client_assertions.make_client_assertion("rp", pem, "aud")
+    token = jwt.JWT(algs=["RS256"])
+    token.deserialize(assertion, RSA_KEY)
+
+
+def test_make_client_assertion_rejects_non_key_types():
+    with pytest.raises(TypeError):
+        client_assertions.make_client_assertion("rp", 12345, "aud")
+
+
+def test_make_client_assertion_infers_hs256_for_oct_jwk():
+    key = jwk.JWK(kty="oct", k=base64url_encode(CLEARTEXT_SECRET))
+    assertion = client_assertions.make_client_assertion("rp", key, "aud")
+    token = jwt.JWT(algs=["HS256"])
+    token.deserialize(assertion, key)
+
+
+def test_make_client_assertion_cannot_infer_alg_for_okp():
+    key = jwk.JWK.generate(kty="OKP", crv="Ed25519")
+    with pytest.raises(ValueError):
+        client_assertions.make_client_assertion("rp", key, "aud")
+
+
+@pytest.mark.django_db
+def test_token_endpoint_basic_auth_rejected_for_jwt_client(client, private_key_jwt_application):
+    import base64 as base64_mod
+
+    from django.urls import reverse
+
+    creds = f"{private_key_jwt_application.client_id}:{CLEARTEXT_SECRET}".encode()
+    response = client.post(
+        reverse("oauth2_provider:token"),
+        data={"grant_type": "client_credentials"},
+        HTTP_AUTHORIZATION="Basic " + base64_mod.b64encode(creds).decode(),
+    )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Discovery advertisement of the JWT methods
+# ---------------------------------------------------------------------------
+
+JWT_METHODS_ADVERTISED = [
+    "client_secret_post",
+    "client_secret_basic",
+    "private_key_jwt",
+    "client_secret_jwt",
+]
+
+
+@pytest.mark.django_db
+def test_server_metadata_advertises_auth_signing_algs(client, oauth2_settings):
+    from django.urls import reverse
+
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = JWT_METHODS_ADVERTISED
+    response = client.get(reverse("oauth2_provider:oauth-server-metadata"))
+    assert response.status_code == 200
+    data = response.json()
+    for endpoint in ("token", "revocation", "introspection"):
+        assert data[f"{endpoint}_endpoint_auth_methods_supported"] == JWT_METHODS_ADVERTISED
+        algs = data[f"{endpoint}_endpoint_auth_signing_alg_values_supported"]
+        assert "RS256" in algs and "ES256" in algs and "HS256" in algs
+
+
+@pytest.mark.django_db
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_oidc_discovery_advertises_auth_signing_algs(client, oauth2_settings):
+    from django.urls import reverse
+
+    oauth2_settings.OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = JWT_METHODS_ADVERTISED
+    response = client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["token_endpoint_auth_methods_supported"] == JWT_METHODS_ADVERTISED
+    algs = data["token_endpoint_auth_signing_alg_values_supported"]
+    assert "RS256" in algs and "HS256" in algs
+
+
+def test_encryption_only_jwks_rejected():
+    # A registered JWKS whose keys are all use=enc offers nothing to verify
+    # signatures with; the assertion must be rejected.
+    enc_key = dict(json.loads(RSA_KEY.export_public()), use="enc")
+    app = pkj_app(client_jwks=json.dumps({"keys": [enc_key]}))
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is False
+
+
+@pytest.mark.django_db
+def test_rs_introspection_unusable_key_is_ignored(oauth2_settings, mocker):
+    from oauthlib.common import Request as OauthlibRequest
+
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL = "https://as.example.com/o/introspect/"
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID = "rs-client"
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY = "not a key at all"
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE = "https://as.example.com"
     post = mocker.patch("requests.post")
 
     result = OAuth2Validator().validate_bearer_token("remote-token", ["read"], OauthlibRequest("/"))
