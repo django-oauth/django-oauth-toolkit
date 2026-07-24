@@ -166,6 +166,24 @@ class TestPAREndpoint(PARBaseTestCase):
         response = self.push()
         self.assertEqual(response.status_code, 400)
 
+    def test_client_secret_post_excluded_from_stored_parameters(self):
+        # Authenticate via client_secret_post (credentials in the body). The
+        # client-authentication parameters must not be stored on the pushed request.
+        response = self.client.post(
+            self.par_url,
+            data={
+                "client_id": self.application.client_id,
+                "client_secret": CLEARTEXT_SECRET,
+                "response_type": "code",
+                "redirect_uri": "http://example.org",
+                "scope": "read write",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        par = PushedAuthorizationRequest.objects.get(request_uri=json.loads(response.content)["request_uri"])
+        self.assertNotIn("client_secret", par.parameters)
+        self.assertEqual(par.parameters["client_id"], self.application.client_id)
+
 
 class TestAuthorizeWithRequestURI(PARBaseTestCase):
     def _make_par(self, client_id=None, expires_in=60, parameters=None):
@@ -283,6 +301,13 @@ class TestPAREnforcement(PARBaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
 
+    def test_not_required_without_client_id(self):
+        # With enforcement off and no client_id, PAR is not required; the request
+        # falls through to normal authorization validation (which then errors).
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(self.authorize_url, {"response_type": "code"})
+        self.assertEqual(response.status_code, 400)
+
     def test_per_application_enforcement(self):
         self.application.require_pushed_authorization_requests = True
         self.application.save()
@@ -327,6 +352,16 @@ class TestPARModel(PARBaseTestCase):
         expired = self._create(expires_in=-10, reference="expired")
         self.assertFalse(active.is_expired())
         self.assertTrue(expired.is_expired())
+
+    def test_is_expired_without_expiry(self):
+        par = PushedAuthorizationRequest(request_uri=f"{REQUEST_URI_PREFIX}x", client_id="c", expires=None)
+        self.assertTrue(par.is_expired())
+
+    def test_str_does_not_leak_request_uri(self):
+        par = self._create(expires_in=60)
+        rendered = str(par)
+        self.assertNotIn(par.request_uri, rendered)
+        self.assertIn(str(par.pk), rendered)
 
     def _create(self, expires_in, reference="active"):
         return create_pushed_authorization_request(

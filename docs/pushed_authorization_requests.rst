@@ -55,6 +55,9 @@ Behavior and limitations
   ``PAR_REQUEST_URI_LIFETIME_SECONDS`` (default 60 seconds).
 * **Client binding.** The ``request_uri`` is bound to the client that pushed it (RFC 9126 §2.2); a
   mismatched ``client_id`` at the authorization endpoint is rejected.
+* **Authoritative parameters.** The pushed request is authoritative: any authorization-request
+  parameters supplied alongside ``request_uri`` at the authorization endpoint (other than the
+  ``client_id`` used for the binding check) are ignored, which prevents parameter injection.
 * **Client authentication.** Confidential clients must authenticate; public clients are identified
   by ``client_id`` and should use PKCE. New/unregistered ``redirect_uri`` values (RFC 9126 §2.4) are
   **not** supported — redirect URIs must be pre-registered and match exactly.

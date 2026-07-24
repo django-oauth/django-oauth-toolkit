@@ -1,7 +1,3 @@
-﻿
-
-
-
 Internet Engineering Task Force (IETF)                    T. Lodderstedt
 Request for Comments: 9126                                       yes.com
 Category: Standards Track                                    B. Campbell

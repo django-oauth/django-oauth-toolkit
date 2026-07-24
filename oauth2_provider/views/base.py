@@ -7,6 +7,7 @@ from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ImproperlyConfigured
+from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, QueryDict
 from django.shortcuts import resolve_url
 from django.urls.exceptions import NoReverseMatch
@@ -211,24 +212,31 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         endpoint (RFC 9126 §4), or return an error response.
         """
         par_model = get_par_request_model()
-        try:
-            par = par_model.objects.get(request_uri=request_uri)
-        except par_model.DoesNotExist:
-            return self._fatal_par_error("The request_uri is invalid or has already been used.")
         # One-time use (RFC 9126 §4 / §7.3): consume the record immediately. The pushed
         # parameters are carried through the rest of the flow via the request query
         # string and the consent form's hidden fields, so it is not needed again.
-        expired = par.is_expired()
-        par.delete()
+        # Read and delete under a row lock in one transaction so two concurrent
+        # authorization requests cannot both consume the same request_uri.
+        try:
+            with transaction.atomic():
+                par = par_model.objects.select_for_update().get(request_uri=request_uri)
+                parameters = par.parameters
+                bound_client_id = par.client_id
+                expired = par.is_expired()
+                par.delete()
+        except par_model.DoesNotExist:
+            return self._fatal_par_error("The request_uri is invalid or has already been used.")
         if expired:
             return self._fatal_par_error("The request_uri has expired.")
         # The request_uri is bound to the client that pushed it (RFC 9126 §2.2).
         client_id = request.GET.get("client_id")
-        if client_id and client_id != par.client_id:
+        if client_id and client_id != bound_client_id:
             return self._fatal_par_error("The request_uri was not issued to this client.")
         # Re-inject the pushed parameters so the existing authorization flow, which
-        # reads from the query string, proceeds unchanged.
-        query_string = urlencode(par.parameters, doseq=True)
+        # reads from the query string, proceeds unchanged. Any parameters supplied
+        # alongside request_uri are intentionally ignored: the pushed request is
+        # authoritative (RFC 9126), which prevents parameter injection.
+        query_string = urlencode(parameters, doseq=True)
         request.GET = QueryDict(query_string, mutable=False)
         request.META["QUERY_STRING"] = query_string
         return None
