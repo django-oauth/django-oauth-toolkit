@@ -15,7 +15,7 @@ rejected, or the secure action is performed instead). How the non-compliant stat
   *every* request (storing tokens in plaintext, omitting the RFC 9207 ``iss``
   parameter). Emitting a warning per operation would flood logs, so these are surfaced
   once, at configuration time, by the ``--deploy`` system checks in
-  :mod:`oauth2_provider.checks` (``W005``/``W006``) rather than per operation.
+  :mod:`oauth2_provider.core.checks` (``W005``/``W006``) rather than per operation.
 
 The gates default to ``False`` (legacy behavior preserved) and are scheduled to flip
 to ``True`` in the 4.0 release.

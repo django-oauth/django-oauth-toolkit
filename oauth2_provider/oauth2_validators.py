@@ -781,7 +781,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         Plaintext storage is an ambient config posture exercised on every token
         issuance, so (unlike the request-time gates) it is surfaced by the ``--deploy``
         system check ``W006`` rather than a per-token warning here. See
-        :mod:`oauth2_provider.bcp`.
+        :mod:`oauth2_provider.authorization_server.bcp`.
         """
         if oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE:
             token_instance._raw_token = raw_token
