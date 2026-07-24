@@ -263,12 +263,27 @@ def _accepted_audiences(request):
         # No OIDC urls installed (plain OAuth deployment) or a host Django
         # refuses; the request-URL audience below still applies.
         log.debug("Could not derive an issuer audience for client assertions", exc_info=True)
-    host = request.headers.get("HTTP_HOST") or request.headers.get("Host")
+    host = _request_host(request.headers)
     if host:
         scheme = "https" if request.headers.get("X_DJANGO_OAUTH_TOOLKIT_SECURE") else "http"
         path = urlparse(request.uri or "").path
         accepted.add(_normalize_audience(f"{scheme}://{host}{path}"))
     return accepted
+
+
+def _request_host(headers):
+    """The host the client addressed, following django.http.HttpRequest.get_host:
+    the Host header when present, else SERVER_NAME[:SERVER_PORT]."""
+    host = headers.get("HTTP_HOST") or headers.get("Host")
+    if host:
+        return host
+    server_name = headers.get("SERVER_NAME")
+    if not server_name:
+        return None
+    port = str(headers.get("SERVER_PORT") or "")
+    if port and port not in ("80", "443"):
+        return f"{server_name}:{port}"
+    return server_name
 
 
 def _normalize_audience(value):
