@@ -45,11 +45,17 @@ class TokenHasScope(BasePermission):
 
             return False
 
-        assert False, (
-            "TokenHasScope requires the"
-            "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
+        # request.auth is not an OAuth2 access token (it has no `scope` attribute),
+        # e.g. it came from a different authentication class in a composed
+        # permission. Deny the request instead of raising, so this permission can be
+        # combined (AND/OR) with others without turning a non-OAuth2 request into an
+        # uncaught AssertionError / HTTP 500. See #1169.
+        log.warning(
+            "TokenHasScope requires the "
+            "`oauth2_provider.contrib.rest_framework.OAuth2Authentication` authentication "
             "class to be used."
         )
+        return False
 
     def get_scopes(self, request, view):
         try:
@@ -167,11 +173,14 @@ class TokenMatchesOASRequirements(BasePermission):
                 log.warning("no scope alternates defined for method {0}".format(m))
                 return False
 
-        assert False, (
-            "TokenMatchesOASRequirements requires the"
-            "`oauth2_provider.rest_framework.OAuth2Authentication` authentication "
+        # See TokenHasScope above and #1169: deny rather than raise when the token
+        # is not an OAuth2 access token, so this permission composes cleanly.
+        log.warning(
+            "TokenMatchesOASRequirements requires the "
+            "`oauth2_provider.contrib.rest_framework.OAuth2Authentication` authentication "
             "class to be used."
         )
+        return False
 
     def get_required_alternate_scopes(self, request, view):
         try:

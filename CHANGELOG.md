@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `invalid_token` error, mirroring the check the issuance path already performs
   in `_load_application`. The default `is_usable()` returns `True`, so this only
   affects swapped Application models that override it.
+* #1169 The DRF `TokenHasScope` and `TokenMatchesOASRequirements` permissions now
+  deny (return `False`) and log a warning, instead of raising an `AssertionError`
+  (HTTP 500), when `request.auth` is not an OAuth2 access token. This lets them be
+  composed with other permission classes (e.g. OR-ed) without a non-OAuth2 token
+  turning into a server error.
 
 ## [3.4.0] - 2026-07-23
 

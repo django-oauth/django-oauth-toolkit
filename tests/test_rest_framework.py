@@ -256,10 +256,16 @@ class TestOAuth2Authentication(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_scope_missing_scope_attr(self):
+        # A token without a `scope` attribute (wrong authentication class) must deny
+        # the request rather than raise an AssertionError, so TokenHasScope can be
+        # composed with other permissions. Regression test for #1169.
         auth = self._create_authorization_header("fake-token")
-        with self.assertRaises(AssertionError) as e:
-            self.client.get("/oauth2-scoped-missing-auth/", HTTP_AUTHORIZATION=auth)
-        self.assertTrue("`oauth2_provider.rest_framework.OAuth2Authentication`" in str(e.exception))
+        with self.assertLogs("oauth2_provider", level="WARNING") as logs:
+            response = self.client.get("/oauth2-scoped-missing-auth/", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(
+            any("`oauth2_provider.contrib.rest_framework.OAuth2Authentication`" in msg for msg in logs.output)
+        )
 
     def test_authenticated_or_scoped_permission_allow(self):
         self.access_token.scope = "scope1"
@@ -460,10 +466,15 @@ class TestOAuth2Authentication(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_method_scope_alt_missing_scope_attr(self):
+        # As with TokenHasScope, a token lacking a `scope` attribute must deny
+        # rather than raise, so TokenMatchesOASRequirements composes. See #1169.
         auth = self._create_authorization_header("fake-token")
-        with self.assertRaises(AssertionError) as e:
-            self.client.get("/oauth2-method-scope-missing-auth/", HTTP_AUTHORIZATION=auth)
-        self.assertTrue("`oauth2_provider.rest_framework.OAuth2Authentication`" in str(e.exception))
+        with self.assertLogs("oauth2_provider", level="WARNING") as logs:
+            response = self.client.get("/oauth2-method-scope-missing-auth/", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(
+            any("`oauth2_provider.contrib.rest_framework.OAuth2Authentication`" in msg for msg in logs.output)
+        )
 
     def test_authentication_none(self):
         auth = self._create_authorization_header(self.access_token.token)
