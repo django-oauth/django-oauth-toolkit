@@ -29,13 +29,15 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
     # POST-only: the base View returns 405 for any other method (RFC 9126 §2.3).
     http_method_names = ["post"]
 
-    def post(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs):
         if not oauth2_settings.PAR_ENABLED:
-            # A disabled endpoint behaves as absent, matching the DCR endpoint when
-            # DCR_ENABLED is off, rather than returning an OAuth error from a
-            # supported endpoint.
+            # A disabled endpoint behaves as absent for *every* method (matching the
+            # DCR endpoint when DCR_ENABLED is off), rather than returning an OAuth
+            # error — or a 405 for non-POST methods — from a supported endpoint.
             return http.JsonResponse({"error": "not_found"}, status=404)
+        return super().dispatch(request, *args, **kwargs)
 
+    def post(self, request, *args, **kwargs):
         # RFC 9126 §2.1 step 2: a pushed request must not itself carry a request_uri.
         if "request_uri" in request.POST:
             return self._error_response(

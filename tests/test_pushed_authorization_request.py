@@ -169,6 +169,12 @@ class TestPAREndpoint(PARBaseTestCase):
         response = self.push()
         self.assertEqual(response.status_code, 404)
 
+    def test_disabled_par_endpoint_is_absent_for_all_methods(self):
+        # The gate lives in dispatch(), so a disabled endpoint is 404 for every method
+        # (not 405 for non-POST via http_method_names).
+        self.oauth2_settings.PAR_ENABLED = False
+        self.assertEqual(self.client.get(self.par_url).status_code, 404)
+
     def test_client_secret_post_excluded_from_stored_parameters(self):
         # Authenticate via client_secret_post (credentials in the body). The
         # client-authentication parameters must not be stored on the pushed request.
