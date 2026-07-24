@@ -592,7 +592,7 @@ def _assertion_post_data(application, key, audience=TOKEN_AUDIENCE, **extra):
     return data
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_token_endpoint_private_key_jwt(client, private_key_jwt_application, client_rsa_jwk):
     from django.urls import reverse
 
@@ -604,7 +604,7 @@ def test_token_endpoint_private_key_jwt(client, private_key_jwt_application, cli
     assert "access_token" in payload
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_token_endpoint_private_key_jwt_es256(client, private_key_jwt_application, client_ec_jwk):
     from django.urls import reverse
 
@@ -613,7 +613,7 @@ def test_token_endpoint_private_key_jwt_es256(client, private_key_jwt_applicatio
     assert response.status_code == 200, response.content
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_token_endpoint_client_secret_jwt(client, client_secret_jwt_application):
     from django.urls import reverse
 
@@ -631,7 +631,7 @@ def test_token_endpoint_client_secret_jwt(client, client_secret_jwt_application)
     assert response.status_code == 200, response.content
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_token_endpoint_replayed_assertion_rejected(client, private_key_jwt_application, client_rsa_jwk):
     from django.urls import reverse
 
@@ -643,7 +643,7 @@ def test_token_endpoint_replayed_assertion_rejected(client, private_key_jwt_appl
     assert json.loads(replay.content)["error"] == "invalid_client"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_token_endpoint_invalid_assertion_does_not_fall_back(client, private_key_jwt_application):
     from django.urls import reverse
 
@@ -662,7 +662,7 @@ def test_token_endpoint_invalid_assertion_does_not_fall_back(client, private_key
     assert json.loads(response.content)["error"] == "invalid_client"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_token_endpoint_secret_auth_rejected_for_jwt_client(client, private_key_jwt_application):
     from django.urls import reverse
 
@@ -677,7 +677,7 @@ def test_token_endpoint_secret_auth_rejected_for_jwt_client(client, private_key_
     assert response.status_code == 401
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_introspection_endpoint_accepts_client_assertion(
     client, private_key_jwt_application, client_rsa_jwk, django_user_model
 ):
@@ -706,7 +706,7 @@ def test_introspection_endpoint_accepts_client_assertion(
     assert json.loads(response.content)["active"] is True
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_revocation_endpoint_accepts_client_assertion(
     client, private_key_jwt_application, client_rsa_jwk, django_user_model
 ):
@@ -758,7 +758,7 @@ def _configure_rs_jwt(oauth2_settings, key):
     oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE = "https://as.example.com"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_rs_introspection_authenticates_with_client_assertion(oauth2_settings, mocker, client_rsa_jwk):
     from oauthlib.common import Request as OauthlibRequest
 
@@ -787,7 +787,7 @@ def test_rs_introspection_authenticates_with_client_assertion(oauth2_settings, m
     assert claims["aud"] == "https://as.example.com"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_rs_introspection_builds_fresh_assertion_per_call(oauth2_settings, mocker, client_rsa_jwk):
     from oauthlib.common import Request as OauthlibRequest
 
@@ -807,7 +807,7 @@ def test_rs_introspection_builds_fresh_assertion_per_call(oauth2_settings, mocke
     assert len(jtis) == 2
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_rs_introspection_bearer_token_takes_precedence(oauth2_settings, mocker, client_rsa_jwk):
     from oauthlib.common import Request as OauthlibRequest
 
@@ -825,7 +825,7 @@ def test_rs_introspection_bearer_token_takes_precedence(oauth2_settings, mocker,
     assert kwargs["headers"]["Authorization"] == "Bearer static-bearer"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_rs_introspection_partial_jwt_config_is_ignored(oauth2_settings, mocker):
     from oauthlib.common import Request as OauthlibRequest
 
@@ -959,7 +959,7 @@ def test_make_client_assertion_cannot_infer_alg_for_okp():
         client_assertions.make_client_assertion("rp", key, "aud")
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_token_endpoint_basic_auth_rejected_for_jwt_client(client, private_key_jwt_application):
     import base64 as base64_mod
 
@@ -986,7 +986,7 @@ JWT_METHODS_ADVERTISED = [
 ]
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_server_metadata_advertises_auth_signing_algs(client, oauth2_settings):
     from django.urls import reverse
 
@@ -1000,7 +1000,7 @@ def test_server_metadata_advertises_auth_signing_algs(client, oauth2_settings):
         assert "RS256" in algs and "ES256" in algs and "HS256" in algs
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_oidc_discovery_advertises_auth_signing_algs(client, oauth2_settings):
     from django.urls import reverse
@@ -1024,7 +1024,7 @@ def test_encryption_only_jwks_rejected():
     assert ok is False
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_rs_introspection_unusable_key_is_ignored(oauth2_settings, mocker):
     from oauthlib.common import Request as OauthlibRequest
 
