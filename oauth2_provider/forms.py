@@ -1,8 +1,10 @@
 """Backward-compatible import shim.
 
-``oauth2_provider.forms`` moved to ``oauth2_provider.authorization_server.forms`` when the package was reorganized
-by OAuth2 role. Importing from this old path still works but is deprecated and
-will be removed in django-oauth-toolkit 4.0.
+``oauth2_provider.forms`` has moved to
+``oauth2_provider.authorization_server.forms``.
+
+Importing from this old path still works but is deprecated and will be removed
+in django-oauth-toolkit 4.0.
 """
 
 import sys
@@ -10,9 +12,11 @@ import warnings
 
 from oauth2_provider.authorization_server import forms as _moved
 
+
 warnings.warn(
-    "oauth2_provider.forms has moved to oauth2_provider.authorization_server.forms. The old import path is "
-    "deprecated and will be removed in django-oauth-toolkit 4.0.",
+    "oauth2_provider.forms has moved to oauth2_provider.authorization_server.forms. "
+    "The old import path is deprecated and will be removed in "
+    "django-oauth-toolkit 4.0.",
     DeprecationWarning,
     stacklevel=2,
 )

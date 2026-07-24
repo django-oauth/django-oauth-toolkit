@@ -13,6 +13,7 @@ from jwcrypto.jws import InvalidJWSObject
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import add_params_to_uri
 
+from ..authorization_server.forms import ConfirmLogoutForm
 from ..compat import login_not_required
 from ..exceptions import (
     ClientIdMissmatch,
@@ -22,7 +23,6 @@ from ..exceptions import (
     LogoutDenied,
     OIDCError,
 )
-from ..authorization_server.forms import ConfirmLogoutForm
 from ..http import OAuth2ResponseRedirect
 from ..models import (
     AbstractGrant,

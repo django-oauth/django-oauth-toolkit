@@ -18,12 +18,12 @@ from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
+from ..authorization_server.forms import AllowForm
 from ..compat import login_not_required
 from ..exceptions import OAuthToolkitError
-from ..authorization_server.forms import AllowForm
 from ..http import OAuth2ResponseRedirect
 from ..models import get_access_token_model, get_application_model, get_device_grant_model
-from ..oauth2_validators import is_valid_resource_uri
+from ..resource_server.validators import is_valid_resource_uri
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
 from ..signals import app_authorized

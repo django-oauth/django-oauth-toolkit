@@ -13,6 +13,7 @@ from oauthlib.common import urlencode
 from oauthlib.oauth2 import DeviceApplicationServer
 
 from oauth2_provider.core.compat import login_not_required
+from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.models import (
     AbstractDeviceGrant,
     DeviceCodeResponse,
@@ -21,7 +22,6 @@ from oauth2_provider.models import (
     get_application_model,
     get_device_grant_model,
 )
-from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.views.mixins import OAuthLibMixin
 
 

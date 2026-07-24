@@ -5,10 +5,10 @@ from django.http import HttpResponse, HttpResponseForbidden
 from oauthlib.oauth2 import Server
 
 from oauth2_provider.core.backends_oauthlib import OAuthLibCore
-from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.core.scopes import get_scopes_backend
-from oauth2_provider.settings import oauth2_settings
+from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.resource_server.www_authenticate import build_bearer_challenge, challenge_status
+from oauth2_provider.settings import oauth2_settings
 
 
 def _denied_response(request, oauthlib_request, advertise_metadata, resource_metadata_url=None):

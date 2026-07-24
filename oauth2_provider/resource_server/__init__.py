@@ -23,6 +23,10 @@ _LAZY = {
     "rw_protected_resource_metadata": "oauth2_provider.resource_server.decorators",
     "OAuth2TokenMiddleware": "oauth2_provider.resource_server.middleware",
     "OAuth2ExtraTokenMiddleware": "oauth2_provider.resource_server.middleware",
+    # RFC 8707 resource-indicator validation + bearer-token validator mixin.
+    "ResourceServerValidatorMixin": "oauth2_provider.resource_server.validators",
+    "validate_resource_as_url_prefix": "oauth2_provider.resource_server.validators",
+    "is_valid_resource_uri": "oauth2_provider.resource_server.validators",
     # Concrete protected-resource views (bodies remain in oauth2_provider.views).
     "ProtectedResourceView": "oauth2_provider.views.generic",
     "ScopedProtectedResourceView": "oauth2_provider.views.generic",

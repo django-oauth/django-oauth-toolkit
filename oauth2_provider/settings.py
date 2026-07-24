@@ -153,14 +153,18 @@ DEFAULTS = {
     "COMPLIANT_BCP_RFC9700_PKCE_REQUIRED": False,
     # Dynamic Client Registration (RFC 7591/7592)
     "DCR_ENABLED": False,
-    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.authorization_server.dcr.IsAuthenticatedDCRPermission",),
+    "DCR_REGISTRATION_PERMISSION_CLASSES": (
+        "oauth2_provider.authorization_server.dcr.IsAuthenticatedDCRPermission",
+    ),
     "DCR_REGISTRATION_SCOPE": "oauth2_provider:registration",
     "DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS": None,  # None = year 9999 (no expiry)
     "DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE": True,
     # Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
     "CIMD_ENABLED": False,
     "CIMD_METADATA_FETCHER": "oauth2_provider.authorization_server.cimd.SafeMetadataFetcher",
-    "CIMD_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.authorization_server.cimd.AllowAllCIMDPermission",),
+    "CIMD_REGISTRATION_PERMISSION_CLASSES": (
+        "oauth2_provider.authorization_server.cimd.AllowAllCIMDPermission",
+    ),
     "CIMD_ALLOWED_HOSTS": [],  # used by HostAllowlistCIMDPermission; ALLOWED_HOSTS syntax
     "CIMD_FETCH_TIMEOUT_SECONDS": 5,
     "CIMD_MAX_DOCUMENT_SIZE": 16 * 1024,  # draft §6.6 recommends ~5 KB; headroom, still bounded
@@ -224,7 +228,7 @@ DEFAULTS = {
     "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
     # Resource Server Token Resource Validator (RFC 8707)
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
-        "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
+        "oauth2_provider.resource_server.validators.validate_resource_as_url_prefix"
     ),
     # Deprecated: introspection ``exp`` values are Unix timestamps interpreted as UTC per RFC 7662/
     # RFC 7519. Setting a non-UTC time zone re-enables the legacy workaround of reinterpreting the
