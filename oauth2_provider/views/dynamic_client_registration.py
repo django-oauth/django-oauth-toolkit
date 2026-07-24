@@ -220,6 +220,11 @@ def _build_application_kwargs(data):
         )
     if jwks_uri is not None and not isinstance(jwks_uri, str):
         return None, _error_response("invalid_client_metadata", "jwks_uri must be a string")
+    # Validate here with the RFC 7591 field name; deferring to
+    # Application.clean() would surface the internal client_jwks_uri field
+    # name in the error_description.
+    if jwks_uri and not jwks_uri.lower().startswith("https://"):
+        return None, _error_response("invalid_client_metadata", "jwks_uri must use the https scheme")
     kwargs["client_jwks"] = json.dumps(jwks) if jwks is not None else ""
     kwargs["client_jwks_uri"] = jwks_uri or ""
 
