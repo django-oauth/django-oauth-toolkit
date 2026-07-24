@@ -21,9 +21,165 @@ For example:
 
 A big *thank you* to the guys from Django REST Framework for inspiring this.
 
+The namespaced ``OAUTH2_PROVIDER`` settings are grouped below by the OAuth2/OIDC
+role they configure, so related knobs sit together:
 
-List of available settings within OAUTH2_PROVIDER
--------------------------------------------------
+* **Core / shared settings** — server plumbing, scopes, and swappable
+  models/admin used across every role.
+* **Authorization Server settings** — the provider side: issuing
+  authorization/tokens, client registration, grant behavior, the RFC 9700 gates,
+  and RFC 8414 authorization-server metadata.
+* **OpenID Connect Provider settings** — the OIDC identity layer on top of the
+  Authorization Server (ID tokens, discovery, JWKS, userinfo, and the
+  RP-Initiated Registration/Logout endpoints that serve external relying
+  parties). This library is the OpenID Provider, not a relying party/client.
+* **Resource Server settings** — validating bearer tokens via remote
+  introspection (RFC 7662) and advertising RFC 9728 protected-resource metadata.
+
+Core / shared settings
+----------------------
+
+OAUTH2_SERVER_CLASS
+~~~~~~~~~~~~~~~~~~~
+The import string for the ``server_class`` (or ``oauthlib.oauth2.Server`` subclass)
+used in the ``OAuthLibMixin`` that implements OAuth2 grant types. It defaults
+to ``oauthlib.oauth2.Server``, except when :doc:`oidc` is enabled, when the
+default is ``oauthlib.openid.Server``.
+
+When ``OIDC_ENABLED`` is ``True`` and ``OAUTH2_SERVER_CLASS`` is not explicitly
+configured, ``OIDC_SERVER_CLASS`` is used as the fallback.
+
+OAUTH2_VALIDATOR_CLASS
+~~~~~~~~~~~~~~~~~~~~~~
+The import string of the ``oauthlib.oauth2.RequestValidator`` subclass that
+validates every step of the OAuth2 process.
+
+OAUTH2_BACKEND_CLASS
+~~~~~~~~~~~~~~~~~~~~
+The import string for the ``oauthlib_backend_class`` used in the ``OAuthLibMixin``,
+to get a ``Server`` instance.
+
+EXTRA_SERVER_KWARGS
+~~~~~~~~~~~~~~~~~~~
+A dictionary to be passed to oauthlib's Server class. Three options
+are natively supported: token_expires_in, token_generator,
+refresh_token_generator. There's no extra processing so callables (every one
+of those three can be a callable) must be passed here directly and classes
+must be instantiated (callables should accept request as their only argument).
+
+SCOPES_BACKEND_CLASS
+~~~~~~~~~~~~~~~~~~~~
+**New in 0.12.0**. The import string for the scopes backend class.
+Defaults to ``oauth2_provider.scopes.SettingsScopes``, which reads scopes through the settings defined below.
+
+SCOPES
+~~~~~~
+.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+
+A dictionary mapping each scope name to its human description.
+
+.. _settings_default_scopes:
+
+DEFAULT_SCOPES
+~~~~~~~~~~~~~~
+.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+
+A list of scopes that should be returned by default.
+This is a subset of the keys of the ``SCOPES`` setting.
+By default this is set to ``'__all__'`` meaning that the whole set of ``SCOPES`` will be returned.
+
+.. code-block:: python
+
+  DEFAULT_SCOPES = ['read', 'write']
+
+READ_SCOPE
+~~~~~~~~~~
+.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+
+The name of the *read* scope.
+
+WRITE_SCOPE
+~~~~~~~~~~~
+.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+
+The name of the *write* scope.
+
+GRANT_MODEL
+~~~~~~~~~~~
+The import string of the class (model) representing your grants. Overwrite
+this value if you wrote your own implementation (subclass of
+``oauth2_provider.models.Grant``).
+
+APPLICATION_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your application admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.ApplicationAdmin``).
+
+ACCESS_TOKEN_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your access token admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.AccessTokenAdmin``).
+
+GRANT_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your grant admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.GrantAdmin``).
+
+REFRESH_TOKEN_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your refresh token admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.RefreshTokenAdmin``).
+
+CLEAR_EXPIRED_TOKENS_BATCH_SIZE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``10000``
+
+The size of delete batches used by ``cleartokens`` management command.
+
+CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``0``
+
+Time of sleep in seconds used by ``cleartokens`` management command between batch deletions.
+
+Set this to a non-zero value (e.g. ``0.1``) to add a pause between batch sizes to reduce system
+load when clearing large batches of expired tokens.
+
+Authorization Server settings
+-----------------------------
+
+CLIENT_ID_GENERATOR_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class responsible for generating client identifiers.
+These are usually random strings.
+
+CLIENT_SECRET_GENERATOR_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class responsible for generating client secrets.
+These are usually random strings.
+
+CLIENT_SECRET_GENERATOR_LENGTH
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The length of the generated secrets, in characters. If this value is too low,
+secrets may become subject to bruteforce guessing.
+
+CLIENT_SECRET_HASHER
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The hasher for storing generated secrets. By default library will use the first hasher in PASSWORD_HASHERS.
+
+ACCESS_TOKEN_GENERATOR
+~~~~~~~~~~~~~~~~~~~~~~
+Import path of a callable used to generate access tokens.
+``oauthlib.oauth2.rfc6749.tokens.random_token_generator`` is (normally) used if not provided.
+
+REFRESH_TOKEN_GENERATOR
+~~~~~~~~~~~~~~~~~~~~~~~
+See `ACCESS_TOKEN_GENERATOR`_. This is the same but for refresh tokens.
+Defaults to access token generator if not provided.
 
 ACCESS_TOKEN_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -33,10 +189,68 @@ The number of seconds an access token remains valid. Requesting a protected
 resource after this duration will fail. Keep this value high enough so clients
 can cache the token for a reasonable amount of time.
 
-ACCESS_TOKEN_GENERATOR
-~~~~~~~~~~~~~~~~~~~~~~
-Import path of a callable used to generate access tokens.
-``oauthlib.oauth2.rfc6749.tokens.random_token_generator`` is (normally) used if not provided.
+AUTHORIZATION_CODE_EXPIRE_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``60``
+
+The number of seconds an authorization code remains valid. Requesting an access
+token after this duration will fail. :rfc:`4.1.2` recommends expire after a short lifetime,
+with 10 minutes (600 seconds) being the maximum acceptable.
+
+REFRESH_TOKEN_EXPIRE_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The number of seconds before a refresh token gets removed from the database by
+the ``cleartokens`` management command. Check :ref:`cleartokens` management command for further info.
+Can be an ``Int`` or ``datetime.timedelta``.
+
+NOTE: This value is completely ignored when validating refresh tokens.
+If you don't change the validator code and don't run cleartokens all refresh
+tokens will last until revoked or the end of time. You should change this.
+
+REFRESH_TOKEN_GRACE_PERIOD_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The number of seconds a refresh token can still be used after it has been
+revoked, for example because it was consumed by refresh token rotation. The
+most common use case is native mobile applications that run into issues of
+network connectivity during the refresh cycle and are unable to complete the
+full request/response life cycle. Without a grace period the app has only a
+consumed refresh token and the only recourse is to have the user
+re-authenticate. A suggested value, if this is enabled, is 2 minutes. The
+value must not be negative.
+
+The ``cleartokens`` management command removes revoked refresh tokens once the
+grace period has passed, unless ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled.
+Check :ref:`cleartokens` management command for further info.
+
+REFRESH_TOKEN_REUSE_PROTECTION
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+When this is set to ``True`` (default ``False``), and ``ROTATE_REFRESH_TOKEN`` is used, the server will check
+if a previously, already revoked refresh token is used a second time. If it detects a reuse, it will automatically
+revoke all related refresh tokens.
+A reused refresh token indicates a breach. Since the server can't determine which request came from the legitimate
+user and which from an attacker, it will end the session for both. The user is required to perform a new login.
+
+Can be used in combination with ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``
+
+More details at https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics-29#name-recommendations
+
+ROTATE_REFRESH_TOKEN
+~~~~~~~~~~~~~~~~~~~~
+When is set to ``True`` (default) a new refresh token is issued to the client when the client refreshes an access token.
+If ``False``, it will reuse the same refresh token and only update the access token with a new token value.
+See also: validator's rotate_refresh_token method can be overridden to make this variable
+(could be usable with expiring refresh tokens, in particular, so that they are rotated
+when close to expiration, theoretically).
+
+ERROR_RESPONSE_WITH_SCOPES
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+When authorization fails due to insufficient scopes include the required scopes in the response.
+Only applicable when used with `Django REST Framework <http://django-rest-framework.org/>`_
+
+REQUEST_APPROVAL_PROMPT
+~~~~~~~~~~~~~~~~~~~~~~~
+Can be ``'force'`` or ``'auto'``.
+The strategy used to display the authorization form. Refer to :ref:`skip-auth-form`.
 
 ALLOWED_REDIRECT_URI_SCHEMES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -52,6 +266,16 @@ assigned ports.
 
 Note that you may override ``Application.get_allowed_schemes()`` to set this on
 a per-application basis.
+
+ALLOWED_SCHEMES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["https"]``
+
+A list of schemes that the ``allowed_origins`` field will be validated against.
+Setting this to ``["https"]`` only in production is strongly recommended.
+Adding ``"http"`` to the list is considered to be safe only for local development and testing.
+Note that `OAUTHLIB_INSECURE_TRANSPORT <https://oauthlib.readthedocs.io/en/latest/oauth2/security.html#envvar-OAUTHLIB_INSECURE_TRANSPORT>`_
+environment variable should be also set to allow HTTP origins.
 
 ALLOW_URI_WILDCARDS
 ~~~~~~~~~~~~~~~~~~~
@@ -110,265 +334,6 @@ SECURITY WARNING: Per RFC 8252 section 8.3, prefer registering the loopback IP l
 ``localhost``: a ``localhost`` redirect can resolve to a non-loopback interface on a host with
 misconfigured name resolution, whereas ``127.0.0.1`` / ``[::1]`` cannot. Only enable this if you must
 support clients that register ``localhost``.
-
-ALLOWED_SCHEMES
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["https"]``
-
-A list of schemes that the ``allowed_origins`` field will be validated against.
-Setting this to ``["https"]`` only in production is strongly recommended.
-Adding ``"http"`` to the list is considered to be safe only for local development and testing.
-Note that `OAUTHLIB_INSECURE_TRANSPORT <https://oauthlib.readthedocs.io/en/latest/oauth2/security.html#envvar-OAUTHLIB_INSECURE_TRANSPORT>`_
-environment variable should be also set to allow HTTP origins.
-
-AUTHORIZATION_CODE_EXPIRE_SECONDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``60``
-
-The number of seconds an authorization code remains valid. Requesting an access
-token after this duration will fail. :rfc:`4.1.2` recommends expire after a short lifetime,
-with 10 minutes (600 seconds) being the maximum acceptable.
-
-CLIENT_ID_GENERATOR_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class responsible for generating client identifiers.
-These are usually random strings.
-
-CLIENT_SECRET_GENERATOR_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class responsible for generating client secrets.
-These are usually random strings.
-
-CLIENT_SECRET_GENERATOR_LENGTH
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The length of the generated secrets, in characters. If this value is too low,
-secrets may become subject to bruteforce guessing.
-
-CLIENT_SECRET_HASHER
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The hasher for storing generated secrets. By default library will use the first hasher in PASSWORD_HASHERS.
-
-EXTRA_SERVER_KWARGS
-~~~~~~~~~~~~~~~~~~~
-A dictionary to be passed to oauthlib's Server class. Three options
-are natively supported: token_expires_in, token_generator,
-refresh_token_generator. There's no extra processing so callables (every one
-of those three can be a callable) must be passed here directly and classes
-must be instantiated (callables should accept request as their only argument).
-
-GRANT_MODEL
-~~~~~~~~~~~
-The import string of the class (model) representing your grants. Overwrite
-this value if you wrote your own implementation (subclass of
-``oauth2_provider.models.Grant``).
-
-APPLICATION_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your application admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.ApplicationAdmin``).
-
-ACCESS_TOKEN_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your access token admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.AccessTokenAdmin``).
-
-GRANT_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your grant admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.GrantAdmin``).
-
-REFRESH_TOKEN_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your refresh token admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.RefreshTokenAdmin``).
-
-OAUTH2_SERVER_CLASS
-~~~~~~~~~~~~~~~~~~~
-The import string for the ``server_class`` (or ``oauthlib.oauth2.Server`` subclass)
-used in the ``OAuthLibMixin`` that implements OAuth2 grant types. It defaults
-to ``oauthlib.oauth2.Server``, except when :doc:`oidc` is enabled, when the
-default is ``oauthlib.openid.Server``.
-
-When ``OIDC_ENABLED`` is ``True`` and ``OAUTH2_SERVER_CLASS`` is not explicitly
-configured, ``OIDC_SERVER_CLASS`` is used as the fallback.
-
-OAUTH2_VALIDATOR_CLASS
-~~~~~~~~~~~~~~~~~~~~~~
-The import string of the ``oauthlib.oauth2.RequestValidator`` subclass that
-validates every step of the OAuth2 process.
-
-OAUTH2_BACKEND_CLASS
-~~~~~~~~~~~~~~~~~~~~
-The import string for the ``oauthlib_backend_class`` used in the ``OAuthLibMixin``,
-to get a ``Server`` instance.
-
-REFRESH_TOKEN_EXPIRE_SECONDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The number of seconds before a refresh token gets removed from the database by
-the ``cleartokens`` management command. Check :ref:`cleartokens` management command for further info.
-Can be an ``Int`` or ``datetime.timedelta``.
-
-NOTE: This value is completely ignored when validating refresh tokens.
-If you don't change the validator code and don't run cleartokens all refresh
-tokens will last until revoked or the end of time. You should change this.
-
-REFRESH_TOKEN_GRACE_PERIOD_SECONDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The number of seconds a refresh token can still be used after it has been
-revoked, for example because it was consumed by refresh token rotation. The
-most common use case is native mobile applications that run into issues of
-network connectivity during the refresh cycle and are unable to complete the
-full request/response life cycle. Without a grace period the app has only a
-consumed refresh token and the only recourse is to have the user
-re-authenticate. A suggested value, if this is enabled, is 2 minutes. The
-value must not be negative.
-
-The ``cleartokens`` management command removes revoked refresh tokens once the
-grace period has passed, unless ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled.
-Check :ref:`cleartokens` management command for further info.
-
-REFRESH_TOKEN_REUSE_PROTECTION
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-When this is set to ``True`` (default ``False``), and ``ROTATE_REFRESH_TOKEN`` is used, the server will check
-if a previously, already revoked refresh token is used a second time. If it detects a reuse, it will automatically
-revoke all related refresh tokens.
-A reused refresh token indicates a breach. Since the server can't determine which request came from the legitimate
-user and which from an attacker, it will end the session for both. The user is required to perform a new login.
-
-Can be used in combination with ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``
-
-More details at https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics-29#name-recommendations
-
-ROTATE_REFRESH_TOKEN
-~~~~~~~~~~~~~~~~~~~~
-When is set to ``True`` (default) a new refresh token is issued to the client when the client refreshes an access token.
-If ``False``, it will reuse the same refresh token and only update the access token with a new token value.
-See also: validator's rotate_refresh_token method can be overridden to make this variable
-(could be usable with expiring refresh tokens, in particular, so that they are rotated
-when close to expiration, theoretically).
-
-REFRESH_TOKEN_GENERATOR
-~~~~~~~~~~~~~~~~~~~~~~~
-See `ACCESS_TOKEN_GENERATOR`_. This is the same but for refresh tokens.
-Defaults to access token generator if not provided.
-
-REQUEST_APPROVAL_PROMPT
-~~~~~~~~~~~~~~~~~~~~~~~
-Can be ``'force'`` or ``'auto'``.
-The strategy used to display the authorization form. Refer to :ref:`skip-auth-form`.
-
-SCOPES_BACKEND_CLASS
-~~~~~~~~~~~~~~~~~~~~
-**New in 0.12.0**. The import string for the scopes backend class.
-Defaults to ``oauth2_provider.scopes.SettingsScopes``, which reads scopes through the settings defined below.
-
-SCOPES
-~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-A dictionary mapping each scope name to its human description.
-
-.. _settings_default_scopes:
-
-DEFAULT_SCOPES
-~~~~~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-A list of scopes that should be returned by default.
-This is a subset of the keys of the ``SCOPES`` setting.
-By default this is set to ``'__all__'`` meaning that the whole set of ``SCOPES`` will be returned.
-
-.. code-block:: python
-
-  DEFAULT_SCOPES = ['read', 'write']
-
-READ_SCOPE
-~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-The name of the *read* scope.
-
-WRITE_SCOPE
-~~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-The name of the *write* scope.
-
-ERROR_RESPONSE_WITH_SCOPES
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-When authorization fails due to insufficient scopes include the required scopes in the response.
-Only applicable when used with `Django REST Framework <http://django-rest-framework.org/>`_
-
-RESOURCE_SERVER_INTROSPECTION_URL
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The introspection endpoint for validating token remotely (RFC7662). This URL requires either an authorization
-token (``RESOURCE_SERVER_AUTH_TOKEN``)
-or HTTP Basic Auth client credentials (``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS``).
-
-RESOURCE_SERVER_AUTH_TOKEN
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-The bearer token to authenticate the introspection request towards the introspection endpoint (RFC7662).
-
-RESOURCE_SERVER_INTROSPECTION_CREDENTIALS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The HTTP Basic Auth Client_ID and Client_Secret to authenticate the introspection request
-towards the introspect endpoint (RFC7662) as a tuple: ``(client_id, client_secret)``.
-
-RESOURCE_SERVER_TOKEN_CACHING_SECONDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The number of seconds an authorization token received from the introspection endpoint remains valid.
-If the expire time of the received token is less than ``RESOURCE_SERVER_TOKEN_CACHING_SECONDS`` the expire time
-will be used.
-
-RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``"oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"``
-
-A callable that validates whether an access token's audience (RFC 8707 resource indicators) matches
-a request URI. The callable receives ``(request_uri, audiences)`` where ``request_uri`` is a string
-and ``audiences`` is a list of audience URIs from the token. Returns ``True`` if the token
-is authorized for the request, ``False`` otherwise.
-
-The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
-will accept requests to ``https://api.example.com/v1/users`` but reject ``https://api.example.com/v2``.
-
-The default validator expects both the request URI and the audience values to be **absolute URIs
-with a scheme and host**, without userinfo or fragment components, because it compares
-``(scheme, host, port)`` and then the path. A query component is permitted on resource indicators
-(RFC 8707 allows one) but plays no part in matching: the request URI is compared with its query
-string stripped. Other absolute-URI forms, such as URNs, never match. Supporting them requires
-both a custom validator here (for matching on the resource server) and a custom
-``OAUTH2_VALIDATOR_CLASS`` overriding ``_validate_resource_uris()`` (the authorization server
-rejects authority-less URIs at issuance).
-
-To use exact matching instead:
-
-.. code-block:: python
-
-    def exact_match_validator(request_uri, audiences):
-        if not audiences:
-            return True  # Unrestricted token
-        return request_uri in audiences
-
-    OAUTH2_PROVIDER = {
-        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': 'myapp.validators.exact_match_validator',
-    }
-
-Set to ``None`` to disable automatic audience validation entirely.
-
-AUTHENTICATION_SERVER_EXP_TIME_ZONE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-.. deprecated:: 3.3.1
-    This setting is deprecated and will be removed in a future release.
-
-Token introspection ``exp`` (expiration) values are Unix timestamps and are interpreted as UTC per
-:rfc:`7662` and :rfc:`7519`. For backwards compatibility, setting this to a non-UTC time zone keeps
-the previous workaround behavior of reinterpreting the ``exp`` wall-clock time as being in the
-configured time zone, but configuring it now emits a ``DeprecationWarning``.
 
 PKCE_REQUIRED
 ~~~~~~~~~~~~~
@@ -445,6 +410,39 @@ a non-compliant value: ``False`` (default) → Warning, ``True`` → Error.
     Default: ``False``. Flags ``PKCE_REQUIRED = False`` (RFC 9700 §2.1.1) as ``W010`` /
     ``E005``. A callable ``PKCE_REQUIRED`` (per-client policy) is not flagged.
 
+OAUTH2_RESPONSE_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["code", "token"]``
+
+The response types advertised by the :doc:`oauth2_server_metadata` endpoint.
+
+OAUTH2_GRANT_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default::
+
+    [
+        "authorization_code",
+        "implicit",
+        "password",
+        "client_credentials",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    ]
+
+The grant types advertised by the :doc:`oauth2_server_metadata` endpoint.
+
+OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["client_secret_post", "client_secret_basic"]``
+
+The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
+
+OpenID Connect Provider settings
+--------------------------------
+
+These settings configure the OpenID Connect Provider (OP) — the identity layer on
+top of the Authorization Server. See :doc:`oidc` for the full guide.
+
 OIDC_ENABLED
 ~~~~~~~~~~~~
 Default: ``False``
@@ -496,40 +494,46 @@ this you must also provide the service at that endpoint.
 If unset, the default location is used, eg if ``django-oauth-toolkit`` is
 mounted at ``/o/``, it will be ``<server-address>/o/userinfo/``.
 
-OIDC_RP_INITIATED_LOGOUT_ENABLED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``False``
+OIDC_ISS_ENDPOINT
+~~~~~~~~~~~~~~~~~
+Default: ``""``
 
-When is set to ``False`` (default) the `OpenID Connect RP-Initiated Logout <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_
-endpoint is not enabled. OpenID Connect RP-Initiated Logout enables an :term:`Client` (Relying Party)
-to request that a :term:`Resource Owner` (End User) is logged out at the :term:`Authorization Server` (OpenID Provider).
+The URL of the issuer that is used in the ID token JWT and advertised in the
+OIDC discovery metadata. Clients use this location to retrieve the OIDC
+discovery metadata from ``OIDC_ISS_ENDPOINT`` +
+``/.well-known/openid-configuration``.
 
-OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``True``
+If unset, the default location is used, eg if ``django-oauth-toolkit`` is
+mounted at ``/o``, it will be ``<server-address>/o``.
 
-Whether to always prompt the :term:`Resource Owner` (End User) to confirm a logout requested by a
-:term:`Client` (Relying Party). If it is disabled the :term:`Resource Owner` (End User) will only be prompted if required by the standard.
+OIDC_RESPONSE_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default::
 
-OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``False``
+    [
+        "code",
+        "token",
+        "id_token",
+        "id_token token",
+        "code token",
+        "code id_token",
+        "code id_token token",
+    ]
 
-Enable this setting to require `https` in post logout redirect URIs. `http` is only allowed when a :term:`Client` is `confidential`.
 
-OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``True``
+The response types that are advertised to be supported by this server.
 
-Whether expired ID tokens are accepted for RP-Initiated Logout. The Tokens must still be signed by the OP and otherwise valid.
+OIDC_SUBJECT_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["public"]``
 
-OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``True``
+The subject types that are advertised to be supported by this server.
 
-Whether to delete the access, refresh and ID tokens of the user that is being logged out.
-The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
-The default is to delete the tokens of all applications if this flag is enabled.
+OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["client_secret_post", "client_secret_basic"]``
+
+The authentication methods that are advertised to be supported by this server.
 
 OIDC_RP_INITIATED_REGISTRATION_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -574,73 +578,110 @@ This setting is required when ``OIDC_RP_INITIATED_REGISTRATION_ENABLED`` is
 ``True``: if it is unset or cannot be resolved, ``ImproperlyConfigured`` is
 raised when a ``prompt=create`` request is received.
 
-OIDC_ISS_ENDPOINT
-~~~~~~~~~~~~~~~~~
-Default: ``""``
+OIDC_RP_INITIATED_LOGOUT_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
 
-The URL of the issuer that is used in the ID token JWT and advertised in the
-OIDC discovery metadata. Clients use this location to retrieve the OIDC
-discovery metadata from ``OIDC_ISS_ENDPOINT`` +
-``/.well-known/openid-configuration``.
+When is set to ``False`` (default) the `OpenID Connect RP-Initiated Logout <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_
+endpoint is not enabled. OpenID Connect RP-Initiated Logout enables an :term:`Client` (Relying Party)
+to request that a :term:`Resource Owner` (End User) is logged out at the :term:`Authorization Server` (OpenID Provider).
 
-If unset, the default location is used, eg if ``django-oauth-toolkit`` is
-mounted at ``/o``, it will be ``<server-address>/o``.
+OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
 
-OIDC_RESPONSE_TYPES_SUPPORTED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default::
+Whether to always prompt the :term:`Resource Owner` (End User) to confirm a logout requested by a
+:term:`Client` (Relying Party). If it is disabled the :term:`Resource Owner` (End User) will only be prompted if required by the standard.
 
-    [
-        "code",
-        "token",
-        "id_token",
-        "id_token token",
-        "code token",
-        "code id_token",
-        "code id_token token",
-    ]
-
-
-The response types that are advertised to be supported by this server.
-
-OIDC_SUBJECT_TYPES_SUPPORTED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["public"]``
-
-The subject types that are advertised to be supported by this server.
-
-OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["client_secret_post", "client_secret_basic"]``
-
-The authentication methods that are advertised to be supported by this server.
-
-OAUTH2_RESPONSE_TYPES_SUPPORTED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["code", "token"]``
-
-The response types advertised by the :doc:`oauth2_server_metadata` endpoint.
-
-OAUTH2_GRANT_TYPES_SUPPORTED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default::
-
-    [
-        "authorization_code",
-        "implicit",
-        "password",
-        "client_credentials",
-        "refresh_token",
-        "urn:ietf:params:oauth:grant-type:device_code",
-    ]
-
-The grant types advertised by the :doc:`oauth2_server_metadata` endpoint.
-
-OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["client_secret_post", "client_secret_basic"]``
+Default: ``False``
 
-The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
+Enable this setting to require `https` in post logout redirect URIs. `http` is only allowed when a :term:`Client` is `confidential`.
+
+OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
+
+Whether expired ID tokens are accepted for RP-Initiated Logout. The Tokens must still be signed by the OP and otherwise valid.
+
+OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
+
+Whether to delete the access, refresh and ID tokens of the user that is being logged out.
+The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
+The default is to delete the tokens of all applications if this flag is enabled.
+
+Resource Server settings
+------------------------
+
+RESOURCE_SERVER_INTROSPECTION_URL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The introspection endpoint for validating token remotely (RFC7662). This URL requires either an authorization
+token (``RESOURCE_SERVER_AUTH_TOKEN``)
+or HTTP Basic Auth client credentials (``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS``).
+
+RESOURCE_SERVER_AUTH_TOKEN
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+The bearer token to authenticate the introspection request towards the introspection endpoint (RFC7662).
+
+RESOURCE_SERVER_INTROSPECTION_CREDENTIALS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The HTTP Basic Auth Client_ID and Client_Secret to authenticate the introspection request
+towards the introspect endpoint (RFC7662) as a tuple: ``(client_id, client_secret)``.
+
+RESOURCE_SERVER_TOKEN_CACHING_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The number of seconds an authorization token received from the introspection endpoint remains valid.
+If the expire time of the received token is less than ``RESOURCE_SERVER_TOKEN_CACHING_SECONDS`` the expire time
+will be used.
+
+RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"``
+
+A callable that validates whether an access token's audience (RFC 8707 resource indicators) matches
+a request URI. The callable receives ``(request_uri, audiences)`` where ``request_uri`` is a string
+and ``audiences`` is a list of audience URIs from the token. Returns ``True`` if the token
+is authorized for the request, ``False`` otherwise.
+
+The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
+will accept requests to ``https://api.example.com/v1/users`` but reject ``https://api.example.com/v2``.
+
+The default validator expects both the request URI and the audience values to be **absolute URIs
+with a scheme and host**, without userinfo or fragment components, because it compares
+``(scheme, host, port)`` and then the path. A query component is permitted on resource indicators
+(RFC 8707 allows one) but plays no part in matching: the request URI is compared with its query
+string stripped. Other absolute-URI forms, such as URNs, never match. Supporting them requires
+both a custom validator here (for matching on the resource server) and a custom
+``OAUTH2_VALIDATOR_CLASS`` overriding ``_validate_resource_uris()`` (the authorization server
+rejects authority-less URIs at issuance).
+
+To use exact matching instead:
+
+.. code-block:: python
+
+    def exact_match_validator(request_uri, audiences):
+        if not audiences:
+            return True  # Unrestricted token
+        return request_uri in audiences
+
+    OAUTH2_PROVIDER = {
+        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': 'myapp.validators.exact_match_validator',
+    }
+
+Set to ``None`` to disable automatic audience validation entirely.
+
+AUTHENTICATION_SERVER_EXP_TIME_ZONE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. deprecated:: 3.3.1
+    This setting is deprecated and will be removed in a future release.
+
+Token introspection ``exp`` (expiration) values are Unix timestamps and are interpreted as UTC per
+:rfc:`7662` and :rfc:`7519`. For backwards compatibility, setting this to a non-UTC time zone keeps
+the previous workaround behavior of reinterpreting the ``exp`` wall-clock time as being in the
+configured time zone, but configuring it now emits a ``DeprecationWarning``.
 
 OAUTH2_PROTECTED_RESOURCE_IDENTIFIER
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -691,21 +732,6 @@ Default: ``""``
 
 ``resource_tos_uri`` URL advertised by the :doc:`protected_resource_metadata`
 endpoint. Omitted from the document when empty.
-
-CLEAR_EXPIRED_TOKENS_BATCH_SIZE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``10000``
-
-The size of delete batches used by ``cleartokens`` management command.
-
-CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``0``
-
-Time of sleep in seconds used by ``cleartokens`` management command between batch deletions.
-
-Set this to a non-zero value (e.g. ``0.1``) to add a pause between batch sizes to reduce system
-load when clearing large batches of expired tokens.
 
 List of non-namespaced settings
 -------------------------------
