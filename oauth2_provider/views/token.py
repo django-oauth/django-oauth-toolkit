@@ -51,7 +51,7 @@ class AuthorizedTokenDeleteView(LoginRequiredMixin, DeleteView):
         whose name depends on the ``related_name`` a swapped refresh token model may
         override.
         """
-        access_token = self.get_object()
+        access_token = self.object
         refresh_token = get_refresh_token_model().objects.filter(access_token=access_token).first()
 
         if refresh_token is not None:
