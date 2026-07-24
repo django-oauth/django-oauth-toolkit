@@ -65,6 +65,41 @@ curl --location 'http://localhost:8000/o/token/' \
 
 The response should include the access token.
 
+### RFC 7523 private_key_jwt example
+
+The seed data includes an "RFC 7523 private_key_jwt demo" application
+(`client_id=private-key-jwt-demo`, client-credentials grant) registered with the public half of
+the demo key below. **The key pair is demo-only seed data — never reuse it anywhere real.**
+
+```sh
+# Save the demo private key (the matching public JWK is in the application's client_jwks).
+cat > /tmp/demo-key.pem <<'PEM'
+-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgy1YSAq2sNhFgAo1h
+TIdnGY1ldQDr0MSUyMqrcSAr1/6hRANCAAQN30rKl0m8eregm6tSRo8Lj/ManHfW
+KUwrl00VCGnfhedvtDJFduSVy3ivDuAqZe30QBERlu+gYdZmHCoYdjQK
+-----END PRIVATE KEY-----
+PEM
+
+# Generate a signed client assertion (fresh jti per call) with the library helper.
+ASSERTION=$(python -c "
+from oauth2_provider.client_assertions import make_client_assertion
+print(make_client_assertion(
+    'private-key-jwt-demo',
+    open('/tmp/demo-key.pem').read(),
+    'http://localhost:8000/o/token/',
+))")
+
+# Exchange it for an access token — no client secret anywhere.
+curl --location 'http://localhost:8000/o/token/' \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=client_credentials' \
+    --data-urlencode 'client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer' \
+    --data-urlencode "client_assertion=$ASSERTION"
+```
+
+Replaying the same assertion is rejected (`invalid_client`): the `jti` is single-use.
+
 ## /test/app/rp
 
 This is an example RP. It is a SPA built with Svelte.
