@@ -78,6 +78,7 @@ Index
    pushed_authorization_requests
    cimd
    oidc
+   jwt_access_tokens
 
 .. toctree::
    :maxdepth: 2

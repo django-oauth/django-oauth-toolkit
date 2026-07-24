@@ -272,6 +272,14 @@ class AbstractApplication(models.Model):
     algorithm = models.CharField(
         max_length=5, choices=ALGORITHM_TYPES, default=NO_ALGORITHM, blank=True, verbose_name=_("algorithm")
     )
+    jwt_access_token = models.BooleanField(
+        default=False,
+        help_text=_(
+            'Issue RFC 9068 JWT access tokens ("at+jwt") for this application, signed with its '
+            "algorithm, instead of opaque random tokens."
+        ),
+        verbose_name=_("JWT access token"),
+    )
     token_endpoint_auth_method = models.CharField(
         max_length=32,
         choices=TOKEN_AUTH_METHODS,
@@ -602,6 +610,16 @@ class AbstractApplication(models.Model):
                         )
                     )
                 )
+
+        # RFC 9068 JWT access tokens MUST be signed, so a signing algorithm is required.
+        # RS256/HS256 key availability is already enforced by the checks above.
+        if self.jwt_access_token and self.algorithm == AbstractApplication.NO_ALGORITHM:
+            raise ValidationError(
+                _(
+                    "You cannot issue JWT access tokens without a signing algorithm; "
+                    "set algorithm to RS256 or HS256."
+                )
+            )
 
     def get_absolute_url(self):
         return reverse("oauth2_provider:detail", args=[str(self.pk)])

@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   swapping the application model. Defaults are unchanged, and the hooks gate only what may be
   stored: request-time matching remains exact per RFC 9700 section 2.1, and `get_allowed_schemes()`
   still gates the redirect scheme independently. See `docs/advanced_topics.rst`.
+* RFC 9068 JWT access tokens (`at+jwt`). A per-application `jwt_access_token` flag opts an
+  `Application` into signed JWT access tokens (using its `RS256`/`HS256` `algorithm` and the
+  existing OIDC signing keys) instead of opaque tokens. Tokens carry the RFC 9068 claim set
+  (`iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`, `scope`); `aud` defaults to the RFC 8707
+  `resource` value(s) or the `client_id`. Tokens remain DB-backed so introspection and revocation
+  are unchanged. See `docs/jwt_access_tokens.rst`.
 * #1762 RFC 7523 JWT client authentication (`private_key_jwt` / `client_secret_jwt`) at the token, introspection and
   revocation endpoints. Applications gain `token_endpoint_auth_method`, `client_jwks` and `client_jwks_uri` fields
   (deployments with a swapped/custom Application model must add an equivalent migration); remote JWK Sets are fetched
