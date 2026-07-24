@@ -36,9 +36,10 @@ Package map
     oauth2_provider/
       core/                     shared plumbing
         scopes, exceptions, utils, http, compat, signals, checks,
+        bcp (RFC 9700 best-current-practice gates),
         backends_oauthlib, views.py (OAuthLibCoreMixin — shared view base)
       authorization_server/     provider side
-        dcr, cimd, bcp, forms, admin,
+        dcr, cimd, forms, admin,
         urls.py (server-metadata / base / management / DCR patterns)
         views/                  base, introspect, device,
                                 dynamic_client_registration, application, token,
