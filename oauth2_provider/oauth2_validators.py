@@ -1023,10 +1023,22 @@ class OAuth2Validator(RequestValidator):
                 else:
                     # make sure that the token data we're returning matches
                     # the existing token
+                    existing_refresh_token = RefreshToken.objects.filter(
+                        access_token=previous_access_token
+                    ).first()
+                    if existing_refresh_token is None:
+                        # The refresh token bound to the previously issued access token was
+                        # revoked/cleaned up (e.g. by ``clear_expired`` or a concurrent
+                        # rotation) while the access token itself survived. Re-issue a
+                        # refresh token for it instead of dereferencing ``None`` (#1687).
+                        # Creating a fresh *access* token here would violate the OneToOne
+                        # ``AccessToken.source_refresh_token`` constraint, since the surviving
+                        # access token already occupies that relation.
+                        existing_refresh_token = self._create_refresh_token(
+                            request, refresh_token_code, previous_access_token, refresh_token_instance
+                        )
                     token["access_token"] = previous_access_token.token
-                    token["refresh_token"] = (
-                        RefreshToken.objects.filter(access_token=previous_access_token).first().token
-                    )
+                    token["refresh_token"] = existing_refresh_token.token
                     token["scope"] = previous_access_token.scope
 
         # No refresh token should be created, just access token

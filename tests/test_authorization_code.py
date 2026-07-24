@@ -1416,6 +1416,58 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_refresh_within_grace_period_when_descendant_refresh_token_is_gone(self):
+        """
+        Reusing a refresh token within the grace period must not raise (HTTP 500) when
+        the access token it previously minted still exists but that access token's own
+        refresh token has been removed -- e.g. cleaned up by ``clear_expired`` or revoked
+        by a concurrent rotation. See issue #1687.
+        """
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 300
+        self.client.login(username="test_user", password="123456")
+        authorization_code = self.get_auth()
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": authorization_code,
+                "redirect_uri": "http://example.org",
+            },
+            **auth_headers,
+        )
+        content = json.loads(response.content.decode("utf-8"))
+        refresh_token_1 = content["refresh_token"]
+
+        # RT1 -> AT2 / RT2
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token_1, "scope": content["scope"]},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        access_token_2 = json.loads(response.content.decode("utf-8"))["access_token"]
+
+        # Simulate clear_expired() / a concurrent rotation removing RT2 while AT2 survives.
+        access_token_2_obj = AccessToken.objects.get(token=access_token_2)
+        RefreshToken.objects.filter(access_token=access_token_2_obj).delete()
+        self.assertTrue(AccessToken.objects.filter(pk=access_token_2_obj.pk).exists())
+
+        # Reuse RT1 within the grace window: previous behavior dereferenced a now-missing
+        # refresh token and raised AttributeError (500). It must return a usable response.
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token_1, "scope": content["scope"]},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        body = json.loads(response.content.decode("utf-8"))
+        self.assertIn("access_token", body)
+        self.assertIn("refresh_token", body)
+        # The returned refresh token must actually exist (be usable), not be a dangling value.
+        self.assertTrue(RefreshToken.objects.filter(token=body["refresh_token"]).exists())
+
     def test_refresh_repeating_requests_non_rotating_tokens(self):
         """
         Try refreshing an access token with the same refresh token more than once when not rotating tokens.

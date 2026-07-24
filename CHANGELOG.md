@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
   removal in 4.0.
 ### Fixed
+* #1687 Reusing a refresh token within `REFRESH_TOKEN_GRACE_PERIOD_SECONDS` no longer
+  raises `AttributeError: 'NoneType' object has no attribute 'token'` (HTTP 500) when the
+  access token previously minted from that refresh token still exists but its own refresh
+  token has since been removed — e.g. by `clear_expired` or a concurrent rotation.
+  `_save_bearer_token` now re-issues a refresh token bound to the surviving access token
+  instead of dereferencing the missing one (creating a fresh access token there would
+  violate the one-to-one `AccessToken.source_refresh_token` relation).
 * #958 Return a spec-compliant 400 instead of raising an uncaught `AssertionError`
   (HTTP 500) when an application without any registered `redirect_uris` (e.g. a
   `client_credentials` application) is driven through a flow that needs a default
