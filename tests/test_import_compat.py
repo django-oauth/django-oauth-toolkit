@@ -33,6 +33,44 @@ MOVED_MODULES = {
     "oauth2_provider.backends": "oauth2_provider.resource_server.backends",
     "oauth2_provider.decorators": "oauth2_provider.resource_server.decorators",
     "oauth2_provider.middleware": "oauth2_provider.resource_server.middleware",
+    # View modules moved into role packages (sys.modules-alias shims).
+    "oauth2_provider.views.base": "oauth2_provider.authorization_server.views.base",
+    "oauth2_provider.views.introspect": "oauth2_provider.authorization_server.views.introspect",
+    "oauth2_provider.views.device": "oauth2_provider.authorization_server.views.device",
+    "oauth2_provider.views.dynamic_client_registration": (
+        "oauth2_provider.authorization_server.views.dynamic_client_registration"
+    ),
+    "oauth2_provider.views.application": "oauth2_provider.authorization_server.views.application",
+    "oauth2_provider.views.token": "oauth2_provider.authorization_server.views.token",
+    "oauth2_provider.views.oidc": "oauth2_provider.authorization_server.oidc.views",
+    "oauth2_provider.views.generic": "oauth2_provider.resource_server.views.generic",
+}
+
+
+# These old paths are re-export shims (not whole-module aliases), because their
+# contents were split across more than one new module. Importing a symbol from the
+# old path must still resolve to the same object as the canonical module, and the
+# old path must warn.
+SPLIT_SHIM_SYMBOLS = {
+    # old module, symbol, canonical module
+    (
+        "oauth2_provider.views.mixins",
+        "AuthorizationServerViewMixin",
+        "oauth2_provider.authorization_server.views.mixins",
+    ),
+    ("oauth2_provider.views.mixins", "ProtectedResourceMixin", "oauth2_provider.resource_server.mixins"),
+    ("oauth2_provider.views.mixins", "OIDCOnlyMixin", "oauth2_provider.authorization_server.oidc.mixins"),
+    ("oauth2_provider.views.mixins", "OAuthLibCoreMixin", "oauth2_provider.core.views"),
+    (
+        "oauth2_provider.views.metadata",
+        "OAuthServerMetadataView",
+        "oauth2_provider.authorization_server.views.metadata",
+    ),
+    (
+        "oauth2_provider.views.metadata",
+        "OAuthProtectedResourceMetadataView",
+        "oauth2_provider.resource_server.views.metadata",
+    ),
 }
 
 # The admin shim is intentionally silent (Django imports oauth2_provider.admin
@@ -64,6 +102,33 @@ def test_admin_shim_is_silent():
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         importlib.import_module("oauth2_provider.admin")  # must not raise
+
+
+@pytest.mark.parametrize("old, symbol, new", sorted(SPLIT_SHIM_SYMBOLS))
+def test_split_shim_symbol_matches_canonical(old, symbol, new):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        old_obj = getattr(importlib.import_module(old), symbol)
+        new_obj = getattr(importlib.import_module(new), symbol)
+    assert old_obj is new_obj
+
+
+@pytest.mark.parametrize("old", sorted({o for o, _, _ in SPLIT_SHIM_SYMBOLS}))
+def test_split_shim_warns(old):
+    sys.modules.pop(old, None)
+    with pytest.warns(DeprecationWarning, match="has moved"):
+        importlib.import_module(old)
+
+
+def test_combined_oauthlib_mixin_warns_on_subclass():
+    from django.views.generic import View
+
+    from oauth2_provider.views.mixins import OAuthLibMixin
+
+    with pytest.warns(DeprecationWarning, match="OAuthLibMixin is deprecated"):
+
+        class _LegacyView(OAuthLibMixin, View):
+            pass
 
 
 def test_private_names_resolve_via_old_path():
