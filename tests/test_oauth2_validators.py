@@ -454,6 +454,24 @@ class TestOAuth2Validator(TransactionTestCase):
         active_token.refresh_from_db()
         self.assertIsNotNone(active_token.revoked)
 
+    def test_revoke_token_without_authenticated_client_is_noop(self):
+        # RFC 7009 §2.1 client-ownership check: with no authenticated client on the
+        # request there is nobody the token could have been "issued to," so revoke_token
+        # must not revoke anything (and must not match tokens with a NULL application).
+        token = "unauthenticated-revoke-token"
+        access_token = AccessToken.objects.create(
+            token=token,
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            application=self.application,
+        )
+
+        request = mock.MagicMock(wraps=Request)
+        request.client = None
+        self.validator.revoke_token(token, "access_token", request)
+
+        self.assertTrue(AccessToken.objects.filter(pk=access_token.pk).exists())
+
     def test_save_bearer_token__without_user__raises_fatal_client(self):
         token = {}
 
