@@ -204,7 +204,17 @@ validates every step of the OAuth2 process.
 OAUTH2_BACKEND_CLASS
 ~~~~~~~~~~~~~~~~~~~~
 The import string for the ``oauthlib_backend_class`` used in the ``OAuthLibMixin``,
-to get a ``Server`` instance.
+to get a ``Server`` instance. Defaults to
+``oauth2_provider.oauth2_backends.OAuthLibCore``, which reads request bodies as
+``application/x-www-form-urlencoded`` as required by the OAuth specifications.
+
+.. deprecated:: 3.5
+    ``oauth2_provider.oauth2_backends.JSONOAuthLibCore`` is deprecated and will be removed
+    in 4.0. It makes the OAuth token, authorization, introspection, and revocation endpoints
+    read ``application/json`` request bodies, but those endpoints are defined to use
+    ``application/x-www-form-urlencoded`` (RFC 6749, RFC 7662, RFC 7009). The JSON mode is
+    non-standard and breaks interoperability with spec-compliant clients; every client can
+    send a form-encoded body, so it provides no capability that the default backend lacks.
 
 REFRESH_TOKEN_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
