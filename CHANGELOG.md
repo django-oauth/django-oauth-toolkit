@@ -60,6 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response); replaying an older, already-rotated-past token within the grace window is
   rejected and revokes the whole token family, instead of being honored (and, without a
   requested scope, minting a fresh token pair).
+* #727 The token revocation endpoint (`/o/revoke_token/`) now only revokes tokens that
+  were issued to the authenticated client. Previously it revoked any token matching the
+  submitted value regardless of which application issued it, so a client could revoke
+  another client's tokens. Per
+  [RFC 7009 §2.1](https://datatracker.ietf.org/doc/html/rfc7009#section-2.1) the server
+  verifies the token was issued to the client making the request; a token belonging to a
+  different client is now left untouched and the endpoint still returns `200` (RFC 7009
+  §2.2) without disclosing whether the token exists.
 
 ## [3.4.0] - 2026-07-23
 

@@ -1146,8 +1146,16 @@ class OAuth2Validator(RequestValidator):
         if not tokens:
             for other_type in [_t for _t in token_types.values() if _t != token_type]:
                 tokens.extend(other_type.objects.filter(token_checksum=token_checksum))
+        # RFC 7009 section 2.1: the authorization server "verifies whether the token was
+        # issued to the client making the revocation request." A client must not be able
+        # to revoke another client's tokens. Tokens that were not issued to the
+        # authenticated client are left untouched and treated like an unknown token, so
+        # the endpoint still returns 200 (RFC 7009 section 2.2) without disclosing whether
+        # the token exists.
+        client = request.client
         for t in tokens:
-            t.revoke()
+            if client is not None and t.application_id == client.pk:
+                t.revoke()
 
     def build_http_request(self, request: OauthlibRequest) -> HttpRequest:
         """

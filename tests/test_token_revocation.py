@@ -238,6 +238,82 @@ class TestRevocationView(BaseTest):
         refresh_token = RefreshToken.objects.filter(pk=rtok.pk).first()
         self.assertIsNotNone(refresh_token.revoked)
 
+    def test_cannot_revoke_another_clients_token(self):
+        """
+        RFC 7009 §2.1: a client may only revoke tokens that were issued to it.
+        Authenticating as one application must not revoke a token belonging to a
+        different application. See issue #727.
+        """
+        other_application = Application.objects.create(
+            name="Other Application",
+            redirect_uris="http://localhost",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            client_secret=CLEARTEXT_SECRET,
+        )
+        victim_token = AccessToken.objects.create(
+            user=self.test_user,
+            token="1234567890",
+            application=other_application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+
+        # Authenticate as self.application but present the other application's token.
+        data = {
+            "client_id": self.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+            "token": victim_token.token,
+        }
+        url = reverse("oauth2_provider:revoke-token")
+        response = self.client.post(url, data=data)
+
+        # RFC 7009 §2.2: the endpoint still returns 200 (it does not disclose whether the
+        # token exists), but the other client's token must remain untouched.
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AccessToken.objects.filter(pk=victim_token.pk).exists())
+
+    def test_cannot_revoke_another_clients_refresh_token(self):
+        """
+        The client-ownership check also applies to refresh tokens (issue #727).
+        """
+        other_application = Application.objects.create(
+            name="Other Application",
+            redirect_uris="http://localhost",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            client_secret=CLEARTEXT_SECRET,
+        )
+        victim_access_token = AccessToken.objects.create(
+            user=self.test_user,
+            token="1234567890",
+            application=other_application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+        victim_refresh_token = RefreshToken.objects.create(
+            user=self.test_user,
+            token="999999999",
+            application=other_application,
+            access_token=victim_access_token,
+        )
+
+        data = {
+            "client_id": self.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+            "token": victim_refresh_token.token,
+            "token_type_hint": "refresh_token",
+        }
+        url = reverse("oauth2_provider:revoke-token")
+        response = self.client.post(url, data=data)
+
+        self.assertEqual(response.status_code, 200)
+        refresh_token = RefreshToken.objects.filter(pk=victim_refresh_token.pk).first()
+        self.assertIsNone(refresh_token.revoked)
+        self.assertTrue(AccessToken.objects.filter(pk=victim_access_token.pk).exists())
+
     def test_revoke_token_with_wrong_hint(self):
         """
         From the revocation rfc, `Section 4.1.2`_ :

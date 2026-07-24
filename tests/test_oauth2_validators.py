@@ -404,7 +404,11 @@ class TestOAuth2Validator(TransactionTestCase):
             application=self.application,
         )
 
-        self.validator.revoke_token(long_token, "refresh_token", mock.MagicMock(wraps=Request))
+        # revoke_token runs after client authentication, so request.client is the
+        # authenticated (owning) application; see RFC 7009 §2.1 client-ownership check.
+        request = mock.MagicMock(wraps=Request)
+        request.client = self.application
+        self.validator.revoke_token(long_token, "refresh_token", request)
 
         refresh_token.refresh_from_db()
         self.assertIsNotNone(refresh_token.revoked)
@@ -443,7 +447,9 @@ class TestOAuth2Validator(TransactionTestCase):
             application=self.application,
         )
 
-        self.validator.revoke_token(token, "refresh_token", mock.MagicMock(wraps=Request))
+        request = mock.MagicMock(wraps=Request)
+        request.client = self.application
+        self.validator.revoke_token(token, "refresh_token", request)
 
         active_token.refresh_from_db()
         self.assertIsNotNone(active_token.revoked)
