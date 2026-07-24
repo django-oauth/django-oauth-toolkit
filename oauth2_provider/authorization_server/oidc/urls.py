@@ -6,7 +6,12 @@ URL namespace.
 
 from django.urls import path, re_path
 
-from oauth2_provider import views
+from oauth2_provider.authorization_server.oidc.views import (
+    ConnectDiscoveryInfoView,
+    JwksInfoView,
+    RPInitiatedLogoutView,
+    UserInfoView,
+)
 
 
 oidc_urlpatterns = [
@@ -16,10 +21,10 @@ oidc_urlpatterns = [
     # Support for trailing slash shall be removed in a future release.
     re_path(
         r"^\.well-known/openid-configuration/?$",
-        views.ConnectDiscoveryInfoView.as_view(),
+        ConnectDiscoveryInfoView.as_view(),
         name="oidc-connect-discovery-info",
     ),
-    path(".well-known/jwks.json", views.JwksInfoView.as_view(), name="jwks-info"),
-    path("userinfo/", views.UserInfoView.as_view(), name="user-info"),
-    path("logout/", views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
+    path(".well-known/jwks.json", JwksInfoView.as_view(), name="jwks-info"),
+    path("userinfo/", UserInfoView.as_view(), name="user-info"),
+    path("logout/", RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
 ]

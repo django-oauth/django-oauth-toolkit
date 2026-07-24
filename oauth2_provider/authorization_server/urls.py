@@ -10,7 +10,34 @@ the OpenID Connect Provider routes live in
 
 from django.urls import path
 
-from oauth2_provider import views
+from oauth2_provider.authorization_server.views.application import (
+    ApplicationDelete,
+    ApplicationDetail,
+    ApplicationList,
+    ApplicationRegistration,
+    ApplicationUpdate,
+)
+from oauth2_provider.authorization_server.views.base import (
+    AuthorizationView,
+    RevokeTokenView,
+    TokenView,
+)
+from oauth2_provider.authorization_server.views.device import (
+    DeviceAuthorizationView,
+    DeviceConfirmView,
+    DeviceGrantStatusView,
+    DeviceUserCodeView,
+)
+from oauth2_provider.authorization_server.views.dynamic_client_registration import (
+    DynamicClientRegistrationManagementView,
+    DynamicClientRegistrationView,
+)
+from oauth2_provider.authorization_server.views.introspect import IntrospectTokenView
+from oauth2_provider.authorization_server.views.metadata import OAuthServerMetadataView
+from oauth2_provider.authorization_server.views.token import (
+    AuthorizedTokenDeleteView,
+    AuthorizedTokensListView,
+)
 
 
 server_metadata_urlpatterns = [
@@ -19,7 +46,7 @@ server_metadata_urlpatterns = [
     # under a prefix — see docs/oauth2_server_metadata.rst.
     path(
         ".well-known/oauth-authorization-server",
-        views.OAuthServerMetadataView.as_view(),
+        OAuthServerMetadataView.as_view(),
         name="oauth-server-metadata",
     ),
     # RFC 8414 path-component form: when the issuer has a path (e.g.
@@ -28,26 +55,26 @@ server_metadata_urlpatterns = [
     # is reflected back into the issuer; the view reads it from the request path.
     path(
         ".well-known/oauth-authorization-server/<path:issuer_path>",
-        views.OAuthServerMetadataView.as_view(),
+        OAuthServerMetadataView.as_view(),
         name="oauth-server-metadata-issuer",
     ),
 ]
 
 base_urlpatterns = [
-    path("authorize/", views.AuthorizationView.as_view(), name="authorize"),
-    path("token/", views.TokenView.as_view(), name="token"),
-    path("revoke_token/", views.RevokeTokenView.as_view(), name="revoke-token"),
-    path("introspect/", views.IntrospectTokenView.as_view(), name="introspect"),
-    path("device-authorization/", views.DeviceAuthorizationView.as_view(), name="device-authorization"),
-    path("device/", views.DeviceUserCodeView.as_view(), name="device"),
+    path("authorize/", AuthorizationView.as_view(), name="authorize"),
+    path("token/", TokenView.as_view(), name="token"),
+    path("revoke_token/", RevokeTokenView.as_view(), name="revoke-token"),
+    path("introspect/", IntrospectTokenView.as_view(), name="introspect"),
+    path("device-authorization/", DeviceAuthorizationView.as_view(), name="device-authorization"),
+    path("device/", DeviceUserCodeView.as_view(), name="device"),
     path(
         "device-confirm/<slug:client_id>/<slug:user_code>",
-        views.DeviceConfirmView.as_view(),
+        DeviceConfirmView.as_view(),
         name="device-confirm",
     ),
     path(
         "device-grant-status/<slug:client_id>/<slug:user_code>",
-        views.DeviceGrantStatusView.as_view(),
+        DeviceGrantStatusView.as_view(),
         name="device-grant-status",
     ),
 ]
@@ -55,25 +82,25 @@ base_urlpatterns = [
 
 management_urlpatterns = [
     # Application management views
-    path("applications/", views.ApplicationList.as_view(), name="list"),
-    path("applications/register/", views.ApplicationRegistration.as_view(), name="register"),
-    path("applications/<slug:pk>/", views.ApplicationDetail.as_view(), name="detail"),
-    path("applications/<slug:pk>/delete/", views.ApplicationDelete.as_view(), name="delete"),
-    path("applications/<slug:pk>/update/", views.ApplicationUpdate.as_view(), name="update"),
+    path("applications/", ApplicationList.as_view(), name="list"),
+    path("applications/register/", ApplicationRegistration.as_view(), name="register"),
+    path("applications/<slug:pk>/", ApplicationDetail.as_view(), name="detail"),
+    path("applications/<slug:pk>/delete/", ApplicationDelete.as_view(), name="delete"),
+    path("applications/<slug:pk>/update/", ApplicationUpdate.as_view(), name="update"),
     # Token management views
-    path("authorized_tokens/", views.AuthorizedTokensListView.as_view(), name="authorized-token-list"),
+    path("authorized_tokens/", AuthorizedTokensListView.as_view(), name="authorized-token-list"),
     path(
         "authorized_tokens/<slug:pk>/delete/",
-        views.AuthorizedTokenDeleteView.as_view(),
+        AuthorizedTokenDeleteView.as_view(),
         name="authorized-token-delete",
     ),
 ]
 
 dcr_urlpatterns = [
-    path("register/", views.DynamicClientRegistrationView.as_view(), name="dcr-register"),
+    path("register/", DynamicClientRegistrationView.as_view(), name="dcr-register"),
     path(
         "register/<str:client_id>/",
-        views.DynamicClientRegistrationManagementView.as_view(),
+        DynamicClientRegistrationManagementView.as_view(),
         name="dcr-register-management",
     ),
 ]

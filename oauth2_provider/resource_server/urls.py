@@ -7,7 +7,7 @@ the server root — see ``docs/protected_resource_metadata.rst``).
 
 from django.urls import path
 
-from oauth2_provider import views
+from oauth2_provider.resource_server.views.metadata import OAuthProtectedResourceMetadataView
 
 
 resource_metadata_urlpatterns = [
@@ -16,7 +16,7 @@ resource_metadata_urlpatterns = [
     # under a prefix — see docs/protected_resource_metadata.rst.
     path(
         ".well-known/oauth-protected-resource",
-        views.OAuthProtectedResourceMetadataView.as_view(),
+        OAuthProtectedResourceMetadataView.as_view(),
         name="oauth-resource-metadata",
     ),
     # RFC 9728 path-component form: when the resource identifier has a path (e.g.
@@ -26,7 +26,7 @@ resource_metadata_urlpatterns = [
     # request path.
     path(
         ".well-known/oauth-protected-resource/<path:resource_path>",
-        views.OAuthProtectedResourceMetadataView.as_view(),
+        OAuthProtectedResourceMetadataView.as_view(),
         name="oauth-resource-metadata-path",
     ),
 ]
