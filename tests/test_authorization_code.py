@@ -134,10 +134,10 @@ class TestAuthorizationCodeView(BaseTest):
 
     def test_pre_auth_client_credentials_app_without_redirect_uri(self):
         """
-        A client_credentials application has no redirect_uris. Driving it through
-        the authorization code flow must return a 400, not raise an AssertionError
-        (HTTP 500), when oauthlib resolves the default redirect URI. Regression
-        test for #958.
+        An application with no registered redirect_uris (here a client_credentials
+        application, created without any) driven through the authorization code
+        flow must return a 400, not raise an AssertionError (HTTP 500), when
+        oauthlib resolves the default redirect URI. Regression test for #958.
         """
         self.oauth2_settings.PKCE_REQUIRED = False
         self.client.login(username="test_user", password="123456")
