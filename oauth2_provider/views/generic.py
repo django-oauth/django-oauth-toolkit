@@ -1,6 +1,6 @@
 from django.views.generic import View
 
-from .mixins import (
+from oauth2_provider.resource_server.mixins import (
     ClientProtectedResourceMixin,
     ProtectedResourceMetadataMixin,
     ProtectedResourceMixin,

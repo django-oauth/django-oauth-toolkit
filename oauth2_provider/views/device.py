@@ -12,6 +12,7 @@ from oauthlib.common import Request as OAuthlibRequest
 from oauthlib.common import urlencode
 from oauthlib.oauth2 import DeviceApplicationServer
 
+from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.models import (
@@ -22,12 +23,11 @@ from oauth2_provider.models import (
     get_application_model,
     get_device_grant_model,
 )
-from oauth2_provider.views.mixins import OAuthLibMixin
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class DeviceAuthorizationView(OAuthLibMixin, View):
+class DeviceAuthorizationView(AuthorizationServerViewMixin, View):
     server_class = DeviceApplicationServer
 
     def post(self, request, *args, **kwargs):

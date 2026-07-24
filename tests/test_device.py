@@ -622,7 +622,9 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         }
 
         with mock.patch(
-            "oauth2_provider.views.mixins.OAuthLibMixin.get_oauthlib_core", MockOauthlibCoreClass
+            "oauth2_provider.authorization_server.views.mixins."
+            "AuthorizationServerViewMixin.get_oauthlib_core",
+            MockOauthlibCoreClass,
         ):
             response = self.client.post(
                 "/o/token/",

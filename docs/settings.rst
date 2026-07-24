@@ -286,7 +286,7 @@ SECURITY WARNING: Enabling this setting can introduce security vulnerabilities. 
 this setting if you understand the risks. https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2
 states "The redirection endpoint URI MUST be an absolute URI as defined by [RFC3986] Section 4.3." The
 intent of the URI restrictions is to prevent open redirects and phishing attacks. If you do enable this
-ensure that the wildcards restrict URIs to resources under your control. You are strongly encouragd not
+ensure that the wildcards restrict URIs to resources under your control. You are strongly encouraged not
 to use this feature in production.
 
 When set to ``True``, the server will allow wildcard characters in the domains for allowed_origins and
