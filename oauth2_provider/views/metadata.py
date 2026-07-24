@@ -131,6 +131,16 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             if registration_url:
                 data["registration_endpoint"] = registration_url
 
+        # RFC 9126 §5: advertise the PAR endpoint and, when set, that PAR is required.
+        # The route is always registered while the view rejects requests when PAR is
+        # off, so gate the advertisement on the setting like DCR above.
+        if oauth2_settings.PAR_ENABLED:
+            par_url = self._get_endpoint_url(request, "pushed-authorization-request")
+            if par_url:
+                data["pushed_authorization_request_endpoint"] = par_url
+                if oauth2_settings.REQUIRE_PUSHED_AUTHORIZATION_REQUESTS:
+                    data["require_pushed_authorization_requests"] = True
+
         # Capability fields describe a specific endpoint, so only advertise them
         # when that endpoint is actually present.
         if "authorization_endpoint" in data:

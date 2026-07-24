@@ -7,7 +7,7 @@ from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, QueryDict
 from django.shortcuts import resolve_url
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
@@ -18,8 +18,9 @@ from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
+from .. import par
 from ..compat import login_not_required
-from ..exceptions import OAuthToolkitError
+from ..exceptions import FatalClientError, OAuthToolkitError
 from ..forms import AllowForm
 from ..http import OAuth2ResponseRedirect
 from ..models import get_access_token_model, get_application_model, get_device_grant_model
@@ -176,7 +177,54 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         log.debug("Success url for the request: {0}".format(self.success_url))
         return self.redirect(self.success_url, application)
 
+    def _fatal_par_error(self, description):
+        """Render a non-redirecting authorization error (RFC 9126).
+
+        Used for request_uri and PAR-enforcement failures: there is no validated
+        redirect_uri to trust, so the error is shown to the resource owner rather
+        than redirected (which would risk an open redirect).
+        """
+        error = FatalClientError(error=CustomOAuth2Error(error="invalid_request", description=description))
+        return self.error_response(error, application=None)
+
+    def _resolve_pushed_request_uri(self, request, request_uri):
+        """Replace an incoming ``request_uri`` with the parameters pushed to the PAR
+        endpoint (RFC 9126 §4), or return an error response.
+
+        The consume/binding/expiry logic lives in :mod:`oauth2_provider.par`; here we
+        only re-inject the resolved parameters into the request and render errors.
+        """
+        try:
+            parameters = par.consume_pushed_request(request_uri, request.GET.get("client_id"))
+        except par.PushedAuthorizationError as error:
+            return self._fatal_par_error(error.description)
+        # Re-inject the pushed parameters so the existing authorization flow, which
+        # reads from the query string, proceeds unchanged. Any parameters supplied
+        # alongside request_uri are intentionally ignored: the pushed request is
+        # authoritative (RFC 9126), which prevents parameter injection.
+        query_string = urlencode(parameters, doseq=True)
+        request.GET = QueryDict(query_string, mutable=False)
+        request.META["QUERY_STRING"] = query_string
+        return None
+
+    def _handle_pushed_authorization_request(self, request):
+        """Resolve a pushed ``request_uri`` or enforce mandatory PAR (RFC 9126).
+
+        Returns an error response to short-circuit the view, or ``None`` to continue
+        with the (possibly rewritten) request.
+        """
+        request_uri = request.GET.get("request_uri")
+        if request_uri:
+            return self._resolve_pushed_request_uri(request, request_uri)
+        if par.pushed_authorization_required(request.GET.get("client_id")):
+            return self._fatal_par_error("Pushed authorization requests are required for this client.")
+        return None
+
     def get(self, request, *args, **kwargs):
+        par_response = self._handle_pushed_authorization_request(request)
+        if par_response is not None:
+            return par_response
+
         try:
             scopes, credentials = self.validate_authorization_request(request)
         except OAuthToolkitError as error:

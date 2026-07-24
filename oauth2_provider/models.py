@@ -126,6 +126,9 @@ class AbstractApplication(models.Model):
                                   ID Metadata Document
     * :attr:`cimd_expires_at` When the cached metadata document should be
                               re-fetched, for CIMD applications
+    * :attr:`require_pushed_authorization_requests` Whether this client may only
+                              start an authorization request via PAR (:rfc:`9126`).
+                              ``None`` defers to the server-wide setting.
     """
 
     class RegistrationSource(models.TextChoices):
@@ -218,6 +221,20 @@ class AbstractApplication(models.Model):
         blank=True,
         default=None,
         help_text=_("When the cached Client ID Metadata Document should be re-fetched"),
+    )
+    # RFC 9126 §6 client metadata. Three-valued: True requires PAR for this client
+    # even when the server-wide setting is off; None (the default) defers to the
+    # REQUIRE_PUSHED_AUTHORIZATION_REQUESTS setting. The server-wide setting is a
+    # floor, so a per-client value never relaxes it (a per-client False therefore
+    # only has an effect when the server-wide setting is off, where it matches None).
+    require_pushed_authorization_requests = models.BooleanField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text=_(
+            "Require this client to use Pushed Authorization Requests (RFC 9126). "
+            "Leave unset to defer to the REQUIRE_PUSHED_AUTHORIZATION_REQUESTS setting."
+        ),
     )
 
     class Meta:
@@ -907,6 +924,72 @@ def create_device_grant(
     )
 
 
+class AbstractPushedAuthorizationRequest(models.Model):
+    """
+    A pushed authorization request as described in :rfc:`9126`.
+
+    A confidential or public client POSTs an authorization request to the PAR
+    endpoint and receives a ``request_uri`` that references the stored request
+    data. The subsequent call to the authorization endpoint carries only the
+    ``request_uri`` (and ``client_id``) instead of the full parameter set.
+
+    Fields:
+
+    * :attr:`request_uri` The single-use ``urn:ietf:params:oauth:request_uri:*``
+                          reference returned to the client.
+    * :attr:`client_id` The client the request URI is bound to (:rfc:`2.2`).
+    * :attr:`parameters` The pushed authorization-request parameters, stored as a
+                         JSON mapping (client-authentication parameters excluded).
+    * :attr:`expires` When the request URI ceases to be valid.
+    """
+
+    class Meta:
+        abstract = True
+        constraints = [
+            models.UniqueConstraint(
+                fields=["request_uri"],
+                name="%(app_label)s_%(class)s_unique_request_uri",
+            ),
+        ]
+
+    id = models.BigAutoField(primary_key=True)
+    # Uniqueness is enforced by the unique_request_uri UniqueConstraint
+    # (Meta.constraints); adding unique=True here would create a redundant
+    # duplicate index (MySQL warns ER_DUP_INDEX 1831).
+    request_uri = models.CharField(max_length=255)
+    client_id = models.CharField(max_length=100, db_index=True)
+    parameters = models.JSONField(default=dict)
+    expires = models.DateTimeField()
+    created = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        """Whether the request URI has passed its ``expires`` deadline."""
+        if not self.expires:
+            return True
+        return timezone.now() >= self.expires
+
+    def __str__(self):
+        # Never render the request_uri itself: __str__ appears in the admin
+        # change page/breadcrumbs, in repr() within tracebacks, and in log output.
+        return "PushedAuthorizationRequest #{self.pk}".format(self=self)
+
+
+class PushedAuthorizationRequest(AbstractPushedAuthorizationRequest):
+    class Meta(AbstractPushedAuthorizationRequest.Meta):
+        swappable = "OAUTH2_PROVIDER_PAR_REQUEST_MODEL"
+
+
+def create_pushed_authorization_request(
+    request_uri: str, client_id: str, parameters: dict, expires_in: int
+) -> AbstractPushedAuthorizationRequest:
+    return get_par_request_model().objects.create(
+        request_uri=request_uri,
+        client_id=client_id,
+        parameters=parameters,
+        expires=timezone.now() + timedelta(seconds=expires_in),
+    )
+
+
 def get_application_model():
     """Return the Application model that is active in this project."""
     return apps.get_model(oauth2_settings.APPLICATION_MODEL)
@@ -915,6 +998,11 @@ def get_application_model():
 def get_device_grant_model():
     """Return the DeviceGrant model that is active in this project."""
     return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
+
+
+def get_par_request_model():
+    """Return the PushedAuthorizationRequest model that is active in this project."""
+    return apps.get_model(oauth2_settings.PAR_REQUEST_MODEL)
 
 
 def get_grant_model():

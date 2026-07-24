@@ -144,12 +144,49 @@ class OAuthClient:
             raise AssertionError(f"Login did not succeed (status {resp.status_code})")
         return session
 
+    def pushed_authorization_request(
+        self,
+        *,
+        client_id,
+        client_secret=None,
+        response_type="code",
+        redirect_uri=None,
+        scope=None,
+        state=None,
+        code_challenge=None,
+        code_challenge_method=None,
+        extra=None,
+    ):
+        """Push an authorization request to the RFC 9126 PAR endpoint.
+
+        This is the client's *back-channel* leg: a confidential client
+        authenticates here exactly as at the token endpoint (``client_secret``),
+        and the returned ``request_uri`` is then presented at the authorization
+        endpoint (see :meth:`authorize`) in place of the individual parameters.
+        Returns the raw response so the caller can assert the 201 / error status.
+        """
+        data = {"client_id": client_id, "response_type": response_type}
+        if client_secret is not None:
+            data["client_secret"] = client_secret
+        if redirect_uri is not None:
+            data["redirect_uri"] = redirect_uri
+        if scope is not None:
+            data["scope"] = scope
+        if state is not None:
+            data["state"] = state
+        if code_challenge is not None:
+            data["code_challenge"] = code_challenge
+            data["code_challenge_method"] = code_challenge_method or "S256"
+        if extra:
+            data.update(extra)
+        return requests.post(self.url("/o/par/"), data=data, timeout=DEFAULT_TIMEOUT)
+
     def authorize(
         self,
         session,
         *,
         client_id,
-        response_type,
+        response_type=None,
         redirect_uri=None,
         scope=None,
         state=None,
@@ -157,6 +194,7 @@ class OAuthClient:
         code_challenge=None,
         code_challenge_method=None,
         claims=None,
+        request_uri=None,
         extra=None,
         approve=True,
     ):
@@ -166,8 +204,16 @@ class OAuthClient:
         ``skip_authorization``. ``approve=False`` denies consent. Never follows
         the final redirect, so the authorization response is read straight off
         the ``Location`` header.
+
+        For an RFC 9126 request the caller passes ``request_uri`` (obtained from
+        :meth:`pushed_authorization_request`) instead of the individual request
+        parameters; only ``client_id`` accompanies it.
         """
-        params = {"client_id": client_id, "response_type": response_type}
+        params = {"client_id": client_id}
+        if response_type is not None:
+            params["response_type"] = response_type
+        if request_uri is not None:
+            params["request_uri"] = request_uri
         if redirect_uri is not None:
             params["redirect_uri"] = redirect_uri
         if scope is not None:

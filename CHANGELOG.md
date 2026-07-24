@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Security -->
 
 ## [unreleased]
+
+### Added
+* Support for OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126). A new `par/` endpoint
+  (`PushedAuthorizationRequestView`) lets clients push authorization request parameters over an
+  authenticated back channel in exchange for a single-use `request_uri`, stored on the swappable
+  `PushedAuthorizationRequest` model. Enforcement can be required server-wide via
+  `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` or per client via the application's
+  `require_pushed_authorization_requests` field, and the endpoint is advertised in the RFC 8414
+  metadata document. See `docs/pushed_authorization_requests.rst`.
+
 ### Fixed
 * #958 Return a spec-compliant 400 instead of raising an uncaught `AssertionError`
   (HTTP 500) when an application without any registered `redirect_uris` (e.g. a

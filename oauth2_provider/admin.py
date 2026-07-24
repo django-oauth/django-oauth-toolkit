@@ -11,6 +11,7 @@ from oauth2_provider.models import (
     get_grant_model,
     get_id_token_admin_class,
     get_id_token_model,
+    get_par_request_model,
     get_refresh_token_admin_class,
     get_refresh_token_model,
 )
@@ -190,11 +191,39 @@ class RefreshTokenAdmin(admin.ModelAdmin):
         return mask_credential(obj.token) if obj is not None else ""
 
 
+class PushedAuthorizationRequestAdmin(admin.ModelAdmin):
+    list_display = ("pk", "masked_request_uri", "client_id", "expires")
+    # Search by the client identifier only; never by the request_uri, which is a
+    # single-use bearer reference (see mask_credential / the credential admins).
+    search_fields = ("client_id",)
+
+    def has_add_permission(self, request):
+        # Request URIs are issued by the PAR endpoint, not hand-created in the admin.
+        return False
+
+    def get_exclude(self, request, obj=None):
+        exclude = tuple(super().get_exclude(request, obj) or ())
+        if obj is not None and "request_uri" not in exclude:
+            exclude += ("request_uri",)
+        return exclude
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly_fields = tuple(super().get_readonly_fields(request, obj))
+        if obj is not None and "masked_request_uri" not in readonly_fields:
+            readonly_fields += ("masked_request_uri",)
+        return readonly_fields
+
+    @admin.display(description="request_uri")
+    def masked_request_uri(self, obj):
+        return mask_credential(obj.request_uri) if obj is not None else ""
+
+
 application_model = get_application_model()
 access_token_model = get_access_token_model()
 grant_model = get_grant_model()
 id_token_model = get_id_token_model()
 refresh_token_model = get_refresh_token_model()
+par_request_model = get_par_request_model()
 
 application_admin_class = get_application_admin_class()
 access_token_admin_class = get_access_token_admin_class()
@@ -207,3 +236,4 @@ admin.site.register(access_token_model, access_token_admin_class)
 admin.site.register(grant_model, grant_admin_class)
 admin.site.register(id_token_model, id_token_admin_class)
 admin.site.register(refresh_token_model, refresh_token_admin_class)
+admin.site.register(par_request_model, PushedAuthorizationRequestAdmin)

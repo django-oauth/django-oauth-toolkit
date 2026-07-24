@@ -37,6 +37,9 @@ ACCESS_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL", "oa
 ID_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ID_TOKEN_MODEL", "oauth2_provider.IDToken")
 GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_GRANT_MODEL", "oauth2_provider.Grant")
 REFRESH_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL", "oauth2_provider.RefreshToken")
+PAR_REQUEST_MODEL = getattr(
+    settings, "OAUTH2_PROVIDER_PAR_REQUEST_MODEL", "oauth2_provider.PushedAuthorizationRequest"
+)
 
 DEFAULTS = {
     "CLIENT_ID_GENERATOR_CLASS": "oauth2_provider.generators.ClientIdGenerator",
@@ -74,6 +77,7 @@ DEFAULTS = {
     "DEVICE_FLOW_INTERVAL": 5,
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
+    "PAR_REQUEST_MODEL": PAR_REQUEST_MODEL,
     "APPLICATION_ADMIN_CLASS": "oauth2_provider.admin.ApplicationAdmin",
     "ACCESS_TOKEN_ADMIN_CLASS": "oauth2_provider.admin.AccessTokenAdmin",
     "GRANT_ADMIN_CLASS": "oauth2_provider.admin.GrantAdmin",
@@ -179,6 +183,10 @@ DEFAULTS = {
     "CIMD_METADATA_MAX_AGE_SECONDS": 86400,
     "CIMD_FAILURE_BACKOFF_SECONDS": 60,
     "CIMD_MAX_CONCURRENT_FETCHES": 10,  # 0 or None disables the in-flight cap
+    # RFC 9126 Pushed Authorization Requests
+    "PAR_ENABLED": True,
+    "PAR_REQUEST_URI_LIFETIME_SECONDS": 60,  # RFC 9126 §2.2 suggests 5-600 seconds
+    "REQUIRE_PUSHED_AUTHORIZATION_REQUESTS": False,
     # RFC 8414 Authorization Server Metadata
     "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code", "token"],
     "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [

@@ -97,7 +97,8 @@ Example response::
         "client_secret_post",
         "client_secret_basic"
       ],
-      "code_challenge_methods_supported": ["plain", "S256"]
+      "code_challenge_methods_supported": ["plain", "S256"],
+      "pushed_authorization_request_endpoint": "https://example.com/o/par/"
     }
 
 ``jwks_uri`` is only included when OIDC is enabled and an RSA private key is
@@ -108,6 +109,11 @@ is disabled, ``jwks_uri`` is omitted since the JWKS endpoint is not reachable.
 <views/dynamic_client_registration>` endpoint, RFC 7591) is only included when
 ``DCR_ENABLED`` is on; while disabled the endpoint returns 404, so it is not
 advertised.
+
+``pushed_authorization_request_endpoint`` (the :doc:`Pushed Authorization Request
+<pushed_authorization_requests>` endpoint, RFC 9126) is included when ``PAR_ENABLED``
+is on (the default). When ``REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`` is enabled, the
+document additionally advertises ``"require_pushed_authorization_requests": true``.
 
 The issuer URL is derived from the incoming request by default, by splitting the
 request URL around the ``/.well-known/oauth-authorization-server`` marker:
