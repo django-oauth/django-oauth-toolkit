@@ -75,8 +75,10 @@ first.
 ```sh
 cd tests/app/idp
 
-# 1. Generate a fresh keypair; the private key stays local.
+# 1. Generate a fresh keypair; the private key stays local, owner-readable only.
 python -c "
+import os
+os.umask(0o077)
 from jwcrypto import jwk
 key = jwk.JWK.generate(kty='EC', crv='P-256', kid='my-demo-key')
 open('/tmp/demo-key.pem', 'wb').write(key.export_to_pem(private_key=True, password=None))
