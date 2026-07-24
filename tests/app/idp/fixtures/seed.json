@@ -66,7 +66,7 @@
     "client_type": "confidential",
     "authorization_grant_type": "client-credentials",
     "client_secret": "",
-    "hash_client_secret": false,
+    "hash_client_secret": true,
     "name": "RFC 7523 private_key_jwt demo",
     "skip_authorization": false,
     "created": "2026-07-24T00:00:00.000Z",
