@@ -1077,3 +1077,31 @@ def test_disallowed_host_header_cannot_pick_the_audience():
     assertion = build_assertion(RSA_KEY, claims, kid="unit-rsa")
     ok, _ = authenticate(assertion, app, headers={"HTTP_HOST": "evil.example"})
     assert ok is False
+
+
+def test_partial_assertion_parameters_still_require_client_authentication():
+    # client_assertion_type with an empty/missing client_assertion is an
+    # assertion-based auth attempt: it must require client authentication (and
+    # then fail closed in authenticate_client) rather than let oauthlib treat
+    # the request as an unauthenticated public client on conditional grants.
+    from oauthlib.common import Request as OauthlibRequest
+
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    validator = OAuth2Validator()
+    body = (
+        "grant_type=authorization_code"
+        f"&client_assertion_type={client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE}"
+        "&client_assertion="
+    )
+    request = OauthlibRequest("/o/token/", http_method="POST", body=body)
+    assert validator.client_authentication_required(request) is True
+    assert validator.authenticate_client(request) is False
+
+    only_type = OauthlibRequest(
+        "/o/token/",
+        http_method="POST",
+        body=f"grant_type=authorization_code&client_assertion_type={client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE}",
+    )
+    assert validator.client_authentication_required(only_type) is True
+    assert validator.authenticate_client(only_type) is False
