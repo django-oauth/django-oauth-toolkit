@@ -210,7 +210,7 @@ to get a ``Server`` instance. Defaults to
 
 .. deprecated:: 3.5
     ``oauth2_provider.oauth2_backends.JSONOAuthLibCore`` is deprecated and will be removed
-    in 4.0. It makes the OAuth token, authorization, introspection, and revocation endpoints
+    in 4.0. It makes the OAuth token, introspection, and revocation endpoints
     read ``application/json`` request bodies, but those endpoints are defined to use
     ``application/x-www-form-urlencoded`` (RFC 6749, RFC 7662, RFC 7009). The JSON mode is
     non-standard and breaks interoperability with spec-compliant clients; every client can

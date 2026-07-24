@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a
-  `DeprecationWarning`. It makes the OAuth token, authorization, introspection, and
+  `DeprecationWarning`. It makes the OAuth token, introspection, and
   revocation endpoints read `application/json` bodies, but those endpoints are defined to
   use `application/x-www-form-urlencoded` (RFC 6749, RFC 7662, RFC 7009); the JSON mode is
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
