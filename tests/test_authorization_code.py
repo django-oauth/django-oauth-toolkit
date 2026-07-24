@@ -132,6 +132,40 @@ class TestAuthorizationCodeView(BaseTest):
             "?error=invalid_request&error_description=Invalid+client_id+parameter+value.",
         )
 
+    def test_pre_auth_client_credentials_app_without_redirect_uri(self):
+        """
+        An application with no registered redirect_uris (here a client_credentials
+        application, created without any) driven through the authorization code
+        flow must return a 400, not raise an AssertionError (HTTP 500), when
+        oauthlib resolves the default redirect URI. Regression test for #958.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.client.login(username="test_user", password="123456")
+
+        cc_application = Application.objects.create(
+            name="Client Credentials Application",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+            client_secret=CLEARTEXT_SECRET,
+        )
+
+        query_data = {
+            "client_id": cc_application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "read write",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+        self.assertEqual(response.status_code, 400)
+        # Ensure the 400 is oauthlib's MissingRedirectURIError (invalid_request),
+        # not some other 400, so we don't regress the specific error surfaced.
+        self.assertEqual(
+            response.context_data["url"],
+            "?error=invalid_request&error_description=Missing+redirect+URI.",
+        )
+
     def test_pre_auth_valid_client(self):
         """
         Test response for a valid client_id with response_type: code
