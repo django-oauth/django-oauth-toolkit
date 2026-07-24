@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import SuspiciousOperation
 
-from .oauth2_backends import get_oauthlib_core
+from .core.backends_oauthlib import get_oauthlib_core
 
 
 UserModel = get_user_model()

@@ -31,8 +31,8 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
-from . import cimd
-from .bcp import bcp_compliant
+from .authorization_server import cimd
+from .authorization_server.bcp import bcp_compliant
 from .core.exceptions import FatalClientError
 from .models import (
     AbstractApplication,

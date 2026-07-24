@@ -3,7 +3,7 @@ from collections import OrderedDict
 from django.core.exceptions import SuspiciousOperation
 from rest_framework.authentication import BaseAuthentication
 
-from ...oauth2_backends import get_oauthlib_core
+from ...core.backends_oauthlib import get_oauthlib_core
 from ...www_authenticate import build_bearer_challenge
 
 

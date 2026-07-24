@@ -22,7 +22,7 @@ from ..exceptions import (
     LogoutDenied,
     OIDCError,
 )
-from ..forms import ConfirmLogoutForm
+from ..authorization_server.forms import ConfirmLogoutForm
 from ..http import OAuth2ResponseRedirect
 from ..models import (
     AbstractGrant,
