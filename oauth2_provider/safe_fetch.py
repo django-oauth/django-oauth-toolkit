@@ -166,6 +166,8 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
             last_exc = exc
         finally:
             pool.close()
+    if last_exc is None:
+        raise exc_class("could not fetch document: timeout budget exhausted before any connection attempt")
     raise exc_class(f"could not fetch document: {last_exc}")
 
 

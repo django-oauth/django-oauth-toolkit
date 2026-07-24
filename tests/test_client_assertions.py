@@ -1066,3 +1066,14 @@ def test_empty_accepted_audiences_list_rejects_everything(oauth2_settings):
     assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
     ok, _ = authenticate(assertion, app)
     assert ok is False
+
+
+def test_disallowed_host_header_cannot_pick_the_audience():
+    # The derived request-URL audience is only trusted when the Host header
+    # passes ALLOWED_HOSTS validation; a crafted Host must not let an attacker
+    # choose the accepted audience (the header bypasses HttpRequest.get_host).
+    app = pkj_app()
+    claims = default_claims(aud="http://evil.example/o/token/")
+    assertion = build_assertion(RSA_KEY, claims, kid="unit-rsa")
+    ok, _ = authenticate(assertion, app, headers={"HTTP_HOST": "evil.example"})
+    assert ok is False

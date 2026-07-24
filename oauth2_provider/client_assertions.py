@@ -26,8 +26,10 @@ import secrets
 import time
 from urllib.parse import urlparse
 
+from django.conf import settings as django_settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
+from django.http.request import split_domain_port, validate_host
 from jwcrypto import jwk, jws, jwt
 from jwcrypto.common import JWException, base64url_encode
 
@@ -291,11 +293,26 @@ def _accepted_audiences(request):
         # refuses; the request-URL audience below still applies.
         log.debug("Could not derive an issuer audience for client assertions", exc_info=True)
     host = _request_host(request.headers)
-    if host:
+    if host and _host_is_allowed(host):
         scheme = "https" if request.headers.get("X_DJANGO_OAUTH_TOOLKIT_SECURE") else "http"
         path = urlparse(request.uri or "").path
         accepted.add(_normalize_audience(f"{scheme}://{host}{path}"))
     return accepted
+
+
+def _host_is_allowed(host):
+    """Validate *host* against ALLOWED_HOSTS before trusting it as an audience.
+
+    The header is read straight from the oauthlib request, bypassing
+    HttpRequest.get_host(), so an attacker could otherwise pick the derived
+    audience with a crafted Host header. Mirrors get_host(): with DEBUG on and
+    ALLOWED_HOSTS empty, the localhost variants are permitted.
+    """
+    allowed_hosts = django_settings.ALLOWED_HOSTS
+    if django_settings.DEBUG and not allowed_hosts:
+        allowed_hosts = [".localhost", "127.0.0.1", "[::1]"]
+    domain, _port = split_domain_port(host)
+    return bool(domain) and validate_host(domain, allowed_hosts)
 
 
 def _request_host(headers):
