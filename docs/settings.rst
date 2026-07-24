@@ -303,6 +303,16 @@ ERROR_RESPONSE_WITH_SCOPES
 When authorization fails due to insufficient scopes include the required scopes in the response.
 Only applicable when used with `Django REST Framework <http://django-rest-framework.org/>`_
 
+VALIDATE_JWT_ACCESS_TOKENS
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When acting as a resource server, validate incoming RFC 9068 ``at+jwt`` access tokens locally
+(signature and claims) against the configured RSA signing keys, instead of a database or
+introspection lookup. Only asymmetric (``RS256``) tokens are validated this way. Because such
+tokens are accepted on their signature and ``exp`` rather than a live database record, revocation
+before expiry does not apply to them. See :doc:`jwt_access_tokens`.
+
 RESOURCE_SERVER_INTROSPECTION_URL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The introspection endpoint for validating token remotely (RFC7662). This URL requires either an authorization

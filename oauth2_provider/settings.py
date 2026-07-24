@@ -90,6 +90,12 @@ DEFAULTS = {
     "OIDC_RSA_PRIVATE_KEY": "",
     "OIDC_RSA_PRIVATE_KEYS_INACTIVE": [],
     "OIDC_JWKS_MAX_AGE_SECONDS": 3600,
+    # RFC 9068: when acting as a resource server, validate incoming "at+jwt" access
+    # tokens locally (signature + claims) against the RSA signing keys, instead of a
+    # database/introspection lookup. Only asymmetric (RS256) tokens are validated this
+    # way. Opt-in: enabling it means such tokens are accepted on signature and expiry,
+    # not on a live database record, so revocation before ``exp`` no longer applies.
+    "VALIDATE_JWT_ACCESS_TOKENS": False,
     "OIDC_RESPONSE_TYPES_SUPPORTED": [
         "code",
         "token",

@@ -67,15 +67,46 @@ can select it from the JWKS.
 Validating tokens as a resource server
 --------------------------------------
 
-A resource server validates an ``at+jwt`` token per RFC 9068 §4: confirm the
-header ``typ`` is ``at+jwt``, reject ``alg: none``, verify the signature using the
-authorization server's keys published at the :doc:`JWKS endpoint <oidc>`
-(``jwks_uri``), and check that ``iss`` matches the expected issuer, ``aud``
-contains the resource server's identifier, and the current time is before ``exp``.
+The issued JWT is still stored as a normal ``AccessToken`` row, so for an
+authorization server co-located with its resource server, token revocation and the
+introspection endpoint keep working unchanged — an ``at+jwt`` is validated by the
+usual database lookup.
 
-The issued JWT is still stored as a normal ``AccessToken`` row, so token
-revocation and the introspection endpoint continue to work unchanged for
-authorization servers that co-locate with their resource servers.
+For a resource server that validates tokens *locally* (RFC 9068 §4) — without a
+database record or an introspection round trip — enable
+``VALIDATE_JWT_ACCESS_TOKENS``::
+
+    OAUTH2_PROVIDER = {
+        # ...
+        "VALIDATE_JWT_ACCESS_TOKENS": True,
+    }
+
+When on, a presented bearer token that is not found locally is validated as an
+``at+jwt`` per RFC 9068 §4: the header ``typ`` must be ``at+jwt`` and ``alg`` must
+be ``RS256`` (``none`` is rejected); the signature is verified against the server's
+configured RSA keys (``OIDC_RSA_PRIVATE_KEY`` and
+``OIDC_RSA_PRIVATE_KEYS_INACTIVE`` — the same keys published at the
+:doc:`JWKS endpoint <oidc>`); the ``iss`` claim must exactly match the issuer; and
+the current time must be before ``exp``. A token carrying RFC 8707 resource
+indicators in ``aud`` is additionally audience-checked against the request URI, as
+for opaque resource-restricted tokens.
+
+Only asymmetric (``RS256``) tokens are validated this way; ``HS256`` uses a
+per-client secret that a resource server does not hold. Because a locally validated
+token is accepted on its signature and ``exp`` rather than on a live database
+record, **revocation before expiry does not apply** to it — keep ``exp`` short.
+
+Discovery
+---------
+
+A resource server discovers what it needs to validate tokens from the server's
+metadata: the ``issuer`` to match against ``iss`` and the ``jwks_uri`` to fetch the
+signing keys. Both are published by the :doc:`OpenID Connect discovery document
+<oidc>` and by the :doc:`RFC 8414 authorization server metadata
+<oauth2_server_metadata>` endpoint (``/.well-known/oauth-authorization-server``),
+and the signing algorithms are advertised as
+``id_token_signing_alg_values_supported``. RFC 9068 does not define a dedicated
+discovery parameter for JWT access tokens.
 
 Notes
 -----

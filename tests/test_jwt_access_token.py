@@ -7,16 +7,45 @@ token) carrying the RFC 9068 claim set, signed with the application's algorithm.
 """
 
 import json
+import uuid
+from datetime import timedelta
 
 import pytest
 from django.core.exceptions import ValidationError
 from django.urls import reverse
-from jwcrypto import jws, jwt
+from django.utils import dateformat, timezone
+from jwcrypto import jwk, jws, jwt
+from oauthlib.common import Request as OauthlibRequest
 
 from oauth2_provider.models import get_access_token_model, get_application_model
+from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets
 from .conftest import CLEARTEXT_SECRET
+
+
+def make_at_jwt(key, claims, typ="at+jwt", alg="RS256"):
+    """Mint a signed JWT with an arbitrary header/claims for resource-server tests."""
+    header = {"typ": typ, "alg": alg, "kid": key.thumbprint()}
+    token = jwt.JWT(header=json.dumps(header), claims=json.dumps(claims))
+    token.make_signed_token(key)
+    return token.serialize()
+
+
+def at_jwt_claims(client_id, **overrides):
+    now = timezone.now()
+    claims = {
+        "iss": "http://localhost/o",
+        "exp": int(dateformat.format(now + timedelta(seconds=3600), "U")),
+        "iat": int(dateformat.format(now, "U")),
+        "aud": client_id,
+        "sub": client_id,
+        "client_id": client_id,
+        "jti": str(uuid.uuid4()),
+        "scope": "read",
+    }
+    claims.update(overrides)
+    return claims
 
 
 Application = get_application_model()
@@ -211,3 +240,85 @@ def test_clean_rejects_jwt_without_signing_algorithm():
     )
     with pytest.raises(ValidationError):
         app.clean()
+
+
+# --- Resource-server side: RFC 9068 §4 local validation ---------------------------
+
+
+def test_stateless_validation_accepts_issued_token(oauth2_settings, cc_application, client):
+    """With VALIDATE_JWT_ACCESS_TOKENS on, an at+jwt validates locally without a DB row."""
+    oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+    oauth2_settings.VALIDATE_JWT_ACCESS_TOKENS = True
+
+    token = client_credentials_token(client, cc_application, scope="read")["access_token"]
+    # Drop all local rows so validation must go through the stateless JWT path.
+    AccessToken.objects.all().delete()
+
+    validator = OAuth2Validator()
+    request = OauthlibRequest("http://testserver/resource")
+    assert validator.validate_bearer_token(token, ["read"], request) is True
+    assert request.access_token.scope == "read"
+    assert request.client.client_id == cc_application.client_id
+
+
+def test_stateless_validation_off_by_default(oauth2_settings, cc_application, client):
+    """Without the opt-in, a token with no DB row is rejected (no stateless acceptance)."""
+    oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+    token = client_credentials_token(client, cc_application, scope="read")["access_token"]
+    AccessToken.objects.all().delete()
+
+    validator = OAuth2Validator()
+    request = OauthlibRequest("http://testserver/resource")
+    assert validator.validate_bearer_token(token, ["read"], request) is False
+
+
+def test_stateless_validation_rejects_id_token(oauth2_settings, cc_application, oidc_key):
+    """An OIDC id_token (typ "JWT") must not be accepted as an access token (§2.1/§5)."""
+    oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+    oauth2_settings.VALIDATE_JWT_ACCESS_TOKENS = True
+    id_token_like = make_at_jwt(oidc_key, at_jwt_claims(cc_application.client_id), typ="JWT")
+
+    validator = OAuth2Validator()
+    request = OauthlibRequest("http://testserver/resource")
+    assert validator._load_jwt_access_token(id_token_like, request) is None
+
+
+def test_stateless_validation_rejects_wrong_issuer(oauth2_settings, cc_application, oidc_key):
+    """RFC 9068 §4: a token whose iss does not match the expected issuer is rejected."""
+    oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+    oauth2_settings.VALIDATE_JWT_ACCESS_TOKENS = True
+    claims = at_jwt_claims(cc_application.client_id, iss="http://evil.example/")
+    token = make_at_jwt(oidc_key, claims)
+
+    validator = OAuth2Validator()
+    request = OauthlibRequest("http://testserver/resource")
+    assert validator._load_jwt_access_token(token, request) is None
+
+
+def test_stateless_validation_rejects_foreign_signature(oauth2_settings, cc_application):
+    """A token signed by a key the server doesn't publish fails signature verification."""
+    oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+    oauth2_settings.VALIDATE_JWT_ACCESS_TOKENS = True
+    foreign_key = jwk.JWK.generate(kty="RSA", size=2048)
+    token = make_at_jwt(foreign_key, at_jwt_claims(cc_application.client_id))
+
+    validator = OAuth2Validator()
+    request = OauthlibRequest("http://testserver/resource")
+    assert validator._load_jwt_access_token(token, request) is None
+
+
+# --- Discovery metadata (RFC 9068 §4 references RFC 8414 jwks_uri + issuer) --------
+
+
+def test_discovery_advertises_jwks_and_issuer(oauth2_settings, client):
+    """Resource servers discover the keys/issuer needed to validate at+jwt tokens."""
+    oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+
+    oidc = client.get(reverse("oauth2_provider:oidc-connect-discovery-info")).json()
+    assert oidc["issuer"] == "http://localhost/o"
+    assert oidc["jwks_uri"].endswith("/.well-known/jwks.json")
+    assert Application.RS256_ALGORITHM in oidc["id_token_signing_alg_values_supported"]
+
+    rfc8414 = client.get(reverse("oauth2_provider:oauth-server-metadata")).json()
+    assert rfc8414["issuer"]
+    assert rfc8414["jwks_uri"].endswith("/.well-known/jwks.json")
