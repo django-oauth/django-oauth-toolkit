@@ -13,138 +13,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Fixed -->
 <!-- ### Security -->
 
-## [unreleased]
+## [3.4.0] - 2026-07-23
 
-### Added
-* #1373 Integration and docs for Django Ninja authentication
-* #1546 Support for RP-Initiated Registration
-* #1099 Add RFC 8414 OAuth 2.0 Authorization Server Metadata endpoint (`/.well-known/oauth-authorization-server`)
-* Add RFC 9728 OAuth 2.0 Protected Resource Metadata endpoint (`/.well-known/oauth-protected-resource`), plus opt-in
-  mixins/decorators (`ProtectedResourceMetadataMixin`, `protected_resource_metadata`) and a DRF authenticator
-  (`OAuth2ProtectedResourceAuthentication`) that advertise it via the `resource_metadata` `WWW-Authenticate` challenge parameter
-* #1635 Dynamic help text on the application form's `client_secret` field, warning users to copy the
-  secret on creation and explaining it is hashed and unrecoverable when editing.
-* #670 Dynamic Client Registration Protocol (RFC 7591 / RFC 7592) — `DynamicClientRegistrationView` and
-  `DynamicClientRegistrationManagementView` with configurable permission classes and registration access
-  tokens. Dynamically registered applications are flagged with `AbstractApplication.registration_source`
-  set to `"dcr"` and can be filtered in the Django admin.
-* #1739 `ALLOW_LOCALHOST_LOOPBACK` setting to extend the RFC 8252 §7.3 any-port loopback exemption to `http://localhost` redirect URIs (opt-in, default `False`)
-* #1742 Support for OAuth Client ID Metadata Documents (CIMD,
-  `draft-ietf-oauth-client-id-metadata-document`). A client may present an `https` URL as its
-  `client_id`; when `CIMD_ENABLED` is on the server fetches, validates and persists the metadata
-  document as a public application (SSRF-hardened fetch, failure backoff and an in-flight fetch cap).
-  Applications resolved this way carry `AbstractApplication.registration_source` set to `"cimd"`.
-  Registration can be gated with `CIMD_REGISTRATION_PERMISSION_CLASSES` (default allow-all;
-  `HostAllowlistCIMDPermission` restricts it to `CIMD_ALLOWED_HOSTS`), and the
-  `clearcimdapplications` management command prunes expired CIMD applications that hold no live
-  tokens. See `docs/cimd.rst`.
-* #1751 Advertise the Dynamic Client Registration endpoint as `registration_endpoint` in the RFC 8414
-  authorization server metadata document when `DCR_ENABLED` is on
-* #1626 RFC 8707 "Resource Indicators" support
-  - clients can optionally specify `resource` parameter during authorization or access token requests
-  - Resource binding stored in Grant, AccessToken and RefreshToken models
-  - Token introspection endpoint returns `aud` claim for tokens with resource indicators
-* [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700) (OAuth 2.0 Security Best Current Practice) compliance
-  gates, each controlled by a `COMPLIANT_BCP_RFC9700_<topic>` setting that defaults to `False` (current behavior,
-  warns when the discouraged behavior is used) and is scheduled to default to `True` in 4.0 (enforces the
-  compliant behavior): `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` (§2.1.2),
-  `COMPLIANT_BCP_RFC9700_PASSWORD_GRANT` (§2.4), `COMPLIANT_BCP_RFC9700_PKCE_METHOD` (§2.1.1),
-  `COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT` (§4.3.2), `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS` (§4.4),
-  and `COMPLIANT_BCP_RFC9700_TOKEN_STORAGE` (§4). Enforced behaviors are also removed from the RFC 8414
-  authorization-server metadata and the OIDC discovery document, so both stay consistent with what the
-  server accepts.
-* [RFC 9207](https://datatracker.ietf.org/doc/html/rfc9207) `iss` authorization-response parameter and the
-  `authorization_response_iss_parameter_supported` metadata field (mix-up defense), gated by
-  `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`.
-* Config-validation gates for the RFC 9700 recommendations expressed through existing settings (the settings stay
-  canonical; the gate only sets validation severity — insecure value → check Warning while the gate is `False`,
-  check Error once it is `True`): `COMPLIANT_BCP_RFC9700_REFRESH_TOKEN`
-  (`REFRESH_TOKEN_REUSE_PROTECTION`, §4.14.2), `COMPLIANT_BCP_RFC9700_REDIRECT_URI_SCHEME`
-  (`ALLOWED_REDIRECT_URI_SCHEMES`, §2.1), `COMPLIANT_BCP_RFC9700_REDIRECT_URI_MATCHING`
-  (`ALLOW_URI_WILDCARDS`, §4.1.1), and `COMPLIANT_BCP_RFC9700_PKCE_REQUIRED` (`PKCE_REQUIRED`, §2.1.1).
-* A `--deploy` security system check that flags every RFC 9700 recommendation currently on a non-compliant value
-  (warnings `oauth2_provider.W001`–`W010`, errors `oauth2_provider.E002`–`E005` when the corresponding
-  config-validation gate is enabled), plus an error (`oauth2_provider.E001`) for the incompatible combination of
-  hashed token storage and a non-zero `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`.
-* New `docs/security.rst` page mapping each RFC 9700 recommendation to the corresponding setting. The demo IdP
-  exposes every gate as an `OAUTH2_PROVIDER_COMPLIANT_BCP_RFC9700_*` environment variable so the Docker image and the
-  e2e suite can exercise both gate positions.
-* #1660 Extract the `HttpRequest` creation in `OAuth2Validator.validate_user` into an overridable
-  `build_http_request` method, so subclasses can pass extra attributes through to their authentication backends.
+The headline of this release is first-class support for the **Model Context Protocol (MCP)**
+authorization server role.
+MCP's authorization spec is built on a stack of modern OAuth RFCs,
+and this cycle landed the whole stack: Authorization Server Metadata (RFC 8414) and Protected
+Resource Metadata (RFC 9728) for discovery, Dynamic Client Registration (RFC 7591 / RFC 7592) and
+OAuth Client ID Metadata Documents (CIMD) so clients can register themselves, Resource Indicators
+(RFC 8707) for audience-bound access tokens, and the OAuth 2.0 Security Best Current Practice
+(RFC 9700) together with the RFC 9207 `iss` parameter. The RFC 9700 compliance gates double as a
+configurable **OAuth 2.1 security posture** — they can reject the implicit and password grants and
+enforce S256-only PKCE (legacy behavior by default in 3.4, scheduled to flip to compliant in 4.0).
+The new `ALLOW_LOCALHOST_LOOPBACK` setting smooths the ephemeral-port loopback callback used by
+native clients such as Claude Code, MCP Inspector, and mcp-remote.
 
-### Deprecated
-* Using the OAuth 2.0 implicit grant, the resource owner password credentials grant, the PKCE `plain`
-  `code_challenge_method`, or an access token in the URI query string now emits a `DeprecationWarning`, per
-  [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700). Each is gated by the corresponding
-  `COMPLIANT_BCP_RFC9700_*` setting, whose default is scheduled to flip to `True` (enforcing rejection) in 4.0.
+Beyond MCP, the release adds a **Django Ninja** integration alongside the existing DRF support and
+support for RP-Initiated Registration, lifts the 255-character cap on refresh tokens (mirroring the
+access-token checksum scheme), makes `cleartokens` reclaim revoked refresh tokens sooner, and
+harmonizes Bearer `Authorization` header parsing across the middleware.
 
-### Changed
-* Replaced the unreleased `AbstractApplication.dcr_created` `BooleanField` (added in #670) with a
-  `registration_source` `CharField` enum (`AbstractApplication.RegistrationSource`, values `manual`,
-  `dcr`, `cimd`; default `manual`). This records client provenance as a single value instead of
-  accumulating one boolean per registration mechanism. `dcr_created=True` becomes
-  `registration_source="dcr"`. As `dcr_created` was never released (latest tag is 3.3.0), the change
-  ships with no deprecation.
-* The dynamic `client_secret` help text (added in #1635) is now shared by the Django admin
-  application form as well as the front-end register/edit views. The `ApplicationAdmin` uses
-  `ApplicationForm`, and a shared `oauth2_provider/js/application_form.js` updates the help text
-  live as the `hash_client_secret` checkbox is toggled on either surface. The application form
-  (admin and front-end) also warns immediately when the `HS256` algorithm is selected while the
-  client secret is — or will be — hashed, instead of only surfacing the error on save.
+It also carries a **batch of security fixes**: an unauthenticated open redirect from the
+authorization endpoint (`prompt=none`), HS256 ID tokens being signed with the *hashed* client
+secret, cleartext tokens and codes exposed in the Django admin, client secrets written to debug
+logs, and predictable device-flow `user_code` generation. Longstanding operational bugs are fixed
+too, including a multi-database `migrate` deadlock (#1591) and duplicate unique indexes that broke
+fresh installs on Oracle and strict MySQL (#1656).
 
-### Fixed
-* #1619 Accept wildcard `redirect_uris` whose hostname uses the double-dash form required for
-  Netlify deploy-preview URLs (`https://*--sitename.netlify.app`). The validator previously stripped
-  only a single leading hyphen after removing the `*`, leaving a hostname that began with `-` and was
-  rejected by `URIValidator`; it now strips up to two leading hyphens while rejecting longer runs.
-* #694 `ReadWriteScopedResourceMixin.__new__()` no longer forwards positional/keyword arguments to
-  `object.__new__()`, which raised `TypeError: object.__new__() takes exactly one argument` when
-  instantiating any view mixing this in with any argument at all — notably breaking Django REST
-  Framework's `cls(**initkwargs)` view instantiation.
-* #1006 A `client_id` or `username` containing a NUL (`\x00`) byte no longer causes a 500 error
-  on database backends (e.g. PostgreSQL) that raise `ValueError` instead of executing the query;
-  such values are now correctly treated as not matching any client/user.
-
-### Security
-* Generate device-flow `user_code` values with the cryptographically secure `secrets` module
-  instead of the predictable `random` module (Mersenne Twister). The `user_code` is a device
-  authorization credential and must be unguessable per
-  [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628) sections 5.1 and 5.2.
-* Stop writing client secrets to the logs. On a failed client authentication, the `OAuth2Validator`
-  logged the submitted `client_secret` (and, for Basic auth, the base64 `client_id:client_secret`
-  credential string) at `DEBUG` level. These messages now log at most the `client_id` (when it is
-  available; the base64/unicode decode-failure paths log a generic message with no credential), so
-  password-equivalent client secrets and raw credential strings no longer leak into log files or
-  aggregators.
-* Stop exposing cleartext access tokens, refresh tokens, and authorization codes in the Django
-  admin. The default `AccessTokenAdmin`, `RefreshTokenAdmin`, and `GrantAdmin` classes listed the
-  raw `token`/`code` in `list_display` and included them in `search_fields`. Because these values
-  are stored in cleartext, any staff user with view access saw replayable credentials, and
-  searching placed them in the `?q=` query string (captured by access logs and browser history).
-  The columns are now masked (last characters only) and are no longer searchable (search is
-  available by application and user instead). The raw `token`/`code` field is also excluded from
-  the admin change/view form, which showed the editable cleartext field to any staff user with view
-  access; a masked read-only value is shown instead. Adding tokens/codes through the admin is now
-  disabled (`has_add_permission` returns `False` on the `AccessToken`, `RefreshToken`, `Grant`, and
-  `IDToken` admins) — these are issued by the OAuth flows and are not meant to be hand-created, and
-  the add form would otherwise present an editable cleartext field. Relatedly, the `AccessToken`,
-  `RefreshToken`, and `Grant` model `__str__` methods no longer return the raw token/code (which the
-  admin renders in a row's change-page title and breadcrumbs, and which also appears in `repr()` and
-  logs); they now return a `"<Model> #<pk>"` identifier.
-* Fix HS256-signed ID tokens being signed with the *hashed* client secret. When an application
-  used the `HS256` algorithm with `hash_client_secret=True` (the default), the ID token was signed
-  with the stored password-hash string as the HMAC key instead of the shared client secret, so a
-  relying party holding the real (plaintext) secret could never verify the signature — and a
-  password hash was misused as a MAC key. `HS256` now requires `hash_client_secret=False`:
-  `Application.clean()` rejects the combination, and `jwk_key` raises `ImproperlyConfigured`
-  rather than emit an unverifiable token. `HS256` with an empty client secret is likewise rejected
-  (an empty HMAC key would make ID tokens trivially forgeable). See the breaking-changes note below.
-* Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
-  an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
-  *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's
-  browser to an arbitrary origin. The request is now validated against a registered client before any
-  redirect, per [OpenID Connect Core 1.0 section 3.1.2.6](https://openid.net/specs/openid-connect-core-1_0.html#AuthError).
-  Reported by Brian Lee (SSLab, Georgia Tech).
+**Before upgrading**, read the breaking-changes section below: most items are `makemigrations`
+steps for swapped models, but applications using the `HS256` signing algorithm now require
+`hash_client_secret=False`.
 
 ### WARNING - POTENTIAL BREAKING CHANGES
 * Applications using the `HS256` signing algorithm must now be configured with
@@ -199,6 +97,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `YourAccessToken.objects.filter(token_checksum__isnull=True).exists()`. Installs that already
   applied `0012` (any 3.x deployment) are unaffected.
 
+### Added
+* #1373 Integration and docs for Django Ninja authentication
+* #1546 Support for RP-Initiated Registration
+* #1099 Add RFC 8414 OAuth 2.0 Authorization Server Metadata endpoint (`/.well-known/oauth-authorization-server`)
+* #1743 Add RFC 9728 OAuth 2.0 Protected Resource Metadata endpoint (`/.well-known/oauth-protected-resource`), plus opt-in
+  mixins/decorators (`ProtectedResourceMetadataMixin`, `protected_resource_metadata`) and a DRF authenticator
+  (`OAuth2ProtectedResourceAuthentication`) that advertise it via the `resource_metadata` `WWW-Authenticate` challenge parameter
+* #1635 Dynamic help text on the application `client_secret` field, warning users to copy the
+  secret on creation and explaining it is hashed and unrecoverable when editing. The help text is
+  shared by both the Django admin application form and the front-end register/edit views: the
+  `ApplicationAdmin` uses `ApplicationForm`, and a shared `oauth2_provider/js/application_form.js`
+  updates the text live as the `hash_client_secret` checkbox is toggled on either surface. The
+  form also warns immediately when the `HS256` algorithm is selected while the client secret is —
+  or will be — hashed, instead of only surfacing the error on save. (#1697, #1740)
+* #670 Dynamic Client Registration Protocol (RFC 7591 / RFC 7592) — `DynamicClientRegistrationView` and
+  `DynamicClientRegistrationManagementView` with configurable permission classes and registration access
+  tokens. Dynamically registered applications are flagged with `AbstractApplication.registration_source`
+  set to `"dcr"` and can be filtered in the Django admin.
+* #1739 `ALLOW_LOCALHOST_LOOPBACK` setting to extend the RFC 8252 §7.3 any-port loopback exemption to `http://localhost` redirect URIs (opt-in, default `False`)
+* #1742 Support for OAuth Client ID Metadata Documents (CIMD,
+  `draft-ietf-oauth-client-id-metadata-document`). A client may present an `https` URL as its
+  `client_id`; when `CIMD_ENABLED` is on the server fetches, validates and persists the metadata
+  document as a public application (SSRF-hardened fetch, failure backoff and an in-flight fetch cap).
+  Applications resolved this way carry `AbstractApplication.registration_source` set to `"cimd"`.
+  Registration can be gated with `CIMD_REGISTRATION_PERMISSION_CLASSES` (default allow-all;
+  `HostAllowlistCIMDPermission` restricts it to `CIMD_ALLOWED_HOSTS`), and the
+  `clearcimdapplications` management command prunes expired CIMD applications that hold no live
+  tokens. See `docs/cimd.rst`.
+* #1751 Advertise the Dynamic Client Registration endpoint as `registration_endpoint` in the RFC 8414
+  authorization server metadata document when `DCR_ENABLED` is on
+* #1626 RFC 8707 "Resource Indicators" support
+  - clients can optionally specify `resource` parameter during authorization or access token requests
+  - Resource binding stored in Grant, AccessToken and RefreshToken models
+  - Token introspection endpoint returns `aud` claim for tokens with resource indicators
+* #1749 [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700) (OAuth 2.0 Security Best Current Practice) compliance
+  gates, each controlled by a `COMPLIANT_BCP_RFC9700_<topic>` setting that defaults to `False` (current behavior,
+  warns when the discouraged behavior is used) and is scheduled to default to `True` in 4.0 (enforces the
+  compliant behavior): `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` (§2.1.2),
+  `COMPLIANT_BCP_RFC9700_PASSWORD_GRANT` (§2.4), `COMPLIANT_BCP_RFC9700_PKCE_METHOD` (§2.1.1),
+  `COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT` (§4.3.2), `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS` (§4.4),
+  and `COMPLIANT_BCP_RFC9700_TOKEN_STORAGE` (§4). Enforced behaviors are also removed from the RFC 8414
+  authorization-server metadata and the OIDC discovery document, so both stay consistent with what the
+  server accepts.
+* #1749 [RFC 9207](https://datatracker.ietf.org/doc/html/rfc9207) `iss` authorization-response parameter and the
+  `authorization_response_iss_parameter_supported` metadata field (mix-up defense), gated by
+  `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`.
+* #1749 Config-validation gates for the RFC 9700 recommendations expressed through existing settings (the settings stay
+  canonical; the gate only sets validation severity — insecure value → check Warning while the gate is `False`,
+  check Error once it is `True`): `COMPLIANT_BCP_RFC9700_REFRESH_TOKEN`
+  (`REFRESH_TOKEN_REUSE_PROTECTION`, §4.14.2), `COMPLIANT_BCP_RFC9700_REDIRECT_URI_SCHEME`
+  (`ALLOWED_REDIRECT_URI_SCHEMES`, §2.1), `COMPLIANT_BCP_RFC9700_REDIRECT_URI_MATCHING`
+  (`ALLOW_URI_WILDCARDS`, §4.1.1), and `COMPLIANT_BCP_RFC9700_PKCE_REQUIRED` (`PKCE_REQUIRED`, §2.1.1).
+* #1749 A `--deploy` security system check that flags every RFC 9700 recommendation currently on a non-compliant value
+  (warnings `oauth2_provider.W001`–`W010`, errors `oauth2_provider.E002`–`E005` when the corresponding
+  config-validation gate is enabled), plus an error (`oauth2_provider.E001`) for the incompatible combination of
+  hashed token storage and a non-zero `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`.
+* #1749 New `docs/security.rst` page mapping each RFC 9700 recommendation to the corresponding setting. The demo IdP
+  exposes every gate as an `OAUTH2_PROVIDER_COMPLIANT_BCP_RFC9700_*` environment variable so the Docker image and the
+  e2e suite can exercise both gate positions.
+* #1660 Extract the `HttpRequest` creation in `OAuth2Validator.validate_user` into an overridable
+  `build_http_request` method, so subclasses can pass extra attributes through to their authentication backends.
+
 ### Changed
 * #1732 Bearer `Authorization` header parsing is now harmonized across the codebase via a shared
   `oauth2_provider.utils.parse_bearer_token` helper implementing RFC 7235 / RFC 6750 semantics.
@@ -222,13 +182,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tokens. See the warning above if you use a swapped access token model.
 
 ### Deprecated
-* Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
+* #1749 Using the OAuth 2.0 implicit grant, the resource owner password credentials grant, the PKCE `plain`
+  `code_challenge_method`, or an access token in the URI query string now emits a `DeprecationWarning`, per
+  [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700). Each is gated by the corresponding
+  `COMPLIANT_BCP_RFC9700_*` setting, whose default is scheduled to flip to `True` (enforcing rejection) in 4.0.
+* #1700 Deprecate the `AUTHENTICATION_SERVER_EXP_TIME_ZONE` setting. Token introspection `exp` values are
   Unix timestamps and are always interpreted as UTC per RFC 7662/RFC 7519. The setting still works
   for backwards compatibility but now emits a `DeprecationWarning` and will be removed in a future
   release.
 
 ### Fixed
-* Fix the `rw_protected_resource` decorator accumulating the read/write scope on a shared list
+* #1619 Accept wildcard `redirect_uris` whose hostname uses the double-dash form required for
+  Netlify deploy-preview URLs (`https://*--sitename.netlify.app`). The validator previously stripped
+  only a single leading hyphen after removing the `*`, leaving a hostname that began with `-` and was
+  rejected by `URIValidator`; it now strips up to two leading hyphens while rejecting longer runs.
+* #694 `ReadWriteScopedResourceMixin.__new__()` no longer forwards positional/keyword arguments to
+  `object.__new__()`, which raised `TypeError: object.__new__() takes exactly one argument` when
+  instantiating any view mixing this in with any argument at all — notably breaking Django REST
+  Framework's `cls(**initkwargs)` view instantiation.
+* #1006 A `client_id` or `username` containing a NUL (`\x00`) byte no longer causes a 500 error
+  on database backends (e.g. PostgreSQL) that raise `ValueError` instead of executing the query;
+  such values are now correctly treated as not matching any client/user.
+* #1738 Fix the `rw_protected_resource` decorator accumulating the read/write scope on a shared list
   across requests. The required-scope list was built once at decoration time and appended to on
   every request, so after a write (`POST`) request the `write` scope stayed in the list and a
   subsequent read (`GET`) request with a read-only token was wrongly rejected. The behaviour was
@@ -259,6 +234,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs. Databases that already applied the old `0013` keep one harmless extra unique index;
   it can optionally be dropped by hand. Thanks to Febin Micheal Antony (#1659) and
   moscowmule2240 (#1718) for the fixes.
+
+### Security
+* #1734 Generate device-flow `user_code` values with the cryptographically secure `secrets` module
+  instead of the predictable `random` module (Mersenne Twister). The `user_code` is a device
+  authorization credential and must be unguessable per
+  [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628) sections 5.1 and 5.2.
+* #1735 Stop writing client secrets to the logs. On a failed client authentication, the `OAuth2Validator`
+  logged the submitted `client_secret` (and, for Basic auth, the base64 `client_id:client_secret`
+  credential string) at `DEBUG` level. These messages now log at most the `client_id` (when it is
+  available; the base64/unicode decode-failure paths log a generic message with no credential), so
+  password-equivalent client secrets and raw credential strings no longer leak into log files or
+  aggregators.
+* #1736 Stop exposing cleartext access tokens, refresh tokens, and authorization codes in the Django
+  admin. The default `AccessTokenAdmin`, `RefreshTokenAdmin`, and `GrantAdmin` classes listed the
+  raw `token`/`code` in `list_display` and included them in `search_fields`. Because these values
+  are stored in cleartext, any staff user with view access saw replayable credentials, and
+  searching placed them in the `?q=` query string (captured by access logs and browser history).
+  The columns are now masked (last characters only) and are no longer searchable (search is
+  available by application and user instead). The raw `token`/`code` field is also excluded from
+  the admin change/view form, which showed the editable cleartext field to any staff user with view
+  access; a masked read-only value is shown instead. Adding tokens/codes through the admin is now
+  disabled (`has_add_permission` returns `False` on the `AccessToken`, `RefreshToken`, `Grant`, and
+  `IDToken` admins) — these are issued by the OAuth flows and are not meant to be hand-created, and
+  the add form would otherwise present an editable cleartext field. Relatedly, the `AccessToken`,
+  `RefreshToken`, and `Grant` model `__str__` methods no longer return the raw token/code (which the
+  admin renders in a row's change-page title and breadcrumbs, and which also appears in `repr()` and
+  logs); they now return a `"<Model> #<pk>"` identifier.
+* #1737 Fix HS256-signed ID tokens being signed with the *hashed* client secret. When an application
+  used the `HS256` algorithm with `hash_client_secret=True` (the default), the ID token was signed
+  with the stored password-hash string as the HMAC key instead of the shared client secret, so a
+  relying party holding the real (plaintext) secret could never verify the signature — and a
+  password hash was misused as a MAC key. `HS256` now requires `hash_client_secret=False`:
+  `Application.clean()` rejects the combination, and `jwk_key` raises `ImproperlyConfigured`
+  rather than emit an unverifiable token. `HS256` with an empty client secret is likewise rejected
+  (an empty HMAC key would make ID tokens trivially forgeable). See the breaking-changes note above.
+* #1719 Fix an unauthenticated open redirect from the authorization endpoint. A `prompt=none` request from
+  an unauthenticated user was redirected to the supplied `redirect_uri` with a `login_required` error
+  *before* the client and `redirect_uri` were validated, allowing an attacker to redirect a victim's
+  browser to an arbitrary origin. The request is now validated against a registered client before any
+  redirect, per [OpenID Connect Core 1.0 section 3.1.2.6](https://openid.net/specs/openid-connect-core-1_0.html#AuthError).
+  Reported by Brian Lee (SSLab, Georgia Tech).
 
 ## [3.3.0] - 2025-05-21
 
