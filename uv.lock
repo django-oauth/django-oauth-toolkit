@@ -495,8 +495,7 @@ dev = [
     { name = "coverage" },
     { name = "django-ninja" },
     { name = "djangorestframework" },
-    { name = "m2r" },
-    { name = "mistune" },
+    { name = "m2r2" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-django" },
@@ -507,8 +506,7 @@ dev = [
     { name = "sphinx-rtd-theme" },
 ]
 docs = [
-    { name = "m2r" },
-    { name = "mistune" },
+    { name = "m2r2" },
     { name = "sphinx" },
     { name = "sphinx-rtd-theme" },
 ]
@@ -533,10 +531,8 @@ requires-dist = [
     { name = "djangorestframework", marker = "extra == 'dev'" },
     { name = "djangorestframework", marker = "extra == 'test'" },
     { name = "jwcrypto", specifier = ">=1.5.0" },
-    { name = "m2r", marker = "extra == 'dev'", specifier = ">=0.2.1" },
-    { name = "m2r", marker = "extra == 'docs'", specifier = ">=0.2.1" },
-    { name = "mistune", marker = "extra == 'dev'", specifier = "<2" },
-    { name = "mistune", marker = "extra == 'docs'", specifier = "<2" },
+    { name = "m2r2", marker = "extra == 'dev'", specifier = ">=0.3.4" },
+    { name = "m2r2", marker = "extra == 'docs'", specifier = ">=0.3.4" },
     { name = "oauthlib", specifier = ">=3.3.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'test'" },
@@ -552,8 +548,8 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "sphinx", marker = "extra == 'dev'", specifier = "==7.2.6" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = "==7.2.6" },
-    { name = "sphinx-rtd-theme", marker = "extra == 'dev'", specifier = "==1.3.0" },
-    { name = "sphinx-rtd-theme", marker = "extra == 'docs'", specifier = "==1.3.0" },
+    { name = "sphinx-rtd-theme", marker = "extra == 'dev'", specifier = "==2.0.0" },
+    { name = "sphinx-rtd-theme", marker = "extra == 'docs'", specifier = "==2.0.0" },
     { name = "urllib3", specifier = ">=1.26" },
 ]
 provides-extras = ["dev", "docs", "test"]
@@ -572,11 +568,11 @@ wheels = [
 
 [[package]]
 name = "docutils"
-version = "0.18.1"
+version = "0.20.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/57/b1/b880503681ea1b64df05106fc7e3c4e3801736cf63deffc6fa7fc5404cf5/docutils-0.18.1.tar.gz", hash = "sha256:679987caf361a7539d76e584cbeddc311e3aee937877c87346f31debc63e9d06", size = 2043249, upload-time = "2021-11-23T17:49:42.043Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/53/a5da4f2c5739cf66290fac1431ee52aff6851c7c8ffd8264f13affd7bcdd/docutils-0.20.1.tar.gz", hash = "sha256:f08a4e276c3a1583a86dce3e34aba3fe04d02bba2dd51ed16106244e8a923e3b", size = 2058365, upload-time = "2023-05-16T23:39:19.748Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/14/69b4bad34e3f250afe29a854da03acb6747711f3df06c359fa053fae4e76/docutils-0.18.1-py2.py3-none-any.whl", hash = "sha256:23010f129180089fbcd3bc08cfefccb3b890b0050e1ca00c867036e9d161b98c", size = 570050, upload-time = "2021-11-23T17:49:38.556Z" },
+    { url = "https://files.pythonhosted.org/packages/26/87/f238c0670b94533ac0353a4e2a1a771a0cc73277b88bff23d3ae35a256c1/docutils-0.20.1-py3-none-any.whl", hash = "sha256:96f387a2c5562db4476f09f13bbab2192e764cac08ebbf3a34a95d9b1e4a59d6", size = 572666, upload-time = "2023-05-16T23:39:15.976Z" },
 ]
 
 [[package]]
@@ -584,7 +580,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -674,14 +670,17 @@ wheels = [
 ]
 
 [[package]]
-name = "m2r"
-version = "0.3.1"
+name = "m2r2"
+version = "0.3.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docutils" },
     { name = "mistune" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/94/65/fd40fbdc608298e760affb95869c3baed237dfe5649d62da1eaa1deca8f3/m2r-0.3.1.tar.gz", hash = "sha256:aafb67fc49cfb1d89e46a3443ac747e15f4bb42df20ed04f067ad9efbee256ab", size = 16622, upload-time = "2022-11-17T08:12:08.781Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/a9/ab03ff21972cfb2e6ea766b1dc015c2c081af70f8f956806e948c62044ba/m2r2-0.3.4.tar.gz", hash = "sha256:e278f5f337e9aa7b2080fcc3e94b051bda9615b02e36c6fb3f23ff019872f043", size = 17082, upload-time = "2025-05-01T16:55:53.244Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/50/5b1d70de548fb1e11e15ea9ebec0480365462d202f98b66ad7e154284327/m2r2-0.3.4-py3-none-any.whl", hash = "sha256:1a445514af8a229496bfb1380c52da8dd38313e48600359ee92b2c9d2e4df34a", size = 11199, upload-time = "2025-05-01T16:55:51.87Z" },
+]
 
 [[package]]
 name = "markupsafe"
@@ -1100,16 +1099,16 @@ wheels = [
 
 [[package]]
 name = "sphinx-rtd-theme"
-version = "1.3.0"
+version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docutils" },
     { name = "sphinx" },
     { name = "sphinxcontrib-jquery" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/3e/477c5b3ed78b6818d673f63512db12ace8c89e83eb9eecc913f9e2cc8416/sphinx_rtd_theme-1.3.0.tar.gz", hash = "sha256:590b030c7abb9cf038ec053b95e5380b5c70d61591eb0b552063fbe7c41f0931", size = 2785069, upload-time = "2023-08-21T18:28:35.63Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/33/2a35a9cdbfda9086bda11457bcc872173ab3565b16b6d7f6b3efaa6dc3d6/sphinx_rtd_theme-2.0.0.tar.gz", hash = "sha256:bd5d7b80622406762073a04ef8fadc5f9151261563d47027de09910ce03afe6b", size = 2785005, upload-time = "2023-11-28T04:14:03.104Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/18/01/76f40a18e9209bb098c1c1313c823dbbd001b23a2db71e7fd4eb5a48559c/sphinx_rtd_theme-1.3.0-py2.py3-none-any.whl", hash = "sha256:46ddef89cc2416a81ecfbeaceab1881948c014b1b6e4450b815311a89fb977b0", size = 2824803, upload-time = "2023-08-21T18:28:32.926Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/46/00fda84467815c29951a9c91e3ae7503c409ddad04373e7cfc78daad4300/sphinx_rtd_theme-2.0.0-py2.py3-none-any.whl", hash = "sha256:ec93d0856dc280cf3aee9a4c9807c60e027c7f7b461b77aeffed682e68f0e586", size = 2824721, upload-time = "2023-11-28T04:13:59.589Z" },
 ]
 
 [[package]]
