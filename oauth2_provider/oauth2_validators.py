@@ -938,6 +938,12 @@ class OAuth2Validator(RequestValidator):
         if request.grant_type == "client_credentials":
             request.user = None
 
+        # RFC 9068: when the application opts in, replace the opaque access token with a
+        # signed JWT ("at+jwt"). Mutating token["access_token"] here means every persistence
+        # path below - and the token response oauthlib builds from this same dict - uses it.
+        if getattr(request.client, "jwt_access_token", False):
+            token["access_token"] = self._create_jwt_access_token(token, request, expires)
+
         # This comes from OAuthLib:
         # https://github.com/idan/oauthlib/blob/1.0.3/oauthlib/oauth2/rfc6749/tokens.py#L267
         # Its value is either a new random code; or if we are reusing
@@ -1318,6 +1324,59 @@ class OAuth2Validator(RequestValidator):
 
     def get_oidc_issuer_endpoint(self, request):
         return oauth2_settings.oidc_issuer(request)
+
+    def _create_jwt_access_token(self, token, request, expires):
+        """
+        Build and sign an RFC 9068 JWT access token ("at+jwt") for ``request``.
+
+        Reuses the application's signing algorithm and key (the same infrastructure
+        used to sign OIDC ID tokens) and returns the serialized JWT string, which is
+        stored and returned in place of an opaque access token.
+        """
+        # RFC 9068 §2.2 / §5: for grants that involve a resource owner the subject is
+        # the user; for grants without one (e.g. client_credentials) it identifies the
+        # client. ``request.user`` is set to None for client_credentials earlier in
+        # ``_save_bearer_token``.
+        if request.user is None:
+            subject = request.client.client_id
+        else:
+            subject = str(request.user.pk)
+
+        # RFC 9068 §3: ``aud`` echoes the RFC 8707 ``resource`` parameter(s) when present;
+        # otherwise the authorization server MUST supply a default resource indicator, for
+        # which we use the client_id (stable and distinct per application, per §5).
+        resource = getattr(request, "resource", []) or []
+        audience = resource if resource else request.client.client_id
+
+        now = timezone.now()
+        claims = {
+            "iss": self.get_oidc_issuer_endpoint(request),
+            "exp": int(dateformat.format(expires, "U")),
+            "iat": int(dateformat.format(now, "U")),
+            "aud": audience,
+            "sub": subject,
+            "client_id": request.client.client_id,
+            "jti": str(uuid.uuid4()),
+        }
+        # RFC 9068 §2.2.3: include the granted scope when present.
+        scope = token.get("scope")
+        if scope:
+            claims["scope"] = scope
+
+        header = {
+            "typ": "at+jwt",
+            "alg": request.client.algorithm,
+        }
+        # RS256 consumers expect a kid in the header to select the verification key.
+        if request.client.algorithm == AbstractApplication.RS256_ALGORITHM:
+            header["kid"] = request.client.jwk_key.thumbprint()
+
+        jwt_token = jwt.JWT(
+            header=json.dumps(header, default=str),
+            claims=json.dumps(claims, default=str),
+        )
+        jwt_token.make_signed_token(request.client.jwk_key)
+        return jwt_token.serialize()
 
     def finalize_id_token(self, id_token, token, token_handler, request):
         claims, expiration_time = self.get_id_token_dictionary(token, token_handler, request)

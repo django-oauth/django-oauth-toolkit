@@ -43,6 +43,7 @@ Index
    advanced_topics
    security
    oidc
+   jwt_access_tokens
    oauth2_server_metadata
    protected_resource_metadata
    cimd

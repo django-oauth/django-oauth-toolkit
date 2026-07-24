@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [unreleased]
 
 ### Added
+* RFC 9068 JWT access tokens (`at+jwt`). A per-application `jwt_access_token` flag opts an
+  `Application` into signed JWT access tokens (using its `RS256`/`HS256` `algorithm` and the
+  existing OIDC signing keys) instead of opaque tokens. Tokens carry the RFC 9068 claim set
+  (`iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`, `scope`); `aud` defaults to the RFC 8707
+  `resource` value(s) or the `client_id`. Tokens remain DB-backed so introspection and revocation
+  are unchanged. See `docs/jwt_access_tokens.rst`.
 * #1373 Integration and docs for Django Ninja authentication
 * #1546 Support for RP-Initiated Registration
 * #1099 Add RFC 8414 OAuth 2.0 Authorization Server Metadata endpoint (`/.well-known/oauth-authorization-server`)
