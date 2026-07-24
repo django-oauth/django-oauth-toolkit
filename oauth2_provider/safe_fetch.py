@@ -112,7 +112,10 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
         port = parsed.port or 443
     except ValueError as exc:
         raise exc_class("URL has an invalid port") from exc
-    if parsed.username or parsed.password:
+    # Presence check, not truthiness: https://@example.com/ has an empty but
+    # present userinfo component (and would leak the "@" into the Host header
+    # via parsed.netloc).
+    if parsed.username is not None or parsed.password is not None:
         raise exc_class("URL must not contain a userinfo component")
 
     ips = resolve_and_validate(parsed.hostname, port, exc_class=exc_class)

@@ -54,6 +54,8 @@ def _patch_network(mocker, response):
         "https:///jwks.json",  # no host
         "https://example.com:99999/jwks.json",  # invalid port
         "https://user:pass@example.com/jwks.json",  # userinfo
+        "https://@example.com/jwks.json",  # empty but present userinfo
+        "https://:@example.com/jwks.json",  # empty username and password
     ],
 )
 def test_fetch_rejects_invalid_urls(url):
@@ -121,3 +123,11 @@ def test_exhausted_timeout_reports_explicit_message(mocker):
     )
     with pytest.raises(SafeFetchError, match="timeout budget exhausted"):
         fetch_https_json("https://example.com/jwks.json", timeout=0, max_size=1024)
+
+
+def test_uppercase_scheme_is_accepted(mocker):
+    # RFC 3986 schemes are case-insensitive; urlparse() lowercases the scheme,
+    # so HTTPS:// URLs pass the https-only check.
+    _patch_network(mocker, _FakeHTTPResponse(body=b'{"keys": []}'))
+    data, _ = fetch_https_json("HTTPS://example.com/jwks.json", timeout=5, max_size=1024)
+    assert data == {"keys": []}
