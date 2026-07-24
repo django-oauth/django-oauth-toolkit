@@ -1,32 +1,17 @@
-from urllib.parse import urlparse
+"""Backward-compatible import shim.
 
-from django.core.exceptions import DisallowedRedirect
-from django.http import HttpResponse
-from django.utils.encoding import iri_to_uri
+``oauth2_provider.http`` moved to ``oauth2_provider.core.http`` when the package was reorganized by
+OAuth2 role. Importing from this old path still works but is deprecated and will
+be removed in django-oauth-toolkit 4.0.
+"""
 
+import warnings
 
-class OAuth2ResponseRedirect(HttpResponse):
-    """
-    An HTTP 302 redirect with an explicit list of allowed schemes.
-    Works like django.http.HttpResponseRedirect but we customize it
-    to give us more flexibility on allowed scheme validation.
-    """
+from oauth2_provider.core.http import *  # noqa: F401,F403
 
-    status_code = 302
-
-    def __init__(self, redirect_to, allowed_schemes, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self["Location"] = iri_to_uri(redirect_to)
-        self.allowed_schemes = allowed_schemes
-        self.validate_redirect(redirect_to)
-
-    @property
-    def url(self):
-        return self["Location"]
-
-    def validate_redirect(self, redirect_to):
-        parsed = urlparse(str(redirect_to))
-        if not parsed.scheme:
-            raise DisallowedRedirect("OAuth2 redirects require a URI scheme.")
-        if parsed.scheme not in self.allowed_schemes:
-            raise DisallowedRedirect("Redirect to scheme {!r} is not permitted".format(parsed.scheme))
+warnings.warn(
+    "oauth2_provider.http has moved to oauth2_provider.core.http. The old import path is "
+    "deprecated and will be removed in django-oauth-toolkit 4.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)

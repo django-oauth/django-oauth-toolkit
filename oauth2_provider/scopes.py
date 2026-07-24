@@ -1,50 +1,17 @@
-from .settings import oauth2_settings
+"""Backward-compatible import shim.
 
+``oauth2_provider.scopes`` moved to ``oauth2_provider.core.scopes`` when the package was reorganized by
+OAuth2 role. Importing from this old path still works but is deprecated and will
+be removed in django-oauth-toolkit 4.0.
+"""
 
-class BaseScopes:
-    def get_all_scopes(self):
-        """
-        Return a dict-like object with all the scopes available in the
-        system. The key should be the scope name and the value should be
-        the description.
+import warnings
 
-        ex: {"read": "A read scope", "write": "A write scope"}
-        """
-        raise NotImplementedError("")
+from oauth2_provider.core.scopes import *  # noqa: F401,F403
 
-    def get_available_scopes(self, application=None, request=None, *args, **kwargs):
-        """
-        Return a list of scopes available for the current application/request.
-
-        TODO: add info on where and why this method is called.
-
-        ex: ["read", "write"]
-        """
-        raise NotImplementedError("")
-
-    def get_default_scopes(self, application=None, request=None, *args, **kwargs):
-        """
-        Return a list of the default scopes for the current application/request.
-        This MUST be a subset of the scopes returned by `get_available_scopes`.
-
-        TODO: add info on where and why this method is called.
-
-        ex: ["read"]
-        """
-        raise NotImplementedError("")
-
-
-class SettingsScopes(BaseScopes):
-    def get_all_scopes(self):
-        return oauth2_settings.SCOPES
-
-    def get_available_scopes(self, application=None, request=None, *args, **kwargs):
-        return oauth2_settings._SCOPES
-
-    def get_default_scopes(self, application=None, request=None, *args, **kwargs):
-        return oauth2_settings._DEFAULT_SCOPES
-
-
-def get_scopes_backend():
-    scopes_class = oauth2_settings.SCOPES_BACKEND_CLASS
-    return scopes_class()
+warnings.warn(
+    "oauth2_provider.scopes has moved to oauth2_provider.core.scopes. The old import path is "
+    "deprecated and will be removed in django-oauth-toolkit 4.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)

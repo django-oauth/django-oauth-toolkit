@@ -6,9 +6,9 @@ from oauthlib.oauth2 import Server
 
 from .oauth2_backends import OAuthLibCore
 from .oauth2_validators import OAuth2Validator
-from .scopes import get_scopes_backend
+from .core.scopes import get_scopes_backend
 from .settings import oauth2_settings
-from .www_authenticate import build_bearer_challenge, challenge_status
+from .resource_server.www_authenticate import build_bearer_challenge, challenge_status
 
 
 def _denied_response(request, oauthlib_request, advertise_metadata, resource_metadata_url=None):

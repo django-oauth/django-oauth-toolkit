@@ -22,9 +22,9 @@ from jwcrypto.common import base64url_encode
 from oauthlib.oauth2.rfc6749 import errors
 
 from .generators import generate_client_id, generate_client_secret
-from .scopes import get_scopes_backend
+from .core.scopes import get_scopes_backend
 from .settings import oauth2_settings
-from .utils import jwk_from_pem
+from .core.utils import jwk_from_pem
 from .validators import AllowedURIValidator
 
 

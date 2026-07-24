@@ -26,7 +26,7 @@ from django.urls import NoReverseMatch, reverse
 from django.utils.module_loading import import_string
 from oauthlib.common import Request
 
-from oauth2_provider.utils import set_oauthlib_user_to_device_request_user, user_code_generator
+from oauth2_provider.core.utils import set_oauthlib_user_to_device_request_user, user_code_generator
 
 
 USER_SETTINGS = getattr(settings, "OAUTH2_PROVIDER", None)
