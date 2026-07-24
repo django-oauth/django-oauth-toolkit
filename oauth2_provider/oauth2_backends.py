@@ -1,4 +1,5 @@
 import json
+import warnings
 from urllib.parse import parse_qsl, urlparse, urlunparse
 from urllib.parse import urlencode as stdlib_urlencode
 
@@ -289,8 +290,29 @@ class OAuthLibCore:
 
 class JSONOAuthLibCore(OAuthLibCore):
     """
-    Extends the default OAuthLibCore to parse correctly application/json requests
+    Extends the default OAuthLibCore to parse ``application/json`` request bodies.
+
+    .. deprecated:: 3.5
+        The OAuth token, authorization, introspection, and revocation endpoints are
+        defined to use ``application/x-www-form-urlencoded`` request bodies
+        (RFC 6749, RFC 7662, RFC 7009). Reading ``application/json`` on these
+        endpoints is non-standard and breaks interoperability with spec-compliant
+        clients. Scheduled for removal in 4.0 (see #1773).
     """
+
+    def __init__(self, server=None):
+        warnings.warn(
+            "JSONOAuthLibCore (OAUTH2_PROVIDER['OAUTH2_BACKEND_CLASS'] = "
+            "'oauth2_provider.oauth2_backends.JSONOAuthLibCore') is deprecated and will be "
+            "removed in django-oauth-toolkit 4.0. The OAuth token, authorization, "
+            "introspection, and revocation endpoints are defined to use "
+            "application/x-www-form-urlencoded request bodies (RFC 6749, RFC 7662, RFC 7009); "
+            "reading application/json on them is non-standard and breaks interoperability "
+            "with spec-compliant clients.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(server)
 
     def extract_body(self, request):
         """

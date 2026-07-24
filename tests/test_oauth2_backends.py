@@ -183,12 +183,21 @@ class TestJSONOAuthLibCoreBackend(TestCase):
             }
         )
         request = self.factory.post("/o/token/", payload, content_type="application/json")
-        oauthlib_core = JSONOAuthLibCore()
+        with pytest.warns(DeprecationWarning):
+            oauthlib_core = JSONOAuthLibCore()
 
         uri, http_method, body, headers = oauthlib_core._extract_params(request)
         self.assertIn("grant_type=password", body)
         self.assertIn("username=john", body)
         self.assertIn("password=123456", body)
+
+    def test_instantiation_emits_deprecation_warning(self):
+        # JSONOAuthLibCore is deprecated (removal tracked in #1773): reading JSON
+        # request bodies on the OAuth endpoints is non-standard (RFC 6749/7662/7009).
+        with pytest.warns(
+            DeprecationWarning, match="deprecated and will be removed in django-oauth-toolkit 4.0"
+        ):
+            JSONOAuthLibCore()
 
 
 class TestOAuthLibCore(TestCase):
