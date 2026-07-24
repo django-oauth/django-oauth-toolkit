@@ -15,16 +15,17 @@ Glossary
         An application providing access to its own resources through an API protected following the OAuth2 spec.
 
     OpenID Connect Provider
-        An :term:`Authorization Server` that also implements `OpenID Connect
-        <https://openid.net/connect/>`_, issuing ID tokens and exposing the discovery,
-        JWKS, and userinfo endpoints. Django OAuth Toolkit acts as an OpenID Connect
-        Provider (OP) when ``OIDC_ENABLED`` is set.
+        An :term:`Authorization Server` that also implements
+        `OpenID Connect <https://openid.net/connect/>`_, issuing ID tokens and exposing
+        the discovery, JWKS, and userinfo endpoints. Django OAuth Toolkit acts as an
+        OpenID Connect Provider (OP) when ``OIDC_ENABLED`` is set.
 
     Relying Party
-        An OpenID Connect :term:`Client` (RP) that relies on an :term:`OpenID Connect
-        Provider` to authenticate resource owners. In Django OAuth Toolkit today, "RP"
-        appears only in the names of OpenID Provider endpoints that *serve* external
-        relying parties (for example RP-Initiated Registration and RP-Initiated Logout).
+        An OpenID Connect :term:`Client` (RP) that relies on an
+        :term:`OpenID Connect Provider` to authenticate resource owners. In Django OAuth
+        Toolkit today, "RP" appears only in the names of OpenID Provider endpoints that
+        *serve* external relying parties (for example RP-Initiated Registration and
+        RP-Initiated Logout).
 
     Application
         An Application represents a Client on the Authorization server. Usually an Application is
