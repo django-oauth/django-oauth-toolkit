@@ -123,7 +123,12 @@ def test_split_shim_warns(old):
 def test_combined_oauthlib_mixin_warns_on_subclass():
     from django.views.generic import View
 
-    from oauth2_provider.views.mixins import OAuthLibMixin
+    # Importing the shim module itself emits a DeprecationWarning; silence it so this
+    # test asserts only on the subclass-time warning below (and stays robust if the
+    # suite ever treats deprecations as errors).
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        from oauth2_provider.views.mixins import OAuthLibMixin
 
     with pytest.warns(DeprecationWarning, match="OAuthLibMixin is deprecated"):
 
