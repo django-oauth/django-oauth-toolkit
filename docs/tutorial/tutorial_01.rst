@@ -7,10 +7,11 @@ You want to make your own :term:`Authorization Server` to issue access tokens to
 
 Start Your App
 --------------
-During this tutorial you will make an XHR POST from a web app hosted on a different domain to your localhost instance.
-Since the domain that originates the request is different from the destination domain (your local instance),
-you will need to install the `django-cors-headers <https://github.com/adamchainz/django-cors-headers>`_ app.
-These "cross-domain" requests are by default forbidden by web browsers unless you use `CORS <http://en.wikipedia.org/wiki/Cross-origin_resource_sharing>`_.
+Browser-based clients (such as single-page apps) make cross-origin requests to your
+provider, which browsers restrict unless the server opts in with
+`CORS <http://en.wikipedia.org/wiki/Cross-origin_resource_sharing>`_. Install
+`django-cors-headers <https://github.com/adamchainz/django-cors-headers>`_ alongside
+Django OAuth Toolkit so you can allow the origins you trust.
 
 Create a virtualenv and install `django-oauth-toolkit` and `django-cors-headers`:
 
@@ -22,12 +23,12 @@ Start a Django project, add `oauth2_provider` and `corsheaders` to the installed
 
 .. code-block:: python
 
-    INSTALLED_APPS = {
+    INSTALLED_APPS = [
         'django.contrib.admin',
         # ...
         'oauth2_provider',
         'corsheaders',
-    }
+    ]
 
 Include the Django OAuth Toolkit urls in your `urls.py`, choosing the urlspace you prefer. For example:
 
@@ -42,9 +43,10 @@ Include the Django OAuth Toolkit urls in your `urls.py`, choosing the urlspace y
         # ...
     ]
 
-Include the CORS middleware in your `settings.py`:
-
-CorsMiddleware should be placed as high as possible, especially before any middleware that can generate responses such as Django's CommonMiddleware or Whitenoise's WhiteNoiseMiddleware. If it is not before, it will not be able to add the CORS headers to these responses.
+Include the CORS middleware in your `settings.py`. ``CorsMiddleware`` should be placed as high as
+possible, especially before any middleware that can generate responses such as Django's
+``CommonMiddleware`` or WhiteNoise's ``WhiteNoiseMiddleware``, otherwise it will not be able to add
+the CORS headers to those responses.
 
 .. code-block:: python
 
@@ -54,11 +56,20 @@ CorsMiddleware should be placed as high as possible, especially before any middl
         # ...
     )
 
-Allow CORS requests from all domains (just for the scope of this tutorial):
+Then allow the origins your browser-based clients are served from:
 
 .. code-block:: python
 
-    CORS_ORIGIN_ALLOW_ALL = True
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+    ]
+
+Django OAuth Toolkit sets the ``Access-Control-Allow-Origin`` header on the token endpoint
+(``/o/token/``) itself, based on each application's `Allowed origins` list, so the token endpoint
+works for browser clients without this middleware. (The public OpenID Connect metadata endpoints —
+discovery and JWKS — already send permissive CORS headers too.) django-cors-headers is what enables
+CORS for the OIDC UserInfo endpoint (``/o/userinfo/``), which browser-based clients may call
+cross-origin and which Django OAuth Toolkit does not CORS-enable on its own.
 
 .. _loginTemplate:
 
@@ -92,8 +103,12 @@ point your browser to http://localhost:8000/o/applications/ and add an Applicati
    specifies one of the verified redirection uris. For this tutorial, paste verbatim the value
    `https://www.getpostman.com/oauth2/callback`
 
- * `Allowed origins`: Browser-based clients use Cross-Origin Resource Sharing (CORS) to request resources from origins other
-   than their own. Provide space-separated list of allowed origins for the token endpoint.
+ * `Allowed origins`: Browser-based clients (such as a single-page app) use Cross-Origin Resource Sharing
+   (CORS) to call the token endpoint from an origin other than their own. Provide a space-separated list of
+   the origins allowed to do so. Django OAuth Toolkit adds the ``Access-Control-Allow-Origin`` header to the
+   token endpoint response for these origins itself, so no extra CORS middleware is required. If a browser
+   client hits a CORS/origin error while exchanging the authorization code for a token, check that its origin
+   is listed here.
    The origin must be in the form of `"://" [ ":" ]`, such as `https://login.mydomain.com` or `http://localhost:3000`.
    Query strings and hash information are not taken into account when validating these URLs.
    This does not include the 'Redirect URIs' or 'Post Logout Redirect URIs', if those domains will also use the token
