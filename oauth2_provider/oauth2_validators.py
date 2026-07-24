@@ -31,7 +31,7 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
-from . import cimd
+from . import cimd, client_assertions
 from .bcp import bcp_compliant
 from .exceptions import FatalClientError
 from .models import (
@@ -281,6 +281,19 @@ class OAuth2Validator(RequestValidator):
         elif request.client.client_id != client_id:
             log.debug("Failed basic auth: wrong client id %s" % client_id)
             return False
+        elif request.client.token_endpoint_auth_method in AbstractApplication.JWT_AUTH_METHODS:
+            # RFC 9700 section 2.5: a client registered for JWT client
+            # authentication (RFC 7523) must use it; a leaked secret must not
+            # open a weaker side door.
+            # request.client.client_id (from the loaded Application) rather than
+            # the credential-derived client_id, so nothing tainted by the
+            # Authorization header reaches the log.
+            log.debug(
+                "Failed basic auth: client %s is registered for %s and must use a client assertion",
+                request.client.client_id,
+                request.client.token_endpoint_auth_method,
+            )
+            return False
         elif (
             request.client.client_type == "public"
             and request.grant_type == "urn:ietf:params:oauth:grant-type:device_code"
@@ -310,6 +323,15 @@ class OAuth2Validator(RequestValidator):
 
         if self._load_application(client_id, request) is None:
             log.debug("Failed body auth: Application %s does not exists" % client_id)
+            return False
+        elif request.client.token_endpoint_auth_method in AbstractApplication.JWT_AUTH_METHODS:
+            # See _authenticate_basic_auth: JWT-registered clients may only
+            # authenticate with a client assertion.
+            log.debug(
+                "Failed body auth: client %s is registered for %s and must use a client assertion",
+                request.client.client_id,
+                request.client.token_endpoint_auth_method,
+            )
             return False
         elif (
             request.client.client_type == "public"
@@ -428,6 +450,13 @@ class OAuth2Validator(RequestValidator):
 
         If something goes wrong, call oauthlib implementation of the method.
         """
+        # An RFC 7523 client assertion is client authentication by definition.
+        # Presence of either parameter counts (even empty), so a malformed or
+        # partial assertion attempt fails closed in authenticate_client instead
+        # of slipping through as an unauthenticated public-client request.
+        if self._presents_client_assertion(request):
+            return True
+
         if self._extract_basic_auth(request):
             return True
 
@@ -454,14 +483,41 @@ class OAuth2Validator(RequestValidator):
         Whether this fails we support including the client credentials in the request-body,
         but this method is NOT RECOMMENDED and SHOULD be limited to clients unable to
         directly utilize the HTTP Basic authentication scheme.
-        See rfc:`2.3.1` for more details
+        See rfc:`2.3.1` for more details.
+
+        A request carrying an RFC 7523 JWT client assertion is authenticated by
+        that assertion alone: per RFC 7521 section 4.2 there is deliberately no
+        fallback to the secret-based methods when the assertion is invalid.
         """
+        if self._presents_client_assertion(request):
+            return self._authenticate_client_assertion(request)
+
         authenticated = self._authenticate_basic_auth(request)
 
         if not authenticated:
             authenticated = self._authenticate_request_body(request)
 
         return authenticated
+
+    @staticmethod
+    def _presents_client_assertion(request):
+        """True when the request carries either RFC 7523 assertion parameter,
+        even with an empty value (oauthlib maps absent parameters to None)."""
+        return (
+            getattr(request, "client_assertion", None) is not None
+            or getattr(request, "client_assertion_type", None) is not None
+        )
+
+    def _authenticate_client_assertion(self, request):
+        """
+        Authenticate a client presenting an RFC 7523 JWT client assertion
+        (private_key_jwt / client_secret_jwt).
+
+        Not related to the ``get_jwt_bearer_token`` / ``validate_jwt_bearer_token``
+        methods below: despite the similar names, those are oauthlib's OpenID
+        hooks treating the OIDC id_token as a bearer token, not RFC 7523.
+        """
+        return client_assertions.authenticate_client_assertion(request, self._load_application)
 
     def authenticate_client_id(self, client_id, request, *args, **kwargs):
         """
@@ -512,17 +568,25 @@ class OAuth2Validator(RequestValidator):
         return user
 
     def _get_token_from_authentication_server(
-        self, token, introspection_url, introspection_token, introspection_credentials
+        self,
+        token,
+        introspection_url,
+        introspection_token,
+        introspection_credentials,
+        introspection_client_assertion=None,
     ):
         """Use external introspection endpoint to "crack open" the token.
         :param introspection_url: introspection endpoint URL
         :param introspection_token: Bearer token
         :param introspection_credentials: Basic Auth credentials (id,secret)
+        :param introspection_client_assertion: (client_id, assertion) pair for
+            RFC 7523 private_key_jwt authentication
         :return: :class:`models.AccessToken`
 
         Some RFC 7662 implementations (including this one) use a Bearer token while others use Basic
         Auth. Depending on the external AS's implementation, provide either the introspection_token
-        or the introspection_credentials.
+        or the introspection_credentials, or — when the external AS expects RFC 7523 JWT client
+        authentication — the introspection_client_assertion.
 
         If the resulting access_token identifies a username (e.g. Authorization Code grant), add
         that user to the UserModel. Also cache the access_token up until its expiry time or a
@@ -530,6 +594,7 @@ class OAuth2Validator(RequestValidator):
 
         """
         headers = None
+        body = {"token": token}
         if introspection_token:
             headers = {"Authorization": "Bearer {}".format(introspection_token)}
         elif introspection_credentials:
@@ -537,9 +602,18 @@ class OAuth2Validator(RequestValidator):
             client_secret = introspection_credentials[1].encode("utf-8")
             basic_auth = base64.b64encode(client_id + b":" + client_secret)
             headers = {"Authorization": "Basic {}".format(basic_auth.decode("utf-8"))}
+        elif introspection_client_assertion:
+            assertion_client_id, assertion = introspection_client_assertion
+            body.update(
+                {
+                    "client_id": assertion_client_id,
+                    "client_assertion_type": client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
+                    "client_assertion": assertion,
+                }
+            )
 
         try:
-            response = requests.post(introspection_url, data={"token": token}, headers=headers)
+            response = requests.post(introspection_url, data=body, headers=headers)
         except requests.exceptions.RequestException:
             log.exception("Introspection: Failed POST to %r in token lookup", introspection_url)
             return None
@@ -616,6 +690,39 @@ class OAuth2Validator(RequestValidator):
 
             return access_token
 
+    @staticmethod
+    def _build_introspection_client_assertion():
+        """Build a fresh (client_id, assertion) pair for authenticating to the
+        remote introspection endpoint with RFC 7523 private_key_jwt, or None
+        when the RESOURCE_SERVER_INTROSPECTION_JWT_* settings are not (fully)
+        configured.
+        """
+        client_id = oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID
+        private_key = oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY
+        audience = oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE
+        configured = (client_id, private_key, audience)
+        if not any(configured):
+            return None
+        if not all(configured):
+            log.warning(
+                "Ignoring partial RESOURCE_SERVER_INTROSPECTION_JWT_* configuration: "
+                "CLIENT_ID, PRIVATE_KEY and AUDIENCE must all be set"
+            )
+            return None
+        try:
+            assertion = client_assertions.make_client_assertion(
+                client_id,
+                private_key,
+                audience,
+                alg=oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_ALG or None,
+                lifetime=oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_LIFETIME,
+                kid=oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_KID or None,
+            )
+        except (ValueError, TypeError, JWException):
+            log.exception("Could not build an introspection client assertion")
+            return None
+        return (client_id, assertion)
+
     def validate_bearer_token(self, token, scopes, request):
         """
         When users try to access resources, check that provided token is valid
@@ -631,9 +738,20 @@ class OAuth2Validator(RequestValidator):
 
         # if there is no token or it's invalid then introspect the token if there's an external OAuth server
         if not access_token or not access_token.is_valid(scopes):
-            if introspection_url and (introspection_token or introspection_credentials):
+            # A fresh assertion (fresh jti, short exp) is built per introspection call;
+            # a static token or Basic credentials take precedence when configured.
+            introspection_client_assertion = None
+            if not introspection_token and not introspection_credentials:
+                introspection_client_assertion = self._build_introspection_client_assertion()
+            if introspection_url and (
+                introspection_token or introspection_credentials or introspection_client_assertion
+            ):
                 access_token = self._get_token_from_authentication_server(
-                    token, introspection_url, introspection_token, introspection_credentials
+                    token,
+                    introspection_url,
+                    introspection_token,
+                    introspection_credentials,
+                    introspection_client_assertion,
                 )
 
         if access_token and access_token.is_valid(scopes):
@@ -1256,6 +1374,10 @@ class OAuth2Validator(RequestValidator):
         return len(inspect.signature(cls.get_additional_claims).parameters) == 1
 
     def get_jwt_bearer_token(self, token, token_handler, request):
+        # Despite the name, this is oauthlib's OpenID hook for issuing the OIDC
+        # id_token as a bearer token — not the RFC 7523 jwt-bearer grant (which
+        # is unimplemented) and unrelated to RFC 7523 client assertions (see
+        # _authenticate_client_assertion).
         return self.get_id_token(token, token_handler, request)
 
     def get_claim_dict(self, request):

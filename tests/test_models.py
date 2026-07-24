@@ -9,6 +9,7 @@ from django.contrib.auth.hashers import check_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.test.utils import override_settings
 from django.utils import timezone
+from jwcrypto import jwk
 
 from oauth2_provider import models as oauth2_models
 from oauth2_provider.models import (
@@ -1005,6 +1006,177 @@ def test_application_clean(oauth2_settings, application):
     application.clean()
 
 
+def _client_assertion_application(**kwargs):
+    """An unsaved confidential client-credentials Application for clean() tests."""
+    defaults = {
+        "name": "rfc7523 app",
+        "client_type": Application.CLIENT_CONFIDENTIAL,
+        "authorization_grant_type": Application.GRANT_CLIENT_CREDENTIALS,
+        "client_secret": CLEARTEXT_SECRET,
+        "hash_client_secret": False,
+    }
+    defaults.update(kwargs)
+    return Application(**defaults)
+
+
+def _public_jwks_json(**generate_kwargs):
+    generate_kwargs.setdefault("kty", "EC")
+    generate_kwargs.setdefault("crv", "P-256")
+    generate_kwargs.setdefault("kid", "test-key")
+    key = jwk.JWK.generate(**generate_kwargs)
+    return f'{{"keys": [{key.export_public()}]}}'
+
+
+def test_application_clean_client_jwks_mutually_exclusive_with_uri():
+    app = _client_assertion_application(
+        client_jwks=_public_jwks_json(),
+        client_jwks_uri="https://client.example.com/jwks.json",
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "mutually exclusive" in str(exc.value)
+
+
+@pytest.mark.parametrize("bad_jwks", ["not json", '{"kty": "EC"}', '{"keys": []}'])
+def test_application_clean_rejects_invalid_client_jwks(bad_jwks):
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks=bad_jwks,
+    )
+    with pytest.raises(ValidationError):
+        app.clean()
+
+
+def test_application_clean_rejects_private_key_material_in_client_jwks():
+    private_key = jwk.JWK.generate(kty="EC", crv="P-256", kid="oops")
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks=f'{{"keys": [{private_key.export_private()}]}}',
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "public keys only" in str(exc.value)
+
+
+def test_application_clean_rejects_non_https_client_jwks_uri():
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks_uri="http://client.example.com/jwks.json",
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "https" in str(exc.value)
+
+
+def test_application_clean_private_key_jwt_requires_a_key_source():
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "client_jwks or client_jwks_uri" in str(exc.value)
+
+    app.client_jwks = _public_jwks_json()
+    app.clean()
+
+    app.client_jwks = ""
+    app.client_jwks_uri = "https://client.example.com/jwks.json"
+    app.clean()
+
+
+def test_application_clean_jwt_methods_require_confidential_client():
+    for method in Application.JWT_AUTH_METHODS:
+        app = _client_assertion_application(
+            client_type=Application.CLIENT_PUBLIC,
+            token_endpoint_auth_method=method,
+            client_jwks=_public_jwks_json(),
+        )
+        with pytest.raises(ValidationError) as exc:
+            app.clean()
+        assert "confidential" in str(exc.value)
+
+
+def test_application_clean_none_method_forbidden_for_confidential_client():
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_NONE,
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "'none'" in str(exc.value)
+
+
+def test_application_clean_client_secret_jwt_requires_plaintext_secret():
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT,
+    )
+    app.clean()
+
+    app.client_secret = ""
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "requires a client secret" in str(exc.value)
+
+    app.client_secret = CLEARTEXT_SECRET
+    app.hash_client_secret = True
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "plaintext client secret" in str(exc.value)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_application_clean_client_secret_jwt_rejects_already_hashed_secret():
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT,
+        hash_client_secret=True,
+        user=UserModel.objects.create_user("assertion_user"),
+    )
+    app.save()  # hashes the stored secret
+    app.hash_client_secret = False
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "plaintext client secret" in str(exc.value)
+
+
+def test_get_client_signing_jwks():
+    app = _client_assertion_application()
+    assert app.get_client_signing_jwks() is None
+
+    app.client_jwks = _public_jwks_json(kid="sig-1")
+    key_set = app.get_client_signing_jwks()
+    assert key_set.get_key("sig-1") is not None
+
+
+def test_get_client_secret_hmac_jwk():
+    app = _client_assertion_application()
+    assert app.get_client_secret_hmac_jwk().kty == "oct"
+
+    app.client_secret = ""
+    with pytest.raises(ImproperlyConfigured) as exc:
+        app.get_client_secret_hmac_jwk()
+    assert "non-empty client secret" in str(exc.value)
+
+
+def test_get_client_secret_hmac_jwk_rejects_hash_flag():
+    # Even with a plaintext stored secret, hash_client_secret=True marks the
+    # row as hashed-at-rest; fail closed like clean() does.
+    app = _client_assertion_application(hash_client_secret=True)
+    with pytest.raises(ImproperlyConfigured) as exc:
+        app.get_client_secret_hmac_jwk()
+    assert "hash_client_secret=False" in str(exc.value)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_get_client_secret_hmac_jwk_rejects_hashed_secret():
+    app = _client_assertion_application(
+        hash_client_secret=True,
+        user=UserModel.objects.create_user("assertion_user2"),
+    )
+    app.save()
+    with pytest.raises(ImproperlyConfigured) as exc:
+        app.get_client_secret_hmac_jwk()
+    assert "hash_client_secret=False" in str(exc.value)
+
+
 def _test_wildcard_redirect_uris_valid(oauth2_settings, application, uris):
     oauth2_settings.ALLOW_URI_WILDCARDS = True
     application.redirect_uris = uris
@@ -1172,3 +1344,35 @@ invalid_localhost_loopback_params = [
 def test_localhost_loopback_redirect_rejected_when_enabled(uri, allowed_uri, oauth2_settings):
     oauth2_settings.ALLOW_LOCALHOST_LOOPBACK = True
     assert not redirect_to_uri_allowed(uri, allowed_uri)
+
+
+def test_application_clean_rejects_jwks_without_verification_keys():
+    # A key set that can never verify a signature (enc-only use, or key_ops
+    # without "verify") is a dead configuration; clean() fails fast.
+    import json as json_mod
+
+    enc_key = dict(
+        json_mod.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="e1").export_public()), use="enc"
+    )
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks=json_mod.dumps({"keys": [enc_key]}),
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "signature" in str(exc.value)
+
+    ops_key = dict(
+        json_mod.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="e2").export_public()),
+        key_ops=["encrypt"],
+    )
+    app.client_jwks = json_mod.dumps({"keys": [ops_key]})
+    with pytest.raises(ValidationError):
+        app.clean()
+
+    verify_key = dict(
+        json_mod.loads(jwk.JWK.generate(kty="EC", crv="P-256", kid="v1").export_public()),
+        key_ops=["verify"],
+    )
+    app.client_jwks = json_mod.dumps({"keys": [enc_key, verify_key]})
+    app.clean()

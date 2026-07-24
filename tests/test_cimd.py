@@ -205,7 +205,7 @@ def test_ip_is_public(ip, public):
 
 def test_resolve_and_validate_rejects_internal(mocker):
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("10.0.0.5", 443))],
     )
     with pytest.raises(CIMDError):
@@ -216,7 +216,7 @@ def test_resolve_and_validate_rejects_mixed(mocker):
     # A host resolving to both a public and an internal address is refused
     # wholesale, so a split result cannot smuggle an internal connection.
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[
             (2, 1, 6, "", ("93.184.216.34", 443)),
             (2, 1, 6, "", ("127.0.0.1", 443)),
@@ -228,20 +228,20 @@ def test_resolve_and_validate_rejects_mixed(mocker):
 
 def test_resolve_and_validate_returns_public_ips(mocker):
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
     )
     assert _resolve_and_validate("client.example.com", 443) == ["93.184.216.34"]
 
 
 def test_resolve_and_validate_dns_failure(mocker):
-    mocker.patch("oauth2_provider.cimd.socket.getaddrinfo", side_effect=socket.gaierror("no such host"))
+    mocker.patch("oauth2_provider.safe_fetch.socket.getaddrinfo", side_effect=socket.gaierror("no such host"))
     with pytest.raises(CIMDError):
         _resolve_and_validate("bad.example.com", 443)
 
 
 def test_resolve_and_validate_no_addresses(mocker):
-    mocker.patch("oauth2_provider.cimd.socket.getaddrinfo", return_value=[])
+    mocker.patch("oauth2_provider.safe_fetch.socket.getaddrinfo", return_value=[])
     with pytest.raises(CIMDError):
         _resolve_and_validate("empty.example.com", 443)
 
@@ -597,7 +597,7 @@ class _FakeHTTPResponse:
 
 def test_fetcher_pins_validated_ip(oauth2_settings, mocker):
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
     )
     captured = {}
@@ -615,7 +615,7 @@ def test_fetcher_pins_validated_ip(oauth2_settings, mocker):
         def close(self):
             pass
 
-    mocker.patch("oauth2_provider.cimd.urllib3.HTTPSConnectionPool", _FakePool)
+    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _FakePool)
 
     metadata, max_age = SafeMetadataFetcher().fetch(CLIENT_URL)
 
@@ -669,7 +669,7 @@ def test_fetcher_accepts_structured_json_suffix():
 
 def test_fetcher_fails_over_to_next_validated_ip(oauth2_settings, mocker):
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 443)), (2, 1, 6, "", ("93.184.216.35", 443))],
     )
     hosts = []
@@ -687,7 +687,7 @@ def test_fetcher_fails_over_to_next_validated_ip(oauth2_settings, mocker):
         def close(self):
             pass
 
-    mocker.patch("oauth2_provider.cimd.urllib3.HTTPSConnectionPool", _FailFirstPool)
+    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _FailFirstPool)
     metadata, _ = SafeMetadataFetcher().fetch(CLIENT_URL)
     assert metadata["client_id"] == CLIENT_URL
     # Each attempt is pinned to the next validated IP, never the hostname.
@@ -696,7 +696,7 @@ def test_fetcher_fails_over_to_next_validated_ip(oauth2_settings, mocker):
 
 def test_fetcher_raises_when_all_ips_fail(oauth2_settings, mocker):
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
     )
 
@@ -710,7 +710,7 @@ def test_fetcher_raises_when_all_ips_fail(oauth2_settings, mocker):
         def close(self):
             pass
 
-    mocker.patch("oauth2_provider.cimd.urllib3.HTTPSConnectionPool", _AlwaysFailPool)
+    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _AlwaysFailPool)
     with pytest.raises(CIMDError):
         SafeMetadataFetcher().fetch(CLIENT_URL)
 
@@ -722,7 +722,7 @@ def test_fetcher_shares_one_deadline_across_ips(oauth2_settings, mocker):
     # fresh timeout each.
     oauth2_settings.CIMD_FETCH_TIMEOUT_SECONDS = 5
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[
             (2, 1, 6, "", ("93.184.216.34", 443)),
             (2, 1, 6, "", ("93.184.216.35", 443)),
@@ -731,7 +731,7 @@ def test_fetcher_shares_one_deadline_across_ips(oauth2_settings, mocker):
     )
     # deadline = 0 + 5; iter1 remaining=5 (now=0), iter2 remaining=2 (now=3),
     # iter3 remaining=-1 (now=6) -> break before the third IP is attempted.
-    mocker.patch("oauth2_provider.cimd.time.monotonic", side_effect=[0, 0, 3, 6])
+    mocker.patch("oauth2_provider.safe_fetch.time.monotonic", side_effect=[0, 0, 3, 6])
 
     attempts = []
 
@@ -745,7 +745,7 @@ def test_fetcher_shares_one_deadline_across_ips(oauth2_settings, mocker):
         def close(self):
             pass
 
-    mocker.patch("oauth2_provider.cimd.urllib3.HTTPSConnectionPool", _SlowPool)
+    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _SlowPool)
 
     with pytest.raises(CIMDError):
         SafeMetadataFetcher().fetch(CLIENT_URL)
@@ -757,7 +757,7 @@ def test_fetcher_shares_one_deadline_across_ips(oauth2_settings, mocker):
 
 def test_fetcher_includes_port_and_query(oauth2_settings, mocker):
     mocker.patch(
-        "oauth2_provider.cimd.socket.getaddrinfo",
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 8443))],
     )
     captured = {}
@@ -774,7 +774,7 @@ def test_fetcher_includes_port_and_query(oauth2_settings, mocker):
         def close(self):
             pass
 
-    mocker.patch("oauth2_provider.cimd.urllib3.HTTPSConnectionPool", _Pool)
+    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _Pool)
     SafeMetadataFetcher().fetch("https://client.example.com:8443/meta.json?v=1")
     assert captured["port"] == 8443
     assert captured["path"] == "/meta.json?v=1"

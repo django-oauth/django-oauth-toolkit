@@ -125,6 +125,47 @@ def public_application():
     )
 
 
+@pytest.fixture(scope="session")
+def client_rsa_jwk():
+    """A client-held RSA signing key for RFC 7523 private_key_jwt tests."""
+    return jwk.JWK.generate(kty="RSA", size=2048, kid="client-rsa-1")
+
+
+@pytest.fixture(scope="session")
+def client_ec_jwk():
+    """A client-held P-256 signing key for RFC 7523 private_key_jwt tests."""
+    return jwk.JWK.generate(kty="EC", crv="P-256", kid="client-ec-1")
+
+
+@pytest.fixture
+def private_key_jwt_application(client_rsa_jwk, client_ec_jwk):
+    """A confidential client-credentials app registered for private_key_jwt,
+    with both test keys' public halves in its inline JWKS."""
+    public_keys = ",".join([client_rsa_jwk.export_public(), client_ec_jwk.export_public()])
+    return Application.objects.create(
+        name="Private Key JWT Application",
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks='{"keys": [%s]}' % public_keys,
+        client_secret=CLEARTEXT_SECRET,
+    )
+
+
+@pytest.fixture
+def client_secret_jwt_application():
+    """A confidential client-credentials app registered for client_secret_jwt
+    (plaintext secret, as the secret is the HMAC key)."""
+    return Application.objects.create(
+        name="Client Secret JWT Application",
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT,
+        client_secret=CLEARTEXT_SECRET,
+        hash_client_secret=False,
+    )
+
+
 @pytest.fixture
 def cors_application():
     return Application.objects.create(

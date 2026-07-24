@@ -7,6 +7,7 @@ RFC 7592 — GET/PUT/DELETE /register/{client_id}/
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
@@ -22,8 +23,10 @@ from django.views.decorators.csrf import csrf_exempt
 from ..compat import login_not_required
 from ..models import get_access_token_model, get_application_model
 from ..settings import oauth2_settings
-from ..utils import parse_bearer_token
+from ..utils import jwk_allows_verification, parse_bearer_token
 
+
+log = logging.getLogger(__name__)
 
 # RFC 7591 grant type name → DOT AbstractApplication constant
 GRANT_TYPE_MAP = {
@@ -183,8 +186,14 @@ def _build_application_kwargs(data):
             f"redirect_uris is required for grant type {rfc_grant!r}",
         )
 
-    # token_endpoint_auth_method → client_type
-    SUPPORTED_AUTH_METHODS = ("none", "client_secret_basic", "client_secret_post")
+    # token_endpoint_auth_method → client_type (+ token_endpoint_auth_method field)
+    SUPPORTED_AUTH_METHODS = (
+        "none",
+        "client_secret_basic",
+        "client_secret_post",
+        "client_secret_jwt",
+        "private_key_jwt",
+    )
     auth_method = data.get("token_endpoint_auth_method", "client_secret_basic")
     if auth_method not in SUPPORTED_AUTH_METHODS:
         return None, _error_response(
@@ -192,10 +201,63 @@ def _build_application_kwargs(data):
             f"Unsupported token_endpoint_auth_method: {auth_method!r}. "
             f"Supported values: {', '.join(SUPPORTED_AUTH_METHODS)}",
         )
+    kwargs["token_endpoint_auth_method"] = auth_method
     if auth_method == "none":
         kwargs["client_type"] = "public"
     else:
         kwargs["client_type"] = "confidential"
+
+    # jwks / jwks_uri (RFC 7591 section 2: mutually exclusive). Always set both
+    # kwargs so a PUT without them resets the fields (full-replacement
+    # semantics, RFC 7592 section 2.2), like client_name above.
+    jwks = data.get("jwks")
+    jwks_uri = data.get("jwks_uri")
+    if jwks_uri is not None and not isinstance(jwks_uri, str):
+        return None, _error_response("invalid_client_metadata", "jwks_uri must be a string")
+    if jwks_uri is not None:
+        # An empty or whitespace-only jwks_uri counts as absent, so the
+        # RFC-named checks below apply instead of Application.clean()'s
+        # model-field wording surfacing later.
+        jwks_uri = jwks_uri.strip() or None
+    if jwks is not None and jwks_uri is not None:
+        return None, _error_response("invalid_client_metadata", "jwks and jwks_uri are mutually exclusive")
+    if jwks is not None and (not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list)):
+        return None, _error_response(
+            "invalid_client_metadata", 'jwks must be a JWK Set object with a "keys" array'
+        )
+    if jwks is not None:
+        # Validate the key material here too, so every failure speaks RFC 7591
+        # ("jwks") instead of Application.clean()'s internal field wording.
+        keys = jwks["keys"]
+        if not keys:
+            return None, _error_response("invalid_client_metadata", "jwks must contain at least one key")
+        if not all(isinstance(key, dict) for key in keys):
+            return None, _error_response("invalid_client_metadata", "each key in jwks must be a JSON object")
+        if any(isinstance(key, dict) and _PRIVATE_JWK_MEMBERS.intersection(key) for key in keys):
+            return None, _error_response(
+                "invalid_client_metadata", "jwks must contain public keys only, never private keys"
+            )
+        if not any(isinstance(key, dict) and jwk_allows_verification(key) for key in keys):
+            return None, _error_response(
+                "invalid_client_metadata",
+                "jwks must contain at least one key usable for signature verification",
+            )
+    # Validate here with the RFC 7591 field name; deferring to
+    # Application.clean() would surface the internal client_jwks_uri field
+    # name in the error_description.
+    if jwks_uri is not None and not jwks_uri.lower().startswith("https://"):
+        return None, _error_response("invalid_client_metadata", "jwks_uri must use the https scheme")
+    kwargs["client_jwks"] = json.dumps(jwks) if jwks is not None else ""
+    kwargs["client_jwks_uri"] = jwks_uri or ""
+
+    # Fail early with the RFC 7591 field names; Application.clean() re-checks
+    # with model-level wording.
+    if auth_method == "private_key_jwt" and jwks is None and jwks_uri is None:
+        return None, _error_response("invalid_client_metadata", "private_key_jwt requires jwks or jwks_uri")
+    # For client_secret_jwt the secret is the HMAC key, so it must be stored in
+    # plaintext (the raw secret is returned in the registration response either
+    # way); every other method keeps the hashed-at-rest default.
+    kwargs["hash_client_secret"] = auth_method != "client_secret_jwt"
 
     return kwargs, None
 
@@ -230,13 +292,16 @@ def _issue_registration_token(application, user):
 
 def _application_to_response(application, registration_token, request):
     """Build the RFC 7591 response dict for *application*."""
+    # Registrations persist the method explicitly; legacy rows (blank field)
+    # keep the old client_type-based inference.
+    auth_method = application.token_endpoint_auth_method or (
+        "none" if application.client_type == "public" else "client_secret_basic"
+    )
     data = {
         "client_id": application.client_id,
         "redirect_uris": application.redirect_uris.split() if application.redirect_uris else [],
         "grant_types": _dot_grant_to_rfc_grant_types(application.authorization_grant_type),
-        "token_endpoint_auth_method": (
-            "none" if application.client_type == "public" else "client_secret_basic"
-        ),
+        "token_endpoint_auth_method": auth_method,
         "registration_access_token": registration_token.token,
         "registration_client_uri": request.build_absolute_uri(
             reverse("oauth2_provider:dcr-register-management", kwargs={"client_id": application.client_id})
@@ -244,7 +309,55 @@ def _application_to_response(application, registration_token, request):
     }
     if application.name:
         data["client_name"] = application.name
+    if application.client_jwks:
+        jwks = _stored_jwks_for_response(application)
+        if jwks is not None:
+            data["jwks"] = jwks
+    if application.client_jwks_uri:
+        data["jwks_uri"] = application.client_jwks_uri
     return data
+
+
+# RFC 7517/7518 private key members. Registration and Application.clean()
+# refuse private material, but a manually edited row must never be echoed
+# back through the management endpoint.
+_PRIVATE_JWK_MEMBERS = frozenset({"d", "k", "p", "q", "dp", "dq", "qi", "oth"})
+
+
+def _stored_jwks_for_response(application):
+    """The stored client JWKS as a response-safe object, or None to omit it.
+
+    Registration validated the value, but a corrupted or manually edited row
+    must degrade safely: unparseable JSON omits the field instead of raising a
+    500, and any key carrying private members is dropped rather than disclosed.
+    """
+    try:
+        parsed = json.loads(application.client_jwks)
+    except ValueError:
+        log.warning(
+            "Stored client_jwks for application %s is not valid JSON; omitting jwks "
+            "from the registration response",
+            application.client_id,
+        )
+        return None
+    keys = parsed.get("keys") if isinstance(parsed, dict) else None
+    if not isinstance(keys, list):
+        return None
+    public_keys = []
+    for key in keys:
+        if not isinstance(key, dict):
+            continue
+        if _PRIVATE_JWK_MEMBERS.intersection(key):
+            log.warning(
+                "Stored client_jwks for application %s contains private key material; "
+                "omitting that key from the registration response",
+                application.client_id,
+            )
+            continue
+        public_keys.append(key)
+    if not public_keys:
+        return None
+    return {"keys": public_keys}
 
 
 def _dot_grant_to_rfc_grant_types(dot_grant):
@@ -304,8 +417,14 @@ class DynamicClientRegistrationView(View):
             **app_kwargs,
         )
 
-        # Capture the raw secret before save() hashes it
-        raw_secret = application.client_secret if application.client_type == "confidential" else None
+        # Capture the raw secret before save() hashes it. A private_key_jwt
+        # client authenticates with its key, never the secret, so none is
+        # returned for it (RFC 7591 section 3.2.1 makes client_secret optional).
+        include_secret = (
+            application.client_type == "confidential"
+            and application.token_endpoint_auth_method != Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+        )
+        raw_secret = application.client_secret if include_secret else None
 
         try:
             application.full_clean()

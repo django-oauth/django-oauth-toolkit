@@ -62,7 +62,13 @@ class ApplicationAdmin(admin.ModelAdmin):
     # application_form.js that updates it live as the checkbox is toggled).
     form = ApplicationForm
     list_display = ("pk", "name", "user", "client_type", "authorization_grant_type", "registration_source")
-    list_filter = ("client_type", "authorization_grant_type", "skip_authorization", "registration_source")
+    list_filter = (
+        "client_type",
+        "authorization_grant_type",
+        "skip_authorization",
+        "registration_source",
+        "token_endpoint_auth_method",
+    )
     radio_fields = {
         "client_type": admin.HORIZONTAL,
         "authorization_grant_type": admin.VERTICAL,

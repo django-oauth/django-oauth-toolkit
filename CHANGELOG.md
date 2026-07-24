@@ -5,16 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- preserve the following to copy/paste on new releases -->
-<!-- ## [unreleased] -->
-<!-- ### Added -->
-<!-- ### Changed -->
-<!-- ### Deprecated -->
-<!-- ### Removed -->
-<!-- ### Fixed -->
-<!-- ### Security -->
-
-## [unreleased]
+<!-- ## [unreleased]
 ### Added
+* #1762 RFC 7523 JWT client authentication (`private_key_jwt` / `client_secret_jwt`) at the token, introspection and
+  revocation endpoints. Applications gain `token_endpoint_auth_method`, `client_jwks` and `client_jwks_uri` fields
+  (deployments with a swapped/custom Application model must add an equivalent migration); remote JWK Sets are fetched
+  with the same SSRF hardening as CIMD and cached. Includes a public `oauth2_provider.client_assertions.make_client_assertion()`
+  helper for apps acting as OAuth clients, optional `private_key_jwt` authentication to a remote introspection endpoint
+  (`RESOURCE_SERVER_INTROSPECTION_JWT_*` settings), Dynamic Client Registration support for both methods with
+  `jwks`/`jwks_uri` metadata, and `*_auth_signing_alg_values_supported` advertisement in the discovery documents.
+  Note that `client_secret_jwt` requires the client secret to be stored unhashed (it is the HMAC key), like HS256.
 * #634 A system check (`oauth2_provider.W011`) that warns when the `AccessToken` and
   `RefreshToken` models are swapped into different apps, and a new
   "Extending the token models" documentation section explaining how to swap the

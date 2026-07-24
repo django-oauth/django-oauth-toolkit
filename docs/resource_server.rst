@@ -76,6 +76,29 @@ For these, use:
 ``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS=('client_id','client_secret')`` instead
 of ``RESOURCE_SERVER_AUTH_TOKEN``.
 
+Authenticating with private_key_jwt (RFC 7523)
+----------------------------------------------
+When the external :term:`Authorization Server` expects :doc:`JWT client authentication <rfc7523>`
+instead of a static token or Basic credentials, configure a signing key and audience; the
+:term:`Resource Server` then generates a fresh ``private_key_jwt`` client assertion (new ``jti``,
+short expiry) for every introspection request:
+
+.. code-block:: python
+
+    OAUTH2_PROVIDER = {
+        ...
+        'RESOURCE_SERVER_INTROSPECTION_URL': 'https://example.org/o/introspect/',
+        'RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID': 'rs_client_id',
+        'RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY': RS_PRIVATE_KEY_PEM,  # or a JWK JSON string
+        'RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE': 'https://example.org',  # the AS issuer
+        ...
+    }
+
+All three settings must be set together. ``RESOURCE_SERVER_AUTH_TOKEN`` and
+``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS`` take precedence when configured. See
+:doc:`settings` for the optional ``RESOURCE_SERVER_INTROSPECTION_JWT_ALG``, ``_LIFETIME`` and
+``_KID`` settings.
+
 
 Token Audience Binding (RFC 8707)
 ==================================
