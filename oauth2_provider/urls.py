@@ -1,108 +1,37 @@
-from django.urls import path, re_path
+"""Root URL aggregator for Django OAuth Toolkit.
 
-from . import views
+The URL patterns are defined in role modules and aggregated here under the
+``oauth2_provider`` URL namespace:
+
+* :mod:`oauth2_provider.authorization_server.urls`
+  (``server_metadata_urlpatterns``, ``base_urlpatterns``,
+  ``management_urlpatterns``, ``dcr_urlpatterns``),
+* :mod:`oauth2_provider.authorization_server.oidc.urls` (``oidc_urlpatterns``),
+* :mod:`oauth2_provider.resource_server.urls` (``resource_metadata_urlpatterns``).
+
+Include this module (``include("oauth2_provider.urls")``) as before; the public
+``*_urlpatterns`` names below are preserved for callers that mount subsets
+separately.
+"""
+
+from oauth2_provider.authorization_server.oidc.urls import oidc_urlpatterns
+from oauth2_provider.authorization_server.urls import (
+    base_urlpatterns,
+    dcr_urlpatterns,
+    management_urlpatterns,
+    server_metadata_urlpatterns,
+)
+from oauth2_provider.resource_server.urls import resource_metadata_urlpatterns
 
 
 app_name = "oauth2_provider"
 
-
-metadata_urlpatterns = [
-    # RFC 8414 locates the metadata document at the origin's
-    # /.well-known/oauth-authorization-server. Mount this at the server root, not
-    # under a prefix — see docs/oauth2_server_metadata.rst.
-    path(
-        ".well-known/oauth-authorization-server",
-        views.OAuthServerMetadataView.as_view(),
-        name="oauth-server-metadata",
-    ),
-    # RFC 8414 path-component form: when the issuer has a path (e.g.
-    # https://host/tenant1), the document lives at
-    # /.well-known/oauth-authorization-server/<issuer_path>. The captured suffix
-    # is reflected back into the issuer; the view reads it from the request path.
-    path(
-        ".well-known/oauth-authorization-server/<path:issuer_path>",
-        views.OAuthServerMetadataView.as_view(),
-        name="oauth-server-metadata-issuer",
-    ),
-    # RFC 9728 locates the protected-resource metadata document at the origin's
-    # /.well-known/oauth-protected-resource. Mount this at the server root, not
-    # under a prefix — see docs/protected_resource_metadata.rst.
-    path(
-        ".well-known/oauth-protected-resource",
-        views.OAuthProtectedResourceMetadataView.as_view(),
-        name="oauth-resource-metadata",
-    ),
-    # RFC 9728 path-component form: when the resource identifier has a path (e.g.
-    # https://host/resource1), the document lives at
-    # /.well-known/oauth-protected-resource/<resource_path>. The captured suffix
-    # is reflected back into the resource identifier; the view reads it from the
-    # request path.
-    path(
-        ".well-known/oauth-protected-resource/<path:resource_path>",
-        views.OAuthProtectedResourceMetadataView.as_view(),
-        name="oauth-resource-metadata-path",
-    ),
-]
-
-base_urlpatterns = [
-    path("authorize/", views.AuthorizationView.as_view(), name="authorize"),
-    path("token/", views.TokenView.as_view(), name="token"),
-    path("revoke_token/", views.RevokeTokenView.as_view(), name="revoke-token"),
-    path("introspect/", views.IntrospectTokenView.as_view(), name="introspect"),
-    path("device-authorization/", views.DeviceAuthorizationView.as_view(), name="device-authorization"),
-    path("device/", views.DeviceUserCodeView.as_view(), name="device"),
-    path(
-        "device-confirm/<slug:client_id>/<slug:user_code>",
-        views.DeviceConfirmView.as_view(),
-        name="device-confirm",
-    ),
-    path(
-        "device-grant-status/<slug:client_id>/<slug:user_code>",
-        views.DeviceGrantStatusView.as_view(),
-        name="device-grant-status",
-    ),
-]
-
-
-management_urlpatterns = [
-    # Application management views
-    path("applications/", views.ApplicationList.as_view(), name="list"),
-    path("applications/register/", views.ApplicationRegistration.as_view(), name="register"),
-    path("applications/<slug:pk>/", views.ApplicationDetail.as_view(), name="detail"),
-    path("applications/<slug:pk>/delete/", views.ApplicationDelete.as_view(), name="delete"),
-    path("applications/<slug:pk>/update/", views.ApplicationUpdate.as_view(), name="update"),
-    # Token management views
-    path("authorized_tokens/", views.AuthorizedTokensListView.as_view(), name="authorized-token-list"),
-    path(
-        "authorized_tokens/<slug:pk>/delete/",
-        views.AuthorizedTokenDeleteView.as_view(),
-        name="authorized-token-delete",
-    ),
-]
-
-oidc_urlpatterns = [
-    # .well-known/openid-configuration/ is deprecated
-    # https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig
-    # does not specify a trailing slash
-    # Support for trailing slash shall be removed in a future release.
-    re_path(
-        r"^\.well-known/openid-configuration/?$",
-        views.ConnectDiscoveryInfoView.as_view(),
-        name="oidc-connect-discovery-info",
-    ),
-    path(".well-known/jwks.json", views.JwksInfoView.as_view(), name="jwks-info"),
-    path("userinfo/", views.UserInfoView.as_view(), name="user-info"),
-    path("logout/", views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
-]
-
-dcr_urlpatterns = [
-    path("register/", views.DynamicClientRegistrationView.as_view(), name="dcr-register"),
-    path(
-        "register/<str:client_id>/",
-        views.DynamicClientRegistrationManagementView.as_view(),
-        name="dcr-register-management",
-    ),
-]
+# Back-compat: ``metadata_urlpatterns`` historically bundled both the RFC 8414
+# authorization-server well-known routes and the RFC 9728 protected-resource
+# well-known routes. It is kept here (combined) so existing deployments that mount
+# it separately at the server root keep working — see
+# docs/oauth2_server_metadata.rst and docs/protected_resource_metadata.rst.
+metadata_urlpatterns = server_metadata_urlpatterns + resource_metadata_urlpatterns
 
 # The default urlpatterns include metadata_urlpatterns so that a root include
 # (path("", include("oauth2_provider.urls"))) publishes the RFC 8414 well-known
