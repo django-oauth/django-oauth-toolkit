@@ -147,6 +147,7 @@ class AbstractApplication(models.Model):
     GRANT_PASSWORD = "password"
     GRANT_CLIENT_CREDENTIALS = "client-credentials"
     GRANT_OPENID_HYBRID = "openid-hybrid"
+    GRANT_JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer"
     GRANT_TYPES = (
         (GRANT_AUTHORIZATION_CODE, _("Authorization code")),
         (GRANT_DEVICE_CODE, _("Device Code")),
@@ -154,6 +155,7 @@ class AbstractApplication(models.Model):
         (GRANT_PASSWORD, _("Resource owner password-based")),
         (GRANT_CLIENT_CREDENTIALS, _("Client credentials")),
         (GRANT_OPENID_HYBRID, _("OpenID connect hybrid")),
+        (GRANT_JWT_BEARER, _("JWT bearer (RFC 7523)")),
     )
 
     NO_ALGORITHM = ""

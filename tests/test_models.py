@@ -127,6 +127,21 @@ class TestModels(BaseTestModels):
 
         self.assertRaises(ValidationError, app.full_clean)
 
+    def test_grant_jwt_bearer_no_redirect_uris_required(self):
+        # RFC 7523 §2.1: the jwt-bearer grant does not use redirect URIs, so an
+        # application registered for it must validate without any.
+        app = Application(
+            name="test_app",
+            redirect_uris="",
+            user=self.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_JWT_BEARER,
+        )
+
+        app.full_clean()
+        self.assertEqual(app.authorization_grant_type, "urn:ietf:params:oauth:grant-type:jwt-bearer")
+        self.assertTrue(app.allows_grant_type(Application.GRANT_JWT_BEARER))
+
     def test_str(self):
         app = Application(
             redirect_uris="",
