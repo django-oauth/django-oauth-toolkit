@@ -283,7 +283,15 @@ class ReadWriteScopedResourceMixin(ScopedResourceMixin, OAuthLibMixin):
                 ' to be in OAUTH2_PROVIDER["SCOPES"] list in settings'.format(read_write_scopes)
             )
 
-        return super().__new__(cls, *args, **kwargs)
+        # This __new__ exists only to run the validation above; it
+        # constructs no state of its own, so it must forward nothing to
+        # the next __new__ in the MRO. Because we override __new__,
+        # object.__new__() rejects any extra positional/keyword argument
+        # outright ("takes exactly one argument"), so forwarding them
+        # breaks instantiation for any view mixing this in that is
+        # constructed with arguments -- e.g. DRF's cls(**initkwargs).
+        # See GH #694.
+        return super().__new__(cls)
 
     def dispatch(self, request, *args, **kwargs):
         if request.method.upper() in SAFE_HTTP_METHODS:

@@ -15,6 +15,7 @@ from oauth2_provider.views.mixins import (
     OIDCOnlyMixin,
     ProtectedResourceMetadataMixin,
     ProtectedResourceMixin,
+    ReadWriteScopedResourceMixin,
     ScopedResourceMixin,
 )
 
@@ -125,6 +126,59 @@ class TestScopedResourceMixin(BaseTest):
         test_view = TestView()
 
         self.assertEqual(test_view.get_scopes(), ["scope1", "scope2"])
+
+
+class TestReadWriteScopedResourceMixin(BaseTest):
+    """
+    Regression tests for
+    https://github.com/django-oauth/django-oauth-toolkit/issues/694
+    """
+
+    def test_instantiation_with_no_arguments_still_works(self):
+        class TestView(ReadWriteScopedResourceMixin, View):
+            required_scopes = ["read"]
+
+        TestView()  # Just checking no crash.
+
+    def test_instantiation_with_keyword_arguments(self):
+        """
+        __new__() must not forward extra keyword arguments down to
+        object.__new__(). Because the mixin overrides __new__(),
+        object.__new__() rejects any extra argument outright, so
+        forwarding them broke instantiation with any argument at all
+        for classes mixing this in (notably Django REST Framework's
+        cls(**initkwargs) view instantiation, which Django's own
+        View.as_view() also uses), raising "object.__new__() takes
+        exactly one argument" instead of constructing the instance
+        normally.
+        """
+
+        class TestView(ReadWriteScopedResourceMixin, View):
+            required_scopes = ["read"]
+
+        TestView(some_kwarg="value")  # Just checking no crash.
+
+    def test_instantiation_with_positional_and_keyword_arguments(self):
+        """
+        The originally reported reproduction (issue #694) instantiated
+        a subclass defining its own ``__init__(self, *args, **kwargs)``
+        with *both* a positional and a keyword argument. Django's
+        ``View.__init__`` does not accept positional arguments, so cover
+        that case directly with a view that does, ensuring ``__new__()``
+        forwards nothing to ``object.__new__()``.
+        """
+
+        class TestView(ReadWriteScopedResourceMixin, View):
+            required_scopes = ["read"]
+
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+                super().__init__()
+
+        test_view = TestView(True, some_kwarg="value")  # Just checking no crash.
+        self.assertEqual(test_view.args, (True,))
+        self.assertEqual(test_view.kwargs, {"some_kwarg": "value"})
 
 
 class TestProtectedResourceMixin(BaseTest):
