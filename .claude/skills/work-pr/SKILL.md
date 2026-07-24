@@ -21,9 +21,18 @@ One issue → one branch → one PR. Drive to green CI with no open review threa
 - **Reply on each review thread, then resolve it** — not a PR-level comment.
 - Re-request Copilot review. Repeat until **CI green and Copilot has no comments**.
 
+## When master advances
+If the base moves while the PR is open — a merge-conflict or base-recovered notice, or CI that ran against a stale base — rebase onto the latest master and force-push with lease:
+
+```
+git fetch origin master && git rebase origin/master
+# resolve conflicts, re-run the affected tests
+git push --force-with-lease
+```
+
 ## Rules
 - Reply on threads only; no PR-level status comments.
-- End every GitHub post with the attribution footer.
+- If your tooling requires an attribution footer on GitHub posts (e.g. Claude Code), include it; it's a tool requirement, not repo policy.
 - Never `git add -A` (it swept a `.venv` in once) — stage explicit paths.
 - Don't poll with sleep; events + the fallback check-in wake you. Re-arm it silently if nothing changed.
 - Don't self-merge. A subscription ends only when the PR is merged/closed.
