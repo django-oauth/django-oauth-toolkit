@@ -10,3 +10,10 @@
 - MUST modify `rfcs/*` only for protocol/spec-facing changes or necessary corpus maintenance; avoid unrelated churn.
 - MUST follow Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) for commit messages and keep commits atomic when creating commits.
 - MUST update `rfcs/README.md` when adding or changing specs.
+- MUST place new code in the correct OAuth2-role package and follow the layout rules in `docs/package_layout.rst`. In short:
+  - Authorization-server / OpenID Connect Provider code goes in `oauth2_provider/authorization_server/` (OIDC under `authorization_server/oidc/`); resource-server code in `oauth2_provider/resource_server/`; genuinely shared plumbing in `oauth2_provider/core/`.
+  - "RP" is reserved for future relying-party/client code and MUST NOT be used to label existing provider code; the OP's `RP-Initiated *` endpoints are provider code that serves external relying parties.
+  - MUST import canonical role paths from first-party code, never the deprecated top-level shim modules (importing a shim emits a `DeprecationWarning`).
+  - MUST NOT relocate `models.py`, `generators.py`, or `validators.py` (migration `deconstruct()` freezes their import paths), and MUST keep `oauth2_provider.oauth2_validators.OAuth2Validator` importable from its current path.
+  - When moving a module/symbol, MUST leave a backward-compatible shim at the old path that emits a `DeprecationWarning` (silent only when a framework imports it at startup, e.g. `oauth2_provider.admin`), repoint all first-party imports/settings defaults to the canonical path, and add a CHANGELOG `Deprecated` entry.
+  - MUST verify a reorganization is behavior-neutral: full pytest suite passes with no first-party `DeprecationWarning` on import, `manage.py makemigrations --check --dry-run` reports no changes, and old import paths still resolve to the same objects (`tests/test_import_compat.py`).

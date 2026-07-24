@@ -78,6 +78,7 @@ Index
    :caption: Project
 
    contributing
+   package_layout
    changelog
 
 

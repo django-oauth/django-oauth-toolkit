@@ -87,6 +87,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `oauth2_provider.resource_server.*`. `oauth2_provider.admin` keeps working silently (no warning) so
   Django admin autodiscovery is unaffected. `oauth2_provider.oauth2_validators.OAuth2Validator` and the
   RFC 8707 helper functions keep their import paths.
+* The view layer moved into role packages too: `oauth2_provider.views.{base,introspect,device,
+  dynamic_client_registration,application,token}` → `oauth2_provider.authorization_server.views.*`;
+  `oauth2_provider.views.oidc` → `oauth2_provider.authorization_server.oidc.views`;
+  `oauth2_provider.views.generic` → `oauth2_provider.resource_server.views.generic`. The view mixins
+  split by role (`oauth2_provider.views.mixins` → `oauth2_provider.core.views.OAuthLibCoreMixin`,
+  `oauth2_provider.authorization_server.views.mixins.AuthorizationServerViewMixin`,
+  `oauth2_provider.resource_server.mixins`, `oauth2_provider.authorization_server.oidc.mixins`), and
+  `oauth2_provider.views.metadata` split into the authorization-server (RFC 8414) and resource-server
+  (RFC 9728) metadata modules. `from oauth2_provider.views import <View>` and the combined
+  `oauth2_provider.views.mixins.OAuthLibMixin` still work; the combined mixin emits a
+  `DeprecationWarning` when subclassed.
 
 ### Changed
 * Reorganized the package by OAuth2 role. Shared plumbing now lives under `oauth2_provider.core`,
@@ -97,9 +108,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of `OAuth2Validator` (bearer-token validation, the RFC 7662 introspection client, and the RFC 8707
   resource-indicator helpers) moved to `oauth2_provider.resource_server.validators` as a
   `ResourceServerValidatorMixin` that `OAuth2Validator` composes; the public validator class, its
-  import path, and its behavior are unchanged. All moves ship with backward-compatible import shims
-  (see Deprecated); the swappable-model, generator, and settings modules were intentionally left in
-  place.
+  import path, and its behavior are unchanged. The view layer, its mixins, and the URL patterns were
+  likewise moved/split by role (with `oauth2_provider/urls.py` kept as a back-compat aggregator that
+  preserves `app_name`, `urlpatterns`, and the public `*_urlpatterns` names), and `OAuthLibMixin` was
+  decomposed into a shared `OAuthLibCoreMixin` plus role-specific view mixins. All moves ship with
+  backward-compatible import shims (see Deprecated); the swappable-model, generator, and settings
+  modules were intentionally left in place. The package layout and its conventions are documented in
+  `docs/package_layout.rst` (and summarized for agents in `AGENTS.md`).
 * Replaced the unreleased `AbstractApplication.dcr_created` `BooleanField` (added in #670) with a
   `registration_source` `CharField` enum (`AbstractApplication.RegistrationSource`, values `manual`,
   `dcr`, `cimd`; default `manual`). This records client provenance as a single value instead of
