@@ -161,6 +161,12 @@ def _candidate_keys(application, header):
     from client_jwks_uri), narrowed by the assertion's ``kid`` when given; an
     unknown ``kid`` against a remote JWKS triggers exactly one cache-bypassing
     refetch so freshly rotated keys are honored without hammering the URL.
+
+    ``kid`` is a hint (RFC 7515 section 4.1.4), not a filter: when it matches
+    nothing, every registered signing key is tried instead — the signature
+    still has to verify against a registered key, so the fallback costs
+    nothing security-wise and tolerates clients whose kid labels differ (e.g.
+    a thumbprint-derived kid against a set registered with human-named kids).
     """
     if application.token_endpoint_auth_method == application.TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT:
         try:
@@ -174,13 +180,15 @@ def _candidate_keys(application, header):
             key_set = application.get_client_signing_jwks()
         except (JWException, ValueError):
             raise ClientAssertionError("registered client_jwks could not be parsed")
-        keys = _signing_keys(key_set, kid)
+        keys = _signing_keys(key_set, kid) or _signing_keys(key_set, None)
     elif application.client_jwks_uri:
         key_set = fetch_remote_jwks(application)
         keys = _signing_keys(key_set, kid)
         if not keys and kid:
             key_set = fetch_remote_jwks(application, force=True)
             keys = _signing_keys(key_set, kid)
+        if not keys:
+            keys = _signing_keys(key_set, None)
     else:
         raise ClientAssertionError("application has no registered JWKS")
     if not keys:

@@ -289,9 +289,19 @@ def test_wrong_signing_key_rejected():
     assert ok is False
 
 
-def test_unknown_kid_against_inline_jwks_rejected():
+def test_unknown_kid_falls_back_to_all_registered_keys():
+    # kid is a hint (RFC 7515 section 4.1.4): a mismatched label must not break
+    # verification when the signature checks out against a registered key
+    # (e.g. a thumbprint-derived kid vs. a human-named registered kid).
     app = pkj_app()
     assertion = build_assertion(RSA_KEY, default_claims(), kid="rotated-away")
+    ok, _ = authenticate(assertion, app)
+    assert ok is True
+
+
+def test_unknown_kid_with_unregistered_key_rejected():
+    app = pkj_app()
+    assertion = build_assertion(OTHER_KEY, default_claims(), kid="rotated-away")
     ok, _ = authenticate(assertion, app)
     assert ok is False
 
