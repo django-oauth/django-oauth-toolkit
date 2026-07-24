@@ -5,7 +5,7 @@ from django.urls import NoReverseMatch, reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import View
 
-from ..compat import login_not_required
+from ..core.compat import login_not_required
 from ..models import AbstractGrant
 from ..settings import oauth2_settings
 

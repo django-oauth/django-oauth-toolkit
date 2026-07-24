@@ -4,7 +4,7 @@ from django.core.exceptions import SuspiciousOperation
 from rest_framework.authentication import BaseAuthentication
 
 from ...core.backends_oauthlib import get_oauthlib_core
-from ...www_authenticate import build_bearer_challenge
+from ...resource_server.www_authenticate import build_bearer_challenge
 
 
 class OAuth2Authentication(BaseAuthentication):

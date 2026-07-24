@@ -14,8 +14,8 @@ from jwcrypto.jwt import JWTExpired
 from oauthlib.common import add_params_to_uri
 
 from ..authorization_server.forms import ConfirmLogoutForm
-from ..compat import login_not_required
-from ..exceptions import (
+from ..core.compat import login_not_required
+from ..core.exceptions import (
     ClientIdMissmatch,
     InvalidIDTokenError,
     InvalidOIDCClientError,
@@ -23,7 +23,8 @@ from ..exceptions import (
     LogoutDenied,
     OIDCError,
 )
-from ..http import OAuth2ResponseRedirect
+from ..core.http import OAuth2ResponseRedirect
+from ..core.utils import jwk_from_pem
 from ..models import (
     AbstractGrant,
     get_access_token_model,
@@ -32,7 +33,6 @@ from ..models import (
     get_refresh_token_model,
 )
 from ..settings import oauth2_settings
-from ..utils import jwk_from_pem
 from .metadata import (
     ServerMetadataViewMixin,
     bcp_filter_code_challenge_methods,
