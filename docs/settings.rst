@@ -242,6 +242,11 @@ The ``cleartokens`` management command removes revoked refresh tokens once the
 grace period has passed, unless ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled.
 Check :ref:`cleartokens` management command for further info.
 
+When ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled the grace period applies only to
+the *immediately preceding* refresh token (the token a client retries when it did not
+receive the rotated response). A token that has already been rotated past is rejected
+as a reuse even within the grace window — see ``REFRESH_TOKEN_REUSE_PROTECTION`` below.
+
 REFRESH_TOKEN_REUSE_PROTECTION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 When this is set to ``True`` (default ``False``), and ``ROTATE_REFRESH_TOKEN`` is used, the server will check

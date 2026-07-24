@@ -1220,14 +1220,27 @@ class OAuth2Validator(RequestValidator):
         if not rt:
             return False
 
-        if rt.revoked is not None and rt.revoked <= timezone.now() - timedelta(
-            seconds=oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS
-        ):
-            if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION and rt.token_family:
-                rt_token_family = RefreshToken.objects.filter(token_family=rt.token_family)
-                for related_rt in rt_token_family.all():
-                    related_rt.revoke()
-            return False
+        if rt.revoked is not None:
+            grace_expired = rt.revoked <= timezone.now() - timedelta(
+                seconds=oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS
+            )
+            # With reuse protection the grace period must only shield the
+            # *immediately preceding* refresh token -- a client that retried
+            # because it did not receive the rotated token. That token still owns
+            # the access token it minted; once the chain rotates again that access
+            # token is revoked (deleted), so its absence marks a stale token being
+            # replayed several generations down the chain. Honoring such a token
+            # within the grace window would defeat reuse protection (#1617).
+            stale_replay = (
+                oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION
+                and not AccessToken.objects.filter(source_refresh_token=rt).exists()
+            )
+            if grace_expired or stale_replay:
+                if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION and rt.token_family:
+                    rt_token_family = RefreshToken.objects.filter(token_family=rt.token_family)
+                    for related_rt in rt_token_family.all():
+                        related_rt.revoke()
+                return False
 
         request.user = rt.user
         # Use the raw token presented in the request, not rt.token: under hashed-at-rest

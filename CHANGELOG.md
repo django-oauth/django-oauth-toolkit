@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [RFC 7009 §2.1](https://datatracker.ietf.org/doc/html/rfc7009#section-2.1) an
   access token revocation may also revoke the respective refresh token; for a
   user-initiated revocation that is now the behavior.
+* #1617 With `REFRESH_TOKEN_REUSE_PROTECTION` enabled, `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`
+  no longer extends the validity of a refresh token that is several generations old in
+  the rotation chain. The grace period now only shields the *immediately preceding*
+  refresh token (the token a client retries when it did not receive the rotated
+  response); replaying an older, already-rotated-past token within the grace window is
+  rejected and revokes the whole token family, instead of being honored (and, without a
+  requested scope, minting a fresh token pair).
 
 ## [3.4.0] - 2026-07-23
 
