@@ -267,6 +267,12 @@ DEFAULTS = {
     # =====================================================================
     # Resource Server
     # =====================================================================
+    # RFC 9068: validate incoming "at+jwt" access tokens locally (signature + claims)
+    # against the RSA signing keys, instead of a database/introspection lookup. Only
+    # asymmetric (RS256) tokens are validated this way. Opt-in: enabling it means such
+    # tokens are accepted on signature and expiry, not on a live database record, so
+    # revocation before ``exp`` no longer applies.
+    "VALIDATE_JWT_ACCESS_TOKENS": False,
     # Token introspection (RFC 7662)
     "RESOURCE_SERVER_INTROSPECTION_URL": None,
     "RESOURCE_SERVER_AUTH_TOKEN": None,

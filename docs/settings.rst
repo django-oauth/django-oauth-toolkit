@@ -918,6 +918,16 @@ The default is to delete the tokens of all applications if this flag is enabled.
 Resource Server settings
 ------------------------
 
+VALIDATE_JWT_ACCESS_TOKENS
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When acting as a resource server, validate incoming RFC 9068 ``at+jwt`` access tokens locally
+(signature and claims) against the configured RSA signing keys, instead of a database or
+introspection lookup. Only asymmetric (``RS256``) tokens are validated this way. Because such
+tokens are accepted on their signature and ``exp`` rather than a live database record, revocation
+before expiry does not apply to them. See :doc:`jwt_access_tokens`.
+
 RESOURCE_SERVER_INTROSPECTION_URL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The introspection endpoint for validating token remotely (RFC7662). This URL requires an

@@ -16,6 +16,7 @@ server's validator.
 import base64
 import hashlib
 import http.client
+import json
 import logging
 import posixpath
 import urllib.parse
@@ -25,18 +26,21 @@ from datetime import timezone as datetime_timezone
 
 import requests
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.timezone import make_aware
 from django.utils.translation import gettext_lazy as _
+from jwcrypto import jws, jwt
 from jwcrypto.common import JWException
+from jwcrypto.jwt import JWTExpired
 
 # Authenticating to a remote authorization server's introspection endpoint makes
 # this resource server an OAuth *client*, so the assertion builder comes from the
 # client package.
 from oauth2_provider.client.client_assertions import make_client_assertion
 from oauth2_provider.core.rfc7523 import JWT_BEARER_CLIENT_ASSERTION_TYPE
-from oauth2_provider.core.utils import get_timezone
-from oauth2_provider.models import get_access_token_model
+from oauth2_provider.core.utils import get_timezone, jwk_from_pem
+from oauth2_provider.models import AbstractApplication, get_access_token_model, get_application_model
 from oauth2_provider.settings import oauth2_settings
 
 
@@ -336,6 +340,15 @@ class ResourceServerValidatorMixin:
 
         access_token = self._load_access_token(token)
 
+        # RFC 9068: validate a self-contained "at+jwt" access token locally before falling
+        # back to introspection, so a resource server needs neither a local record nor a
+        # round trip to the authorization server.
+        if not access_token or not access_token.is_valid(scopes):
+            if oauth2_settings.VALIDATE_JWT_ACCESS_TOKENS:
+                jwt_access_token = self._load_jwt_access_token(token, request)
+                if jwt_access_token:
+                    access_token = jwt_access_token
+
         # if there is no token or it's invalid then introspect the token if there's an external OAuth server
         if not access_token or not access_token.is_valid(scopes):
             # A fresh assertion (fresh jti, short exp) is built per introspection call;
@@ -405,4 +418,103 @@ class ResourceServerValidatorMixin:
             AccessToken.objects.select_related("application", "user")
             .filter(token_checksum=token_checksum)
             .first()
+        )
+
+    def _load_jwt_access_token(self, token, request):
+        """
+        RFC 9068 section 4: validate an ``at+jwt`` access token locally (statelessly).
+
+        Verifies the token's signature against the server's RSA signing keys (the same
+        keys published at the JWKS endpoint) and checks the required claims, returning an
+        unsaved ``AccessToken`` built from the claims, or ``None`` if the token is not a
+        valid ``at+jwt`` for this issuer. Only asymmetric (RS256) tokens are validated
+        here; HS256 secrets are per-client and not available to a resource server.
+        """
+        # Cheap pre-check: must be a compact JWS whose typ marks it as an access token.
+        try:
+            unverified = jws.JWS()
+            unverified.deserialize(token)
+            header = unverified.jose_header
+        except (JWException, ValueError, TypeError):
+            return None
+        if header.get("typ") not in ("at+jwt", "application/at+jwt"):
+            return None
+        # RFC 9068 section 4: reject "none" and verify with an allowed asymmetric algorithm.
+        if header.get("alg") != AbstractApplication.RS256_ALGORITHM:
+            return None
+
+        claims = self._verify_jwt_access_token_signature(token)
+        if claims is None:
+            return None
+
+        # RFC 9068 section 4: the issuer identifier MUST exactly match the "iss" claim, and
+        # the required "aud"/"exp" claims must be present ("exp" is enforced during verify).
+        if claims.get("iss") != oauth2_settings.oidc_issuer(request):
+            return None
+        if "aud" not in claims or "exp" not in claims:
+            return None
+
+        return self._build_access_token_from_jwt_claims(claims, token)
+
+    def _verify_jwt_access_token_signature(self, token):
+        """
+        Verify an ``at+jwt`` against each configured RSA signing key (active + inactive,
+        matching the JWKS endpoint). Returns the claims dict on success, else ``None``.
+        Restricting the accepted algorithm to RS256 prevents algorithm-substitution
+        attacks (e.g. an ``HS256`` token forged with a public key as the HMAC secret).
+        """
+        pems = []
+        if oauth2_settings.OIDC_RSA_PRIVATE_KEY:
+            pems.append(oauth2_settings.OIDC_RSA_PRIVATE_KEY)
+        pems.extend(oauth2_settings.OIDC_RSA_PRIVATE_KEYS_INACTIVE)
+
+        for pem in pems:
+            try:
+                verified = jwt.JWT(
+                    key=jwk_from_pem(pem),
+                    jwt=token,
+                    algs=[AbstractApplication.RS256_ALGORITHM],
+                )
+                return json.loads(verified.claims)
+            except (JWException, JWTExpired, ValueError):
+                continue
+        return None
+
+    def _build_access_token_from_jwt_claims(self, claims, token):
+        """Build an unsaved ``AccessToken`` from validated RFC 9068 JWT claims."""
+        expires = datetime.fromtimestamp(int(claims["exp"]), tz=datetime_timezone.utc)
+        if not settings.USE_TZ:
+            expires = timezone.make_naive(expires, expires.tzinfo)
+
+        aud = claims.get("aud")
+        if isinstance(aud, str):
+            aud = [aud]
+        elif not isinstance(aud, list):
+            aud = []
+        # Audience enforcement in ``validate_bearer_token`` treats ``resource`` as a set of
+        # RFC 8707 resource-indicator URIs. The default ``aud`` (the client_id) is not a
+        # resource URI, so only URI-shaped audiences act as a restriction; a client_id-only
+        # audience behaves like an unrestricted token (as an opaque token with no resource).
+        resource = [entry for entry in aud if "://" in entry]
+
+        client_id = claims.get("client_id")
+        application = None
+        if client_id:
+            Application = get_application_model()
+            application = Application.objects.filter(client_id=client_id).first()
+
+        user = None
+        sub = claims.get("sub")
+        # For grants with a resource owner, ``sub`` is the user's pk; for client_credentials
+        # it is the client_id, which is not a user.
+        if sub and sub != client_id:
+            user = get_user_model().objects.filter(pk=sub).first()
+
+        return AccessToken(
+            token=token,
+            user=user,
+            application=application,
+            scope=claims.get("scope", ""),
+            expires=expires,
+            resource=resource,
         )

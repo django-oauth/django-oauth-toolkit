@@ -38,7 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing OIDC signing keys) instead of opaque tokens. Tokens carry the RFC 9068 claim set
   (`iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`, `scope`); `aud` defaults to the RFC 8707
   `resource` value(s) or the `client_id`. Tokens remain DB-backed so introspection and revocation
-  are unchanged. See `docs/jwt_access_tokens.rst`.
+  are unchanged. A new `VALIDATE_JWT_ACCESS_TOKENS` setting lets a resource server validate
+  incoming `at+jwt` tokens locally (RFC 9068 §4) against the published `RS256` keys, without a
+  database or introspection lookup. The RFC 8414 and OIDC discovery documents advertise the
+  `jwks_uri` and `issuer` a resource server needs. See `docs/jwt_access_tokens.rst`.
 * #1762 RFC 7523 JWT client authentication (`private_key_jwt` / `client_secret_jwt`) at the token, introspection and
   revocation endpoints. Applications gain `token_endpoint_auth_method`, `client_jwks` and `client_jwks_uri` fields
   (deployments with a swapped/custom Application model must add an equivalent migration); remote JWK Sets are fetched
