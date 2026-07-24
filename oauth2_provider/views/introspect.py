@@ -31,6 +31,14 @@ class IntrospectTokenView(ClientProtectedScopedResourceView):
                 {"error": "invalid_request", "error_description": "Token parameter is missing."},
                 status=400,
             )
+        if not isinstance(token_value, str):
+            # RFC 7662 defines `token` as a string. A JSON body (JSONOAuthLibCore)
+            # can deliver a non-string value (e.g. a number); reject it with a 400
+            # instead of raising an AttributeError on `token_value.encode()` below.
+            return JsonResponse(
+                {"error": "invalid_request", "error_description": "Token parameter must be a string."},
+                status=400,
+            )
         try:
             token_checksum = hashlib.sha256(token_value.encode("utf-8")).hexdigest()
             token = (

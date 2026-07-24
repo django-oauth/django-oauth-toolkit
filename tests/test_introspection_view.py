@@ -268,6 +268,26 @@ class TestTokenIntrospectionViews(TestCase):
             },
         )
 
+    def test_view_post_non_string_token_json_body(self):
+        """
+        A JSON body may carry a non-string ``token`` (e.g. a number). RFC 7662
+        defines ``token`` as a string, so this must return a 400, not a 500 from
+        ``token_value.encode()``. See #613.
+        """
+        self.oauth2_settings.OAUTH2_BACKEND_CLASS = JSONOAuthLibCore
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:introspect"),
+            data=json.dumps({"token": 12345}),
+            content_type="application/json",
+            **auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "invalid_request")
+
     def test_view_post_invalid_token(self):
         """
         Test that when you pass an invalid token as form parameter,
