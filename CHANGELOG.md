@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client_credentials` application) is driven through a flow that needs a default
   redirect URI. `Application.default_redirect_uri` now raises
   `oauthlib`'s `MissingRedirectURIError`, consistent with the multiple-URI case.
+* #1260 `OAuth2Validator.validate_bearer_token` now rejects a token whose
+  application is not usable (`Application.is_usable()` returns `False`) with an
+  `invalid_token` error, mirroring the check the issuance path already performs
+  in `_load_application`. The default `is_usable()` returns `True`, so this only
+  affects swapped Application models that override it.
 
 ## [3.4.0] - 2026-07-23
 

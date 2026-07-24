@@ -725,6 +725,56 @@ class TestOAuth2ValidatorProvidesErrorData(TransactionTestCase):
             },
         )
 
+    def test_validate_bearer_token_rejects_token_when_application_not_usable(self):
+        """
+        A valid token whose application is no longer usable must be rejected with
+        an ``invalid_token`` error, mirroring the ``is_usable()`` check the
+        issuance path performs in ``_load_application``. Regression test for #1260.
+        """
+        access_token = AccessToken.objects.create(
+            token="usable_check_token",
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            application=self.application,
+            scope="read",
+        )
+        with mock.patch.object(Application, "is_usable", return_value=False):
+            self.assertFalse(
+                self.validator.validate_bearer_token(
+                    access_token.token,
+                    ["read"],
+                    self.request,
+                )
+            )
+        self.assertDictEqual(
+            self.request.oauth2_error,
+            {
+                "error": "invalid_token",
+                "error_description": "The access token is invalid.",
+            },
+        )
+
+    def test_validate_bearer_token_accepts_token_when_application_usable(self):
+        """
+        The default ``is_usable()`` returns True, so the added check is a no-op
+        for a valid token and it still validates. Guards against #1260's fix
+        rejecting ordinary tokens.
+        """
+        access_token = AccessToken.objects.create(
+            token="usable_check_token_ok",
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            application=self.application,
+            scope="read",
+        )
+        self.assertTrue(
+            self.validator.validate_bearer_token(
+                access_token.token,
+                ["read"],
+                self.request,
+            )
+        )
+
     def test_validate_bearer_token_adds_error_to_the_request_when_a_valid_token_has_insufficient_scope(self):
         access_token = AccessToken.objects.create(
             token="some_valid_token",

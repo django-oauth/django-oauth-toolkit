@@ -655,6 +655,21 @@ class OAuth2Validator(RequestValidator):
                     )
                     return False
 
+            # Reject tokens whose application is no longer usable, mirroring the
+            # is_usable() check the issuance path performs in _load_application.
+            # The default is_usable() returns True, so this is a no-op unless a
+            # swapped Application model overrides it (e.g. to disable an app or
+            # gate on request attributes). See #1260.
+            application = access_token.application
+            if application is not None and not application.is_usable(request):
+                request.oauth2_error = OrderedDict(
+                    [
+                        ("error", "invalid_token"),
+                        ("error_description", _("The access token is invalid.")),
+                    ]
+                )
+                return False
+
             request.client = access_token.application
             request.user = access_token.user
             request.scopes = list(access_token.scopes)

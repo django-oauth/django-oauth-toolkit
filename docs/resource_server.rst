@@ -180,3 +180,17 @@ To disable automatic validation entirely, set the validator to ``None``:
     OAUTH2_PROVIDER = {
         'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': None,
     }
+
+Rejecting tokens of an unusable application
+-------------------------------------------
+``Application.is_usable(request)`` is a hook you can override on a
+:ref:`swapped application model <extend_app_model>` to disable an application
+dynamically — for example to freeze a deactivated account or enforce an IP allowlist. It
+returns ``True`` by default.
+
+``is_usable()`` is enforced on **both** sides of the flow: the authorization server checks it
+at token issuance, and the resource server checks it in ``validate_bearer_token()``. A token
+whose application returns ``is_usable() == False`` is therefore rejected with an
+``invalid_token`` error even if the token itself is otherwise valid and unexpired. If you
+override ``is_usable()``, keep in mind that returning ``False`` immediately stops the
+application's existing access tokens from authenticating, not just new issuance.
