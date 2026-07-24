@@ -713,3 +713,108 @@ def test_revocation_endpoint_accepts_client_assertion(
     response = client.post(reverse("oauth2_provider:revoke-token"), data=data)
     assert response.status_code == 200, response.content
     assert not AccessToken.objects.filter(pk=token.pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# Resource-server side: private_key_jwt to a remote introspection endpoint
+# ---------------------------------------------------------------------------
+
+
+class _IntrospectionResponse:
+    status_code = 200
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def _configure_rs_jwt(oauth2_settings, key):
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL = "https://as.example.com/o/introspect/"
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID = "rs-client"
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY = key.export_private()
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE = "https://as.example.com"
+
+
+@pytest.mark.django_db
+def test_rs_introspection_authenticates_with_client_assertion(oauth2_settings, mocker, client_rsa_jwk):
+    from oauthlib.common import Request as OauthlibRequest
+
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    _configure_rs_jwt(oauth2_settings, client_rsa_jwk)
+    post = mocker.patch(
+        "requests.post", return_value=_IntrospectionResponse({"active": True, "scope": "read"})
+    )
+
+    validator = OAuth2Validator()
+    assert validator.validate_bearer_token("remote-token", ["read"], OauthlibRequest("/")) is True
+
+    assert post.call_count == 1
+    _, kwargs = post.call_args
+    body = kwargs.get("data") or post.call_args[0][1]
+    assert body["token"] == "remote-token"
+    assert body["client_id"] == "rs-client"
+    assert body["client_assertion_type"] == client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE
+    assert kwargs.get("headers") is None
+
+    token = jwt.JWT(algs=["RS256"])
+    token.deserialize(body["client_assertion"], client_rsa_jwk)
+    claims = json.loads(token.claims)
+    assert claims["iss"] == claims["sub"] == "rs-client"
+    assert claims["aud"] == "https://as.example.com"
+
+
+@pytest.mark.django_db
+def test_rs_introspection_builds_fresh_assertion_per_call(oauth2_settings, mocker, client_rsa_jwk):
+    from oauthlib.common import Request as OauthlibRequest
+
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    _configure_rs_jwt(oauth2_settings, client_rsa_jwk)
+    post = mocker.patch("requests.post", return_value=_IntrospectionResponse({"active": False}))
+
+    validator = OAuth2Validator()
+    jtis = set()
+    for candidate in ("token-one", "token-two"):
+        validator.validate_bearer_token(candidate, ["read"], OauthlibRequest("/"))
+        body = post.call_args.kwargs.get("data") or post.call_args.args[1]
+        token = jwt.JWT(algs=["RS256"])
+        token.deserialize(body["client_assertion"], client_rsa_jwk)
+        jtis.add(json.loads(token.claims)["jti"])
+    assert len(jtis) == 2
+
+
+@pytest.mark.django_db
+def test_rs_introspection_bearer_token_takes_precedence(oauth2_settings, mocker, client_rsa_jwk):
+    from oauthlib.common import Request as OauthlibRequest
+
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    _configure_rs_jwt(oauth2_settings, client_rsa_jwk)
+    oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN = "static-bearer"
+    post = mocker.patch("requests.post", return_value=_IntrospectionResponse({"active": False}))
+
+    OAuth2Validator().validate_bearer_token("remote-token", ["read"], OauthlibRequest("/"))
+
+    _, kwargs = post.call_args
+    body = kwargs.get("data") or post.call_args[0][1]
+    assert "client_assertion" not in body
+    assert kwargs["headers"]["Authorization"] == "Bearer static-bearer"
+
+
+@pytest.mark.django_db
+def test_rs_introspection_partial_jwt_config_is_ignored(oauth2_settings, mocker):
+    from oauthlib.common import Request as OauthlibRequest
+
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL = "https://as.example.com/o/introspect/"
+    oauth2_settings.RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID = "rs-client"  # key/audience missing
+    post = mocker.patch("requests.post")
+
+    result = OAuth2Validator().validate_bearer_token("remote-token", ["read"], OauthlibRequest("/"))
+
+    assert result is False
+    assert post.call_count == 0
