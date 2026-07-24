@@ -20,18 +20,10 @@ import hashlib
 import json
 import logging
 import re
-
-# socket, time and urllib3 are kept imported so existing patch targets like
-# ``oauth2_provider.cimd.socket.getaddrinfo`` keep resolving now that the
-# fetch internals live in ``safe_fetch`` (module attributes are shared
-# globals, so patching them here still affects the moved code).
-import socket  # noqa: F401  (patch-target compatibility)
 import threading
-import time  # noqa: F401  (patch-target compatibility)
 from datetime import timedelta
 from urllib.parse import urlparse
 
-import urllib3  # noqa: F401  (patch-target compatibility)
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
