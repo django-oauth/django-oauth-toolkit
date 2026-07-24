@@ -70,7 +70,8 @@ must be instantiated (callables should accept request as their only argument).
 SCOPES_BACKEND_CLASS
 ~~~~~~~~~~~~~~~~~~~~
 **New in 0.12.0**. The import string for the scopes backend class.
-Defaults to ``oauth2_provider.scopes.SettingsScopes``, which reads scopes through the settings defined below.
+Defaults to ``oauth2_provider.core.scopes.SettingsScopes``, which reads scopes through the settings defined below.
+(The pre-4.0 alias ``oauth2_provider.scopes.SettingsScopes`` still resolves but is deprecated.)
 
 SCOPES
 ~~~~~~
@@ -639,7 +640,8 @@ will be used.
 
 RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``"oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"``
+Default: ``"oauth2_provider.resource_server.validators.validate_resource_as_url_prefix"``
+(the pre-4.0 alias ``oauth2_provider.oauth2_validators.validate_resource_as_url_prefix`` still resolves).
 
 A callable that validates whether an access token's audience (RFC 8707 resource indicators) matches
 a request URI. The callable receives ``(request_uri, audiences)`` where ``request_uri`` is a string

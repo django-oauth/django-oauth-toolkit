@@ -4,10 +4,10 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseNotFound
 
-from ..exceptions import FatalClientError
-from ..scopes import get_scopes_backend
+from ..core.exceptions import FatalClientError
+from ..core.scopes import get_scopes_backend
+from ..resource_server.www_authenticate import build_bearer_challenge, challenge_status
 from ..settings import oauth2_settings
-from ..www_authenticate import build_bearer_challenge, challenge_status
 
 
 log = logging.getLogger("oauth2_provider")

@@ -70,7 +70,7 @@ DEFAULTS = {
     # Scopes
     "SCOPES": {"read": "Reading scope", "write": "Writing scope"},
     "DEFAULT_SCOPES": ["__all__"],
-    "SCOPES_BACKEND_CLASS": "oauth2_provider.scopes.SettingsScopes",
+    "SCOPES_BACKEND_CLASS": "oauth2_provider.core.scopes.SettingsScopes",
     "READ_SCOPE": "read",
     "WRITE_SCOPE": "write",
     # Special settings that will be evaluated at runtime

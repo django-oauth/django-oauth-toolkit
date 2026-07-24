@@ -39,11 +39,16 @@ from .models import (
     get_id_token_model,
     get_refresh_token_model,
 )
-from .resource_server.validators import (  # noqa: F401  (re-exported for backward compatibility)
+
+# Re-exported for backward compatibility: these RFC 8707 helpers used to live in
+# this module and were part of its public API (e.g. the historical
+# RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR default pointed here). They now live in
+# oauth2_provider.resource_server.validators; keep the old import path working.
+from .resource_server.validators import (
     ResourceServerValidatorMixin,
     _parse_and_validate_uri,
-    is_valid_resource_uri,
-    validate_resource_as_url_prefix,
+    is_valid_resource_uri,  # noqa: F401
+    validate_resource_as_url_prefix,  # noqa: F401
 )
 from .settings import oauth2_settings
 

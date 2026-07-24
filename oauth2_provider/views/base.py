@@ -19,14 +19,14 @@ from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
 from ..authorization_server.forms import AllowForm
-from ..compat import login_not_required
-from ..exceptions import OAuthToolkitError
-from ..http import OAuth2ResponseRedirect
+from ..core.compat import login_not_required
+from ..core.exceptions import OAuthToolkitError
+from ..core.http import OAuth2ResponseRedirect
+from ..core.scopes import get_scopes_backend
+from ..core.signals import app_authorized
 from ..models import get_access_token_model, get_application_model, get_device_grant_model
 from ..resource_server.validators import is_valid_resource_uri
-from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
-from ..signals import app_authorized
 from .mixins import OAuthLibMixin
 
 

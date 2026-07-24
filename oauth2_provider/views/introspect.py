@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
-from ..compat import login_not_required
+from ..core.compat import login_not_required
 from ..models import get_access_token_model
 from ..views.generic import ClientProtectedScopedResourceView
 

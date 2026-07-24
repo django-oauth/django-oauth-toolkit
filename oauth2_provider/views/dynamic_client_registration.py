@@ -19,10 +19,10 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from ..compat import login_not_required
+from ..core.compat import login_not_required
+from ..core.utils import parse_bearer_token
 from ..models import get_access_token_model, get_application_model
 from ..settings import oauth2_settings
-from ..utils import parse_bearer_token
 
 
 # RFC 7591 grant type name → DOT AbstractApplication constant
