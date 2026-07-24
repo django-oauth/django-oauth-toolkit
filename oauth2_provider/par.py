@@ -75,18 +75,39 @@ def authenticate_par_client(core: "OAuthLibCore", request: HttpRequest) -> Optio
     return None
 
 
+def effective_client_id(request: HttpRequest) -> Optional[str]:
+    """The ``client_id`` oauthlib validates against: body wins over the query string.
+
+    oauthlib merges the request URI (query string) and body, so a client_id in
+    either place is honored during validation; the binding check must consider both.
+    """
+    return request.POST.get("client_id") or request.GET.get("client_id")
+
+
 def collect_pushed_parameters(request: HttpRequest) -> dict:
     """Build the JSON-serialisable mapping of authorization-request parameters to
-    store, dropping client-authentication parameters. Repeated ``resource`` values
-    (RFC 8707) are preserved as a list; all other parameters keep their last value,
-    matching :meth:`oauth2_provider.oauth2_backends.OAuthLibCore.extract_body`.
+    store, dropping client-authentication parameters.
+
+    The query string and body are merged so the stored parameters reflect exactly
+    what oauthlib validated (it merges the request URI and body). The body wins on
+    conflicts — applied last, matching oauthlib and
+    :meth:`oauth2_provider.oauth2_backends.OAuthLibCore.extract_body`. Repeated
+    ``resource`` values (RFC 8707) are preserved as a list; all other parameters
+    keep their last value.
     """
     parameters = {}
-    for key in request.POST:
-        if key in CLIENT_AUTH_PARAMETERS:
-            continue
-        values = request.POST.getlist(key)
-        parameters[key] = values if key == "resource" else values[-1]
+    resource_values = []
+    for source in (request.GET, request.POST):
+        for key in source:
+            if key in CLIENT_AUTH_PARAMETERS:
+                continue
+            values = source.getlist(key)
+            if key == "resource":
+                resource_values.extend(values)
+            else:
+                parameters[key] = values[-1]
+    if resource_values:
+        parameters["resource"] = resource_values
     return parameters
 
 

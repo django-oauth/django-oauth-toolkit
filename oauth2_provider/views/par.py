@@ -77,8 +77,9 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
         # Bind the request to the authenticated client (RFC 9126 §2.2) *before*
         # validating it, so a client cannot submit an arbitrary client_id and observe
         # validation differences (e.g. whether another client exists or has a given
-        # redirect_uri). client_id is a required authorization-request parameter.
-        client_id = request.POST.get("client_id")
+        # redirect_uri). Use the effective client_id (body or query string) that
+        # oauthlib will validate against, not just the body.
+        client_id = par.effective_client_id(request)
         if client_id and client.client_id != client_id:
             return self._error_response(
                 "invalid_request",

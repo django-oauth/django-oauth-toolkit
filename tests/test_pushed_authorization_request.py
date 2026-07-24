@@ -207,6 +207,42 @@ class TestPAREndpoint(PARBaseTestCase):
         self.oauth2_settings.PAR_ENABLED = False
         self.assertEqual(self.client.get(self.par_url).status_code, 404)
 
+    def test_query_string_client_id_binding_enforced(self):
+        # oauthlib validates the merged query string + body, so a client_id supplied
+        # via the query string must not bypass the binding check.
+        headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        response = self.client.post(
+            self.par_url + f"?client_id={self.public_application.client_id}",
+            data={
+                "response_type": "code",
+                "redirect_uri": "http://example.org",
+                "scope": "read write",
+            },
+            **headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content)["error"], "invalid_request")
+
+    def test_query_string_parameters_are_stored(self):
+        # A parameter supplied via the query string is validated by oauthlib, so it
+        # must also be stored (merged with the body) — otherwise the request_uri would
+        # resolve to different parameters than were validated.
+        headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        response = self.client.post(
+            self.par_url + "?scope=read+write",
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "http://example.org",
+            },
+            **headers,
+        )
+        self.assertEqual(response.status_code, 201)
+        par = PushedAuthorizationRequest.objects.get(
+            request_uri=json.loads(response.content)["request_uri"]
+        )
+        self.assertEqual(par.parameters["scope"], "read write")
+
     def test_client_secret_post_excluded_from_stored_parameters(self):
         # Authenticate via client_secret_post (credentials in the body). The
         # client-authentication parameters must not be stored on the pushed request.
