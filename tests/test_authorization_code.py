@@ -159,6 +159,12 @@ class TestAuthorizationCodeView(BaseTest):
 
         response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
         self.assertEqual(response.status_code, 400)
+        # Ensure the 400 is oauthlib's MissingRedirectURIError (invalid_request),
+        # not some other 400, so we don't regress the specific error surfaced.
+        self.assertEqual(
+            response.context_data["url"],
+            "?error=invalid_request&error_description=Missing+redirect+URI.",
+        )
 
     def test_pre_auth_valid_client(self):
         """

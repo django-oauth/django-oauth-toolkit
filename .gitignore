@@ -51,6 +51,7 @@ _build
 *.sqlite
 
 /venv/
+/.venv/
 /coverage.xml
 
 db.sqlite3
