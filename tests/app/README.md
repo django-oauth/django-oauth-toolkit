@@ -68,20 +68,30 @@ The response should include the access token.
 ### RFC 7523 private_key_jwt example
 
 The seed data includes an "RFC 7523 private_key_jwt demo" application
-(`client_id=private-key-jwt-demo`, client-credentials grant) registered with the public half of
-the demo key below. **The key pair is demo-only seed data — never reuse it anywhere real.**
+(`client_id=private-key-jwt-demo`, client-credentials grant). No private key ships with the
+repository: generate your own keypair locally and register its public half on the application
+first.
 
 ```sh
-# Save the demo private key (the matching public JWK is in the application's client_jwks).
-cat > /tmp/demo-key.pem <<'PEM'
------BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgy1YSAq2sNhFgAo1h
-TIdnGY1ldQDr0MSUyMqrcSAr1/6hRANCAAQN30rKl0m8eregm6tSRo8Lj/ManHfW
-KUwrl00VCGnfhedvtDJFduSVy3ivDuAqZe30QBERlu+gYdZmHCoYdjQK
------END PRIVATE KEY-----
-PEM
+cd tests/app/idp
 
-# Generate a signed client assertion (fresh jti per call) with the library helper.
+# 1. Generate a fresh keypair; the private key stays local.
+python -c "
+from jwcrypto import jwk
+key = jwk.JWK.generate(kty='EC', crv='P-256', kid='my-demo-key')
+open('/tmp/demo-key.pem', 'wb').write(key.export_to_pem(private_key=True, password=None))
+open('/tmp/demo-key.pub.json', 'w').write(key.export_public())
+"
+
+# 2. Register the public half on the seeded demo application.
+python manage.py shell -c "
+from oauth2_provider.models import get_application_model
+app = get_application_model().objects.get(client_id='private-key-jwt-demo')
+app.client_jwks = '{\"keys\": [%s]}' % open('/tmp/demo-key.pub.json').read()
+app.save()
+"
+
+# 3. Generate a signed client assertion (fresh jti per call) with the library helper.
 ASSERTION=$(python -c "
 from oauth2_provider.client_assertions import make_client_assertion
 print(make_client_assertion(
@@ -90,7 +100,7 @@ print(make_client_assertion(
     'http://localhost:8000/o/token/',
 ))")
 
-# Exchange it for an access token — no client secret anywhere.
+# 4. Exchange it for an access token — no client secret anywhere.
 curl --location 'http://localhost:8000/o/token/' \
     --header 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=client_credentials' \
