@@ -32,6 +32,7 @@ GRANT_TYPE_MAP = {
     "password": "password",
     "client_credentials": "client-credentials",
     "urn:ietf:params:oauth:grant-type:device_code": "urn:ietf:params:oauth:grant-type:device_code",
+    "urn:ietf:params:oauth:grant-type:jwt-bearer": "urn:ietf:params:oauth:grant-type:jwt-bearer",
 }
 
 # Grant types that are handled automatically by DOT alongside authorization_code

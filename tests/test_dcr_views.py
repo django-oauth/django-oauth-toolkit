@@ -171,6 +171,19 @@ class TestDynamicClientRegistration(TestCase):
         app = Application.objects.get(client_id=body["client_id"])
         assert app.authorization_grant_type == Application.GRANT_CLIENT_CREDENTIALS
 
+    def test_register_jwt_bearer(self):
+        """jwt-bearer (RFC 7523) grant type round-trips through registration."""
+        self.client.force_login(self.user)
+        data = {
+            "grant_types": ["urn:ietf:params:oauth:grant-type:jwt-bearer"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.authorization_grant_type == Application.GRANT_JWT_BEARER
+        assert body["grant_types"] == ["urn:ietf:params:oauth:grant-type:jwt-bearer"]
+
     def test_response_includes_registration_token_and_uri(self):
         """Registration response includes registration_access_token and registration_client_uri."""
         self.client.force_login(self.user)
