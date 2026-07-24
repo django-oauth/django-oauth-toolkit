@@ -288,6 +288,46 @@ class TestTokenIntrospectionViews(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "invalid_request")
 
+    def test_view_post_malformed_json_body(self):
+        """
+        A malformed JSON body with ``JSONOAuthLibCore`` must return a 400, not a
+        500. ``extract_body()`` returns ``""`` on a JSON parse error and
+        ``dict("") == {}``, so the token reads as missing. See #613.
+        """
+        self.oauth2_settings.OAUTH2_BACKEND_CLASS = JSONOAuthLibCore
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:introspect"),
+            data="{not valid json",
+            content_type="application/json",
+            **auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "invalid_request")
+
+    def test_view_post_non_utf8_json_body(self):
+        """
+        A non-UTF8 body with ``JSONOAuthLibCore`` must return a 400, not a 500:
+        ``request.body.decode("utf-8")`` raises ``UnicodeDecodeError`` — a
+        ``ValueError`` subclass that ``extract_body()`` catches. See #613.
+        """
+        self.oauth2_settings.OAUTH2_BACKEND_CLASS = JSONOAuthLibCore
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:introspect"),
+            data=b"\xff\xfe\x00token",
+            content_type="application/json",
+            **auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "invalid_request")
+
     def test_view_post_invalid_token(self):
         """
         Test that when you pass an invalid token as form parameter,
