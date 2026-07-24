@@ -1156,12 +1156,11 @@ class OAuth2Validator(RequestValidator):
 
         # RefreshToken uniqueness is (token_checksum, revoked), so several rows may share a
         # checksum; revoke every match instead of get() to avoid MultipleObjectsReturned.
-        tokens = list(token_type.objects.filter(token_checksum=token_checksum, application_id=application_pk))
+        lookup = {"token_checksum": token_checksum, "application_id": application_pk}
+        tokens = list(token_type.objects.filter(**lookup))
         if not tokens:
             for other_type in [_t for _t in token_types.values() if _t != token_type]:
-                tokens.extend(
-                    other_type.objects.filter(token_checksum=token_checksum, application_id=application_pk)
-                )
+                tokens.extend(other_type.objects.filter(**lookup))
         for t in tokens:
             t.revoke()
 
