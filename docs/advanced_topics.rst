@@ -65,6 +65,79 @@ That's all, now Django OAuth Toolkit will use your model wherever an Application
     is because of the way Django currently implements swappable models.
     See `issue #90 <https://github.com/django-oauth/django-oauth-toolkit/issues/90>`_ for details.
 
+.. _extend_token_models:
+
+Extending the token models
+==========================
+
+The ``AccessToken``, ``RefreshToken`` and ``IDToken`` models are swappable in the same way as
+``Application``, and can be extended by subclassing their abstract base classes. There are, however,
+two constraints that make them different from ``Application``, and getting either wrong is the cause
+of the long-standing confusion tracked in
+`issue #634 <https://github.com/django-oauth/django-oauth-toolkit/issues/634>`_.
+
+**1. Swap the interrelated models together.** ``AccessToken.source_refresh_token`` references
+``RefreshToken`` and ``RefreshToken.access_token`` references ``AccessToken`` -- a circular foreign
+key. ``AccessToken`` also references ``IDToken``. Because of this you cannot swap just one of them:
+pointing ``OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`` at a custom model while leaving ``RefreshToken`` on
+the default ``oauth2_provider.RefreshToken`` splits the circular reference across two apps, and
+Django cannot order the migrations for that graph. This surfaces as ``fields.E304``/``fields.E305``
+reverse-accessor clashes or ``lazy reference ... isn't installed`` errors. Django OAuth Toolkit ships
+a system check (``oauth2_provider.W011``) that warns when the ``AccessToken`` and ``RefreshToken``
+models are not defined in the same app.
+
+**2. Declare the ``swappable`` Meta option.** Each concrete model must set the ``swappable`` Meta
+option to the corresponding setting name. This is what tells Django the model is a swap target rather
+than an additional concrete model, and is what prevents the ``E304`` reverse-accessor clashes.
+
+Put all of the models in a single app (here called ``my_oauth``)::
+
+    from oauth2_provider.models import (
+        AbstractAccessToken,
+        AbstractApplication,
+        AbstractIDToken,
+        AbstractRefreshToken,
+    )
+
+
+    class Application(AbstractApplication):
+        class Meta(AbstractApplication.Meta):
+            swappable = "OAUTH2_PROVIDER_APPLICATION_MODEL"
+
+
+    class AccessToken(AbstractAccessToken):
+        class Meta(AbstractAccessToken.Meta):
+            swappable = "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL"
+
+
+    class RefreshToken(AbstractRefreshToken):
+        class Meta(AbstractRefreshToken.Meta):
+            swappable = "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL"
+
+
+    class IDToken(AbstractIDToken):
+        class Meta(AbstractIDToken.Meta):
+            swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
+
+and point the settings at them::
+
+    OAUTH2_PROVIDER_APPLICATION_MODEL = "my_oauth.Application"
+    OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "my_oauth.AccessToken"
+    OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "my_oauth.RefreshToken"
+    OAUTH2_PROVIDER_ID_TOKEN_MODEL = "my_oauth.IDToken"
+
+Then run ``makemigrations`` and ``migrate``. On a fresh database this works out of the box.
+
+.. note:: This is straightforward for a **new** project. Migrating an **existing** deployment that
+    already has data in the default ``oauth2_provider`` tables is a data-migration exercise that is
+    out of scope here: you would need to create the new tables, copy the rows across (rewriting the
+    foreign keys), and only then switch the settings. Because the ``AccessToken``/``RefreshToken``
+    foreign keys are circular, the migration that creates the tables must add the
+    ``source_refresh_token`` field *after* both tables exist (mirroring what
+    ``oauth2_provider/migrations/0001_initial.py`` does), or use
+    ``django.db.migrations.operations.SeparateDatabaseAndState`` to decouple the state from the
+    schema changes.
+
 Configuring multiple databases
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

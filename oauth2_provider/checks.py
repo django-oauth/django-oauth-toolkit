@@ -199,3 +199,43 @@ def validate_token_configuration(app_configs, **kwargs):
         return [checks.Error("The token models are expected to be stored in the same database.")]
 
     return []
+
+
+@checks.register(checks.Tags.models)
+def validate_swapped_model_consistency(app_configs, **kwargs):
+    """
+    Warn when the two circularly related token models are not swapped together.
+
+    ``AccessToken.source_refresh_token`` points at ``REFRESH_TOKEN_MODEL`` and
+    ``RefreshToken.access_token`` points back at ``ACCESS_TOKEN_MODEL``, so the two
+    models reference each other. Swapping only one of them -- e.g. pointing
+    ``OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL`` at a custom model while leaving
+    ``RefreshToken`` on the default ``oauth2_provider.RefreshToken`` -- produces a
+    circular foreign key that spans two apps. Django cannot order the initial
+    migration for such a graph, which surfaces as ``fields.E304``/``E305`` reverse
+    accessor clashes or "lazy reference ... isn't installed" migration errors.
+
+    The two models must therefore live in the same app. This is only a warning:
+    wiring the cross-app migration dependencies by hand is possible, but it is almost
+    always a mistake rather than an intention.
+    """
+    access_app = oauth2_settings.ACCESS_TOKEN_MODEL.split(".", 1)[0]
+    refresh_app = oauth2_settings.REFRESH_TOKEN_MODEL.split(".", 1)[0]
+    if access_app != refresh_app:
+        return [
+            checks.Warning(
+                "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL "
+                f"('{oauth2_settings.ACCESS_TOKEN_MODEL}') and "
+                "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL "
+                f"('{oauth2_settings.REFRESH_TOKEN_MODEL}') are defined in different apps, "
+                "but they reference each other with a circular foreign key.",
+                hint=(
+                    "Swap the AccessToken and RefreshToken models together in the same app "
+                    "(the IDToken model is usually customized alongside them). See "
+                    "'Extending the token models' in the advanced topics documentation."
+                ),
+                id="oauth2_provider.W011",
+            )
+        ]
+
+    return []

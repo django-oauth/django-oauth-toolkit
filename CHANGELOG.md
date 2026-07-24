@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Security -->
 
 ## [unreleased]
+### Added
+* #634 A system check (`oauth2_provider.W011`) that warns when the `AccessToken` and
+  `RefreshToken` models are swapped into different apps, and a new
+  "Extending the token models" documentation section explaining how to swap the
+  interrelated token models together.
 ### Fixed
 * #958 Return a spec-compliant 400 instead of raising an uncaught `AssertionError`
   (HTTP 500) when an application without any registered `redirect_uris` (e.g. a
