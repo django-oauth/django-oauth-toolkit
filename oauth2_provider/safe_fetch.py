@@ -18,7 +18,7 @@ import json
 import socket
 import ssl
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 import urllib3
 
@@ -103,7 +103,10 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
     the caller's own status/size/content checks. Raises *exc_class* when the
     URL is invalid, resolution fails, or every address attempt errors.
     """
-    parsed = urlparse(url)
+    # urlsplit, not urlparse: urlparse splits a legacy ";params" component off
+    # the last path segment, which would silently drop it from the fetched
+    # target; urlsplit keeps the path verbatim.
+    parsed = urlsplit(url)
     if parsed.scheme != "https":
         raise exc_class("URL must use the https scheme")
     if not parsed.hostname:

@@ -131,3 +131,28 @@ def test_uppercase_scheme_is_accepted(mocker):
     _patch_network(mocker, _FakeHTTPResponse(body=b'{"keys": []}'))
     data, _ = fetch_https_json("HTTPS://example.com/jwks.json", timeout=5, max_size=1024)
     assert data == {"keys": []}
+
+
+def test_path_params_component_is_preserved(mocker):
+    # urlparse would split ";v=2.json" off the path as legacy params; the
+    # request target must keep the path verbatim.
+    mocker.patch(
+        "oauth2_provider.safe_fetch.socket.getaddrinfo",
+        return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+    captured = {}
+
+    class _Pool:
+        def __init__(self, **kwargs):
+            pass
+
+        def urlopen(self, method, path, **kwargs):
+            captured["path"] = path
+            return _FakeHTTPResponse(body=b'{"keys": []}')
+
+        def close(self):
+            pass
+
+    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _Pool)
+    fetch_https_json("https://example.com/jwks;v=2.json?x=1", timeout=5, max_size=1024)
+    assert captured["path"] == "/jwks;v=2.json?x=1"
