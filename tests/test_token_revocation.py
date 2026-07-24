@@ -314,6 +314,62 @@ class TestRevocationView(BaseTest):
         self.assertIsNone(refresh_token.revoked)
         self.assertTrue(AccessToken.objects.filter(pk=victim_access_token.pk).exists())
 
+    def test_hinted_lookup_falls_back_across_token_types_respecting_ownership(self):
+        """
+        A ``token_type_hint`` that matches only another client's token in the hinted
+        table must still fall back to the other token type to find the caller's own
+        token (issue #727 / RFC 7009 §2.1). Because the ownership filter is part of the
+        lookup, a same-value token owned by a different client does not block the
+        fallback.
+        """
+        other_application = Application.objects.create(
+            name="Other Application",
+            redirect_uris="http://localhost",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            client_secret=CLEARTEXT_SECRET,
+        )
+        shared_value = "shared-token-value"
+        # Another client's access token in the *hinted* table, sharing the value...
+        other_access_token = AccessToken.objects.create(
+            user=self.test_user,
+            token=shared_value,
+            application=other_application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+        # ...and the caller's own refresh token (same value) in the other table.
+        own_access_token = AccessToken.objects.create(
+            user=self.test_user,
+            token="own-access-token",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+        own_refresh_token = RefreshToken.objects.create(
+            user=self.test_user,
+            token=shared_value,
+            application=self.application,
+            access_token=own_access_token,
+        )
+
+        data = {
+            "client_id": self.application.client_id,
+            "client_secret": CLEARTEXT_SECRET,
+            "token": shared_value,
+            "token_type_hint": "access_token",
+        }
+        url = reverse("oauth2_provider:revoke-token")
+        response = self.client.post(url, data=data)
+        self.assertEqual(response.status_code, 200)
+
+        # The caller's own refresh token (in the non-hinted table) is revoked...
+        own_refresh_token.refresh_from_db()
+        self.assertIsNotNone(own_refresh_token.revoked)
+        # ...while the other client's same-valued access token is untouched.
+        self.assertTrue(AccessToken.objects.filter(pk=other_access_token.pk).exists())
+
     def test_revoke_token_with_wrong_hint(self):
         """
         From the revocation rfc, `Section 4.1.2`_ :

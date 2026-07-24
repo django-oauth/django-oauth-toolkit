@@ -1140,22 +1140,30 @@ class OAuth2Validator(RequestValidator):
 
         token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
         token_type = token_types.get(token_type_hint, AccessToken)
-        # RefreshToken uniqueness is (token_checksum, revoked), so several rows may share a
-        # checksum; revoke every match instead of get() to avoid MultipleObjectsReturned.
-        tokens = list(token_type.objects.filter(token_checksum=token_checksum))
-        if not tokens:
-            for other_type in [_t for _t in token_types.values() if _t != token_type]:
-                tokens.extend(other_type.objects.filter(token_checksum=token_checksum))
+
         # RFC 7009 section 2.1: the authorization server "verifies whether the token was
         # issued to the client making the revocation request." A client must not be able
-        # to revoke another client's tokens. Tokens that were not issued to the
-        # authenticated client are left untouched and treated like an unknown token, so
-        # the endpoint still returns 200 (RFC 7009 section 2.2) without disclosing whether
-        # the token exists.
-        client = request.client
+        # to revoke another client's tokens, so the lookup is scoped to the authenticated
+        # client (request.client). Filtering by application in the queryset means a
+        # same-checksum token belonging to a different client is treated like an unknown
+        # token -- the search still falls back to the other token type, and the endpoint
+        # returns 200 (RFC 7009 section 2.2) without disclosing whether the token exists.
+        # Bail out when the request is not tied to a stored application so a NULL
+        # application filter can never match unrelated tokens.
+        application_pk = getattr(request.client, "pk", None)
+        if application_pk is None:
+            return
+
+        # RefreshToken uniqueness is (token_checksum, revoked), so several rows may share a
+        # checksum; revoke every match instead of get() to avoid MultipleObjectsReturned.
+        tokens = list(token_type.objects.filter(token_checksum=token_checksum, application_id=application_pk))
+        if not tokens:
+            for other_type in [_t for _t in token_types.values() if _t != token_type]:
+                tokens.extend(
+                    other_type.objects.filter(token_checksum=token_checksum, application_id=application_pk)
+                )
         for t in tokens:
-            if client is not None and t.application_id == client.pk:
-                t.revoke()
+            t.revoke()
 
     def build_http_request(self, request: OauthlibRequest) -> HttpRequest:
         """
