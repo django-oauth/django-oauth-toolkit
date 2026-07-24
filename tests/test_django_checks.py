@@ -29,6 +29,16 @@ class SwappedModelConsistencyCheckTestCase(TestCase):
     def _ids(self):
         return {m.id for m in validate_swapped_model_consistency(None)}
 
+    def test_check_is_registered(self):
+        # Guard against the @checks.register decorator being dropped: the direct-call
+        # tests below would still pass, but Django would never run the check.
+        from django.core.checks.registry import registry as checks_registry
+
+        self.assertIn(
+            validate_swapped_model_consistency,
+            checks_registry.get_checks(include_deployment_checks=True),
+        )
+
     def test_default_models_pass(self):
         # Both models default to the oauth2_provider app.
         self.assertNotIn("oauth2_provider.W011", self._ids())
