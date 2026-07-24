@@ -1,6 +1,7 @@
 from django import http
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import View
 
 from oauth2_provider import par
@@ -37,6 +38,9 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
             return http.JsonResponse({"error": "not_found"}, status=404)
         return super().dispatch(request, *args, **kwargs)
 
+    # Keep client-authentication credentials out of Django error reports / debug
+    # pages, mirroring the token endpoint's protection of client_secret.
+    @method_decorator(sensitive_post_parameters("client_secret", "client_assertion"))
     def post(self, request, *args, **kwargs):
         # RFC 9126 §2.1 step 2: a pushed request must not itself carry a request_uri.
         if "request_uri" in request.POST:
