@@ -13,6 +13,7 @@ from jwcrypto.jws import InvalidJWSObject
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import add_params_to_uri
 
+from .. import client_assertions
 from ..compat import login_not_required
 from ..exceptions import (
     ClientIdMissmatch,
@@ -94,6 +95,13 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             # RFC 8414 metadata endpoint so the two discovery documents agree.
             "client_id_metadata_document_supported": oauth2_settings.CIMD_ENABLED,
         }
+        # OIDC Discovery: required whenever a JWT client authentication method
+        # (RFC 7523 private_key_jwt / client_secret_jwt) is advertised above.
+        auth_signing_algs = client_assertions.token_endpoint_auth_signing_algs(
+            oauth2_settings.OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+        )
+        if auth_signing_algs:
+            data["token_endpoint_auth_signing_alg_values_supported"] = auth_signing_algs
         if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
             data["authorization_response_iss_parameter_supported"] = True
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
