@@ -451,7 +451,10 @@ class OAuth2Validator(RequestValidator):
         If something goes wrong, call oauthlib implementation of the method.
         """
         # An RFC 7523 client assertion is client authentication by definition.
-        if getattr(request, "client_assertion", None):
+        # Presence of either parameter counts (even empty), so a malformed or
+        # partial assertion attempt fails closed in authenticate_client instead
+        # of slipping through as an unauthenticated public-client request.
+        if self._presents_client_assertion(request):
             return True
 
         if self._extract_basic_auth(request):
@@ -486,7 +489,7 @@ class OAuth2Validator(RequestValidator):
         that assertion alone: per RFC 7521 section 4.2 there is deliberately no
         fallback to the secret-based methods when the assertion is invalid.
         """
-        if getattr(request, "client_assertion", None) or getattr(request, "client_assertion_type", None):
+        if self._presents_client_assertion(request):
             return self._authenticate_client_assertion(request)
 
         authenticated = self._authenticate_basic_auth(request)
@@ -495,6 +498,15 @@ class OAuth2Validator(RequestValidator):
             authenticated = self._authenticate_request_body(request)
 
         return authenticated
+
+    @staticmethod
+    def _presents_client_assertion(request):
+        """True when the request carries either RFC 7523 assertion parameter,
+        even with an empty value (oauthlib maps absent parameters to None)."""
+        return (
+            getattr(request, "client_assertion", None) is not None
+            or getattr(request, "client_assertion_type", None) is not None
+        )
 
     def _authenticate_client_assertion(self, request):
         """
