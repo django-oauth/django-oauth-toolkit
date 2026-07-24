@@ -1031,6 +1031,17 @@ class TestDCRJwtAuthMethods(TestCase):
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
+    def test_register_non_string_jwks_uri_is_400(self):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks_uri": 12345,
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
     def test_register_malformed_jwks_is_400(self):
         data = {
             "redirect_uris": ["https://example.com/cb"],
