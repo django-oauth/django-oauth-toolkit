@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from ..compat import login_not_required
 from ..models import get_access_token_model
+from ..oauth2_backends import get_oauthlib_core
 from ..views.generic import ClientProtectedScopedResourceView
 
 
@@ -75,7 +76,12 @@ class IntrospectTokenView(ClientProtectedScopedResourceView):
 
     def post(self, request, *args, **kwargs):
         """
-        Get the token from the body form parameters.
+        Get the token from the request body.
+
+        The body is parsed through the configured ``OAUTH2_BACKEND_CLASS`` so the
+        ``token`` parameter is read whether the body is form-encoded (the default
+        backend) or JSON (``JSONOAuthLibCore``). Previously the token was read
+        straight from ``request.POST``, which is empty for a JSON body. See #613.
         Body: token=mF_9.B5f-4.1JqM
 
         :param request:
@@ -83,4 +89,5 @@ class IntrospectTokenView(ClientProtectedScopedResourceView):
         :param kwargs:
         :return:
         """
-        return self.get_token_response(request.POST.get("token", None))
+        body = dict(get_oauthlib_core().extract_body(request))
+        return self.get_token_response(body.get("token", None))

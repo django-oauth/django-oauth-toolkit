@@ -1,5 +1,6 @@
 import calendar
 import datetime
+import json
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -8,6 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from oauth2_provider.models import get_access_token_model, get_application_model
+from oauth2_provider.oauth2_backends import JSONOAuthLibCore
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -224,6 +226,37 @@ class TestTokenIntrospectionViews(TestCase):
         self.assertEqual(response.status_code, 200)
         content = response.json()
         self.assertIsInstance(content, dict)
+        self.assertDictEqual(
+            content,
+            {
+                "active": True,
+                "scope": self.valid_token.scope,
+                "client_id": self.valid_token.application.client_id,
+                "username": self.valid_token.user.get_username(),
+                "exp": int(calendar.timegm(self.valid_token.expires.timetuple())),
+            },
+        )
+
+    def test_view_post_valid_token_json_body(self):
+        """
+        With ``OAUTH2_BACKEND_CLASS`` set to ``JSONOAuthLibCore``, a token supplied
+        in a JSON request body is parsed and introspected. The endpoint previously
+        read the token straight from ``request.POST``, which is empty for a JSON
+        body, so this returned "token missing". Regression test for #613.
+        """
+        self.oauth2_settings.OAUTH2_BACKEND_CLASS = JSONOAuthLibCore
+        auth_headers = {
+            "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:introspect"),
+            data=json.dumps({"token": self.valid_token.token}),
+            content_type="application/json",
+            **auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.json()
         self.assertDictEqual(
             content,
             {

@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (HTTP 500), when `request.auth` is not an OAuth2 access token. This lets them be
   composed with other permission classes (e.g. OR-ed) without a non-OAuth2 token
   turning into a server error.
+* #613 The token introspection endpoint (`IntrospectTokenView`) now reads the
+  `token` parameter from the request body through the configured
+  `OAUTH2_BACKEND_CLASS`, so a token supplied in a JSON body is parsed when
+  `JSONOAuthLibCore` is configured. Previously the token was read straight from
+  `request.POST`, which is empty for a JSON body.
 
 ## [3.4.0] - 2026-07-23
 
