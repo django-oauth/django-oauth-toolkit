@@ -404,7 +404,11 @@ class TestOAuth2Validator(TransactionTestCase):
             application=self.application,
         )
 
-        self.validator.revoke_token(long_token, "refresh_token", mock.MagicMock(wraps=Request))
+        # revoke_token runs after client authentication, so request.client is the
+        # authenticated (owning) application; see RFC 7009 §2.1 client-ownership check.
+        request = mock.MagicMock(wraps=Request)
+        request.client = self.application
+        self.validator.revoke_token(long_token, "refresh_token", request)
 
         refresh_token.refresh_from_db()
         self.assertIsNotNone(refresh_token.revoked)
@@ -443,10 +447,41 @@ class TestOAuth2Validator(TransactionTestCase):
             application=self.application,
         )
 
-        self.validator.revoke_token(token, "refresh_token", mock.MagicMock(wraps=Request))
+        request = mock.MagicMock(wraps=Request)
+        request.client = self.application
+        self.validator.revoke_token(token, "refresh_token", request)
 
         active_token.refresh_from_db()
         self.assertIsNotNone(active_token.revoked)
+
+    def test_revoke_token_without_authenticated_client_is_noop(self):
+        # RFC 7009 §2.1 client-ownership check: with no authenticated client on the
+        # request there is nobody the token could have been "issued to," so revoke_token
+        # must not revoke anything. In particular the early return must fire before the
+        # queryset is built, so an application-less (NULL application) token is not matched
+        # by an ``application_id=None`` filter.
+        token = "unauthenticated-revoke-token"
+        access_token = AccessToken.objects.create(
+            token=token,
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            application=self.application,
+        )
+        applicationless_token = AccessToken.objects.create(
+            token="applicationless-token",
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            application=None,
+        )
+
+        request = mock.MagicMock(wraps=Request)
+        request.client = None
+        # Revoke by the value of the NULL-application token: a naive ``application_id=None``
+        # filter would match it; the early return must prevent that.
+        self.validator.revoke_token("applicationless-token", "access_token", request)
+
+        self.assertTrue(AccessToken.objects.filter(pk=access_token.pk).exists())
+        self.assertTrue(AccessToken.objects.filter(pk=applicationless_token.pk).exists())
 
     def test_save_bearer_token__without_user__raises_fatal_client(self):
         token = {}

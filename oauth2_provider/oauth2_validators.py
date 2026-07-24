@@ -1140,12 +1140,27 @@ class OAuth2Validator(RequestValidator):
 
         token_checksum = hashlib.sha256(token.encode("utf-8")).hexdigest()
         token_type = token_types.get(token_type_hint, AccessToken)
+
+        # RFC 7009 section 2.1: the authorization server "verifies whether the token was
+        # issued to the client making the revocation request." A client must not be able
+        # to revoke another client's tokens, so the lookup is scoped to the authenticated
+        # client (request.client). Filtering by application in the queryset means a
+        # same-checksum token belonging to a different client is treated like an unknown
+        # token -- the search still falls back to the other token type, and the endpoint
+        # returns 200 (RFC 7009 section 2.2) without disclosing whether the token exists.
+        # Bail out when the request is not tied to a stored application so a NULL
+        # application filter can never match unrelated tokens.
+        application_pk = getattr(request.client, "pk", None)
+        if application_pk is None:
+            return
+
         # RefreshToken uniqueness is (token_checksum, revoked), so several rows may share a
         # checksum; revoke every match instead of get() to avoid MultipleObjectsReturned.
-        tokens = list(token_type.objects.filter(token_checksum=token_checksum))
+        lookup = {"token_checksum": token_checksum, "application_id": application_pk}
+        tokens = list(token_type.objects.filter(**lookup))
         if not tokens:
             for other_type in [_t for _t in token_types.values() if _t != token_type]:
-                tokens.extend(other_type.objects.filter(token_checksum=token_checksum))
+                tokens.extend(other_type.objects.filter(**lookup))
         for t in tokens:
             t.revoke()
 
