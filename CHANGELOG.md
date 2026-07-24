@@ -77,8 +77,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `code_challenge_method`, or an access token in the URI query string now emits a `DeprecationWarning`, per
   [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700). Each is gated by the corresponding
   `COMPLIANT_BCP_RFC9700_*` setting, whose default is scheduled to flip to `True` (enforcing rejection) in 4.0.
+* Several modules moved into role-based subpackages (see Changed below). The old top-level import paths
+  still work but now emit a `DeprecationWarning` and will be removed in 4.0. Update imports as follows:
+  `oauth2_provider.{compat,exceptions,http,scopes,signals,utils,checks}` →
+  `oauth2_provider.core.*`; `oauth2_provider.oauth2_backends` →
+  `oauth2_provider.core.backends_oauthlib`; `oauth2_provider.{bcp,dcr,cimd,forms,admin}` →
+  `oauth2_provider.authorization_server.*`;
+  `oauth2_provider.{www_authenticate,backends,decorators,middleware}` →
+  `oauth2_provider.resource_server.*`. `oauth2_provider.admin` keeps working silently (no warning) so
+  Django admin autodiscovery is unaffected. `oauth2_provider.oauth2_validators.OAuth2Validator` and the
+  RFC 8707 helper functions keep their import paths.
 
 ### Changed
+* Reorganized the package by OAuth2 role. Shared plumbing now lives under `oauth2_provider.core`,
+  authorization-server / OpenID Connect Provider code under `oauth2_provider.authorization_server`
+  (with an `authorization_server.oidc` facet), and resource-server code under
+  `oauth2_provider.resource_server`. The role packages re-export their public API for imports by role
+  (e.g. `from oauth2_provider.resource_server import ProtectedResourceView`). The resource-server slice
+  of `OAuth2Validator` (bearer-token validation, the RFC 7662 introspection client, and the RFC 8707
+  resource-indicator helpers) moved to `oauth2_provider.resource_server.validators` as a
+  `ResourceServerValidatorMixin` that `OAuth2Validator` composes; the public validator class, its
+  import path, and its behavior are unchanged. All moves ship with backward-compatible import shims
+  (see Deprecated); the swappable-model, generator, and settings modules were intentionally left in
+  place.
 * Replaced the unreleased `AbstractApplication.dcr_created` `BooleanField` (added in #670) with a
   `registration_source` `CharField` enum (`AbstractApplication.RegistrationSource`, values `manual`,
   `dcr`, `cimd`; default `manual`). This records client provenance as a single value instead of
