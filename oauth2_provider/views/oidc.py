@@ -13,6 +13,9 @@ from jwcrypto.jws import InvalidJWSObject
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import add_params_to_uri
 
+from oauth2_provider.authorization_server.oidc.mixins import OIDCLogoutOnlyMixin, OIDCOnlyMixin
+from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
+
 from ..authorization_server.forms import ConfirmLogoutForm
 from ..core.compat import login_not_required
 from ..core.exceptions import (
@@ -38,7 +41,6 @@ from .metadata import (
     bcp_filter_code_challenge_methods,
     bcp_filter_response_types,
 )
-from .mixins import OAuthLibMixin, OIDCLogoutOnlyMixin, OIDCOnlyMixin
 
 
 Application = get_application_model()
@@ -138,7 +140,7 @@ class JwksInfoView(OIDCOnlyMixin, View):
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class UserInfoView(OIDCOnlyMixin, OAuthLibMixin, View):
+class UserInfoView(OIDCOnlyMixin, AuthorizationServerViewMixin, View):
     """
     View used to show Claims about the authenticated End-User
     """

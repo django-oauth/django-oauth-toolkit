@@ -18,6 +18,8 @@ from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
+from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
+
 from ..authorization_server.forms import AllowForm
 from ..core.compat import login_not_required
 from ..core.exceptions import OAuthToolkitError
@@ -27,7 +29,6 @@ from ..core.signals import app_authorized
 from ..models import get_access_token_model, get_application_model, get_device_grant_model
 from ..resource_server.validators import is_valid_resource_uri
 from ..settings import oauth2_settings
-from .mixins import OAuthLibMixin
 
 
 log = logging.getLogger("oauth2_provider")
@@ -35,7 +36,7 @@ log = logging.getLogger("oauth2_provider")
 
 # login_not_required decorator to bypass LoginRequiredMiddleware
 @method_decorator(login_not_required, name="dispatch")
-class BaseAuthorizationView(LoginRequiredMixin, OAuthLibMixin, View):
+class BaseAuthorizationView(LoginRequiredMixin, AuthorizationServerViewMixin, View):
     """
     Implements a generic endpoint to handle *Authorization Requests* as in :rfc:`4.1.1`. The view
     does not implement any strategy to determine *authorize/do not authorize* logic.
@@ -482,7 +483,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class TokenView(OAuthLibMixin, View):
+class TokenView(AuthorizationServerViewMixin, View):
     """
     Implements an endpoint to provide access tokens
 
@@ -576,7 +577,7 @@ class TokenView(OAuthLibMixin, View):
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class RevokeTokenView(OAuthLibMixin, View):
+class RevokeTokenView(AuthorizationServerViewMixin, View):
     """
     Implements an endpoint to revoke access or refresh tokens
     """
