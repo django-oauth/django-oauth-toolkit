@@ -162,8 +162,12 @@ Refresh-token rotation and replay detection (§4.14)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Rotation is on by default (``ROTATE_REFRESH_TOKEN``). Set
 ``REFRESH_TOKEN_REUSE_PROTECTION`` to ``True`` to revoke the entire token family when
-a refresh token is replayed (§4.14.2). Note that reuse detection only treats a replay
-as an attack after ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``. The
+a refresh token is replayed (§4.14.2). With reuse protection enabled,
+``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` only shields the *immediately preceding*
+refresh token — the one a client retries when it did not receive the rotated
+response. Replaying a token that has already been rotated past (one several
+generations old in the chain) is treated as an attack immediately, even inside the
+grace window, and revokes the whole family. The
 ``COMPLIANT_BCP_RFC9700_REFRESH_TOKEN`` validation gate flags
 ``REFRESH_TOKEN_REUSE_PROTECTION = False`` (``W007`` while the gate is ``False``,
 ``E002`` once it is ``True``).
