@@ -305,6 +305,70 @@ class TestOAuth2Validator(TransactionTestCase):
         self.assertIsNone(application)
         self.assertIsNone(self.request.client)
 
+    @mock.patch.object(Application._default_manager, "get")
+    def test_load_application_returns_none_for_client_id_containing_nul_byte(self, mock_get):
+        """
+        Regression test for
+        https://github.com/django-oauth/django-oauth-toolkit/issues/1006
+
+        Some database backends (e.g. PostgreSQL) raise ValueError
+        rather than executing the query at all when a string
+        parameter contains a NUL (0x00) byte. A client_id containing
+        one can never match a real Application, so this must return
+        None (same as "not found") instead of letting the ValueError
+        propagate into a 500 error.
+
+        The manager lookup is mocked to raise ValueError so the test is
+        backend-agnostic: SQLite (the default test backend) tolerates a
+        NUL byte and simply returns "not found", so without the mock this
+        would pass even against the unfixed code.
+        """
+        mock_get.side_effect = ValueError("A string literal cannot contain NUL (0x00) characters.")
+        self.request.client = None
+        application = self.validator._load_application("client_id\x00", self.request)
+        self.assertIsNone(application)
+        self.assertIsNone(self.request.client)
+
+    @mock.patch("oauth2_provider.oauth2_validators.authenticate")
+    def test_validate_user_returns_false_for_username_containing_nul_byte(self, mock_authenticate):
+        """
+        Regression test for
+        https://github.com/django-oauth/django-oauth-toolkit/issues/1006
+
+        Some database backends (e.g. PostgreSQL) raise ValueError from
+        within Django's own authenticate() when a username contains a
+        NUL (0x00) byte, rather than the usual "no matching user"
+        outcome. A username containing one can never match a real
+        user, so this must return False (authentication failed)
+        instead of letting the ValueError propagate into a 500 error.
+
+        authenticate() is mocked to raise ValueError so the test is
+        backend-agnostic: SQLite (the default test backend) tolerates a
+        NUL byte and simply returns None, so without the mock this would
+        pass even against the unfixed code.
+        """
+        mock_authenticate.side_effect = ValueError("A string literal cannot contain NUL (0x00) characters.")
+        oauthlib_request = Request("/o/token/")
+        oauthlib_request.decoded_body = []
+        result = self.validator.validate_user(
+            "someuser\x00", "somepassword", self.application, oauthlib_request
+        )
+        self.assertFalse(result)
+
+    @mock.patch("oauth2_provider.oauth2_validators.authenticate")
+    def test_validate_user_reraises_unrelated_value_error(self, mock_authenticate):
+        """
+        A ValueError that is not caused by a NUL byte in the username
+        (e.g. raised by a custom authentication backend for an unrelated
+        reason) must propagate rather than being silently swallowed as a
+        failed authentication.
+        """
+        mock_authenticate.side_effect = ValueError("unrelated backend error")
+        oauthlib_request = Request("/o/token/")
+        oauthlib_request.decoded_body = []
+        with self.assertRaises(ValueError):
+            self.validator.validate_user("someuser", "somepassword", self.application, oauthlib_request)
+
     def test_rotate_refresh_token__is_true(self):
         self.assertTrue(self.validator.rotate_refresh_token(mock.MagicMock()))
 
