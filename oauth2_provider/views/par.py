@@ -1,31 +1,13 @@
-import secrets
-
 from django import http
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import View
-from oauthlib.common import Request as OAuthlibRequest
 
+from oauth2_provider import par
 from oauth2_provider.compat import login_not_required
 from oauth2_provider.exceptions import OAuthToolkitError
-from oauth2_provider.models import create_pushed_authorization_request
 from oauth2_provider.settings import oauth2_settings
 from oauth2_provider.views.mixins import OAuthLibMixin
-
-
-# Request URIs use the IANA-registered URN sub-namespace (RFC 9126 §2.2 / §9.3).
-REQUEST_URI_PREFIX = "urn:ietf:params:oauth:request_uri:"
-
-# Parameters that authenticate the client at a token-style endpoint. They are
-# relied upon only for client authentication and are not part of the authorization
-# request itself (RFC 9126 §2.1), so they are never stored on the pushed request.
-CLIENT_AUTH_PARAMETERS = frozenset(
-    {
-        "client_secret",
-        "client_assertion",
-        "client_assertion_type",
-    }
-)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -39,6 +21,9 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
     authorization request; the server validates them and returns a single-use
     ``request_uri`` that the client subsequently presents at the authorization
     endpoint in place of the individual parameters.
+
+    This view is a thin HTTP adapter; the request handling lives in
+    :mod:`oauth2_provider.par`.
     """
 
     # POST-only: the base View returns 405 for any other method (RFC 9126 §2.3).
@@ -70,15 +55,14 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
         # RFC 9126 §2.1 step 1: authenticate the client exactly as at the token
         # endpoint. Confidential clients authenticate; public clients (e.g. PKCE)
         # are identified by client_id.
-        client = self._authenticate_client(core, request)
+        client = par.authenticate_par_client(core, request)
         if client is None:
             return self._error_response("invalid_client", "Client authentication failed.", status=401)
 
         # Bind the request to the authenticated client (RFC 9126 §2.2) *before*
-        # validating it. Otherwise an authenticated client could submit an arbitrary
-        # client_id and observe validation differences (e.g. whether another client
-        # exists or has a given redirect_uri). The client_id is a required
-        # authorization-request parameter, so it must be present and match.
+        # validating it, so a client cannot submit an arbitrary client_id and observe
+        # validation differences (e.g. whether another client exists or has a given
+        # redirect_uri). client_id is a required authorization-request parameter.
         client_id = request.POST.get("client_id")
         if client_id and client.client_id != client_id:
             return self._error_response(
@@ -95,53 +79,9 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
         except OAuthToolkitError as error:
             return self._error_from_oauthlib(error)
 
-        parameters = self._collect_parameters(request)
-        request_uri = REQUEST_URI_PREFIX + secrets.token_urlsafe(32)
-        lifetime = oauth2_settings.PAR_REQUEST_URI_LIFETIME_SECONDS
-        create_pushed_authorization_request(
-            request_uri=request_uri,
-            client_id=client.client_id,
-            parameters=parameters,
-            expires_in=lifetime,
-        )
-
-        return self._json_response({"request_uri": request_uri, "expires_in": lifetime}, status=201)
-
-    def _authenticate_client(self, core, request):
-        """
-        Authenticate the request's client, returning the client instance or ``None``.
-
-        Confidential clients are authenticated with their credentials; public
-        clients that cannot authenticate are accepted on client_id alone, mirroring
-        how the authorization-code grant treats public clients.
-        """
-        uri, http_method, body, headers = core._extract_params(request)
-        oauthlib_request = OAuthlibRequest(uri, http_method=http_method, body=body, headers=headers)
-        validator = core.server.request_validator
-
-        if validator.authenticate_client(oauthlib_request):
-            return oauthlib_request.client
-
-        client_id = oauthlib_request.client_id
-        if client_id and validator.authenticate_client_id(client_id, oauthlib_request):
-            return oauthlib_request.client
-
-        return None
-
-    def _collect_parameters(self, request):
-        """
-        Build the JSON-serialisable mapping of authorization-request parameters to
-        store, dropping client-authentication parameters. Repeated ``resource``
-        values (RFC 8707) are preserved as a list; all other parameters keep their
-        last value, matching ``OAuthLibCore.extract_body``.
-        """
-        parameters = {}
-        for key in request.POST:
-            if key in CLIENT_AUTH_PARAMETERS:
-                continue
-            values = request.POST.getlist(key)
-            parameters[key] = values if key == "resource" else values[-1]
-        return parameters
+        parameters = par.collect_pushed_parameters(request)
+        request_uri, expires_in = par.store_pushed_request(client.client_id, parameters)
+        return self._json_response({"request_uri": request_uri, "expires_in": expires_in}, status=201)
 
     def _error_from_oauthlib(self, error):
         oauthlib_error = error.oauthlib_error

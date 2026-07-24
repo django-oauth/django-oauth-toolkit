@@ -7,7 +7,6 @@ from django import http
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ImproperlyConfigured
-from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, QueryDict
 from django.shortcuts import resolve_url
 from django.urls.exceptions import NoReverseMatch
@@ -19,16 +18,12 @@ from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
+from .. import par
 from ..compat import login_not_required
 from ..exceptions import FatalClientError, OAuthToolkitError
 from ..forms import AllowForm
 from ..http import OAuth2ResponseRedirect
-from ..models import (
-    get_access_token_model,
-    get_application_model,
-    get_device_grant_model,
-    get_par_request_model,
-)
+from ..models import get_access_token_model, get_application_model, get_device_grant_model
 from ..oauth2_validators import is_valid_resource_uri
 from ..scopes import get_scopes_backend
 from ..settings import oauth2_settings
@@ -192,47 +187,17 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         error = FatalClientError(error=CustomOAuth2Error(error="invalid_request", description=description))
         return self.error_response(error, application=None)
 
-    def _pushed_authorization_required(self, request):
-        """Whether this authorization request must go through the PAR endpoint.
-
-        True when the server-wide setting requires PAR, or when the client's
-        ``require_pushed_authorization_requests`` flag is set (RFC 9126 §4 / §6).
-        The server-wide setting is a floor; a per-client value never relaxes it.
-        """
-        if oauth2_settings.REQUIRE_PUSHED_AUTHORIZATION_REQUESTS:
-            return True
-        client_id = request.GET.get("client_id")
-        if not client_id:
-            return False
-        application = get_application_model().objects.filter(client_id=client_id).first()
-        return bool(application and application.require_pushed_authorization_requests)
-
     def _resolve_pushed_request_uri(self, request, request_uri):
         """Replace an incoming ``request_uri`` with the parameters pushed to the PAR
         endpoint (RFC 9126 §4), or return an error response.
+
+        The consume/binding/expiry logic lives in :mod:`oauth2_provider.par`; here we
+        only re-inject the resolved parameters into the request and render errors.
         """
-        par_model = get_par_request_model()
-        # The request_uri is bound to the client that pushed it (RFC 9126 §2.2), so
-        # client_id is required in the authorization request (RFC 9126 §4 example).
-        client_id = request.GET.get("client_id")
-        # Read, verify the client binding, then delete under a row lock in one
-        # transaction. Two concurrent authorization requests cannot both consume the
-        # same request_uri (one-time use, RFC 9126 §4 / §7.3), and — crucially — the
-        # binding is checked *before* deletion so a party who merely obtained a leaked
-        # request_uri (and is not the bound client) cannot consume/invalidate it (DoS).
         try:
-            with transaction.atomic():
-                par = par_model.objects.select_for_update().get(request_uri=request_uri)
-                if not client_id or client_id != par.client_id:
-                    # Leave the record intact so the legitimate client can still use it.
-                    return self._fatal_par_error("The request_uri was not issued to this client.")
-                parameters = par.parameters
-                expired = par.is_expired()
-                par.delete()
-        except par_model.DoesNotExist:
-            return self._fatal_par_error("The request_uri is invalid or has already been used.")
-        if expired:
-            return self._fatal_par_error("The request_uri has expired.")
+            parameters = par.consume_pushed_request(request_uri, request.GET.get("client_id"))
+        except par.PushedAuthorizationError as error:
+            return self._fatal_par_error(error.description)
         # Re-inject the pushed parameters so the existing authorization flow, which
         # reads from the query string, proceeds unchanged. Any parameters supplied
         # alongside request_uri are intentionally ignored: the pushed request is
@@ -251,7 +216,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         request_uri = request.GET.get("request_uri")
         if request_uri:
             return self._resolve_pushed_request_uri(request, request_uri)
-        if self._pushed_authorization_required(request):
+        if par.pushed_authorization_required(request.GET.get("client_id")):
             return self._fatal_par_error("Pushed authorization requests are required for this client.")
         return None
 

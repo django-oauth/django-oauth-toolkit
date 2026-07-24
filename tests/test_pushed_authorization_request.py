@@ -12,7 +12,7 @@ from oauth2_provider.models import (
     get_grant_model,
     get_par_request_model,
 )
-from oauth2_provider.views.par import REQUEST_URI_PREFIX
+from oauth2_provider.par import REQUEST_URI_PREFIX
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase

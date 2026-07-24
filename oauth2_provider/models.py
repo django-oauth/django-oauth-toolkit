@@ -222,9 +222,11 @@ class AbstractApplication(models.Model):
         default=None,
         help_text=_("When the cached Client ID Metadata Document should be re-fetched"),
     )
-    # RFC 9126 §6 client metadata. Three-valued: True/False override the server-wide
-    # policy for this client; None (the default) defers to the
-    # REQUIRE_PUSHED_AUTHORIZATION_REQUESTS setting.
+    # RFC 9126 §6 client metadata. Three-valued: True requires PAR for this client
+    # even when the server-wide setting is off; None (the default) defers to the
+    # REQUIRE_PUSHED_AUTHORIZATION_REQUESTS setting. The server-wide setting is a
+    # floor, so a per-client value never relaxes it (a per-client False therefore
+    # only has an effect when the server-wide setting is off, where it matches None).
     require_pushed_authorization_requests = models.BooleanField(
         null=True,
         blank=True,
