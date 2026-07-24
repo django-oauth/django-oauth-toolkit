@@ -5,7 +5,7 @@ from django.contrib.auth import authenticate
 from django.utils.cache import patch_vary_headers
 
 from oauth2_provider.models import get_access_token_model
-from oauth2_provider.utils import parse_bearer_token
+from oauth2_provider.core.utils import parse_bearer_token
 
 
 log = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ Configure via ``OAUTH2_PROVIDER["DCR_REGISTRATION_PERMISSION_CLASSES"]``.
 
 from django.middleware.csrf import CsrfViewMiddleware
 
-from .utils import parse_bearer_token
+from .core.utils import parse_bearer_token
 
 
 class _CsrfCheck(CsrfViewMiddleware):

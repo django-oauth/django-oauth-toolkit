@@ -9,7 +9,7 @@ from oauthlib.common import quote, urlencode, urlencoded
 from oauthlib.oauth2 import OAuth2Error
 
 from .bcp import bcp_compliant
-from .exceptions import FatalClientError, OAuthToolkitError
+from .core.exceptions import FatalClientError, OAuthToolkitError
 from .settings import oauth2_settings
 
 

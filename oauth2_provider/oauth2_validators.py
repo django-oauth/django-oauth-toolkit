@@ -33,7 +33,7 @@ from oauthlib.openid import RequestValidator
 
 from . import cimd
 from .bcp import bcp_compliant
-from .exceptions import FatalClientError
+from .core.exceptions import FatalClientError
 from .models import (
     AbstractApplication,
     get_access_token_model,
@@ -42,9 +42,9 @@ from .models import (
     get_id_token_model,
     get_refresh_token_model,
 )
-from .scopes import get_scopes_backend
+from .core.scopes import get_scopes_backend
 from .settings import oauth2_settings
-from .utils import get_timezone
+from .core.utils import get_timezone
 
 
 # Default ports used to normalize URIs before comparison, so that e.g.
