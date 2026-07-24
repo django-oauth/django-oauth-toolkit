@@ -60,7 +60,7 @@ tests/e2e/
   rfc6749_resource_owner_password/  rfc6749_implicit/  rfc6749_refresh_token/
   rfc7636_pkce/  rfc7009_revocation/  rfc7662_introspection/
   rfc8414_as_metadata/  rfc8628_device_grant/
-  rfc7591_dynamic_client_registration/
+  rfc7591_dynamic_client_registration/  rfc7523_jwt_bearer/
   cimd_client_id_metadata_document/   # CIMD-enabled IdP + loopback document server
   oidc_core/  oidc_discovery/  oidc_rp_initiated_logout/
   browser_rp/          # Playwright over the real SvelteKit RP

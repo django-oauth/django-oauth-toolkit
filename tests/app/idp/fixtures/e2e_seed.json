@@ -1,133 +1,154 @@
 [
-{
-  "model": "auth.user",
-  "fields": {
-    "password": "pbkdf2_sha256$1000000$YEKWi3C3L5q5St4tVA9nNw$j2xwTR9OZ3R71O31wfOMOqySUjCToXcdV7gIPuhT26M=",
-    "last_login": null,
-    "is_superuser": false,
-    "username": "e2euser",
-    "first_name": "Test",
-    "last_name": "User",
-    "email": "e2e@example.com",
-    "is_staff": false,
-    "is_active": true,
-    "date_joined": "2024-01-01T00:00:00Z",
-    "groups": [],
-    "user_permissions": []
+  {
+    "model": "auth.user",
+    "fields": {
+      "password": "pbkdf2_sha256$1000000$YEKWi3C3L5q5St4tVA9nNw$j2xwTR9OZ3R71O31wfOMOqySUjCToXcdV7gIPuhT26M=",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "e2euser",
+      "first_name": "Test",
+      "last_name": "User",
+      "email": "e2e@example.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2024-01-01T00:00:00Z",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "oauth2_provider.application",
+    "fields": {
+      "client_id": "e2e-confidential-code",
+      "user": null,
+      "redirect_uris": "http://localhost:9000/callback",
+      "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
+      "client_type": "confidential",
+      "authorization_grant_type": "authorization-code",
+      "client_secret": "pbkdf2_sha256$1000000$9f78P6JKJa5Bg7Zgi2UWcf$bCxuMkMHY5K4wjT8x6pZ9ioIuU5Y1GFyne/RCs/6iQA=",
+      "hash_client_secret": true,
+      "name": "E2E Confidential Authorization Code",
+      "skip_authorization": false,
+      "created": "2024-01-01T00:00:00Z",
+      "updated": "2024-01-01T00:00:00Z",
+      "algorithm": "RS256",
+      "allowed_origins": ""
+    }
+  },
+  {
+    "model": "oauth2_provider.application",
+    "fields": {
+      "client_id": "e2e-public-pkce",
+      "user": null,
+      "redirect_uris": "http://localhost:9000/callback",
+      "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
+      "client_type": "public",
+      "authorization_grant_type": "authorization-code",
+      "client_secret": "",
+      "hash_client_secret": false,
+      "name": "E2E Public Authorization Code (PKCE required)",
+      "skip_authorization": true,
+      "created": "2024-01-01T00:00:00Z",
+      "updated": "2024-01-01T00:00:00Z",
+      "algorithm": "RS256",
+      "allowed_origins": ""
+    }
+  },
+  {
+    "model": "oauth2_provider.application",
+    "fields": {
+      "client_id": "e2e-client-credentials",
+      "user": null,
+      "redirect_uris": "",
+      "post_logout_redirect_uris": "",
+      "client_type": "confidential",
+      "authorization_grant_type": "client-credentials",
+      "client_secret": "pbkdf2_sha256$1000000$PNZ7dL5oq5KGryhoAz7guR$9eykGSvENwqi8MbC+3s38Rovb5NBc84cNKa0GNfyoAI=",
+      "hash_client_secret": true,
+      "name": "E2E Client Credentials",
+      "skip_authorization": true,
+      "created": "2024-01-01T00:00:00Z",
+      "updated": "2024-01-01T00:00:00Z",
+      "algorithm": "",
+      "allowed_origins": ""
+    }
+  },
+  {
+    "model": "oauth2_provider.application",
+    "fields": {
+      "client_id": "e2e-password",
+      "user": null,
+      "redirect_uris": "",
+      "post_logout_redirect_uris": "",
+      "client_type": "confidential",
+      "authorization_grant_type": "password",
+      "client_secret": "pbkdf2_sha256$1000000$aBsqZrlUuM37VUiHLt75H6$IQGFTcjrTa+zXdM9EomOrGClIojMI/QcAmjPED63mUI=",
+      "hash_client_secret": true,
+      "name": "E2E Resource Owner Password Credentials",
+      "skip_authorization": true,
+      "created": "2024-01-01T00:00:00Z",
+      "updated": "2024-01-01T00:00:00Z",
+      "algorithm": "",
+      "allowed_origins": ""
+    }
+  },
+  {
+    "model": "oauth2_provider.application",
+    "fields": {
+      "client_id": "e2e-implicit",
+      "user": null,
+      "redirect_uris": "http://localhost:9000/callback",
+      "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
+      "client_type": "public",
+      "authorization_grant_type": "implicit",
+      "client_secret": "",
+      "hash_client_secret": false,
+      "name": "E2E Implicit",
+      "skip_authorization": true,
+      "created": "2024-01-01T00:00:00Z",
+      "updated": "2024-01-01T00:00:00Z",
+      "algorithm": "RS256",
+      "allowed_origins": ""
+    }
+  },
+  {
+    "model": "oauth2_provider.application",
+    "fields": {
+      "client_id": "e2e-hybrid",
+      "user": null,
+      "redirect_uris": "http://localhost:9000/callback",
+      "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
+      "client_type": "confidential",
+      "authorization_grant_type": "openid-hybrid",
+      "client_secret": "pbkdf2_sha256$1000000$DLAEOPigtz3awGC7VOCmDZ$4a6LGqO2Dg0KkCQZM7rdooG3CMQfcKzHXzxaZAV/LkU=",
+      "hash_client_secret": true,
+      "name": "E2E OIDC Hybrid",
+      "skip_authorization": true,
+      "created": "2024-01-01T00:00:00Z",
+      "updated": "2024-01-01T00:00:00Z",
+      "algorithm": "RS256",
+      "allowed_origins": ""
+    }
+  },
+  {
+    "model": "oauth2_provider.application",
+    "fields": {
+      "client_id": "e2e-jwt-bearer",
+      "user": null,
+      "redirect_uris": "",
+      "post_logout_redirect_uris": "",
+      "client_type": "public",
+      "authorization_grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "client_secret": "",
+      "hash_client_secret": false,
+      "name": "E2E JWT Bearer (RFC 7523)",
+      "skip_authorization": true,
+      "created": "2024-01-01T00:00:00Z",
+      "updated": "2024-01-01T00:00:00Z",
+      "algorithm": "",
+      "allowed_origins": "",
+      "client_jwks": "{\"keys\": [{\"e\": \"AQAB\", \"kid\": \"e2e-jwt-bearer-1\", \"kty\": \"RSA\", \"n\": \"1SIdxiZUn78-q-oEOVY3N0gaq0xyRar5ChXyaqSmxTVN9oOdTtAYSCky4EwPhyYB_UE_M2b2degMhQuQhegaezf3iAxOqq6ncxU1zk3-h-rAcjY8Tv70XqvxDGmuwhE9c-i3l8pU0eS5PBee84wNi-Kf8ham2D8EHP16J58QlKkyoLHnO-muqAaD9dUH2I8dmTvfFP2cZgOzkjlFm37xrYnq6-pIDqhxD3-jRz8nnYM405Jdul7ZhAZhKZfr2pc9EZvzSeT6EYQUPl3BAq5zIiGhk9S3sNIN5qCtCoaeDTFrxq_SnNJejW2cLphcWwuPmK4fwlG__yEt8s8U8lXpHQ\"}]}",
+      "client_jwks_uri": ""
+    }
   }
-},
-{
-  "model": "oauth2_provider.application",
-  "fields": {
-    "client_id": "e2e-confidential-code",
-    "user": null,
-    "redirect_uris": "http://localhost:9000/callback",
-    "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
-    "client_type": "confidential",
-    "authorization_grant_type": "authorization-code",
-    "client_secret": "pbkdf2_sha256$1000000$9f78P6JKJa5Bg7Zgi2UWcf$bCxuMkMHY5K4wjT8x6pZ9ioIuU5Y1GFyne/RCs/6iQA=",
-    "hash_client_secret": true,
-    "name": "E2E Confidential Authorization Code",
-    "skip_authorization": false,
-    "created": "2024-01-01T00:00:00Z",
-    "updated": "2024-01-01T00:00:00Z",
-    "algorithm": "RS256",
-    "allowed_origins": ""
-  }
-},
-{
-  "model": "oauth2_provider.application",
-  "fields": {
-    "client_id": "e2e-public-pkce",
-    "user": null,
-    "redirect_uris": "http://localhost:9000/callback",
-    "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
-    "client_type": "public",
-    "authorization_grant_type": "authorization-code",
-    "client_secret": "",
-    "hash_client_secret": false,
-    "name": "E2E Public Authorization Code (PKCE required)",
-    "skip_authorization": true,
-    "created": "2024-01-01T00:00:00Z",
-    "updated": "2024-01-01T00:00:00Z",
-    "algorithm": "RS256",
-    "allowed_origins": ""
-  }
-},
-{
-  "model": "oauth2_provider.application",
-  "fields": {
-    "client_id": "e2e-client-credentials",
-    "user": null,
-    "redirect_uris": "",
-    "post_logout_redirect_uris": "",
-    "client_type": "confidential",
-    "authorization_grant_type": "client-credentials",
-    "client_secret": "pbkdf2_sha256$1000000$PNZ7dL5oq5KGryhoAz7guR$9eykGSvENwqi8MbC+3s38Rovb5NBc84cNKa0GNfyoAI=",
-    "hash_client_secret": true,
-    "name": "E2E Client Credentials",
-    "skip_authorization": true,
-    "created": "2024-01-01T00:00:00Z",
-    "updated": "2024-01-01T00:00:00Z",
-    "algorithm": "",
-    "allowed_origins": ""
-  }
-},
-{
-  "model": "oauth2_provider.application",
-  "fields": {
-    "client_id": "e2e-password",
-    "user": null,
-    "redirect_uris": "",
-    "post_logout_redirect_uris": "",
-    "client_type": "confidential",
-    "authorization_grant_type": "password",
-    "client_secret": "pbkdf2_sha256$1000000$aBsqZrlUuM37VUiHLt75H6$IQGFTcjrTa+zXdM9EomOrGClIojMI/QcAmjPED63mUI=",
-    "hash_client_secret": true,
-    "name": "E2E Resource Owner Password Credentials",
-    "skip_authorization": true,
-    "created": "2024-01-01T00:00:00Z",
-    "updated": "2024-01-01T00:00:00Z",
-    "algorithm": "",
-    "allowed_origins": ""
-  }
-},
-{
-  "model": "oauth2_provider.application",
-  "fields": {
-    "client_id": "e2e-implicit",
-    "user": null,
-    "redirect_uris": "http://localhost:9000/callback",
-    "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
-    "client_type": "public",
-    "authorization_grant_type": "implicit",
-    "client_secret": "",
-    "hash_client_secret": false,
-    "name": "E2E Implicit",
-    "skip_authorization": true,
-    "created": "2024-01-01T00:00:00Z",
-    "updated": "2024-01-01T00:00:00Z",
-    "algorithm": "RS256",
-    "allowed_origins": ""
-  }
-},
-{
-  "model": "oauth2_provider.application",
-  "fields": {
-    "client_id": "e2e-hybrid",
-    "user": null,
-    "redirect_uris": "http://localhost:9000/callback",
-    "post_logout_redirect_uris": "http://localhost:9000/logout-callback",
-    "client_type": "confidential",
-    "authorization_grant_type": "openid-hybrid",
-    "client_secret": "pbkdf2_sha256$1000000$DLAEOPigtz3awGC7VOCmDZ$4a6LGqO2Dg0KkCQZM7rdooG3CMQfcKzHXzxaZAV/LkU=",
-    "hash_client_secret": true,
-    "name": "E2E OIDC Hybrid",
-    "skip_authorization": true,
-    "created": "2024-01-01T00:00:00Z",
-    "updated": "2024-01-01T00:00:00Z",
-    "algorithm": "RS256",
-    "allowed_origins": ""
-  }
-}
 ]
