@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password
-from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist, ValidationError
 from django.test.utils import override_settings
 from django.utils import timezone
 
@@ -385,6 +385,24 @@ class TestAccessTokenModel(BaseTestModels):
         expected_checksum = hashlib.sha256(token.encode()).hexdigest()
 
         self.assertEqual(access_token.token_checksum, expected_checksum)
+
+    def test_revoke_tolerates_missing_id_token(self):
+        # revoke() cleans up the associated ID token, but a dangling reference is
+        # possible under cross-database routing (where the FK is not enforced). Loading
+        # it then raises ObjectDoesNotExist, which must not break revocation (#1604).
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="tok-dangling-id-token",
+            expires=timezone.now() + timedelta(hours=1),
+        )
+        with mock.patch.object(
+            type(access_token),
+            "id_token",
+            new_callable=mock.PropertyMock,
+            side_effect=ObjectDoesNotExist,
+        ):
+            access_token.revoke()
+        self.assertFalse(AccessToken.objects.filter(pk=access_token.pk).exists())
 
 
 class TestRefreshTokenModel(BaseTestModels):
