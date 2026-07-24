@@ -44,6 +44,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use `application/x-www-form-urlencoded` (RFC 6749, RFC 7662, RFC 7009); the JSON mode is
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
   removal in 4.0.
+* Several modules moved into role-based subpackages (see Changed below). The old top-level import paths
+  still work but now emit a `DeprecationWarning` and will be removed in 4.0. Update imports as follows:
+  `oauth2_provider.{compat,exceptions,http,scopes,signals,utils,checks}` →
+  `oauth2_provider.core.*`; `oauth2_provider.oauth2_backends` →
+  `oauth2_provider.core.backends_oauthlib`; `oauth2_provider.{bcp,dcr,cimd,forms,admin}` →
+  `oauth2_provider.authorization_server.*`;
+  `oauth2_provider.{www_authenticate,backends,decorators,middleware}` →
+  `oauth2_provider.resource_server.*`. `oauth2_provider.admin` keeps working silently (no warning) so
+  Django admin autodiscovery is unaffected. `oauth2_provider.oauth2_validators.OAuth2Validator` and the
+  RFC 8707 helper functions keep their import paths.
+
 ### Changed
 * The `AccessToken` and `RefreshToken` admins now invalidate tokens through a **"Revoke selected"**
   action instead of raw delete (delete is disabled on those two admins). A raw delete of an access
@@ -70,6 +81,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mitigation), and document why `OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS` defaults
   to `True` (the `id_token_hint` is a previously issued token per OIDC RP-Initiated Logout)
   and how to harden it.
+* Reorganized the package by OAuth2 role. Shared plumbing now lives under `oauth2_provider.core`,
+  authorization-server / OpenID Connect Provider code under `oauth2_provider.authorization_server`
+  (with an `authorization_server.oidc` facet), and resource-server code under
+  `oauth2_provider.resource_server`. The role packages re-export their public API for imports by role
+  (e.g. `from oauth2_provider.resource_server import ProtectedResourceView`). The resource-server slice
+  of `OAuth2Validator` (bearer-token validation, the RFC 7662 introspection client, and the RFC 8707
+  resource-indicator helpers) moved to `oauth2_provider.resource_server.validators` as a
+  `ResourceServerValidatorMixin` that `OAuth2Validator` composes; the public validator class, its
+  import path, and its behavior are unchanged. All moves ship with backward-compatible import shims
+  (see Deprecated); the swappable-model, generator, and settings modules were intentionally left in
+  place.
+
 ### Fixed
 * #1796 Redirect URIs using an RFC 8252 §7.1 private-use URI scheme can now be registered.
   Such a scheme has no naming authority, so only a single slash follows it
