@@ -5,6 +5,7 @@ from django.urls import NoReverseMatch, reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import View
 
+from .. import client_assertions
 from ..compat import login_not_required
 from ..models import AbstractGrant
 from ..settings import oauth2_settings
@@ -138,12 +139,21 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             data["code_challenge_methods_supported"] = bcp_filter_code_challenge_methods(
                 [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS]
             )
+        # RFC 8414: when a JWT client authentication method (RFC 7523) is
+        # advertised, also advertise the JWS algs assertions may be signed with.
+        auth_signing_algs = client_assertions.token_endpoint_auth_signing_algs(auth_methods)
         if "token_endpoint" in data:
             data["token_endpoint_auth_methods_supported"] = auth_methods
+            if auth_signing_algs:
+                data["token_endpoint_auth_signing_alg_values_supported"] = auth_signing_algs
         if "revocation_endpoint" in data:
             data["revocation_endpoint_auth_methods_supported"] = auth_methods
+            if auth_signing_algs:
+                data["revocation_endpoint_auth_signing_alg_values_supported"] = auth_signing_algs
         if "introspection_endpoint" in data:
             data["introspection_endpoint_auth_methods_supported"] = auth_methods
+            if auth_signing_algs:
+                data["introspection_endpoint_auth_signing_alg_values_supported"] = auth_signing_algs
 
         if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY:
             jwks_url = self._get_endpoint_url(request, "jwks-info")
