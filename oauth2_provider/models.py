@@ -18,7 +18,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from jwcrypto import jwk
-from jwcrypto.common import base64url_encode
+from jwcrypto.common import JWException, base64url_encode
 from oauthlib.oauth2.rfc6749 import errors
 
 from .generators import generate_client_id, generate_client_secret
@@ -165,6 +165,29 @@ class AbstractApplication(models.Model):
         (HS256_ALGORITHM, _("HMAC with SHA-2 256")),
     )
 
+    # RFC 7591 / OIDC token_endpoint_auth_method values. The blank default
+    # keeps the legacy behavior: secret via Basic auth or request body for
+    # confidential clients, nothing for public ones. JWT client assertions
+    # (RFC 7523) are only accepted when explicitly registered.
+    TOKEN_AUTH_METHOD_DEFAULT = ""
+    TOKEN_AUTH_METHOD_NONE = "none"
+    TOKEN_AUTH_METHOD_CLIENT_SECRET_BASIC = "client_secret_basic"
+    TOKEN_AUTH_METHOD_CLIENT_SECRET_POST = "client_secret_post"
+    TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT = "client_secret_jwt"
+    TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT = "private_key_jwt"
+    TOKEN_AUTH_METHODS = (
+        (TOKEN_AUTH_METHOD_DEFAULT, _("Not set (infer from client type)")),
+        (TOKEN_AUTH_METHOD_NONE, _("None (public client)")),
+        (TOKEN_AUTH_METHOD_CLIENT_SECRET_BASIC, _("Client secret via HTTP Basic auth")),
+        (TOKEN_AUTH_METHOD_CLIENT_SECRET_POST, _("Client secret in the request body")),
+        (TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT, _("JWT assertion signed with the client secret")),
+        (TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT, _("JWT assertion signed with a private key")),
+    )
+    JWT_AUTH_METHODS = (
+        TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT,
+        TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+    )
+
     id = models.BigAutoField(primary_key=True)
     # 255 rather than 100 so a Client ID Metadata Document URL fits (CIMD uses
     # the client's https URL as its client_id).
@@ -202,6 +225,36 @@ class AbstractApplication(models.Model):
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
     algorithm = models.CharField(max_length=5, choices=ALGORITHM_TYPES, default=NO_ALGORITHM, blank=True)
+    token_endpoint_auth_method = models.CharField(
+        max_length=32,
+        choices=TOKEN_AUTH_METHODS,
+        default=TOKEN_AUTH_METHOD_DEFAULT,
+        blank=True,
+        help_text=_(
+            "How the client authenticates to the token endpoint. Leave unset to keep the "
+            "legacy behavior (client secret via Basic auth or request body for confidential "
+            "clients). When a JWT method is selected the client must authenticate with an "
+            "RFC 7523 client assertion and secret-based authentication is rejected."
+        ),
+    )
+    client_jwks = models.TextField(
+        blank=True,
+        default="",
+        help_text=_(
+            'The client\'s JSON Web Key Set (RFC 7517, {"keys": [...]}) holding the public keys '
+            "used to verify private_key_jwt client assertions. Public keys only. "
+            "Mutually exclusive with client_jwks_uri."
+        ),
+    )
+    client_jwks_uri = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_(
+            "HTTPS URL of the client's JSON Web Key Set, fetched to verify private_key_jwt "
+            "client assertions. Mutually exclusive with client_jwks."
+        ),
+    )
     allowed_origins = models.TextField(
         blank=True,
         help_text=_("Allowed origins list to enable CORS, space separated"),
@@ -341,6 +394,58 @@ class AbstractApplication(models.Model):
                     )
                 )
 
+        self._clean_client_assertion_config()
+
+    def _clean_client_assertion_config(self):
+        """Validate the RFC 7523 client authentication fields (see clean())."""
+        if self.client_jwks and self.client_jwks_uri:
+            raise ValidationError(_("client_jwks and client_jwks_uri are mutually exclusive."))
+        if self.client_jwks:
+            try:
+                key_set = jwk.JWKSet.from_json(self.client_jwks)
+            except (ValueError, JWException) as exc:
+                raise ValidationError(_("client_jwks is not a valid JWK Set: {err}").format(err=exc))
+            if not key_set["keys"]:
+                raise ValidationError(_("client_jwks must contain at least one key."))
+            # The AS only ever needs the public halves; storing a private key
+            # here would put a client credential server-side by accident.
+            if any(key.has_private for key in key_set["keys"]):
+                raise ValidationError(_("client_jwks must contain public keys only, never private keys."))
+        if self.client_jwks_uri and not self.client_jwks_uri.lower().startswith("https://"):
+            raise ValidationError(_("client_jwks_uri must use the https scheme."))
+
+        method = self.token_endpoint_auth_method
+        if method == AbstractApplication.TOKEN_AUTH_METHOD_NONE:
+            if self.client_type == AbstractApplication.CLIENT_CONFIDENTIAL:
+                raise ValidationError(
+                    _("A confidential client cannot use token_endpoint_auth_method 'none'.")
+                )
+        if method in AbstractApplication.JWT_AUTH_METHODS:
+            if self.client_type != AbstractApplication.CLIENT_CONFIDENTIAL:
+                raise ValidationError(
+                    _("token_endpoint_auth_method {method} requires a confidential client.").format(
+                        method=method
+                    )
+                )
+        if method == AbstractApplication.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT:
+            if not (self.client_jwks or self.client_jwks_uri):
+                raise ValidationError(_("private_key_jwt requires client_jwks or client_jwks_uri to be set."))
+        if method == AbstractApplication.TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT:
+            if not self.client_secret:
+                raise ValidationError(
+                    _("client_secret_jwt requires a client secret; it is the HMAC signing key.")
+                )
+            # Same constraint as HS256 id_token signing above: the secret is the
+            # shared HMAC key, so a hashed copy can never verify anything.
+            if self.hash_client_secret or self._client_secret_is_hashed(self.client_secret):
+                raise ValidationError(
+                    _(
+                        "client_secret_jwt requires the plaintext client secret as the HMAC key. "
+                        "Set hash_client_secret=False and store an unhashed client_secret on "
+                        "this application."
+                    )
+                )
+
     def get_absolute_url(self):
         return reverse("oauth2_provider:detail", args=[str(self.pk)])
 
@@ -394,6 +499,38 @@ class AbstractApplication(models.Model):
                 )
             return jwk.JWK(kty="oct", k=base64url_encode(self.client_secret))
         raise ImproperlyConfigured("This application does not support signed tokens")
+
+    def get_client_signing_jwks(self):
+        """Return the inline ``jwk.JWKSet`` used to verify this client's RFC 7523
+        assertions, or None when no inline JWKS is registered.
+
+        Remote ``client_jwks_uri`` resolution deliberately lives in
+        :mod:`oauth2_provider.client_assertions` so the model stays network-free.
+        """
+        if not self.client_jwks:
+            return None
+        return jwk.JWKSet.from_json(self.client_jwks)
+
+    def get_client_secret_hmac_jwk(self):
+        """Return the ``oct`` JWK derived from the plaintext client secret, used to
+        verify client_secret_jwt assertions (RFC 7523 section 2.2).
+
+        Distinct from :attr:`jwk_key`, which is the key the *server* signs
+        ID tokens with; this one verifies what the *client* signed.
+        """
+        # An empty or hashed secret can never verify an HMAC the client computed
+        # over the plaintext secret; fail loudly instead of silently rejecting.
+        if not self.client_secret:
+            raise ImproperlyConfigured(
+                "client_secret_jwt requires a non-empty client secret to use as the HMAC key."
+            )
+        if self._client_secret_is_hashed(self.client_secret):
+            raise ImproperlyConfigured(
+                "client_secret_jwt requires the plaintext client secret as the HMAC key, but this "
+                "application's client secret is hashed. Set hash_client_secret=False and reset the "
+                "client_secret so the plaintext secret is stored."
+            )
+        return jwk.JWK(kty="oct", k=base64url_encode(self.client_secret))
 
 
 class ApplicationManager(models.Manager):
