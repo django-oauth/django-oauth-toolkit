@@ -74,16 +74,11 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
         if client is None:
             return self._error_response("invalid_client", "Client authentication failed.", status=401)
 
-        # RFC 9126 §2.1 step 3: validate the pushed parameters as an authorization
-        # request. Parameters arrive in the POST body; oauthlib merges the body into
-        # its Request, so the existing authorization validation applies unchanged.
-        try:
-            core.validate_authorization_request(request)
-        except OAuthToolkitError as error:
-            return self._error_from_oauthlib(error)
-
-        # The request URI is bound to the authenticated client (RFC 9126 §2.2). The
-        # client_id is a required authorization-request parameter, so it must match.
+        # Bind the request to the authenticated client (RFC 9126 §2.2) *before*
+        # validating it. Otherwise an authenticated client could submit an arbitrary
+        # client_id and observe validation differences (e.g. whether another client
+        # exists or has a given redirect_uri). The client_id is a required
+        # authorization-request parameter, so it must be present and match.
         client_id = request.POST.get("client_id")
         if client_id and client.client_id != client_id:
             return self._error_response(
@@ -91,6 +86,14 @@ class PushedAuthorizationRequestView(OAuthLibMixin, View):
                 "The client_id does not match the authenticated client.",
                 status=400,
             )
+
+        # RFC 9126 §2.1 step 3: validate the pushed parameters as an authorization
+        # request. Parameters arrive in the POST body; oauthlib merges the body into
+        # its Request, so the existing authorization validation applies unchanged.
+        try:
+            core.validate_authorization_request(request)
+        except OAuthToolkitError as error:
+            return self._error_from_oauthlib(error)
 
         parameters = self._collect_parameters(request)
         request_uri = REQUEST_URI_PREFIX + secrets.token_urlsafe(32)
