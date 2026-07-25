@@ -558,6 +558,12 @@ class TestClearExpired(BaseTestModels):
         initial_gt_count = Grant.objects.count()
         assert initial_gt_count == self.num_tokens * 2, f"{self.num_tokens * 2} grants should exist."
 
+        # Refresh tokens now expire by their own age (``created``), not by their access
+        # token's expiry (#746). Backdate the refresh tokens attached to expired access
+        # tokens past REFRESH_TOKEN_EXPIRE_SECONDS so they are the ones reclaimed; the
+        # rest were just created and must survive.
+        RefreshToken.objects.filter(access_token__expires__lte=self.now).update(created=self.earlier)
+
         clear_expired()
 
         # after clear_expired():
@@ -585,6 +591,42 @@ class TestClearExpired(BaseTestModels):
         )
         remaining_gt_count = Grant.objects.count()
         assert remaining_gt_count == initial_gt_count // 2, "half the remaining grants should still exist."
+
+    def test_clear_expired_deletes_old_refresh_token_without_access_token(self):
+        """
+        A refresh token older than REFRESH_TOKEN_EXPIRE_SECONDS must be reclaimed even
+        when its access token is gone (rotated out or removed by an earlier sweep). The
+        previous ``access_token__expires__lt`` condition could never match a refresh token
+        whose ``access_token`` is NULL, so such tokens were left in the DB forever (#746).
+        """
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = self.delta_secs // 2
+
+        app = Application.objects.get(name="test_app")
+        orphaned = RefreshToken.objects.create(
+            token="orphaned old refresh token",
+            application=app,
+            access_token=None,
+            user=self.user,
+        )
+        # created is auto_now_add, so backdate it past the expiry window.
+        RefreshToken.objects.filter(pk=orphaned.pk).update(created=self.earlier)
+
+        # A recently issued refresh token with no access token must survive.
+        recent = RefreshToken.objects.create(
+            token="recent refresh token without access token",
+            application=app,
+            access_token=None,
+            user=self.user,
+        )
+
+        clear_expired()
+
+        assert not RefreshToken.objects.filter(pk=orphaned.pk).exists(), (
+            "an expired refresh token must be reclaimed even without an access token"
+        )
+        assert RefreshToken.objects.filter(pk=recent.pk).exists(), (
+            "a refresh token within its expiry window must be kept"
+        )
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -875,12 +917,14 @@ def test_clear_expired_id_tokens(oauth2_settings, oidc_tokens, rf):
 
     assert IDToken.objects.filter(jti=id_token.jti).exists()
 
-    # Mark refresh token as expired
+    # Mark the refresh token as expired. Refresh tokens now expire by their own age
+    # (``created``), not by their access token's expiry (#746), so backdate it past the
+    # expiry window rather than expiring the access token.
     delta = timedelta(seconds=oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS + 60)
-    access_token.expires = timezone.now() - delta
-    access_token.save()
+    RefreshToken.objects.filter(access_token=access_token).update(created=timezone.now() - delta)
 
-    # With the refresh token expired, the ID token should be deleted
+    # With the refresh token expired, it -- and then the now-orphaned, expired access and
+    # ID tokens -- should be deleted.
     clear_expired()
 
     assert not IDToken.objects.filter(jti=id_token.jti).exists()

@@ -1032,7 +1032,12 @@ def clear_expired():
         logger.info("refresh_revoked_at is %s. No revoked refresh tokens deleted.", refresh_revoked_at)
 
     if refresh_expire_at:
-        expired_query = models.Q(access_token__expires__lt=refresh_expire_at)
+        # Expire refresh tokens by their own age (``created``), not by their access
+        # token's expiry. The old ``access_token__expires__lt`` join keyed cleanup on the
+        # wrong lifetime and, worse, could never match once the access token had been
+        # deleted (rotated out, or removed by an earlier sweep) -- leaving the refresh
+        # token in the database forever. See issue #746.
+        expired_query = models.Q(created__lt=refresh_expire_at)
         expired = refresh_token_model.objects.filter(expired_query)
 
         expired_deleted_no = batch_delete(expired, expired_query)

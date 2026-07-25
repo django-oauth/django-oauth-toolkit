@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
   removal in 4.0.
 ### Fixed
+* #746 `cleartokens` / `clear_expired()` now expires refresh tokens by their own age
+  (`created`) rather than by their access token's expiry. The previous
+  `access_token__expires__lt` condition keyed cleanup on the wrong lifetime and could
+  never match a refresh token whose access token had already been removed (rotated out,
+  or deleted by an earlier sweep), leaving such refresh tokens in the database
+  indefinitely. They are now reclaimed `REFRESH_TOKEN_EXPIRE_SECONDS` after issuance
+  regardless of their access token's state.
 * #1687 Reusing a refresh token within `REFRESH_TOKEN_GRACE_PERIOD_SECONDS` no longer
   raises `AttributeError: 'NoneType' object has no attribute 'token'` (HTTP 500) when the
   access token previously minted from that refresh token still exists but its own refresh
