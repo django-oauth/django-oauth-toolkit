@@ -249,7 +249,17 @@ To allow the flow under a strict ``form-action`` policy, add the requesting appl
 registered redirect URIs to the ``form-action`` directive for the authorization response,
 by overriding :class:`~oauth2_provider.views.AuthorizationView` (see :ref:`override-views`)::
 
+    from urllib.parse import urlsplit, urlunsplit
+
     from oauth2_provider.views import AuthorizationView
+
+
+    def csp_source(uri):
+        # A CSP source expression matches scheme/host/port/path only. DOT permits
+        # a query string (and fragment) in a redirect URI, but those are not valid
+        # in a CSP source and would make the directive non-matching, so drop them.
+        parts = urlsplit(uri)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
     class CSPAuthorizationView(AuthorizationView):
@@ -266,7 +276,10 @@ by overriding :class:`~oauth2_provider.views.AuthorizationView` (see :ref:`overr
                 # (``_csp_replace`` / ``_csp_update``) and value format depend on your
                 # django-csp version; consult its documentation.
                 response._csp_replace = {
-                    "form-action": ["'self'", *application.redirect_uris.split()]
+                    "form-action": [
+                        "'self'",
+                        *(csp_source(uri) for uri in application.redirect_uris.split()),
+                    ]
                 }
             return response
 
