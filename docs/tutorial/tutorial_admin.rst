@@ -51,7 +51,8 @@ fields are:
 * **User** — the user the application belongs to. It uses a raw-id widget, so enter or look up
   the user's primary key.
 * **Redirect uris** — a space-separated list of allowed redirect URIs. A client using the
-  authorization-code or implicit grant must register at least one.
+  authorization-code, implicit or openid-hybrid grant must register at least one (application
+  validation rejects an empty value for those grants).
 * **Post logout redirect uris** — space-separated URIs allowed after an RP-initiated OIDC logout.
 * **Allowed origins** — space-separated origins for which CORS is enabled on the token endpoint.
 * **Client type** — ``confidential`` or ``public`` (:rfc:`2.1`).
