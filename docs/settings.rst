@@ -246,6 +246,13 @@ expiry is disabled -- consistent with ``cleartokens``.
    are already past their configured lifetime are rejected on their next use, which may
    force affected clients to re-authenticate.
 
+.. note::
+   **Security guidance.** Refresh-token rotation (``ROTATE_REFRESH_TOKEN``, on by default)
+   is the primary defense against a leaked refresh token; see :doc:`security`. As
+   additional defense-in-depth, consider setting a finite ``REFRESH_TOKEN_EXPIRE_SECONDS``
+   so a refresh token that leaks and is then left idle cannot be redeemed indefinitely.
+   The default ``None`` places no upper bound on an idle refresh token's lifetime.
+
 REFRESH_TOKEN_GRACE_PERIOD_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The number of seconds a refresh token can still be used after it has been
@@ -556,7 +563,16 @@ OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``True``
 
-Whether expired ID tokens are accepted for RP-Initiated Logout. The Tokens must still be signed by the OP and otherwise valid.
+Whether expired ID tokens are accepted for RP-Initiated Logout. The token must still be
+signed by the OP, carry a matching ``iss`` claim, and resolve to a stored ``IDToken``;
+only the ``exp`` and ``nbf`` claims are skipped.
+
+The default is ``True`` because `OpenID Connect RP-Initiated Logout 1.0
+<https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ treats ``id_token_hint``
+as a *previously issued* ID token, used only as a hint about which session to end. Logout
+frequently happens long after the ID token's (typically short) ``exp``, so rejecting an
+expired hint would break the normal logout flow. Set this to ``False`` if you additionally
+want to require that the ``id_token_hint`` is still within its validity period.
 
 OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
