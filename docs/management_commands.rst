@@ -10,15 +10,26 @@ cleartokens
 ~~~~~~~~~~~
 
 The ``cleartokens`` management command allows the user to remove refresh tokens that can no longer be
-used: those whose lifetime is greater than the amount specified by the ``REFRESH_TOKEN_EXPIRE_SECONDS``
-setting, and those that have been revoked for longer than the ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``
-setting. It is important that this command is run regularly (eg: via cron) to avoid cluttering the
+used:
+
+* those that have been idle longer than ``REFRESH_TOKEN_EXPIRE_SECONDS`` -- i.e. whose paired access
+  token expired more than ``REFRESH_TOKEN_EXPIRE_SECONDS`` ago (see ``REFRESH_TOKEN_EXPIRE_SECONDS``
+  for the idle-expiry semantics);
+* those that have been revoked for longer than the ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` setting; and
+* orphaned refresh tokens -- non-revoked refresh tokens whose access token was deleted out of band,
+  leaving nothing to refresh against. These are removed unconditionally, regardless of
+  ``REFRESH_TOKEN_EXPIRE_SECONDS``.
+
+It is important that this command is run regularly (eg: via cron) to avoid cluttering the
 database with expired refresh tokens.
 
 If ``cleartokens`` runs daily the maximum delay before a refresh token is
 removed is its retention period (``REFRESH_TOKEN_EXPIRE_SECONDS`` for expired
 tokens, ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` for revoked ones) + 1 day. This
 is normally not a problem since refresh tokens are long lived.
+
+Note that ``REFRESH_TOKEN_EXPIRE_SECONDS`` is also enforced when a refresh token is presented, so a
+refresh token past its lifetime is rejected even if ``cleartokens`` has not yet removed it.
 
 To prevent the CPU and RAM high peaks during deletion process use ``CLEAR_EXPIRED_TOKENS_BATCH_SIZE`` and
 ``CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL`` settings to adjust the process speed.

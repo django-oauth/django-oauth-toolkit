@@ -219,13 +219,32 @@ to get a ``Server`` instance. Defaults to
 
 REFRESH_TOKEN_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The number of seconds before a refresh token gets removed from the database by
-the ``cleartokens`` management command. Check :ref:`cleartokens` management command for further info.
-Can be an ``Int`` or ``datetime.timedelta``.
+How long a refresh token remains valid. Can be an ``Int`` or ``datetime.timedelta``.
+Defaults to ``None``, which means refresh tokens never expire (they last until
+revoked or rotated).
 
-NOTE: This value is completely ignored when validating refresh tokens.
-If you don't change the validator code and don't run cleartokens all refresh
-tokens will last until revoked or the end of time. You should change this.
+Expiry is **idle-based**: a refresh token is rejected ``REFRESH_TOKEN_EXPIRE_SECONDS``
+after its paired access token expires. Because the access token's expiry advances
+every time the refresh token is used, an actively-used refresh token keeps sliding
+forward and never expires on its own; only a refresh token that has been dormant for
+longer than ``REFRESH_TOKEN_EXPIRE_SECONDS`` past its last access token's expiry is
+rejected.
+
+When set, this is enforced in two places:
+
+* at validation time -- a refresh token past its lifetime is rejected when presented,
+  regardless of whether ``cleartokens`` has run; and
+* by the ``cleartokens`` management command, which deletes expired refresh tokens from
+  the database (see the :ref:`cleartokens` management command).
+
+A value of ``0`` (or ``datetime.timedelta(0)``) is treated the same as ``None`` --
+expiry is disabled -- consistent with ``cleartokens``.
+
+.. note::
+   Deployments that already set ``REFRESH_TOKEN_EXPIRE_SECONDS`` should be aware that,
+   as of the release that introduced validation-time enforcement, refresh tokens that
+   are already past their configured lifetime are rejected on their next use, which may
+   force affected clients to re-authenticate.
 
 REFRESH_TOKEN_GRACE_PERIOD_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
