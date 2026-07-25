@@ -1031,8 +1031,28 @@ def clear_expired():
     else:
         logger.info("refresh_revoked_at is %s. No revoked refresh tokens deleted.", refresh_revoked_at)
 
+    # Orphaned refresh tokens: non-revoked, but their access token is gone
+    # (``RefreshToken.access_token`` is SET_NULL, so deleting an access token out of band
+    # leaves the refresh token behind with a NULL FK). The toolkit no longer produces
+    # these -- both the RFC 7009 ``/revoke/`` endpoint and the admin view revoke the bound
+    # refresh token when an access token is revoked -- so any that remain came from an
+    # out-of-band deletion and are stale. Delete them regardless of
+    # REFRESH_TOKEN_EXPIRE_SECONDS: there is no access token to anchor an expiry on, and a
+    # surviving orphan could re-mint access tokens, defeating whatever removed the access
+    # token in the first place. This is also the case that could previously live in the DB
+    # forever, because the age join below can never match a NULL access token (#746).
+    orphan_query = models.Q(revoked__isnull=True, access_token__isnull=True)
+    orphans = refresh_token_model.objects.filter(orphan_query)
+
+    orphans_deleted_no = batch_delete(orphans, orphan_query)
+    logger.info("%s Orphaned refresh tokens deleted", orphans_deleted_no)
+
     if refresh_expire_at:
-        expired_query = models.Q(access_token__expires__lt=refresh_expire_at)
+        # Idle expiry: a refresh token is reclaimed REFRESH_TOKEN_EXPIRE_SECONDS after its
+        # paired access token expires. ``access_token.expires`` advances on every refresh,
+        # so an actively-used token slides forward and only dormant ones are reaped. Orphans
+        # (NULL access token) are handled above; this join deliberately ignores them.
+        expired_query = models.Q(revoked__isnull=True, access_token__expires__lt=refresh_expire_at)
         expired = refresh_token_model.objects.filter(expired_query)
 
         expired_deleted_no = batch_delete(expired, expired_query)

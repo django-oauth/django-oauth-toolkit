@@ -58,6 +58,7 @@ def always_invalid_token():
         AccessToken.is_valid = original_is_valid
 
 
+@pytest.mark.usefixtures("oauth2_settings")
 class TestOAuth2Validator(TransactionTestCase):
     def setUp(self):
         self.user = UserModel.objects.create_user("user", "test@example.com", "123456")
@@ -423,15 +424,97 @@ class TestOAuth2Validator(TransactionTestCase):
             application=self.application,
             revoked=timezone.now() - datetime.timedelta(days=1),
         )
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="dup-active-access-token",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+        )
         RefreshToken.objects.create(
             user=self.user,
             token=token,
             application=self.application,
+            access_token=access_token,
         )
         request = mock.MagicMock(wraps=Request)
 
         self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
         self.assertIsNone(request.refresh_token_instance.revoked)
+
+    def test_validate_refresh_token_rejects_orphan_without_access_token(self):
+        # A non-revoked refresh token whose access token was deleted out of band is an
+        # orphan (access_token is SET_NULL). There is nothing left to refresh against, so
+        # validation rejects it rather than letting it re-mint an access token (#746).
+        token = "orphaned-refresh-token"
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            access_token=None,
+        )
+        request = mock.MagicMock(wraps=Request)
+        self.assertFalse(self.validator.validate_refresh_token(token, self.application, request))
+
+    def test_validate_refresh_token_rejects_token_past_expire_seconds(self):
+        # REFRESH_TOKEN_EXPIRE_SECONDS is enforced at validation time, not just by
+        # clear_expired cleanup (#746). Idle semantics: the deadline is the access token's
+        # expiry plus REFRESH_TOKEN_EXPIRE_SECONDS.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 3600
+        token = "expired-refresh-token"
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="long-expired-access-token",
+            application=self.application,
+            expires=timezone.now() - datetime.timedelta(hours=2),
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            access_token=access_token,
+        )
+        request = mock.MagicMock(wraps=Request)
+        self.assertFalse(self.validator.validate_refresh_token(token, self.application, request))
+
+    def test_validate_refresh_token_accepts_token_within_expire_seconds(self):
+        # The access token expired only recently, so the refresh token is still within its
+        # REFRESH_TOKEN_EXPIRE_SECONDS idle window and must be accepted.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 3600
+        token = "fresh-refresh-token"
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="recently-expired-access-token",
+            application=self.application,
+            expires=timezone.now() - datetime.timedelta(minutes=1),
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            access_token=access_token,
+        )
+        request = mock.MagicMock(wraps=Request)
+        self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
+
+    def test_validate_refresh_token_default_none_never_expires(self):
+        # With REFRESH_TOKEN_EXPIRE_SECONDS unset (the default), age is not enforced even
+        # for a long-expired access token, as long as the refresh token is still paired.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = None
+        token = "never-expires-refresh-token"
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="ancient-access-token",
+            application=self.application,
+            expires=timezone.now() - datetime.timedelta(days=365),
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            access_token=access_token,
+        )
+        request = mock.MagicMock(wraps=Request)
+        self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
 
     def test_revoke_token_with_duplicate_refresh_token_checksums(self):
         token = "duplicate-refresh-token"
@@ -453,6 +536,36 @@ class TestOAuth2Validator(TransactionTestCase):
 
         active_token.refresh_from_db()
         self.assertIsNotNone(active_token.revoked)
+
+    def test_revoke_access_token_also_revokes_bound_refresh_token(self):
+        # RFC 7009 §2.1: revoking an access token also revokes its bound refresh token, so
+        # the refresh token cannot re-mint an access token (and is not left an active
+        # orphan). See #746.
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="revoke-me-access-token",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+        )
+        refresh_token = RefreshToken.objects.create(
+            user=self.user,
+            token="bound-refresh-token",
+            application=self.application,
+            access_token=access_token,
+        )
+
+        request = mock.MagicMock(wraps=Request)
+        request.client = self.application
+        self.validator.revoke_token(access_token.token, "access_token", request)
+
+        self.assertFalse(
+            AccessToken.objects.filter(pk=access_token.pk).exists(),
+            "the access token itself must be revoked",
+        )
+        refresh_token.refresh_from_db()
+        self.assertIsNotNone(
+            refresh_token.revoked, "the bound refresh token must be revoked, not left an orphan"
+        )
 
     def test_revoke_token_without_authenticated_client_is_noop(self):
         # RFC 7009 §2.1 client-ownership check: with no authenticated client on the

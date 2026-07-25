@@ -586,6 +586,44 @@ class TestClearExpired(BaseTestModels):
         remaining_gt_count = Grant.objects.count()
         assert remaining_gt_count == initial_gt_count // 2, "half the remaining grants should still exist."
 
+    def test_clear_expired_deletes_orphaned_refresh_tokens(self):
+        """
+        A non-revoked refresh token whose access token is gone (``access_token`` is
+        SET_NULL, so an out-of-band access-token deletion strands it) is an orphan. The
+        toolkit no longer produces these -- the ``/revoke/`` endpoint and admin view both
+        revoke the bound refresh token -- so any that remain are stale and are reclaimed
+        regardless of age or REFRESH_TOKEN_EXPIRE_SECONDS. This is the case that could
+        previously survive in the DB forever, since the age join can never match a NULL
+        access token (#746).
+        """
+        # No age policy at all: orphans are still deleted.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = None
+        app = Application.objects.get(name="test_app")
+
+        old_orphan = RefreshToken.objects.create(
+            token="old orphan", application=app, access_token=None, user=self.user
+        )
+        RefreshToken.objects.filter(pk=old_orphan.pk).update(created=self.earlier)
+        new_orphan = RefreshToken.objects.create(
+            token="new orphan", application=app, access_token=None, user=self.user
+        )
+
+        # A refresh token paired with a current access token must survive.
+        paired_at = AccessToken.objects.create(token="paired current AT", expires=self.later)
+        paired = RefreshToken.objects.create(
+            token="paired refresh token", application=app, access_token=paired_at, user=self.user
+        )
+
+        clear_expired()
+
+        assert not RefreshToken.objects.filter(pk=old_orphan.pk).exists()
+        assert not RefreshToken.objects.filter(pk=new_orphan.pk).exists(), (
+            "orphaned refresh tokens are reclaimed regardless of age"
+        )
+        assert RefreshToken.objects.filter(pk=paired.pk).exists(), (
+            "a refresh token paired with a current access token must survive"
+        )
+
 
 @pytest.mark.usefixtures("oauth2_settings")
 class TestCustomPrimaryKeyTokens(BaseTestModels):
@@ -693,10 +731,18 @@ class TestClearRevoked(BaseTestModels):
             ).save()
 
         for i in range(2, cls.num_tokens, 3):
+            # A current (non-revoked) refresh token is always paired with an access token
+            # in normal operation; without one it would be an orphan that clear_expired now
+            # reclaims. Give it a non-expired access token so it survives on its own merits.
+            current_access_token = AccessToken.objects.create(
+                token=f"current refresh token's access token {i}",
+                expires=cls.now + timedelta(seconds=cls.grace_secs),
+            )
             RefreshToken(
                 token=f"current refresh token {i}",
                 application=app,
                 user=cls.user,
+                access_token=current_access_token,
             ).save()
 
         cls.initial_rt_count = RefreshToken.objects.count()
