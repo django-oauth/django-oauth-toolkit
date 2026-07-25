@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RefreshToken` models are swapped into different apps, and a new
   "Extending the token models" documentation section explaining how to swap the
   interrelated token models together.
+* #746 A system check (`oauth2_provider.W012`) that warns when
+  `REFRESH_TOKEN_EXPIRE_SECONDS` is set shorter than `ACCESS_TOKEN_EXPIRE_SECONDS`. Since
+  refresh tokens are now reclaimed by their own age, such a configuration can delete a
+  refresh token before its access token expires, leaving clients unable to refresh.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a

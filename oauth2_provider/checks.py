@@ -1,8 +1,21 @@
+from datetime import timedelta
+
 from django.apps import apps
 from django.core import checks
 from django.db import router
 
 from .settings import oauth2_settings
+
+
+def _expire_seconds(value):
+    """Coerce a ``*_EXPIRE_SECONDS`` setting (int/float seconds or ``timedelta``) to
+    seconds, or ``None`` if it is not a usable numeric value (bad types are surfaced by
+    ``clear_expired``/token issuance, not here)."""
+    if isinstance(value, timedelta):
+        return value.total_seconds()
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
 
 
 # RFC 9700 (OAuth 2.0 Security Best Current Practice) behavior gates. Each tuple is
@@ -176,6 +189,41 @@ def validate_bcp_configuration(app_configs, **kwargs):
         )
 
     return messages
+
+
+@checks.register(checks.Tags.security)
+def validate_refresh_token_expire_seconds(app_configs, **kwargs):
+    """
+    A refresh token must outlive the access token it is meant to refresh.
+
+    ``cleartokens`` reclaims a refresh token ``REFRESH_TOKEN_EXPIRE_SECONDS`` after it is
+    issued (#746). If that is shorter than ``ACCESS_TOKEN_EXPIRE_SECONDS`` the refresh
+    token can be deleted before its access token even expires, leaving the client with an
+    access token it cannot refresh. ``REFRESH_TOKEN_EXPIRE_SECONDS`` defaults to ``None``
+    (refresh tokens are not age-expired), for which this check is a no-op.
+    """
+    refresh_expire = _expire_seconds(oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS)
+    access_expire = _expire_seconds(oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS)
+    if refresh_expire is None or access_expire is None:
+        return []
+    if refresh_expire < access_expire:
+        return [
+            checks.Warning(
+                "OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] "
+                f"({oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS!r}) is shorter than "
+                "OAUTH2_PROVIDER['ACCESS_TOKEN_EXPIRE_SECONDS'] "
+                f"({oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS!r}). A refresh token is "
+                "reclaimed that many seconds after it is issued, so it can be deleted "
+                "before its access token expires, leaving clients unable to refresh.",
+                hint=(
+                    "Set OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] to at least "
+                    "ACCESS_TOKEN_EXPIRE_SECONDS (a refresh token should outlive the access "
+                    "tokens it issues)."
+                ),
+                id="oauth2_provider.W012",
+            )
+        ]
+    return []
 
 
 @checks.register(checks.Tags.database)

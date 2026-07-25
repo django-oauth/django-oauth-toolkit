@@ -1,10 +1,15 @@
+from datetime import timedelta
+
 import pytest
 from django.core import checks
 from django.core.management import call_command
 from django.core.management.base import SystemCheckError
 from django.test import override_settings
 
-from oauth2_provider.checks import validate_swapped_model_consistency
+from oauth2_provider.checks import (
+    validate_refresh_token_expire_seconds,
+    validate_swapped_model_consistency,
+)
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 
@@ -60,3 +65,49 @@ class SwappedModelConsistencyCheckTestCase(TestCase):
         self.oauth2_settings.ACCESS_TOKEN_MODEL = "app_a.AccessToken"
         self.oauth2_settings.REFRESH_TOKEN_MODEL = "app_b.RefreshToken"
         self.assertIn("oauth2_provider.W011", self._ids())
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class RefreshTokenExpireSecondsCheckTestCase(TestCase):
+    def _ids(self):
+        return {m.id for m in validate_refresh_token_expire_seconds(None)}
+
+    def test_check_is_registered(self):
+        from django.core.checks.registry import registry as checks_registry
+
+        self.assertIn(
+            validate_refresh_token_expire_seconds,
+            checks_registry.get_checks(include_deployment_checks=True),
+        )
+
+    def test_default_none_passes(self):
+        # REFRESH_TOKEN_EXPIRE_SECONDS defaults to None (no age expiry) -> no-op.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = None
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
+    def test_refresh_longer_than_access_passes(self):
+        self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = 3600
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 86400
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
+    def test_refresh_equal_to_access_passes(self):
+        self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = 3600
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 3600
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
+    def test_refresh_shorter_than_access_warns(self):
+        self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = 3600
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 60
+        messages = validate_refresh_token_expire_seconds(None)
+        self.assertEqual([m.id for m in messages], ["oauth2_provider.W012"])
+        self.assertIsInstance(messages[0], checks.Warning)
+
+    def test_timedelta_refresh_shorter_than_access_warns(self):
+        self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = 3600
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = timedelta(minutes=1)
+        self.assertIn("oauth2_provider.W012", self._ids())
+
+    def test_non_numeric_does_not_crash(self):
+        # A bad type is surfaced by clear_expired()/issuance, not this check.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = "not-a-number"
+        self.assertNotIn("oauth2_provider.W012", self._ids())
