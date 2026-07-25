@@ -27,8 +27,11 @@ General upgrade procedure
 Upgrading to 2.0
 ----------------
 
-2.0.0 is a major release with breaking changes. The two that most often surface — both as an
-``{"error": "invalid_client"}`` response — are the client-secret hashing and PKCE changes.
+2.0.0 is a major release with breaking changes. The two most likely to surface in a running
+deployment are the client-secret hashing change — which shows up as an ``{"error":
+"invalid_client"}`` response at the token endpoint — and PKCE now being required, which instead
+fails with an ``invalid_request`` / ``invalid_grant`` error for clients that don't send a PKCE
+challenge.
 
 * **Client secrets are now hashed on save (#1093).** Existing cleartext
   ``application.client_secret`` values are migrated to Django password-style hashes on upgrade, and
