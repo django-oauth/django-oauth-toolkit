@@ -7,6 +7,7 @@ import pytest
 import requests
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
+from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest
 from django.utils import timezone
 from jwcrypto import jwt
@@ -536,6 +537,28 @@ class TestOAuth2Validator(TransactionTestCase):
 
         active_token.refresh_from_db()
         self.assertIsNotNone(active_token.revoked)
+
+    def test_validate_refresh_token_invalid_expire_seconds_raises(self):
+        # A non-numeric REFRESH_TOKEN_EXPIRE_SECONDS is a misconfiguration. Validation
+        # surfaces it as ImproperlyConfigured -- the same way clear_expired() does -- rather
+        # than raising an opaque TypeError from timedelta().
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = "not-a-number"
+        token = "misconfigured-expire-refresh-token"
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="misconfigured-expire-access-token",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            access_token=access_token,
+        )
+        request = mock.MagicMock(wraps=Request)
+        with self.assertRaises(ImproperlyConfigured):
+            self.validator.validate_refresh_token(token, self.application, request)
 
     def test_revoke_access_token_also_revokes_bound_refresh_token(self):
         # RFC 7009 §2.1: revoking an access token also revokes its bound refresh token, so

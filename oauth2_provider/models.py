@@ -967,6 +967,25 @@ def get_refresh_token_admin_class():
     return refresh_token_admin_class
 
 
+def refresh_token_expire_timedelta():
+    """Return ``REFRESH_TOKEN_EXPIRE_SECONDS`` as a ``timedelta``, or ``None`` when refresh
+    tokens do not age-expire (the setting is unset, ``0``, or ``timedelta(0)``).
+
+    Raises ``ImproperlyConfigured`` for a non-numeric value so that both the validation-time
+    enforcement and ``clear_expired`` fail the same way on a misconfiguration instead of
+    raising an opaque ``TypeError``.
+    """
+    value = oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS
+    if not value:
+        return None
+    if isinstance(value, timedelta):
+        return value
+    try:
+        return timedelta(seconds=value)
+    except TypeError:
+        raise ImproperlyConfigured("REFRESH_TOKEN_EXPIRE_SECONDS must be either a timedelta or seconds")
+
+
 def clear_expired():
     def batch_delete(queryset, query):
         CLEAR_EXPIRED_TOKENS_BATCH_SIZE = oauth2_settings.CLEAR_EXPIRED_TOKENS_BATCH_SIZE
@@ -994,7 +1013,6 @@ def clear_expired():
     id_token_model = get_id_token_model()
     grant_model = get_grant_model()
     REFRESH_TOKEN_GRACE_PERIOD_SECONDS = oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS
-    REFRESH_TOKEN_EXPIRE_SECONDS = oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS
 
     if REFRESH_TOKEN_GRACE_PERIOD_SECONDS:
         try:
@@ -1007,14 +1025,9 @@ def clear_expired():
             raise ImproperlyConfigured(e)
         refresh_revoked_at = now - REFRESH_TOKEN_GRACE_PERIOD_SECONDS
 
-    if REFRESH_TOKEN_EXPIRE_SECONDS:
-        if not isinstance(REFRESH_TOKEN_EXPIRE_SECONDS, timedelta):
-            try:
-                REFRESH_TOKEN_EXPIRE_SECONDS = timedelta(seconds=REFRESH_TOKEN_EXPIRE_SECONDS)
-            except TypeError:
-                e = "REFRESH_TOKEN_EXPIRE_SECONDS must be either a timedelta or seconds"
-                raise ImproperlyConfigured(e)
-        refresh_expire_at = now - REFRESH_TOKEN_EXPIRE_SECONDS
+    refresh_token_expire_delta = refresh_token_expire_timedelta()
+    if refresh_token_expire_delta:
+        refresh_expire_at = now - refresh_token_expire_delta
 
     if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION:
         # Revoked refresh tokens are what allows reuse of a rotated token to

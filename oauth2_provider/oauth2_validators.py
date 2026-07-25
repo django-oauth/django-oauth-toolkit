@@ -41,6 +41,7 @@ from .models import (
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
+    refresh_token_expire_timedelta,
 )
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
@@ -1302,14 +1303,14 @@ class OAuth2Validator(RequestValidator):
         # non-revoked token with no access token is an orphan from an out-of-band access
         # token deletion -- there is nothing left to refresh against, so reject it.
         if rt.revoked is None:
-            expire_seconds = oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS
             if rt.access_token is None:
                 return False
-            if expire_seconds:
-                if not isinstance(expire_seconds, timedelta):
-                    expire_seconds = timedelta(seconds=expire_seconds)
-                if rt.access_token.expires + expire_seconds < timezone.now():
-                    return False
+            # refresh_token_expire_timedelta() returns None when age expiry is disabled and
+            # raises ImproperlyConfigured on a bad type, exactly as clear_expired does, so a
+            # misconfiguration fails the same way here instead of raising an opaque TypeError.
+            expire_delta = refresh_token_expire_timedelta()
+            if expire_delta and rt.access_token.expires + expire_delta < timezone.now():
+                return False
 
         request.user = rt.user
         # Use the raw token presented in the request, not rt.token: under hashed-at-rest
