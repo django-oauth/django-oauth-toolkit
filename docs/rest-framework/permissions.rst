@@ -65,6 +65,37 @@ When the request's method is one of "non safe" methods, the access is allowed on
 
 The `required_scopes` attribute is mandatory (you just need inform the resource scope).
 
+.. _resource-scope-syntax:
+
+Resource scope syntax
+^^^^^^^^^^^^^^^^^^^^^^
+
+``TokenHasResourceScope`` does not check the plain ``required_scopes`` value. It appends
+``:read`` or ``:write`` to each entry depending on the request method and checks *that*
+scope instead. With ``required_scopes = ['music']`` a safe method (``GET``, ``HEAD``,
+``OPTIONS``) requires ``music:read`` and an unsafe method (``POST``, ``PUT``, ``PATCH``,
+``DELETE``) requires ``music:write``. A token whose scope is the bare ``music`` — without a
+``:read`` or ``:write`` suffix — is therefore **rejected**, because neither ``music:read``
+nor ``music:write`` is present.
+
+For the check to succeed you must both declare the colon-separated scopes in your settings
+and issue tokens for them. Declare each read/write scope explicitly in the ``SCOPES``
+setting so it can be requested and shown on the authorization form:
+
+.. code-block:: python
+
+    OAUTH2_PROVIDER = {
+        "SCOPES": {
+            "music:read": "Read your music.",
+            "music:write": "Modify your music.",
+            # ...
+        },
+    }
+
+A token then has to be authorized for ``music:read`` and/or ``music:write`` (for example
+``scope=music:read music:write`` to allow both safe and unsafe methods). Requesting only the
+bare ``music`` scope will not satisfy this permission class.
+
 
 IsAuthenticatedOrTokenHasScope
 ------------------------------
