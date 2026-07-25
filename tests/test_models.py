@@ -587,6 +587,28 @@ class TestClearExpired(BaseTestModels):
         remaining_gt_count = Grant.objects.count()
         assert remaining_gt_count == initial_gt_count // 2, "half the remaining grants should still exist."
 
+    def test_clear_expired_reclaims_refresh_token_at_expiry_boundary(self):
+        # A refresh token whose access token expired exactly at the cutoff
+        # (access_token.expires == now - REFRESH_TOKEN_EXPIRE_SECONDS) is reclaimed, matching
+        # AccessToken.is_expired() (``now >= expires``) and validation-time expiry.
+        self.oauth2_settings.CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL = 0.0
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = self.delta_secs // 2
+        app = Application.objects.get(name="test_app")
+        frozen_now = timezone.now()
+        boundary_at = AccessToken.objects.create(
+            token="boundary AT", expires=frozen_now - timedelta(seconds=self.delta_secs // 2)
+        )
+        boundary_rt = RefreshToken.objects.create(
+            token="boundary RT", application=app, access_token=boundary_at, user=self.user
+        )
+
+        with mock.patch("oauth2_provider.models.timezone.now", return_value=frozen_now):
+            clear_expired()
+
+        assert not RefreshToken.objects.filter(pk=boundary_rt.pk).exists(), (
+            "a refresh token at exactly the expiry cutoff must be reclaimed"
+        )
+
     def test_clear_expired_deletes_orphaned_refresh_tokens(self):
         """
         A non-revoked refresh token whose access token is gone (``access_token`` is

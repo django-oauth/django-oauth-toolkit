@@ -1068,7 +1068,9 @@ def clear_expired():
         # paired access token expires. ``access_token.expires`` advances on every refresh,
         # so an actively-used token slides forward and only dormant ones are reaped. Orphans
         # (NULL access token) are handled above; this join deliberately ignores them.
-        expired_query = models.Q(revoked__isnull=True, access_token__expires__lt=refresh_expire_at)
+        # ``__lte`` so a token whose access token expired exactly at the cutoff is reclaimed,
+        # matching AccessToken.is_expired() (``now >= expires``) and validation-time expiry.
+        expired_query = models.Q(revoked__isnull=True, access_token__expires__lte=refresh_expire_at)
         expired = refresh_token_model.objects.filter(expired_query)
 
         expired_deleted_no = batch_delete(expired, expired_query)

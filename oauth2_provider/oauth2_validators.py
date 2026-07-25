@@ -1309,7 +1309,9 @@ class OAuth2Validator(RequestValidator):
             # raises ImproperlyConfigured on a bad type, exactly as clear_expired does, so a
             # misconfiguration fails the same way here instead of raising an opaque TypeError.
             expire_delta = refresh_token_expire_timedelta()
-            if expire_delta and rt.access_token.expires + expire_delta < timezone.now():
+            # ``<=`` so the deadline itself counts as expired, matching AccessToken.is_expired()
+            # (``now >= expires``).
+            if expire_delta and rt.access_token.expires + expire_delta <= timezone.now():
                 return False
 
         request.user = rt.user

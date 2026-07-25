@@ -497,6 +497,28 @@ class TestOAuth2Validator(TransactionTestCase):
         request = mock.MagicMock(wraps=Request)
         self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
 
+    def test_validate_refresh_token_rejects_token_at_expiry_boundary(self):
+        # At exactly access_token.expires + REFRESH_TOKEN_EXPIRE_SECONDS the token is
+        # expired, matching AccessToken.is_expired() (``now >= expires``).
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 3600
+        frozen_now = timezone.now()
+        token = "boundary-refresh-token"
+        access_token = AccessToken.objects.create(
+            user=self.user,
+            token="boundary-access-token",
+            application=self.application,
+            expires=frozen_now - datetime.timedelta(seconds=3600),
+        )
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            access_token=access_token,
+        )
+        request = mock.MagicMock(wraps=Request)
+        with mock.patch("oauth2_provider.oauth2_validators.timezone.now", return_value=frozen_now):
+            self.assertFalse(self.validator.validate_refresh_token(token, self.application, request))
+
     def test_validate_refresh_token_default_none_never_expires(self):
         # With REFRESH_TOKEN_EXPIRE_SECONDS unset (the default), age is not enforced even
         # for a long-expired access token, as long as the refresh token is still paired.
