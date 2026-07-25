@@ -85,6 +85,18 @@ class RefreshTokenExpireSecondsCheckTestCase(TestCase):
         self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = None
         self.assertNotIn("oauth2_provider.W012", self._ids())
 
+    def test_zero_refresh_expire_passes(self):
+        # clear_expired() gates its refresh-token cleanup on ``if REFRESH_TOKEN_EXPIRE_SECONDS``,
+        # so 0 / timedelta(0) disable age expiry entirely -- there is nothing to warn about.
+        self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = 3600
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 0
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
+    def test_zero_timedelta_refresh_expire_passes(self):
+        self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = 3600
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = timedelta(0)
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
     def test_refresh_longer_than_access_passes(self):
         self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = 3600
         self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 86400

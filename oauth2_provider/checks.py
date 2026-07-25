@@ -204,7 +204,10 @@ def validate_refresh_token_expire_seconds(app_configs, **kwargs):
     """
     refresh_expire = _expire_seconds(oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS)
     access_expire = _expire_seconds(oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS)
-    if refresh_expire is None or access_expire is None:
+    # clear_expired() only age-expires refresh tokens when REFRESH_TOKEN_EXPIRE_SECONDS is
+    # truthy (it gates on ``if REFRESH_TOKEN_EXPIRE_SECONDS``); None / 0 / timedelta(0)
+    # disable that cleanup, so there is nothing to warn about.
+    if not refresh_expire or access_expire is None:
         return []
     if refresh_expire < access_expire:
         return [
@@ -212,9 +215,10 @@ def validate_refresh_token_expire_seconds(app_configs, **kwargs):
                 "OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] "
                 f"({oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS!r}) is shorter than "
                 "OAUTH2_PROVIDER['ACCESS_TOKEN_EXPIRE_SECONDS'] "
-                f"({oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS!r}). A refresh token is "
-                "reclaimed that many seconds after it is issued, so it can be deleted "
-                "before its access token expires, leaving clients unable to refresh.",
+                f"({oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS!r}). cleartokens reclaims a "
+                "refresh token that many seconds after it is issued, so once it runs a "
+                "refresh token can be deleted before its access token expires, leaving "
+                "clients unable to refresh.",
                 hint=(
                     "Set OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] to at least "
                     "ACCESS_TOKEN_EXPIRE_SECONDS (a refresh token should outlive the access "
