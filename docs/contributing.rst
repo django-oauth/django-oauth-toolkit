@@ -45,6 +45,22 @@ can also (largely) stop worrying about code style, although you should always
 check how the code looks after ``ruff`` has formatted it, and think if there
 is a better way to structure the code so that it is more readable.
 
+Type annotations
+================
+
+The codebase is being typed incrementally rather than in a single sweep. When
+you change a function or method signature, add type annotations to it (both the
+parameters and the return type). Please do not submit standalone typing-only
+changes to code you are not otherwise touching — annotations should ride along
+with the change that touches the signature.
+
+Do not add a ``py.typed`` marker as part of this incremental work. Per
+:pep:`561`, that marker tells downstream type checkers to use the package's
+inline annotations; adding it while coverage is still sparse would expose
+incomplete — and therefore potentially misleading — type information to users.
+Whether and when the project ships one is a separate decision that has not been
+made.
+
 Documentation
 =============
 
