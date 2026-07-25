@@ -247,11 +247,13 @@ Then implement the backend::
         def get_available_scopes(self, application=None, request=None, *args, **kwargs):
             if application is None:
                 return list(Scope.objects.values_list("name", flat=True))
-            available = ApplicationScope.objects.filter(application=application)
-            if available.exists():
-                return list(available.values_list("scope__name", flat=True))
+            available = list(
+                ApplicationScope.objects.filter(application=application).values_list(
+                    "scope__name", flat=True
+                )
+            )
             # No per-application restriction configured: allow all known scopes.
-            return list(Scope.objects.values_list("name", flat=True))
+            return available or list(Scope.objects.values_list("name", flat=True))
 
         def get_default_scopes(self, application=None, request=None, *args, **kwargs):
             # Defaults MUST be a subset of get_available_scopes, so intersect the flagged
@@ -271,8 +273,18 @@ With a custom backend in place the ``SCOPES`` and ``DEFAULT_SCOPES`` settings ar
 consulted (the backend becomes the single source of truth for the available scopes and their
 defaults), so you can drop them. ``READ_SCOPE`` and ``WRITE_SCOPE`` are read directly from settings
 by the read/write permission helpers (see :doc:`rest-framework/permissions`) and still apply, so
-keep them if you use those helpers. Register the ``Scope`` and ``ApplicationScope`` models with the
-admin as usual to manage scopes through the admin site.
+keep them if you use those helpers.
+
+.. note::
+   If you use the read/write helpers (``TokenHasReadWriteScope``, ``TokenHasResourceScope``,
+   ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``), your backend's
+   ``get_all_scopes()`` **must** include the configured ``READ_SCOPE`` and ``WRITE_SCOPE`` names
+   (``read`` and ``write`` by default). Those helpers look the read/write scope up in the active
+   backend and raise ``ImproperlyConfigured`` if it is missing, so make sure the model-based
+   example above has ``Scope`` rows for them.
+
+Register the ``Scope`` and ``ApplicationScope`` models with the admin as usual to manage scopes
+through the admin site.
 
 .. _skip-auth-form:
 

@@ -332,15 +332,17 @@ By default this is set to ``'__all__'`` meaning that the whole set of ``SCOPES``
 
 READ_SCOPE
 ~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-The name of the *read* scope.
+The name of the *read* scope. Unlike ``SCOPES``/``DEFAULT_SCOPES``, this is used regardless of
+``SCOPES_BACKEND_CLASS`` -- the read/write permission helpers (``TokenHasReadWriteScope``,
+``TokenHasResourceScope``, ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``) read it
+directly from settings. A custom scopes backend must therefore expose a scope with this name from
+``get_all_scopes()`` (see :ref:`custom-scopes-backend`).
 
 WRITE_SCOPE
 ~~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-The name of the *write* scope.
+The name of the *write* scope. Like ``READ_SCOPE``, this is used regardless of
+``SCOPES_BACKEND_CLASS`` by the read/write permission helpers, so a custom scopes backend must
+expose a scope with this name from ``get_all_scopes()`` (see :ref:`custom-scopes-backend`).
 
 ERROR_RESPONSE_WITH_SCOPES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
