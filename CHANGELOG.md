@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #452 Documentation ("Custom scopes backend") explaining how to replace the default
   settings-driven scopes backend via `SCOPES_BACKEND_CLASS`, including a worked model-based
   example that stores scopes in the database.
+* #1045 Tutorial ("Managing applications and tokens in the Django admin") walking through the
+  admin site for applications and issued tokens, including client-secret hashing, credential
+  masking, and that tokens cannot be created by hand.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a
