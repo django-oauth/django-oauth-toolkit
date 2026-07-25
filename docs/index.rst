@@ -13,7 +13,8 @@ REST Framework API. Django OAuth Toolkit makes extensive use of the excellent
 `OAuthLib <https://github.com/idan/oauthlib>`_, so that everything is
 `rfc-compliant <https://rfc-editor.org/rfc/rfc6749.html>`_.
 
-See our :doc:`Changelog <changelog>` for information on updates.
+See our :doc:`Changelog <changelog>` for information on updates, and the :doc:`Upgrading <upgrade>`
+guide for the breaking changes and steps involved in major version upgrades.
 
 MCP authorization
 -----------------
@@ -47,6 +48,7 @@ Index
    :maxdepth: 2
 
    install
+   upgrade
    getting_started
    tutorial/tutorial
    rest-framework/rest-framework
