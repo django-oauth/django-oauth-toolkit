@@ -40,8 +40,14 @@ Upgrading to 2.0
 
 * **PKCE is now required by default (#1129).** ``PKCE_REQUIRED`` defaults to ``True``, so
   authorization-code clients that do not send a PKCE ``code_challenge``/``code_verifier`` will fail.
-  Either add PKCE to those clients (recommended) or set ``PKCE_REQUIRED = False`` in your settings
-  to retain the pre-2.x behavior.
+  Either add PKCE to those clients (recommended) or set ``PKCE_REQUIRED`` to ``False`` to retain the
+  pre-2.x behavior. Note that it is namespaced under the ``OAUTH2_PROVIDER`` setting, not a
+  top-level Django setting::
+
+      OAUTH2_PROVIDER = {
+          # ...
+          "PKCE_REQUIRED": False,
+      }
 
 * **OIDC standard scopes now gate claims (#1108).** Default OIDC scopes now determine which claims
   are returned. If you customized OIDC responses and want the pre-2.x behavior, set
