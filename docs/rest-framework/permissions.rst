@@ -70,24 +70,27 @@ The `required_scopes` attribute is mandatory (you just need inform the resource 
 Resource scope syntax
 ^^^^^^^^^^^^^^^^^^^^^^
 
-``TokenHasResourceScope`` does not check the plain ``required_scopes`` value. It appends
-``:read`` or ``:write`` to each entry depending on the request method and checks *that*
-scope instead. With ``required_scopes = ['music']`` a safe method (``GET``, ``HEAD``,
-``OPTIONS``) requires ``music:read`` and an unsafe method (``POST``, ``PUT``, ``PATCH``,
-``DELETE``) requires ``music:write``. A token whose scope is the bare ``music`` — without a
-``:read`` or ``:write`` suffix — is therefore **rejected**, because neither ``music:read``
-nor ``music:write`` is present.
+``TokenHasResourceScope`` does not check the plain ``required_scopes`` value. For each entry
+it appends a colon and the read/write scope name — the ``READ_SCOPE`` setting for safe
+methods (``GET``, ``HEAD``, ``OPTIONS``) and the ``WRITE_SCOPE`` setting for the others
+(``POST``, ``PUT``, ``PATCH``, ``DELETE``) — and checks *that* scope instead. ``READ_SCOPE``
+and ``WRITE_SCOPE`` default to ``read`` and ``write``, so with the defaults and
+``required_scopes = ['music']`` a safe method requires ``music:read`` and an unsafe method
+requires ``music:write``. A token whose scope is the bare ``music`` — without the read/write
+suffix — is therefore **rejected**, because neither ``music:read`` nor ``music:write`` is
+present. If you customize ``READ_SCOPE`` / ``WRITE_SCOPE``, substitute those names for
+``read`` / ``write`` throughout this section.
 
-For the check to succeed you must both declare the colon-separated scopes in your settings
-and issue tokens for them. Declare each read/write scope explicitly in the ``SCOPES``
-setting so it can be requested and shown on the authorization form:
+For the check to succeed you must both declare the suffixed scopes and issue tokens for them.
+When using the default settings-based scopes backend, declare each read/write scope explicitly
+in the ``SCOPES`` setting so it can be requested and shown on the authorization form:
 
 .. code-block:: python
 
     OAUTH2_PROVIDER = {
-        "SCOPES": {
-            "music:read": "Read your music.",
-            "music:write": "Modify your music.",
+        'SCOPES': {
+            'music:read': 'Read your music.',
+            'music:write': 'Modify your music.',
             # ...
         },
     }
