@@ -19,11 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RefreshToken` models are swapped into different apps, and a new
   "Extending the token models" documentation section explaining how to swap the
   interrelated token models together.
-* #1715 Security guidance in the settings reference: recommend a finite
-  `REFRESH_TOKEN_EXPIRE_SECONDS` as defense-in-depth (rotation remains the primary
-  mitigation), and document why `OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS` defaults
-  to `True` (the `id_token_hint` is a previously issued token per OIDC RP-Initiated Logout)
-  and how to harden it.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a
@@ -39,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   access token, defeating the revocation and leaving the refresh token an active "orphan"
   (its `access_token` foreign key is `SET_NULL`). Whether a refresh token may survive
   access-token revocation will become a configurable policy in 4.0.
+* #1715 Security guidance in the settings reference: recommend a finite
+  `REFRESH_TOKEN_EXPIRE_SECONDS` as defense-in-depth (rotation remains the primary
+  mitigation), and document why `OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS` defaults
+  to `True` (the `id_token_hint` is a previously issued token per OIDC RP-Initiated Logout)
+  and how to harden it.
 ### Fixed
 * #746 `REFRESH_TOKEN_EXPIRE_SECONDS` is now enforced when a refresh token is presented,
   not only by the `cleartokens` (`clear_expired`) cleanup job. Previously a refresh token
