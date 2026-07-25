@@ -223,3 +223,65 @@ same namespace as before.
     ]
 
 This method also allows to remove some of the urls (such as managements) urls if you don't want them.
+
+.. _csp-authorization-form:
+
+Content Security Policy and the authorization form
+==================================================
+
+If your project sends a `Content Security Policy
+<https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy>`_ that
+restricts ``form-action`` (for example ``form-action 'self'``, commonly configured through
+`django-csp <https://django-csp.readthedocs.io/>`_), the authorization-code flow can fail
+in Chromium-based browsers: clicking **Authorize** appears to do nothing and the browser
+never reaches the client's ``redirect_uri``.
+
+This happens because the authorization form posts to the authorization endpoint
+(``/o/authorize/`` by default, wherever you mounted it) and the server answers with a
+``302`` redirect to the client's registered ``redirect_uri`` — a *different* origin. Chromium enforces ``form-action`` against the redirect target of a form submission,
+so the off-site redirect is blocked; Firefox and Safari historically check only the form's
+own action (``'self'``) and are unaffected. This is a browser/CSP-policy interaction rather
+than a defect in the toolkit — DOT issues a standard ``302`` — and it cannot be worked around
+by setting an ``action`` attribute on the ``<form>`` element, because the block is on the
+redirect *target*, not on the POST target.
+
+To allow the flow under a strict ``form-action`` policy, add the requesting application's
+registered redirect URIs to the ``form-action`` directive for the authorization response,
+by overriding :class:`~oauth2_provider.views.AuthorizationView` (see :ref:`override-views`)::
+
+    from urllib.parse import urlsplit, urlunsplit
+
+    from oauth2_provider.views import AuthorizationView
+
+
+    def csp_source(uri):
+        # A CSP source expression matches scheme/host/port/path only. DOT permits
+        # a query string (and fragment) in a redirect URI, but those are not valid
+        # in a CSP source and would make the directive non-matching, so drop them.
+        parts = urlsplit(uri)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
+    class CSPAuthorizationView(AuthorizationView):
+        def get(self, request, *args, **kwargs):
+            response = super().get(request, *args, **kwargs)
+            # Only the rendered consent page carries the form and needs the relaxed
+            # directive; reuse the application the base view already put in the template
+            # context rather than re-querying, and skip redirect / error responses
+            # (skip_authorization, auto-approval, invalid client_id) that have no context.
+            application = getattr(response, "context_data", {}).get("application")
+            if application is not None:
+                # django-csp: extend form-action with this client's redirect URIs so the
+                # post-authorization redirect is allowed. The exact response attribute
+                # (``_csp_replace`` / ``_csp_update``) and value format depend on your
+                # django-csp version; consult its documentation.
+                response._csp_replace = {
+                    "form-action": [
+                        "'self'",
+                        *(csp_source(uri) for uri in application.redirect_uris.split()),
+                    ]
+                }
+            return response
+
+Scope the added origins as narrowly as possible — to the requesting application's redirect
+URIs, as above — rather than relaxing ``form-action`` globally.
