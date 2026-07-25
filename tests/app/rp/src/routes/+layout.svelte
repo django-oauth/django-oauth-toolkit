@@ -60,6 +60,11 @@
 					>Device Authorization Flow</a
 				>
 			</li>
+			<li class="tab">
+				<a href="/par" class:active={$page.url.pathname === '/par'}
+					>Pushed Authorization Requests (PAR)</a
+				>
+			</li>
 		</ul>
 	</div>
 </nav>

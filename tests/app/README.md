@@ -113,6 +113,27 @@ This is an example RP. It is a SPA built with Svelte.
   # open http://localhost:5173
   ```
 
+The RP has three tabs: the OIDC Authorization Code flow, the Device Authorization
+flow, and **Pushed Authorization Requests (PAR)**.
+
+### Pushed Authorization Requests (PAR) demo
+
+The `/par` tab demonstrates RFC 9126 with a SvelteKit **server** component
+(`src/routes/par/+page.server.ts`). Because PAR is a back-channel flow, the push
+must happen server-side: the SvelteKit server (never the browser) holds the
+client secret for the confidential `par-demo-confidential` seed application and
+POSTs the authorization request to the IdP's `/o/par/` endpoint, receiving a
+single-use `request_uri`. Only `client_id` + `request_uri` then travel through
+the browser to the authorization endpoint. The demo IdP requires PKCE, so the
+server also generates the PKCE verifier/challenge.
+
+Start both the IdP (`http://localhost:8000`, with `fixtures/seed.json` loaded)
+and the RP, open `http://localhost:5173/par`, and click **Push authorization
+request**. You'll see the returned `request_uri`; continue to the authorization
+endpoint (log in as `superuser` / `password` and approve), and the RP server
+exchanges the returned code for tokens. This flow is covered end-to-end by
+`tests/e2e/browser_rp/test_browser_par.py`.
+
 ## Running with Docker Compose
 
 The repository root ships a `Dockerfile` and `docker-compose.yml` that build the

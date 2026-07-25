@@ -55,5 +55,26 @@
     "algorithm": "",
     "allowed_origins": ""
   }
+},
+{
+  "model": "oauth2_provider.application",
+  "fields": {
+    "client_id": "par-demo-confidential",
+    "user": [
+      "superuser"
+    ],
+    "redirect_uris": "http://localhost:5173/par\r\nhttp://127.0.0.1:5173/par",
+    "post_logout_redirect_uris": "",
+    "client_type": "confidential",
+    "authorization_grant_type": "authorization-code",
+    "client_secret": "par-demo-secret",
+    "hash_client_secret": false,
+    "name": "PAR - Pushed Authorization Requests Demo",
+    "skip_authorization": false,
+    "created": "2025-11-07T16:56:23.156Z",
+    "updated": "2025-11-07T16:56:23.156Z",
+    "algorithm": "RS256",
+    "allowed_origins": ""
+  }
 }
 ]
