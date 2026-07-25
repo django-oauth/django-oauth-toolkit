@@ -69,7 +69,7 @@ Add ``oauth2_provider`` to your ``INSTALLED_APPS``
     )
 
 
-If you need an OAuth2 provider you'll want to add the following to your ``urls.py``.
+If you need an OAuth 2.0 authorization server you'll want to add the following to your ``urls.py``.
 
 .. code-block:: python
 

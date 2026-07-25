@@ -328,7 +328,7 @@ Remember we used ``http://127.0.0.1:8000/noexist/callback`` as ``redirect_uri`` 
 
     http://127.0.0.1:8000/noexist/callback?code=uVqLxiHDKIirldDZQfSnDsmYW1Abj2
 
-This is the OAuth2 provider trying to give you a ``code``. in this case ``uVqLxiHDKIirldDZQfSnDsmYW1Abj2``.
+This is the OAuth 2.0 authorization server trying to give you a ``code``. in this case ``uVqLxiHDKIirldDZQfSnDsmYW1Abj2``.
 
 Export it as an environment variable:
 
@@ -353,7 +353,7 @@ To be more easy to visualize::
         -d "redirect_uri=http://127.0.0.1:8000/noexist/callback" \
         -d "grant_type=authorization_code"
 
-The OAuth2 provider will return the follow response:
+The OAuth 2.0 authorization server will return the follow response:
 
 .. code-block:: json
 
@@ -423,7 +423,7 @@ To be easier to visualize::
         "http://127.0.0.1:8000/o/token/" \
         -d "grant_type=client_credentials"
 
-The OAuth2 provider will return the following response:
+The OAuth 2.0 authorization server will return the following response:
 
 .. code-block:: json
 
