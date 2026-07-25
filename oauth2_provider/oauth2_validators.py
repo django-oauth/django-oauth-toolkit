@@ -41,6 +41,7 @@ from .models import (
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
+    refresh_token_expire_timedelta,
 )
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
@@ -1185,6 +1186,18 @@ class OAuth2Validator(RequestValidator):
             for other_type in [_t for _t in token_types.values() if _t != token_type]:
                 tokens.extend(other_type.objects.filter(**lookup))
         for t in tokens:
+            if isinstance(t, AccessToken):
+                # RFC 7009 section 2.1: revoking an access token MAY also revoke the bound
+                # refresh token. We do -- otherwise deleting the access token alone leaves
+                # the refresh token an active orphan (``RefreshToken.access_token`` is
+                # SET_NULL) that can immediately re-mint an access token, defeating the
+                # revocation. Revoking the refresh token deletes its access token too, so it
+                # covers both. Mirrors the admin DeleteAccessTokenView. Whether a refresh
+                # token may survive access-token revocation is a policy deferred to 4.x.
+                bound_refresh_token = RefreshToken.objects.filter(access_token=t).first()
+                if bound_refresh_token is not None:
+                    bound_refresh_token.revoke()
+                    continue
             t.revoke()
 
     def build_http_request(self, request: OauthlibRequest) -> HttpRequest:
@@ -1278,6 +1291,27 @@ class OAuth2Validator(RequestValidator):
                     rt_token_family = RefreshToken.objects.filter(token_family=rt.token_family)
                     for related_rt in rt_token_family.all():
                         related_rt.revoke()
+                return False
+
+        # Enforce REFRESH_TOKEN_EXPIRE_SECONDS at validation time. Historically the setting
+        # only governed clear_expired() cleanup, so a refresh token past its configured
+        # lifetime was still accepted until a sweep happened to remove it -- or forever, if
+        # cleartokens never ran (#746). A live, actively-used refresh token is always paired
+        # with an access token (rotation mints the pair together; non-rotating reuse keeps
+        # it and bumps its ``expires``), so the expiry slides with the access token: the
+        # token is dead REFRESH_TOKEN_EXPIRE_SECONDS after its access token expires. A
+        # non-revoked token with no access token is an orphan from an out-of-band access
+        # token deletion -- there is nothing left to refresh against, so reject it.
+        if rt.revoked is None:
+            if rt.access_token is None:
+                return False
+            # refresh_token_expire_timedelta() returns None when age expiry is disabled and
+            # raises ImproperlyConfigured on a bad type, exactly as clear_expired does, so a
+            # misconfiguration fails the same way here instead of raising an opaque TypeError.
+            expire_delta = refresh_token_expire_timedelta()
+            # ``<=`` so the deadline itself counts as expired, matching AccessToken.is_expired()
+            # (``now >= expires``).
+            if expire_delta and rt.access_token.expires + expire_delta <= timezone.now():
                 return False
 
         request.user = rt.user

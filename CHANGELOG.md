@@ -27,7 +27,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use `application/x-www-form-urlencoded` (RFC 6749, RFC 7662, RFC 7009); the JSON mode is
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
   removal in 4.0.
+### Changed
+* #746 Revoking an access token (via the RFC 7009 `/revoke/` endpoint) now also revokes
+  the refresh token bound to it, matching the admin "delete access token" view and
+  RFC 7009 §2.1. Previously the refresh token survived and could immediately mint a new
+  access token, defeating the revocation and leaving the refresh token an active "orphan"
+  (its `access_token` foreign key is `SET_NULL`). Whether a refresh token may survive
+  access-token revocation will become a configurable policy in 4.0.
 ### Fixed
+* #746 `REFRESH_TOKEN_EXPIRE_SECONDS` is now enforced when a refresh token is presented,
+  not only by the `cleartokens` (`clear_expired`) cleanup job. Previously a refresh token
+  past its configured lifetime kept working until a cleanup sweep happened to remove it —
+  or forever, if `cleartokens` was never scheduled. Expiry is idle-based: a refresh token
+  is rejected `REFRESH_TOKEN_EXPIRE_SECONDS` after its access token expires (the deadline
+  slides forward on every refresh), so actively-used tokens are unaffected. The default
+  (`REFRESH_TOKEN_EXPIRE_SECONDS = None`) still never expires refresh tokens. **Upgrade
+  note:** deployments that set `REFRESH_TOKEN_EXPIRE_SECONDS` may see idle refresh tokens
+  that are already past their lifetime rejected on upgrade, forcing those clients to
+  re-authenticate.
+* #746 `clear_expired()` now reclaims "orphaned" refresh tokens — non-revoked refresh
+  tokens whose access token was deleted out of band, leaving `access_token` `NULL`. The
+  previous `access_token__expires__lt` join could never match a `NULL` access token, so
+  such rows could remain in the database indefinitely.
 * #1687 Reusing a refresh token within `REFRESH_TOKEN_GRACE_PERIOD_SECONDS` no longer
   raises `AttributeError: 'NoneType' object has no attribute 'token'` (HTTP 500) when the
   access token previously minted from that refresh token still exists but its own refresh

@@ -967,6 +967,28 @@ def get_refresh_token_admin_class():
     return refresh_token_admin_class
 
 
+def refresh_token_expire_timedelta():
+    """Return ``REFRESH_TOKEN_EXPIRE_SECONDS`` as a ``timedelta``, or ``None`` when refresh
+    tokens do not age-expire (the setting is unset, ``0``, or ``timedelta(0)``).
+
+    Raises ``ImproperlyConfigured`` for a non-numeric, out-of-range, or negative value
+    (like ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``) so that both the validation-time
+    enforcement and ``clear_expired`` fail the same way on a misconfiguration instead of
+    raising an opaque ``TypeError``/``OverflowError``.
+    """
+    value = oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS
+    if not value:
+        return None
+    if not isinstance(value, timedelta):
+        try:
+            value = timedelta(seconds=value)
+        except (TypeError, OverflowError):
+            raise ImproperlyConfigured("REFRESH_TOKEN_EXPIRE_SECONDS must be either a timedelta or seconds")
+    if value < timedelta(0):
+        raise ImproperlyConfigured("REFRESH_TOKEN_EXPIRE_SECONDS must not be negative")
+    return value
+
+
 def clear_expired():
     def batch_delete(queryset, query):
         CLEAR_EXPIRED_TOKENS_BATCH_SIZE = oauth2_settings.CLEAR_EXPIRED_TOKENS_BATCH_SIZE
@@ -994,7 +1016,6 @@ def clear_expired():
     id_token_model = get_id_token_model()
     grant_model = get_grant_model()
     REFRESH_TOKEN_GRACE_PERIOD_SECONDS = oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS
-    REFRESH_TOKEN_EXPIRE_SECONDS = oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS
 
     if REFRESH_TOKEN_GRACE_PERIOD_SECONDS:
         try:
@@ -1007,14 +1028,9 @@ def clear_expired():
             raise ImproperlyConfigured(e)
         refresh_revoked_at = now - REFRESH_TOKEN_GRACE_PERIOD_SECONDS
 
-    if REFRESH_TOKEN_EXPIRE_SECONDS:
-        if not isinstance(REFRESH_TOKEN_EXPIRE_SECONDS, timedelta):
-            try:
-                REFRESH_TOKEN_EXPIRE_SECONDS = timedelta(seconds=REFRESH_TOKEN_EXPIRE_SECONDS)
-            except TypeError:
-                e = "REFRESH_TOKEN_EXPIRE_SECONDS must be either a timedelta or seconds"
-                raise ImproperlyConfigured(e)
-        refresh_expire_at = now - REFRESH_TOKEN_EXPIRE_SECONDS
+    refresh_token_expire_delta = refresh_token_expire_timedelta()
+    if refresh_token_expire_delta:
+        refresh_expire_at = now - refresh_token_expire_delta
 
     if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION:
         # Revoked refresh tokens are what allows reuse of a rotated token to
@@ -1031,8 +1047,30 @@ def clear_expired():
     else:
         logger.info("refresh_revoked_at is %s. No revoked refresh tokens deleted.", refresh_revoked_at)
 
+    # Orphaned refresh tokens: non-revoked, but their access token is gone
+    # (``RefreshToken.access_token`` is SET_NULL, so deleting an access token out of band
+    # leaves the refresh token behind with a NULL FK). The toolkit no longer produces
+    # these -- both the RFC 7009 ``/revoke/`` endpoint and the admin view revoke the bound
+    # refresh token when an access token is revoked -- so any that remain came from an
+    # out-of-band deletion and are stale. Delete them regardless of
+    # REFRESH_TOKEN_EXPIRE_SECONDS: there is no access token to anchor an expiry on, and a
+    # surviving orphan could re-mint access tokens, defeating whatever removed the access
+    # token in the first place. This is also the case that could previously live in the DB
+    # forever, because the age join below can never match a NULL access token (#746).
+    orphan_query = models.Q(revoked__isnull=True, access_token__isnull=True)
+    orphans = refresh_token_model.objects.filter(orphan_query)
+
+    orphans_deleted_no = batch_delete(orphans, orphan_query)
+    logger.info("%s Orphaned refresh tokens deleted", orphans_deleted_no)
+
     if refresh_expire_at:
-        expired_query = models.Q(access_token__expires__lt=refresh_expire_at)
+        # Idle expiry: a refresh token is reclaimed REFRESH_TOKEN_EXPIRE_SECONDS after its
+        # paired access token expires. ``access_token.expires`` advances on every refresh,
+        # so an actively-used token slides forward and only dormant ones are reaped. Orphans
+        # (NULL access token) are handled above; this join deliberately ignores them.
+        # ``__lte`` so a token whose access token expired exactly at the cutoff is reclaimed,
+        # matching AccessToken.is_expired() (``now >= expires``) and validation-time expiry.
+        expired_query = models.Q(revoked__isnull=True, access_token__expires__lte=refresh_expire_at)
         expired = refresh_token_model.objects.filter(expired_query)
 
         expired_deleted_no = batch_delete(expired, expired_query)
