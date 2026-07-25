@@ -971,19 +971,22 @@ def refresh_token_expire_timedelta():
     """Return ``REFRESH_TOKEN_EXPIRE_SECONDS`` as a ``timedelta``, or ``None`` when refresh
     tokens do not age-expire (the setting is unset, ``0``, or ``timedelta(0)``).
 
-    Raises ``ImproperlyConfigured`` for a non-numeric value so that both the validation-time
+    Raises ``ImproperlyConfigured`` for a non-numeric, out-of-range, or negative value
+    (like ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``) so that both the validation-time
     enforcement and ``clear_expired`` fail the same way on a misconfiguration instead of
-    raising an opaque ``TypeError``.
+    raising an opaque ``TypeError``/``OverflowError``.
     """
     value = oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS
     if not value:
         return None
-    if isinstance(value, timedelta):
-        return value
-    try:
-        return timedelta(seconds=value)
-    except TypeError:
-        raise ImproperlyConfigured("REFRESH_TOKEN_EXPIRE_SECONDS must be either a timedelta or seconds")
+    if not isinstance(value, timedelta):
+        try:
+            value = timedelta(seconds=value)
+        except (TypeError, OverflowError):
+            raise ImproperlyConfigured("REFRESH_TOKEN_EXPIRE_SECONDS must be either a timedelta or seconds")
+    if value < timedelta(0):
+        raise ImproperlyConfigured("REFRESH_TOKEN_EXPIRE_SECONDS must not be negative")
+    return value
 
 
 def clear_expired():

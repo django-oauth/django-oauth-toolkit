@@ -19,6 +19,7 @@ from oauth2_provider.models import (
     get_id_token_model,
     get_refresh_token_model,
     redirect_to_uri_allowed,
+    refresh_token_expire_timedelta,
 )
 
 from . import presets
@@ -623,6 +624,38 @@ class TestClearExpired(BaseTestModels):
         assert RefreshToken.objects.filter(pk=paired.pk).exists(), (
             "a refresh token paired with a current access token must survive"
         )
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class TestRefreshTokenExpireTimedelta(TestCase):
+    def test_none_and_zero_disable_expiry(self):
+        for value in (None, 0, timedelta(0)):
+            self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = value
+            assert refresh_token_expire_timedelta() is None, f"{value!r} should disable expiry"
+
+    def test_int_seconds_coerced_to_timedelta(self):
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 3600
+        assert refresh_token_expire_timedelta() == timedelta(seconds=3600)
+
+    def test_timedelta_passed_through(self):
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = timedelta(days=1)
+        assert refresh_token_expire_timedelta() == timedelta(days=1)
+
+    def test_non_numeric_raises(self):
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = "not-a-number"
+        with pytest.raises(ImproperlyConfigured, match="must be either a timedelta or seconds"):
+            refresh_token_expire_timedelta()
+
+    def test_negative_raises(self):
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = -3600
+        with pytest.raises(ImproperlyConfigured, match="must not be negative"):
+            refresh_token_expire_timedelta()
+
+    def test_out_of_range_raises(self):
+        # timedelta() overflows for absurdly large values; normalize to ImproperlyConfigured.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 10**20
+        with pytest.raises(ImproperlyConfigured, match="must be either a timedelta or seconds"):
+            refresh_token_expire_timedelta()
 
 
 @pytest.mark.usefixtures("oauth2_settings")
