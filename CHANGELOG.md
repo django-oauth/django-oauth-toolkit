@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RefreshToken` models are swapped into different apps, and a new
   "Extending the token models" documentation section explaining how to swap the
   interrelated token models together.
+* #1623 Documentation ("Content Security Policy and the authorization form") on completing
+  the authorization-code flow under a strict `form-action` Content Security Policy, which
+  Chromium enforces against the post-authorization redirect to the client's `redirect_uri`.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a
