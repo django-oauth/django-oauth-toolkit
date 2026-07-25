@@ -22,8 +22,9 @@ As of 3.4.0, Django OAuth Toolkit supports the authorization server role require
 Context Protocol (MCP) authorization specification. PKCE is required by default, and the
 :doc:`authorization server metadata <oauth2_server_metadata>` (RFC 8414) and
 :doc:`protected resource metadata <protected_resource_metadata>` (RFC 9728) discovery endpoints are
-published out of the box. :doc:`Dynamic Client Registration </views/dynamic_client_registration>`
-(RFC 7591/7592) and :doc:`Client ID Metadata Documents <cimd>` can be enabled by setting. See the
+included in the default URLconf. :doc:`Dynamic Client Registration </views/dynamic_client_registration>`
+(RFC 7591/7592) and :doc:`Client ID Metadata Documents <cimd>` can be enabled with the ``DCR_ENABLED``
+and ``CIMD_ENABLED`` settings. See the
 `3.4.0 release discussion <https://github.com/django-oauth/django-oauth-toolkit/discussions/1775>`_
 for the supported specifications and current gaps.
 

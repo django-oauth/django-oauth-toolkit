@@ -29,8 +29,9 @@ from your existing Django project, instead of standing up and operating a separa
 As of 3.4.0, Django OAuth Toolkit supports the authorization server role required by the
 Model Context Protocol (MCP) authorization specification: PKCE is required by default, and the
 authorization server metadata (RFC 8414) and protected resource metadata (RFC 9728) discovery
-endpoints are published out of the box. Dynamic Client Registration (RFC 7591/7592) and Client
-ID Metadata Documents can be enabled by setting. See the
+endpoints are included in the default URLconf. Dynamic Client Registration (RFC 7591/7592) and
+Client ID Metadata Documents can be enabled with the ``DCR_ENABLED`` and ``CIMD_ENABLED`` settings.
+See the
 `3.4.0 release discussion <https://github.com/django-oauth/django-oauth-toolkit/discussions/1775>`_
 for the supported specifications and current gaps.
 
