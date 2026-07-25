@@ -62,12 +62,24 @@ Upgrading to 3.0
   ``TextField`` (removing the 255-character limit so JWT access tokens with extra claims fit), and a
   new ``token_checksum`` (SHA-256) field is used to look tokens up. Run ``python manage.py migrate``
   after upgrading; if you use swapped models, run ``makemigrations`` for your app first.
+
+  .. warning::
+     **Swapped access token models need a manual ``token_checksum`` backfill.** The built-in
+     migration backfills ``token_checksum`` for the *default* ``AccessToken`` only — it deliberately
+     skips a swapped access token model (and logs a warning to that effect). Until you backfill the
+     checksum for your existing rows, those access tokens will fail validation. Backfill it in a data
+     migration on your app, computing ``hashlib.sha256(token.encode("utf-8")).hexdigest()`` for each
+     existing row (mirroring what ``oauth2_provider``'s ``0012_add_token_checksum`` migration does for
+     the default model).
 * **Models now use ``pk`` instead of ``id`` (#1446).** This lets swapped models use a different
   primary-key field. If any of your code assumed an ``id`` attribute on the toolkit's models, use
   ``pk`` instead.
 * **Django < 4.2 is no longer supported (#1455).** Upgrade Django to 4.2 or newer first.
-* **Deprecations from 2.4.0 were removed (#1425).** ``RedirectURIValidator``, ``WildcardSet`` and
-  ``validate_logout_request`` (deprecated in #1345/#1274) are gone. Replace any imports of them.
+* **Deprecations from 2.4.0 were removed (#1425).** ``RedirectURIValidator`` and ``WildcardSet``
+  (deprecated in #1345) are gone — replace any imports of them. The deprecated *importable*
+  ``validate_logout_request`` helper was also removed (#1274); note that this is distinct from the
+  ``RPInitiatedLogoutView.validate_logout_request`` *method*, which still exists — so if you grep
+  the codebase and still find ``validate_logout_request``, that method is expected to be there.
 * **Token cleanup writes now honor database routers (#1450).** If you run a multi-database setup,
   ensure your routers direct the token models to the correct database (see
   :ref:`the multiple-databases note <extend_token_models>`).
