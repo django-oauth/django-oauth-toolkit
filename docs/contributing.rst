@@ -54,12 +54,12 @@ parameters and the return type). Please do not submit standalone typing-only
 changes to code you are not otherwise touching — annotations should ride along
 with the change that touches the signature.
 
-The package does not yet ship a ``py.typed`` marker. Per :pep:`561`, that marker
-tells downstream type checkers to use the package's inline annotations; adding it
-while coverage is still sparse would expose incomplete — and therefore
-potentially misleading — type information to users. It will only be added once
-annotation coverage is broadly complete. Until then, keep contributing
-annotations as you touch signatures.
+Do not add a ``py.typed`` marker as part of this incremental work. Per
+:pep:`561`, that marker tells downstream type checkers to use the package's
+inline annotations; adding it while coverage is still sparse would expose
+incomplete — and therefore potentially misleading — type information to users.
+Whether and when the project ships one is a separate decision that has not been
+made.
 
 Documentation
 =============

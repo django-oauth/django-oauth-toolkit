@@ -5,7 +5,7 @@
 - SHOULD demonstrate new features in `/tests/app/idp` and `/tests/app/rp` where possible.
 - MUST keep changes focused on the feature at hand; do not change nearby code or formatting only because of proximity.
 - MUST ensure all new or updated code adheres to Ruff lint and format rules per the tox configuration.
-- SHOULD add type annotations to any function or method signature you are already modifying (both parameters and the return type), so the codebase moves toward full typing incrementally; do not annotate untouched code as a standalone change, and do not add a `py.typed` marker until annotation coverage is broadly complete.
+- SHOULD add type annotations to any function or method signature you are already modifying (both parameters and the return type), so the codebase moves toward full typing incrementally; do not annotate untouched code as a standalone change, and do not add a `py.typed` marker (whether the package ships one is a separate decision that has not been made).
 - MUST keep user-facing documentation in `docs/` in sync with behavior changes.
 - SHOULD follow guidance and best practices for upstream OAuthLib integration.
 - MUST modify `rfcs/*` only for protocol/spec-facing changes or necessary corpus maintenance; avoid unrelated churn.
