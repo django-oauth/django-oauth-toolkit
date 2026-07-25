@@ -44,6 +44,10 @@ until they expire per ``REFRESH_TOKEN_EXPIRE_SECONDS``.
 
 Note: Refresh tokens need to expire before AccessTokens can be removed from the
 database. Using ``cleartokens`` without ``REFRESH_TOKEN_EXPIRE_SECONDS`` has limited effect.
+When ``REFRESH_TOKEN_EXPIRE_SECONDS`` is unset (or ``0``), ``cleartokens`` prints a warning to
+stderr to make this easy to notice: only revoked and orphaned refresh tokens are removed, and
+expired access and ID tokens are retained as long as their refresh token lives. Set
+``REFRESH_TOKEN_EXPIRE_SECONDS`` to enable expiry-based cleanup.
 
 .. _clearcimdapplications:
 

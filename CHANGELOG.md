@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
   removal in 4.0.
 ### Changed
+* #522 The `cleartokens` management command now prints a warning to stderr when
+  `REFRESH_TOKEN_EXPIRE_SECONDS` is unset (or `0`), explaining that only revoked and
+  orphaned refresh tokens are removed and that expired access/ID tokens are retained until
+  their refresh token is gone. The management command and settings docs were clarified to
+  match.
 * #746 Revoking an access token (via the RFC 7009 `/revoke/` endpoint) now also revokes
   the refresh token bound to it, matching the admin "delete access token" view and
   RFC 7009 §2.1. Previously the refresh token survived and could immediately mint a new
