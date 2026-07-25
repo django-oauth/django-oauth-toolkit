@@ -307,6 +307,8 @@ SCOPES_BACKEND_CLASS
 ~~~~~~~~~~~~~~~~~~~~
 **New in 0.12.0**. The import string for the scopes backend class.
 Defaults to ``oauth2_provider.scopes.SettingsScopes``, which reads scopes through the settings defined below.
+See :ref:`custom-scopes-backend` for how to write your own backend (for example to store scopes in the
+database).
 
 SCOPES
 ~~~~~~

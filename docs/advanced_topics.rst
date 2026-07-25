@@ -157,6 +157,109 @@ to support the authorization code *and* client credentials grants, you might do 
             # Assume, for this example, that self.authorization_grant_type is set to self.GRANT_AUTHORIZATION_CODE
             return bool( set([self.authorization_grant_type, self.GRANT_CLIENT_CREDENTIALS]) & grant_types )
 
+.. _custom-scopes-backend:
+
+Custom scopes backend
+=====================
+
+The set of scopes your server understands does not have to be hard-coded in settings. The
+``SCOPES``, ``DEFAULT_SCOPES``, ``READ_SCOPE`` and ``WRITE_SCOPE`` settings are read through a
+*scopes backend*, and you can replace it with one of your own -- for example to store scopes in
+the database and administer them through the Django admin, or to expose a different set of scopes
+per application.
+
+The backend used is controlled by the ``SCOPES_BACKEND_CLASS`` setting, which defaults to
+``oauth2_provider.scopes.SettingsScopes`` (the settings-driven backend). To write your own, subclass
+``oauth2_provider.scopes.BaseScopes`` and implement its three methods::
+
+    class BaseScopes:
+        def get_all_scopes(self):
+            """
+            Return a dict-like mapping of every scope name the system knows about to its
+            human-readable description, e.g. ``{"read": "Read scope", "write": "Write scope"}``.
+            Used to render descriptions on the authorization form and to validate requested scopes.
+            """
+
+        def get_available_scopes(self, application=None, request=None, *args, **kwargs):
+            """
+            Return the list of scope names that may be requested for the given
+            ``application``/``request``, e.g. ``["read", "write"]``. A scope not in this list
+            cannot be granted.
+            """
+
+        def get_default_scopes(self, application=None, request=None, *args, **kwargs):
+            """
+            Return the list of scope names granted when a client requests authorization without
+            specifying any scope. This MUST be a subset of ``get_available_scopes``.
+            """
+
+``get_available_scopes`` and ``get_default_scopes`` receive the ``application`` and ``request``
+in play, so a backend can vary the offered scopes per application or per request.
+
+Model-based scopes
+~~~~~~~~~~~~~~~~~~
+
+The following backend keeps scopes in the database. It lets you add or remove scopes (and pick
+which ones a given application may use) from the Django admin without a code deploy or settings
+change.
+
+Define the models in one of your apps::
+
+    from django.db import models
+
+
+    class Scope(models.Model):
+        name = models.CharField(max_length=255, unique=True)
+        description = models.TextField(blank=True)
+        is_default = models.BooleanField(default=False)
+
+        def __str__(self):
+            return self.name
+
+
+    class ApplicationScope(models.Model):
+        # Which scopes each application is allowed to request. If an application has no rows
+        # here, fall back to every scope (see the backend below).
+        application = models.ForeignKey(
+            "oauth2_provider.Application", on_delete=models.CASCADE, related_name="scopes"
+        )
+        scope = models.ForeignKey(Scope, on_delete=models.CASCADE)
+
+Then implement the backend::
+
+    from oauth2_provider.scopes import BaseScopes
+
+    from .models import ApplicationScope, Scope
+
+
+    class ModelScopes(BaseScopes):
+        def get_all_scopes(self):
+            return dict(Scope.objects.values_list("name", "description"))
+
+        def get_available_scopes(self, application=None, request=None, *args, **kwargs):
+            if application is None:
+                return list(Scope.objects.values_list("name", flat=True))
+            available = ApplicationScope.objects.filter(application=application)
+            if available.exists():
+                return list(available.values_list("scope__name", flat=True))
+            # No per-application restriction configured: allow all known scopes.
+            return list(Scope.objects.values_list("name", flat=True))
+
+        def get_default_scopes(self, application=None, request=None, *args, **kwargs):
+            return list(Scope.objects.filter(is_default=True).values_list("name", flat=True))
+
+Finally point the setting at your backend::
+
+    OAUTH2_PROVIDER = {
+        # ...
+        "SCOPES_BACKEND_CLASS": "your_app.scopes.ModelScopes",
+    }
+
+With a custom backend in place the ``SCOPES``, ``DEFAULT_SCOPES``, ``READ_SCOPE`` and
+``WRITE_SCOPE`` settings are no longer consulted (the backend is the single source of truth), so
+you can drop them. Register the ``Scope`` and ``ApplicationScope`` models with the admin as usual
+to manage scopes through the admin site.
+
 .. _skip-auth-form:
 
 Skip authorization form

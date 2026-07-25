@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1157 An "Upgrading" documentation page collecting the breaking changes and upgrade steps for
   major version bumps (2.0 and 3.0), linked from the documentation index, so upgrade guidance is
   discoverable outside the CHANGELOG.
+* #452 Documentation ("Custom scopes backend") explaining how to replace the default
+  settings-driven scopes backend via `SCOPES_BACKEND_CLASS`, including a worked model-based
+  example that stores scopes in the database.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a
