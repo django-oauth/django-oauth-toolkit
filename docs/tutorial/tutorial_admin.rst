@@ -19,14 +19,15 @@ route it in your ``urls.py``:
 .. code-block:: python
 
     from django.contrib import admin
+    from django.urls import path
 
     urlpatterns = [
         path("admin/", admin.site.urls),
         # ...
     ]
 
-Log in at http://localhost:8000/admin/ with a staff account. Under the **DJANGO OAUTH TOOLKIT**
-section you will find five model admins:
+Log in at http://localhost:8000/admin/ with a staff account. Under the **Django OAuth Toolkit**
+section (the app's ``verbose_name``) you will find five model admins:
 
 * **Applications** — the OAuth clients you have registered.
 * **Access tokens** — bearer tokens issued to those clients.
@@ -60,16 +61,21 @@ fields are:
 * **Skip authorization** — when enabled, users are never shown the authorization form for this
   application, even on first use. Enable it only for applications you fully trust (see
   :ref:`skip-auth-form`).
-* **Algorithm** — the OIDC token signing algorithm (``No OIDC support``, ``RS256`` or ``HS256``).
+* **Algorithm** — the OIDC token signing algorithm. The choices are labelled *No OIDC support*
+  (the default, empty value), *RSA with SHA-2 256* (``RS256``) and *HMAC with SHA-2 256*
+  (``HS256``).
+* **Hash client secret** — whether this application's ``client_secret`` is hashed on save (see the
+  note below).
 
 .. note::
-   **Client secrets are hashed and shown only once.** By default the toolkit stores a hash of
-   ``client_secret`` (like a password), so the raw value cannot be recovered after you save. When
-   you create an application — or paste a new secret into an existing one — copy the secret
-   *before* clicking **Save**. If you lose it, generate a new one by saving a fresh random value
-   into both the admin and your client. ``registration_source`` and ``cimd_expires_at`` are
-   maintained by the toolkit (they mark applications created via Dynamic Client Registration or
-   :doc:`CIMD <../cimd>`) and are read-only.
+   **Copy a hashed client secret before you save it.** When **Hash client secret** is enabled —
+   the default — the toolkit stores only a hash of ``client_secret`` (like a password), so the raw
+   value cannot be recovered after you save. When you create such an application, or paste a new
+   secret into one, copy the secret *before* clicking **Save**; if you lose it, generate a new one
+   by saving a fresh random value into both the admin and your client. If **Hash client secret** is
+   disabled, the secret is stored (and remains viewable) in cleartext instead. ``registration_source``
+   and ``cimd_expires_at`` are maintained by the toolkit (they mark applications created via Dynamic
+   Client Registration or :doc:`CIMD <../cimd>`) and are read-only.
 
 Reviewing and revoking tokens
 -----------------------------
@@ -85,10 +91,12 @@ credential admins:
   non-secret identifiers (application client id / name, and user) — never by the token itself.
   This keeps live, replayable credentials out of the admin UI and out of ``?q=`` search URLs
   captured in server logs and browser history.
-* **Deleting an access token also revokes its refresh token.** Removing an access token from the
-  admin revokes the refresh token bound to it, so a deleted access token cannot be silently
-  refreshed back into existence.
+* **Deleting one token does not cascade to the other.** ``RefreshToken.access_token`` is
+  ``SET_NULL``, so deleting an access token in the admin only detaches its refresh token (leaving
+  it active), and deleting a refresh token likewise leaves its access token in place. Neither
+  delete revokes the paired token.
 
-To revoke a user's access, delete their access token (and, if present, refresh token) from these
-changelists. For bulk, scheduled cleanup of *expired* tokens, use the :ref:`cleartokens`
-management command rather than deleting rows by hand.
+To fully revoke a user's access, delete **both** their access token and its refresh token from
+these changelists — otherwise a surviving refresh token can mint a new access token. For bulk,
+scheduled cleanup of *expired* tokens, use the :ref:`cleartokens` management command rather than
+deleting rows by hand.
