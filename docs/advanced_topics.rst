@@ -163,10 +163,12 @@ Custom scopes backend
 =====================
 
 The set of scopes your server understands does not have to be hard-coded in settings. The
-``SCOPES``, ``DEFAULT_SCOPES``, ``READ_SCOPE`` and ``WRITE_SCOPE`` settings are read through a
-*scopes backend*, and you can replace it with one of your own -- for example to store scopes in
-the database and administer them through the Django admin, or to expose a different set of scopes
-per application.
+available scopes and their defaults (the ``SCOPES`` and ``DEFAULT_SCOPES`` settings) are read
+through a *scopes backend*, and you can replace it with one of your own -- for example to store
+scopes in the database and administer them through the Django admin, or to expose a different set
+of scopes per application. (The ``READ_SCOPE`` and ``WRITE_SCOPE`` settings are *not* part of the
+backend: they are read directly from settings by the read/write permission helpers, so they keep
+applying regardless of the backend in use.)
 
 The backend used is controlled by the ``SCOPES_BACKEND_CLASS`` setting, which defaults to
 ``oauth2_provider.scopes.SettingsScopes`` (the settings-driven backend). To write your own, subclass
@@ -177,7 +179,9 @@ The backend used is controlled by the ``SCOPES_BACKEND_CLASS`` setting, which de
             """
             Return a dict-like mapping of every scope name the system knows about to its
             human-readable description, e.g. ``{"read": "Read scope", "write": "Write scope"}``.
-            Used to render descriptions on the authorization form and to validate requested scopes.
+            Used to render scope descriptions (for example on the authorization form) and to
+            describe a token's scopes. Requested scopes are validated against
+            ``get_available_scopes``, not this method.
             """
 
         def get_available_scopes(self, application=None, request=None, *args, **kwargs):
@@ -207,6 +211,8 @@ Define the models in one of your apps::
 
     from django.db import models
 
+    from oauth2_provider.settings import oauth2_settings
+
 
     class Scope(models.Model):
         name = models.CharField(max_length=255, unique=True)
@@ -220,8 +226,10 @@ Define the models in one of your apps::
     class ApplicationScope(models.Model):
         # Which scopes each application is allowed to request. If an application has no rows
         # here, fall back to every scope (see the backend below).
+        # oauth2_settings.APPLICATION_MODEL honors a swapped application model
+        # (OAUTH2_PROVIDER_APPLICATION_MODEL); it is "oauth2_provider.Application" by default.
         application = models.ForeignKey(
-            "oauth2_provider.Application", on_delete=models.CASCADE, related_name="scopes"
+            oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE, related_name="scopes"
         )
         scope = models.ForeignKey(Scope, on_delete=models.CASCADE)
 
@@ -246,7 +254,11 @@ Then implement the backend::
             return list(Scope.objects.values_list("name", flat=True))
 
         def get_default_scopes(self, application=None, request=None, *args, **kwargs):
-            return list(Scope.objects.filter(is_default=True).values_list("name", flat=True))
+            # Defaults MUST be a subset of get_available_scopes, so intersect the flagged
+            # default scopes with what this application is actually allowed to request.
+            available = set(self.get_available_scopes(application, request, *args, **kwargs))
+            defaults = Scope.objects.filter(is_default=True).values_list("name", flat=True)
+            return [name for name in defaults if name in available]
 
 Finally point the setting at your backend::
 
@@ -255,10 +267,12 @@ Finally point the setting at your backend::
         "SCOPES_BACKEND_CLASS": "your_app.scopes.ModelScopes",
     }
 
-With a custom backend in place the ``SCOPES``, ``DEFAULT_SCOPES``, ``READ_SCOPE`` and
-``WRITE_SCOPE`` settings are no longer consulted (the backend is the single source of truth), so
-you can drop them. Register the ``Scope`` and ``ApplicationScope`` models with the admin as usual
-to manage scopes through the admin site.
+With a custom backend in place the ``SCOPES`` and ``DEFAULT_SCOPES`` settings are no longer
+consulted (the backend becomes the single source of truth for the available scopes and their
+defaults), so you can drop them. ``READ_SCOPE`` and ``WRITE_SCOPE`` are read directly from settings
+by the read/write permission helpers (see :doc:`rest-framework/permissions`) and still apply, so
+keep them if you use those helpers. Register the ``Scope`` and ``ApplicationScope`` models with the
+admin as usual to manage scopes through the admin site.
 
 .. _skip-auth-form:
 
