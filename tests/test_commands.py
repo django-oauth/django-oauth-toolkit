@@ -161,6 +161,13 @@ class ClearTokensTest(TestCase):
         call_command("cleartokens", stderr=stderr)
         self.assertIn("REFRESH_TOKEN_EXPIRE_SECONDS is not set", stderr.getvalue())
 
+    def test_warns_when_refresh_token_expiry_zero(self):
+        # 0 is treated the same as unset (expiry disabled), so it also warns.
+        self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 0
+        stderr = StringIO()
+        call_command("cleartokens", stderr=stderr)
+        self.assertIn("REFRESH_TOKEN_EXPIRE_SECONDS is not set", stderr.getvalue())
+
     def test_no_warning_when_refresh_token_expiry_set(self):
         self.oauth2_settings.REFRESH_TOKEN_EXPIRE_SECONDS = 3600
         stderr = StringIO()
