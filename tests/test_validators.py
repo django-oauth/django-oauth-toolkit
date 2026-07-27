@@ -239,3 +239,71 @@ class TestAllowedURIValidator(TestCase):
         for uri in bad_uris:
             with self.assertRaises(ValidationError):
                 validator(uri)
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class TestPrivateUseURISchemeValidator(TestCase):
+    """
+    RFC 8252 §7.1 private-use URI scheme redirects have no naming authority
+    (RFC 3986 §3.2), so only a single slash follows the scheme component.
+    """
+
+    def test_valid_private_use_uris(self):
+        validator = AllowedURIValidator(["com.example.app", "myapp"], "test", allow_path=True)
+        good_uris = [
+            # The complete example given in RFC 8252 §7.1.
+            "com.example.app:/oauth2redirect/example-provider",
+            "com.example.app:/oauth2redirect",
+            "com.example.app:/",
+            "myapp:/callback",
+            # urlsplit() lowercases the scheme, so matching is case-insensitive.
+            "COM.EXAMPLE.APP:/oauth2redirect",
+            # The double-slash spelling remains valid; it is simply a different
+            # URI, parsing to a hostname rather than to no authority at all.
+            "com.example.app://oauth2redirect",
+        ]
+        for uri in good_uris:
+            # Check ValidationError not thrown
+            validator(uri)
+
+    def test_valid_private_use_uri_with_query(self):
+        validator = AllowedURIValidator(["com.example.app"], "test", allow_path=True, allow_query=True)
+        validator("com.example.app:/oauth2redirect?state=xyz")
+
+    def test_invalid_private_use_uris(self):
+        validator = AllowedURIValidator(["com.example.app", "myapp"], "test", allow_path=True)
+        bad_uris = [
+            # No callback target at all.
+            "com.example.app:",
+            "com.example.app://",
+            # Valid absolute-URIs per RFC 3986 §4.3, but rejected as
+            # non-canonical: "scheme:///path" aliases with the single-slash form
+            # under redirect_to_uri_allowed(), and RFC 9700 §2.1 requires exact
+            # string matching.  "scheme:path" (path-rootless) is not the shape
+            # RFC 8252 §7.1 prescribes.
+            "com.example.app:///oauth2redirect",
+            "com.example.app:oauth2redirect",
+            # Whitespace is never part of a redirect URI.
+            "com.example.app:/oauth2 redirect",
+            # Scheme still has to be allowed.
+            "com.other.app:/oauth2redirect",
+        ]
+        for uri in bad_uris:
+            with self.assertRaises(ValidationError):
+                validator(uri)
+
+    def test_schemes_requiring_an_authority_still_require_a_host(self):
+        # "https:/example.com" is a valid absolute-URI, but browsers normalize it
+        # to "https://example.com/", so registering it would not describe what is
+        # actually redirected to.  Only non-special schemes may omit the authority.
+        validator = AllowedURIValidator(["https", "http", "ws", "wss", "ftp"], "test", allow_path=True)
+        for uri in ["https:/example.com", "http:/example.com", "ws:/x", "wss:/x", "ftp:/x"]:
+            with self.assertRaises(ValidationError):
+                validator(uri)
+
+    def test_private_use_uri_rejected_when_paths_are_not_allowed(self):
+        # allowed_origins uses allow_path=False, so a private-use redirect URI is
+        # still rejected there — an origin has no path and needs a host.
+        validator = AllowedURIValidator(["com.example.app"], "test")
+        with self.assertRaises(ValidationError):
+            validator("com.example.app:/oauth2redirect")

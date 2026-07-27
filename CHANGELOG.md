@@ -71,6 +71,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `True` (the `id_token_hint` is a previously issued token per OIDC RP-Initiated Logout)
   and how to harden it.
 ### Fixed
+* #1796 Redirect URIs using an RFC 8252 §7.1 private-use URI scheme can now be registered.
+  Such a scheme has no naming authority, so only a single slash follows it
+  (`com.example.app:/oauth2redirect`), but `Application.clean()` reassembled every URI with
+  `://` before validating and rejected the result with "Enter a valid URL." — leaving native
+  apps no way to register the form the RFC prescribes and their clients actually send. The
+  double-slash variant was not a workaround: the two spellings parse to different hostnames
+  and produce `redirect_uri_mismatch` against each other. Schemes that require an authority
+  (`http`, `https`, `ws`, `wss`, `ftp`) must still include a host, and the redundant
+  `com.example.app:///oauth2redirect` and rootless `com.example.app:oauth2redirect` spellings
+  are rejected so that each callback has one canonical registration (RFC 9700 §2.1).
+  **Upgrade note:** the rootless spelling was previously accepted, but the same reassembly
+  rewrote it to `com.example.app://oauth2redirect` — registering `oauth2redirect` as a
+  *hostname*, which no client matches. It is now rejected at registration instead of being
+  silently reinterpreted; re-register any such URI in the single-slash form.
+* #1796 `redirect_to_uri_allowed()` no longer raises `AttributeError` when
+  `ALLOW_URI_WILDCARDS` is enabled and a redirect URI has no hostname, as is the case for
+  private-use URI scheme redirects.
 * #746 `REFRESH_TOKEN_EXPIRE_SECONDS` is now enforced when a refresh token is presented,
   not only by the `cleartokens` (`clear_expired`) cleanup job. Previously a refresh token
   past its configured lifetime kept working until a cleanup sweep happened to remove it —

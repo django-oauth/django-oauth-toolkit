@@ -1336,3 +1336,28 @@ def test_redirect_to_uri_allowed_loopback_port_exemption_survives_exact_matching
     assert redirect_to_uri_allowed("http://127.0.0.1:49152/cb", ["http://127.0.0.1/cb"])
     # ...but the exemption is only for the port, not for the query.
     assert not redirect_to_uri_allowed("http://127.0.0.1:49152/cb?evil=1", ["http://127.0.0.1/cb"])
+
+
+def test_private_use_uri_scheme_redirect_allowed():
+    # RFC 8252 §7.1: a private-use URI scheme redirect has no naming authority,
+    # so a single slash follows the scheme and urlparse() reports hostname None.
+    uri = "com.example.app:/oauth2redirect/example-provider"
+    assert redirect_to_uri_allowed(uri, [uri])
+    assert redirect_to_uri_allowed("com.example.app:/oauth2redirect", ["com.example.app:/oauth2redirect"])
+    # The single-slash and double-slash spellings parse to different hostnames
+    # (None vs "oauth2redirect"), so they are not interchangeable.
+    single, double = "com.example.app:/oauth2redirect", "com.example.app://oauth2redirect"
+    assert not redirect_to_uri_allowed(single, [double])
+    assert not redirect_to_uri_allowed(double, [single])
+    # A different path is a different endpoint.
+    assert not redirect_to_uri_allowed("com.example.app:/other", ["com.example.app:/oauth2redirect"])
+
+
+def test_private_use_uri_scheme_redirect_allowed_with_wildcards_enabled(oauth2_settings):
+    # Regression: the wildcard branch used to call .startswith() on the hostname
+    # unguarded, raising AttributeError for authority-less private-use URIs.
+    oauth2_settings.ALLOW_URI_WILDCARDS = True
+    assert redirect_to_uri_allowed("com.example.app:/oauth2redirect", ["com.example.app:/oauth2redirect"])
+    assert not redirect_to_uri_allowed("com.example.app:/oauth2redirect", ["https://*.example.com/cb"])
+    # ...and from the other side: an authority-less request against a wildcard.
+    assert not redirect_to_uri_allowed("https:/oauth2redirect", ["https://*.example.com/cb"])
