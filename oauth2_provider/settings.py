@@ -119,6 +119,16 @@ DEFAULTS = {
     "RESOURCE_SERVER_AUTH_TOKEN": None,
     "RESOURCE_SERVER_INTROSPECTION_CREDENTIALS": None,
     "RESOURCE_SERVER_TOKEN_CACHING_SECONDS": 36000,
+    # RFC 7523 private_key_jwt authentication to the remote introspection
+    # endpoint. All of CLIENT_ID, PRIVATE_KEY and AUDIENCE must be set;
+    # RESOURCE_SERVER_AUTH_TOKEN and RESOURCE_SERVER_INTROSPECTION_CREDENTIALS
+    # take precedence when set.
+    "RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID": None,
+    "RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY": None,  # PEM or JWK JSON string
+    "RESOURCE_SERVER_INTROSPECTION_JWT_ALG": None,  # None = infer from the key type
+    "RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE": None,  # remote AS issuer or introspection URL
+    "RESOURCE_SERVER_INTROSPECTION_JWT_LIFETIME": 60,
+    "RESOURCE_SERVER_INTROSPECTION_JWT_KID": None,
     # Resource Server Token Resource Validator (RFC 8707)
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": (
         "oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"
@@ -179,6 +189,26 @@ DEFAULTS = {
     "CIMD_METADATA_MAX_AGE_SECONDS": 86400,
     "CIMD_FAILURE_BACKOFF_SECONDS": 60,
     "CIMD_MAX_CONCURRENT_FETCHES": 10,  # 0 or None disables the in-flight cap
+    # RFC 7523 JWT client authentication (private_key_jwt / client_secret_jwt)
+    "CLIENT_ASSERTION_LEEWAY": 60,  # seconds of clock skew tolerated on exp/nbf/iat
+    "CLIENT_ASSERTION_MAX_LIFETIME": 300,  # reject assertions expiring further out than this
+    "CLIENT_ASSERTION_ACCEPTED_AUDIENCES": None,  # None = derive from issuer + request URL
+    "CLIENT_ASSERTION_PRIVATE_KEY_JWT_ALGS": [
+        "RS256",
+        "RS384",
+        "RS512",
+        "ES256",
+        "ES384",
+        "ES512",
+        "PS256",
+        "PS384",
+        "PS512",
+    ],
+    "CLIENT_ASSERTION_CLIENT_SECRET_JWT_ALGS": ["HS256", "HS384", "HS512"],
+    "CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT": 3600,
+    "CLIENT_ASSERTION_JWKS_FETCH_TIMEOUT_SECONDS": 5,
+    "CLIENT_ASSERTION_JWKS_MAX_SIZE": 64 * 1024,
+    "CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS": 60,
     # RFC 8414 Authorization Server Metadata
     "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code", "token"],
     "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [

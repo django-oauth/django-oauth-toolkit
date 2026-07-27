@@ -55,5 +55,27 @@
     "algorithm": "",
     "allowed_origins": ""
   }
+},
+{
+  "model": "oauth2_provider.application",
+  "fields": {
+    "client_id": "private-key-jwt-demo",
+    "user": null,
+    "redirect_uris": "",
+    "post_logout_redirect_uris": "",
+    "client_type": "confidential",
+    "authorization_grant_type": "client-credentials",
+    "client_secret": "",
+    "hash_client_secret": true,
+    "name": "RFC 7523 private_key_jwt demo",
+    "skip_authorization": false,
+    "created": "2026-07-24T00:00:00.000Z",
+    "updated": "2026-07-24T00:00:00.000Z",
+    "algorithm": "",
+    "allowed_origins": "",
+    "token_endpoint_auth_method": "private_key_jwt",
+    "client_jwks": "{\"keys\": [{\"crv\":\"P-256\",\"kid\":\"idp-demo-ec-1\",\"kty\":\"EC\",\"x\":\"0TDB4KuoPV7TRUCRv1VjFZiXiWPAHziSpDHwqc4BfuE\",\"y\":\"OFl8_mtENF2ZxURiJE2UMj8lxxWO3fXkl7Vsa9dyBK8\"}]}",
+    "client_jwks_uri": ""
+  }
 }
 ]
