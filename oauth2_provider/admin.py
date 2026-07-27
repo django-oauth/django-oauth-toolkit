@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
+from django.utils.translation import ngettext
 
 from oauth2_provider.forms import ApplicationForm
 from oauth2_provider.models import (
@@ -111,7 +112,10 @@ class AccessTokenAdmin(admin.ModelAdmin):
         for access_token in queryset:
             revoke_access_token(access_token)
             revoked += 1
-        self.message_user(request, "Revoked %d access token(s)." % revoked)
+        self.message_user(
+            request,
+            ngettext("Revoked %d access token.", "Revoked %d access tokens.", revoked) % revoked,
+        )
 
     def get_exclude(self, request, obj=None):
         # Hide the raw token on the change/view form (obj is set). Adding is disabled
@@ -208,7 +212,10 @@ class RefreshTokenAdmin(admin.ModelAdmin):
             # revoked; it is a no-op on an already-revoked token.
             refresh_token.revoke()
             revoked += 1
-        self.message_user(request, "Revoked %d refresh token(s)." % revoked)
+        self.message_user(
+            request,
+            ngettext("Revoked %d refresh token.", "Revoked %d refresh tokens.", revoked) % revoked,
+        )
 
     def get_exclude(self, request, obj=None):
         # Hide the raw token on the change/view form. Adding is disabled (see
