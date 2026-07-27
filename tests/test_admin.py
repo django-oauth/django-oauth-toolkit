@@ -31,6 +31,21 @@ from oauth2_provider.models import (
 )
 
 
+class _PermissiveUser:
+    """A minimal stand-in for an authenticated superuser, so admin permission checks pass
+    without a database user."""
+
+    is_active = True
+    is_staff = True
+    is_superuser = True
+
+    def has_perm(self, perm, obj=None):
+        return True
+
+    def has_module_perms(self, app_label):
+        return True
+
+
 def _admin_form_fields(admin_class, model, obj):
     """
     Return the fields the admin form would render. Pass ``obj=None`` for the add
@@ -148,6 +163,9 @@ def test_credential_admins_delete_policy():
     would orphan the paired token / discard the reuse-protection tombstone). Grants and ID tokens
     keep Django's default delete."""
     request = RequestFactory().get("/")
+    # get_actions() can consult request.user for permission-gated actions; a RequestFactory
+    # request has none, so attach a permissive stub (no DB needed) to keep the assertion robust.
+    request.user = _PermissiveUser()
     for admin_class, model in (
         (AccessTokenAdmin, get_access_token_model()),
         (RefreshTokenAdmin, get_refresh_token_model()),
