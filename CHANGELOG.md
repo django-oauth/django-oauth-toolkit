@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1623 Documentation ("Content Security Policy and the authorization form") on completing
   the authorization-code flow under a strict `form-action` Content Security Policy, which
   Chromium enforces against the post-authorization redirect to the client's `redirect_uri`.
+* #410 Documentation ("Resource scope syntax") clarifying that `TokenHasResourceScope`
+  checks each `required_scopes` entry suffixed with the `READ_SCOPE`/`WRITE_SCOPE` setting
+  value (defaults `read`/`write`, e.g. `music:read`, `music:write`), so a bare `music` scope
+  is rejected; with the default settings-based scopes backend the suffixed scopes must be
+  declared in `SCOPES`.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a
