@@ -276,12 +276,14 @@ by the read/write permission helpers (see :doc:`rest-framework/permissions`) and
 keep them if you use those helpers.
 
 .. note::
-   If you use the read/write helpers (``TokenHasReadWriteScope``, ``TokenHasResourceScope``,
-   ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``), your backend's
-   ``get_all_scopes()`` **must** include the configured ``READ_SCOPE`` and ``WRITE_SCOPE`` names
-   (``read`` and ``write`` by default). Those helpers look the read/write scope up in the active
-   backend and raise ``ImproperlyConfigured`` if it is missing, so make sure the model-based
-   example above has ``Scope`` rows for them.
+   ``rw_protected_resource`` and ``ReadWriteScopedResourceMixin`` look the configured
+   ``READ_SCOPE`` / ``WRITE_SCOPE`` names up in the active backend's ``get_all_scopes()`` and raise
+   ``ImproperlyConfigured`` if either is missing, so a custom backend **must** expose scopes with
+   those names (``read`` and ``write`` by default). The DRF permission classes
+   (``TokenHasReadWriteScope``, ``TokenHasResourceScope``) don't perform that check -- they simply
+   require the token to carry the ``READ_SCOPE`` / ``WRITE_SCOPE`` scope -- but the backend still
+   needs to offer those scopes so they can be granted in the first place. Either way, make sure the
+   model-based example above has ``Scope`` rows for them.
 
 Register the ``Scope`` and ``ApplicationScope`` models with the admin as usual to manage scopes
 through the admin site.

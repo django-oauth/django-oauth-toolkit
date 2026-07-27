@@ -335,8 +335,10 @@ READ_SCOPE
 The name of the *read* scope. Unlike ``SCOPES``/``DEFAULT_SCOPES``, this is used regardless of
 ``SCOPES_BACKEND_CLASS`` -- the read/write permission helpers (``TokenHasReadWriteScope``,
 ``TokenHasResourceScope``, ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``) read it
-directly from settings. A custom scopes backend must therefore expose a scope with this name from
-``get_all_scopes()`` (see :ref:`custom-scopes-backend`).
+directly from settings. A custom scopes backend should therefore expose a scope with this name from
+``get_all_scopes()`` so it can be granted; ``rw_protected_resource`` and
+``ReadWriteScopedResourceMixin`` additionally raise ``ImproperlyConfigured`` if it is missing (see
+:ref:`custom-scopes-backend`).
 
 WRITE_SCOPE
 ~~~~~~~~~~~
