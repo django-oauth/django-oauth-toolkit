@@ -6,8 +6,13 @@ which would leak them into the ``?q=`` query string and therefore into access
 logs / browser history).
 """
 
+import pytest
+from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
+from django.contrib.auth import get_user_model
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.test import RequestFactory
+from django.utils import timezone
 
 from oauth2_provider.admin import (
     AccessTokenAdmin,
@@ -18,6 +23,7 @@ from oauth2_provider.admin import (
 )
 from oauth2_provider.models import (
     get_access_token_model,
+    get_application_model,
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
@@ -134,3 +140,103 @@ def test_id_token_admin_searchable_by_app_and_user():
     # IDTokenAdmin holds no cleartext replayable secret, but its search should stay
     # consistent with the other credential admins (and non-empty on custom user models).
     _assert_searchable_by_app_and_user(IDTokenAdmin)
+
+
+def test_credential_admins_delete_policy():
+    """Access/refresh tokens are invalidated via the revoke action, not raw delete (a raw delete
+    would orphan the paired token / discard the reuse-protection tombstone). Grants and ID tokens
+    keep Django's default delete."""
+    request = RequestFactory().get("/")
+    for admin_class, model in (
+        (AccessTokenAdmin, get_access_token_model()),
+        (RefreshTokenAdmin, get_refresh_token_model()),
+    ):
+        model_admin = admin_class(model, AdminSite())
+        assert model_admin.has_delete_permission(request) is False
+        assert "revoke_tokens" in model_admin.actions
+    # Grants and ID tokens don't override delete -- they keep Django's default policy.
+    assert GrantAdmin.has_delete_permission is admin.ModelAdmin.has_delete_permission
+    assert IDTokenAdmin.has_delete_permission is admin.ModelAdmin.has_delete_permission
+
+
+def _request_with_messages():
+    # message_user() needs the messages framework attached to the request.
+    request = RequestFactory().post("/")
+    request.session = {}
+    setattr(request, "_messages", FallbackStorage(request))
+    return request
+
+
+def _make_application(user):
+    Application = get_application_model()
+    return Application.objects.create(
+        name="revoke-test-app",
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        user=user,
+    )
+
+
+@pytest.mark.django_db
+def test_access_token_admin_revoke_action_revokes_token_family():
+    UserModel = get_user_model()
+    AccessToken = get_access_token_model()
+    RefreshToken = get_refresh_token_model()
+
+    user = UserModel.objects.create(username="revoke-at")
+    app = _make_application(user)
+    access_token = AccessToken.objects.create(
+        user=user, token="at-to-revoke", application=app, expires=timezone.now(), scope="read"
+    )
+    refresh_token = RefreshToken.objects.create(
+        user=user, token="rt-bound", application=app, access_token=access_token
+    )
+
+    model_admin = AccessTokenAdmin(AccessToken, AdminSite())
+    model_admin.revoke_tokens(_request_with_messages(), AccessToken.objects.filter(pk=access_token.pk))
+
+    # The access token is gone and the bound refresh token is revoked (kept as a tombstone).
+    assert not AccessToken.objects.filter(pk=access_token.pk).exists()
+    refresh_token.refresh_from_db()
+    assert refresh_token.revoked is not None
+
+
+@pytest.mark.django_db
+def test_access_token_admin_revoke_action_without_refresh_token_deletes():
+    UserModel = get_user_model()
+    AccessToken = get_access_token_model()
+
+    user = UserModel.objects.create(username="revoke-at-solo")
+    app = _make_application(user)
+    access_token = AccessToken.objects.create(
+        user=user, token="at-solo", application=app, expires=timezone.now(), scope="read"
+    )
+
+    model_admin = AccessTokenAdmin(AccessToken, AdminSite())
+    model_admin.revoke_tokens(_request_with_messages(), AccessToken.objects.filter(pk=access_token.pk))
+
+    assert not AccessToken.objects.filter(pk=access_token.pk).exists()
+
+
+@pytest.mark.django_db
+def test_refresh_token_admin_revoke_action_revokes_token_family():
+    UserModel = get_user_model()
+    AccessToken = get_access_token_model()
+    RefreshToken = get_refresh_token_model()
+
+    user = UserModel.objects.create(username="revoke-rt")
+    app = _make_application(user)
+    access_token = AccessToken.objects.create(
+        user=user, token="at-bound", application=app, expires=timezone.now(), scope="read"
+    )
+    refresh_token = RefreshToken.objects.create(
+        user=user, token="rt-to-revoke", application=app, access_token=access_token
+    )
+
+    model_admin = RefreshTokenAdmin(RefreshToken, AdminSite())
+    model_admin.revoke_tokens(_request_with_messages(), RefreshToken.objects.filter(pk=refresh_token.pk))
+
+    # Revoking the refresh token revokes the bound access token (deletes it) and tombstones itself.
+    assert not AccessToken.objects.filter(pk=access_token.pk).exists()
+    refresh_token.refresh_from_db()
+    assert refresh_token.revoked is not None

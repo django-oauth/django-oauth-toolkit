@@ -989,6 +989,32 @@ def refresh_token_expire_timedelta():
     return value
 
 
+def revoke_access_token(access_token):
+    """
+    Revoke an access token and, if present, its bound refresh token.
+
+    Deleting the access token on its own leaves the refresh token usable (the
+    ``RefreshToken.access_token`` FK is ``SET_NULL``), so it can still be exchanged for a fresh
+    access token, defeating the revocation. Per :rfc:`7009#section-2.1` revoking an access token
+    MAY also revoke the bound refresh token; revoking the refresh token also deletes the bound
+    access token, so it covers both. When there is no refresh token, revoke the access token
+    directly (which deletes it).
+
+    The bound refresh token is looked up with a forward query on the refresh token model rather
+    than the reverse ``access_token.refresh_token`` accessor, whose name depends on the
+    ``related_name`` a swapped refresh token model may override.
+
+    This is the single revoke path shared by the ``/revoke/`` endpoint, the
+    ``AuthorizedTokenDeleteView``, and the admin "Revoke selected access tokens" action. Whether a
+    refresh token may *survive* access-token revocation is a policy deferred to 4.x (see #1786).
+    """
+    refresh_token = get_refresh_token_model().objects.filter(access_token=access_token).first()
+    if refresh_token is not None:
+        refresh_token.revoke()
+    else:
+        access_token.revoke()
+
+
 def clear_expired():
     def batch_delete(queryset, query):
         CLEAR_EXPIRED_TOKENS_BATCH_SIZE = oauth2_settings.CLEAR_EXPIRED_TOKENS_BATCH_SIZE

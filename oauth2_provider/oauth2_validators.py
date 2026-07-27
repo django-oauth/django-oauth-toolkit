@@ -42,6 +42,7 @@ from .models import (
     get_id_token_model,
     get_refresh_token_model,
     refresh_token_expire_timedelta,
+    revoke_access_token,
 )
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
@@ -1188,17 +1189,13 @@ class OAuth2Validator(RequestValidator):
         for t in tokens:
             if isinstance(t, AccessToken):
                 # RFC 7009 section 2.1: revoking an access token MAY also revoke the bound
-                # refresh token. We do -- otherwise deleting the access token alone leaves
-                # the refresh token an active orphan (``RefreshToken.access_token`` is
-                # SET_NULL) that can immediately re-mint an access token, defeating the
-                # revocation. Revoking the refresh token deletes its access token too, so it
-                # covers both. Mirrors the admin DeleteAccessTokenView. Whether a refresh
-                # token may survive access-token revocation is a policy deferred to 4.x.
-                bound_refresh_token = RefreshToken.objects.filter(access_token=t).first()
-                if bound_refresh_token is not None:
-                    bound_refresh_token.revoke()
-                    continue
-            t.revoke()
+                # refresh token. We do -- otherwise deleting the access token alone leaves the
+                # refresh token an active orphan (``RefreshToken.access_token`` is SET_NULL) that
+                # can immediately re-mint an access token, defeating the revocation. ``revoke_access_token``
+                # is the shared path used here, by ``AuthorizedTokenDeleteView``, and by the admin.
+                revoke_access_token(t)
+            else:
+                t.revoke()
 
     def build_http_request(self, request: OauthlibRequest) -> HttpRequest:
         """
