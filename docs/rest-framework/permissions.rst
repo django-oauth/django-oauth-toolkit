@@ -53,8 +53,8 @@ TokenHasResourceScope
 ----------------------
 The `TokenHasResourceScope` permission class allows access only when the current access token has been authorized for **all** the scopes listed in the `required_scopes` field of the view but according of request's method.
 
-When the current request's method is one of the "safe" methods, the access is allowed only if the access token has been authorized for the `scope:read` scope (for example `music:read`).
-When the request's method is one of "non safe" methods, the access is allowed only if the access token has been authorized for the `scope:write` scope (for example `music:write`).
+When the current request's method is one of the "safe" methods, the access is allowed only if the access token has been authorized for the ``READ_SCOPE``-suffixed scope (``music:read`` with the default ``READ_SCOPE`` of ``read``).
+When the request's method is one of "non safe" methods, the access is allowed only if the access token has been authorized for the ``WRITE_SCOPE``-suffixed scope (``music:write`` by default). See :ref:`resource-scope-syntax` below for the exact rules.
 
 .. code-block:: python
 
