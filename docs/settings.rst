@@ -335,16 +335,19 @@ READ_SCOPE
 The name of the *read* scope. Unlike ``SCOPES``/``DEFAULT_SCOPES``, this is used regardless of
 ``SCOPES_BACKEND_CLASS`` -- the read/write permission helpers (``TokenHasReadWriteScope``,
 ``TokenHasResourceScope``, ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``) read it
-directly from settings. A custom scopes backend should therefore expose a scope with this name from
-``get_all_scopes()`` so it can be granted; ``rw_protected_resource`` and
-``ReadWriteScopedResourceMixin`` additionally raise ``ImproperlyConfigured`` if it is missing (see
-:ref:`custom-scopes-backend`).
+directly from settings. A custom scopes backend must therefore expose a scope with this name from
+``get_available_scopes()`` so a token can actually be granted it (requested scopes are validated
+against ``get_available_scopes()``; see ``OAuth2Validator.validate_scopes``). ``rw_protected_resource``
+and ``ReadWriteScopedResourceMixin`` additionally require it to be in ``get_all_scopes()`` and raise
+``ImproperlyConfigured`` otherwise (see :ref:`custom-scopes-backend`).
 
 WRITE_SCOPE
 ~~~~~~~~~~~
 The name of the *write* scope. Like ``READ_SCOPE``, this is used regardless of
 ``SCOPES_BACKEND_CLASS`` by the read/write permission helpers, so a custom scopes backend must
-expose a scope with this name from ``get_all_scopes()`` (see :ref:`custom-scopes-backend`).
+expose a scope with this name from ``get_available_scopes()`` (so it can be granted) and, for
+``rw_protected_resource`` / ``ReadWriteScopedResourceMixin``, from ``get_all_scopes()`` (see
+:ref:`custom-scopes-backend`).
 
 ERROR_RESPONSE_WITH_SCOPES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

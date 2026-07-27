@@ -276,14 +276,21 @@ by the read/write permission helpers (see :doc:`rest-framework/permissions`) and
 keep them if you use those helpers.
 
 .. note::
-   ``rw_protected_resource`` and ``ReadWriteScopedResourceMixin`` look the configured
-   ``READ_SCOPE`` / ``WRITE_SCOPE`` names up in the active backend's ``get_all_scopes()`` and raise
-   ``ImproperlyConfigured`` if either is missing, so a custom backend **must** expose scopes with
-   those names (``read`` and ``write`` by default). The DRF permission classes
-   (``TokenHasReadWriteScope``, ``TokenHasResourceScope``) don't perform that check -- they simply
-   require the token to carry the ``READ_SCOPE`` / ``WRITE_SCOPE`` scope -- but the backend still
-   needs to offer those scopes so they can be granted in the first place. Either way, make sure the
-   model-based example above has ``Scope`` rows for them.
+   If you use the read/write helpers, your backend must offer the configured ``READ_SCOPE`` /
+   ``WRITE_SCOPE`` names (``read`` and ``write`` by default) in **two** places:
+
+   * ``get_available_scopes()`` -- so a token can actually be granted the scope. Requested scopes
+     are validated against ``get_available_scopes()`` (``OAuth2Validator.validate_scopes``), so a
+     name missing here can never be issued, and the read/write check would then always fail.
+   * ``get_all_scopes()`` -- ``rw_protected_resource`` and ``ReadWriteScopedResourceMixin`` look the
+     name up here and raise ``ImproperlyConfigured`` if it is missing. (The DRF permission classes
+     ``TokenHasReadWriteScope`` / ``TokenHasResourceScope`` don't perform this check; they just
+     require the token to carry the scope.)
+
+   In the model-based example above, adding ``Scope`` rows named ``read`` and ``write`` satisfies
+   both, since ``get_all_scopes()`` and the fallback ``get_available_scopes()`` both derive from the
+   ``Scope`` table -- just make sure those rows are also in an application's ``ApplicationScope`` set
+   if you restrict scopes per application.
 
 Register the ``Scope`` and ``ApplicationScope`` models with the admin as usual to manage scopes
 through the admin site.
