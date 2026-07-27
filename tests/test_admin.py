@@ -176,6 +176,7 @@ def _make_application(user):
         name="revoke-test-app",
         client_type=Application.CLIENT_CONFIDENTIAL,
         authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        redirect_uris="https://example.com/callback",
         user=user,
     )
 
