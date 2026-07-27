@@ -989,7 +989,7 @@ def refresh_token_expire_timedelta():
     return value
 
 
-def revoke_access_token(access_token):
+def revoke_access_token(access_token: AbstractAccessToken) -> None:
     """
     Revoke an access token and, if present, its bound refresh token.
 

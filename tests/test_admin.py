@@ -11,6 +11,7 @@ from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.contrib.messages.storage.fallback import FallbackStorage
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory
 from django.utils import timezone
 
@@ -162,7 +163,9 @@ def test_credential_admins_delete_policy():
 def _request_with_messages():
     # message_user() needs the messages framework attached to the request.
     request = RequestFactory().post("/")
-    request.session = {}
+    # A real session (via SessionMiddleware) so message_user() works even if the messages
+    # framework falls back from cookie to session storage.
+    SessionMiddleware(lambda r: None).process_request(request)
     setattr(request, "_messages", FallbackStorage(request))
     return request
 
