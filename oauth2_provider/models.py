@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 from typing import Callable, Optional, Union
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import urlparse
 
 from django.apps import apps
 from django.conf import settings
@@ -1137,7 +1137,14 @@ def redirect_to_uri_allowed(uri, allowed_uris):
         raise ValueError("allowed_uris must be a list")
 
     parsed_uri = urlparse(uri)
-    uqs_set = set(parse_qsl(parsed_uri.query))
+
+    # RFC 6749 section 3.1.2: "The endpoint URI MUST NOT include a fragment
+    # component."  urlparse() splits the fragment off before the component
+    # comparisons below, so without this an appended fragment would be ignored
+    # and the URI would match its registered, fragment-less counterpart.
+    if parsed_uri.fragment:
+        return False
+
     for allowed_uri in allowed_uris:
         parsed_allowed_uri = urlparse(allowed_uri)
 
@@ -1183,8 +1190,15 @@ def redirect_to_uri_allowed(uri, allowed_uris):
             continue
 
         """ check querystring """
-        aqs_set = set(parse_qsl(parsed_allowed_uri.query))
-        if not aqs_set.issubset(uqs_set):
+        # RFC 9700 section 2.1 requires exact matching of the redirect URI (see
+        # also OpenID Connect Core section 3.1.2.1, which mandates RFC 3986
+        # section 6.2.1 Simple String Comparison).  This previously tested that
+        # the registered query was a *subset* of the requested one, which let a
+        # request carry query parameters that were never registered: an attacker
+        # could append parameters to an otherwise-legitimate redirect URI and
+        # have the authorization server reflect them into the client's callback
+        # alongside the authorization code (RFC 9700 section 4.1).
+        if parsed_allowed_uri.query != parsed_uri.query:
             continue  # circuit break
 
         return True

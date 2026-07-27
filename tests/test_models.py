@@ -1273,3 +1273,40 @@ invalid_localhost_loopback_params = [
 def test_localhost_loopback_redirect_rejected_when_enabled(uri, allowed_uri, oauth2_settings):
     oauth2_settings.ALLOW_LOCALHOST_LOOPBACK = True
     assert not redirect_to_uri_allowed(uri, allowed_uri)
+
+
+# RFC 9700 §2.1 requires exact matching of redirect URIs (see also OpenID Connect
+# Core §3.1.2.1, mandating RFC 3986 §6.2.1 Simple String Comparison).
+exact_redirect_match_params = [
+    # Identical URIs match, with and without a registered query.
+    ("https://example.com/cb", ["https://example.com/cb"], True),
+    ("https://example.com/cb?a=1", ["https://example.com/cb?a=1"], True),
+    ("https://example.com/cb?a=1&b=2", ["https://example.com/cb?a=1&b=2"], True),
+    # Query parameters that were never registered must not be accepted: an
+    # attacker could otherwise append parameters to an otherwise-legitimate
+    # redirect URI and have them reflected into the client's callback alongside
+    # the authorization code (RFC 9700 §4.1).
+    ("https://example.com/cb?evil=1", ["https://example.com/cb"], False),
+    ("https://example.com/cb?a=1&evil=1", ["https://example.com/cb?a=1"], False),
+    # A registered parameter that is missing from the request is also a mismatch.
+    ("https://example.com/cb", ["https://example.com/cb?a=1"], False),
+    # Reordered parameters are no longer accepted; matching is by string.
+    ("https://example.com/cb?b=2&a=1", ["https://example.com/cb?a=1&b=2"], False),
+    # RFC 6749 §3.1.2: the endpoint URI MUST NOT include a fragment component.
+    # urlparse() splits the fragment off, so this used to match.
+    ("https://example.com/cb#x", ["https://example.com/cb"], False),
+    ("https://example.com/cb?a=1#x", ["https://example.com/cb?a=1"], False),
+]
+
+
+@pytest.mark.parametrize("uri, allowed_uris, expected", exact_redirect_match_params)
+def test_redirect_to_uri_allowed_matches_exactly(uri, allowed_uris, expected):
+    assert redirect_to_uri_allowed(uri, allowed_uris) is expected
+
+
+def test_redirect_to_uri_allowed_loopback_port_exemption_survives_exact_matching():
+    # RFC 9700 §2.1 carves out "port numbers in localhost redirection URIs of
+    # native apps"; RFC 8252 §7.3 requires it.  Exact matching must not undo it.
+    assert redirect_to_uri_allowed("http://127.0.0.1:49152/cb", ["http://127.0.0.1/cb"])
+    # ...but the exemption is only for the port, not for the query.
+    assert not redirect_to_uri_allowed("http://127.0.0.1:49152/cb?evil=1", ["http://127.0.0.1/cb"])

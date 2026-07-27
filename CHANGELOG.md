@@ -109,6 +109,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turning into a server error.
 
 ### Security
+* Redirect URIs are now matched exactly, as
+  [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1) requires
+  ("authorization servers MUST utilize exact string matching except for port numbers in
+  localhost redirection URIs of native apps") and OpenID Connect Core §3.1.2.1 restates
+  via RFC 3986 §6.2.1 Simple String Comparison. Two deviations are closed:
+  * A request could carry **query parameters that were never registered** — the check
+    tested that the registered query was a *subset* of the requested one. An attacker
+    could append parameters to an otherwise-legitimate `redirect_uri` and have the
+    authorization server reflect them into the client's callback alongside the
+    authorization code, the redirect-URI manipulation class described in
+    [RFC 9700 §4.1](https://datatracker.ietf.org/doc/html/rfc9700#section-4.1).
+  * A request could carry a **fragment**, which `urlparse()` split off before comparison,
+    so `https://example.com/cb#x` matched a registered `https://example.com/cb`.
+    [RFC 6749 §3.1.2](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2) states
+    the endpoint URI MUST NOT include a fragment component.
+
+  Case-insensitive scheme/host comparison (RFC 3986 §6.2.2.1 normalization) and the
+  RFC 8252 §7.3 loopback any-port exemption are unchanged; `ALLOW_URI_WILDCARDS` still
+  opts out of exact host matching and remains flagged by `oauth2_provider.W009`/`E004`.
+
+  **Upgrade note:** clients that pass per-request data through the `redirect_uri` query
+  string will now be rejected — every query parameter must be registered, and in the same
+  order. Register the full URI including its query, or move per-request data into the
+  `state` parameter, which is what it is for. Applications whose registered
+  `redirect_uris` already carry no query component are unaffected.
 * #1510 Revoking an access token from the authorized-tokens page
   (`AuthorizedTokenDeleteView`) now also revokes the refresh token issued
   alongside it. Previously only the access token was deleted, leaving the
