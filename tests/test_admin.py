@@ -154,7 +154,7 @@ def test_credential_admins_delete_policy():
     ):
         model_admin = admin_class(model, AdminSite())
         assert model_admin.has_delete_permission(request) is False
-        assert "revoke_tokens" in model_admin.actions
+        assert "revoke_tokens" in model_admin.get_actions(request)
     # Grants and ID tokens don't override delete -- they keep Django's default policy.
     assert GrantAdmin.has_delete_permission is admin.ModelAdmin.has_delete_permission
     assert IDTokenAdmin.has_delete_permission is admin.ModelAdmin.has_delete_permission
@@ -187,7 +187,7 @@ def test_access_token_admin_revoke_action_revokes_token_family():
     AccessToken = get_access_token_model()
     RefreshToken = get_refresh_token_model()
 
-    user = UserModel.objects.create(username="revoke-at")
+    user = UserModel.objects.create_user(username="revoke-at")
     app = _make_application(user)
     access_token = AccessToken.objects.create(
         user=user, token="at-to-revoke", application=app, expires=timezone.now(), scope="read"
@@ -210,7 +210,7 @@ def test_access_token_admin_revoke_action_without_refresh_token_deletes():
     UserModel = get_user_model()
     AccessToken = get_access_token_model()
 
-    user = UserModel.objects.create(username="revoke-at-solo")
+    user = UserModel.objects.create_user(username="revoke-at-solo")
     app = _make_application(user)
     access_token = AccessToken.objects.create(
         user=user, token="at-solo", application=app, expires=timezone.now(), scope="read"
@@ -228,7 +228,7 @@ def test_refresh_token_admin_revoke_action_revokes_token_family():
     AccessToken = get_access_token_model()
     RefreshToken = get_refresh_token_model()
 
-    user = UserModel.objects.create(username="revoke-rt")
+    user = UserModel.objects.create_user(username="revoke-rt")
     app = _make_application(user)
     access_token = AccessToken.objects.create(
         user=user, token="at-bound", application=app, expires=timezone.now(), scope="read"
