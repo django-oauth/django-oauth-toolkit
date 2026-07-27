@@ -177,7 +177,7 @@ def _make_application(user):
     )
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_access_token_admin_revoke_action_revokes_token_family():
     UserModel = get_user_model()
     AccessToken = get_access_token_model()
@@ -201,7 +201,7 @@ def test_access_token_admin_revoke_action_revokes_token_family():
     assert refresh_token.revoked is not None
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_access_token_admin_revoke_action_without_refresh_token_deletes():
     UserModel = get_user_model()
     AccessToken = get_access_token_model()
@@ -218,7 +218,7 @@ def test_access_token_admin_revoke_action_without_refresh_token_deletes():
     assert not AccessToken.objects.filter(pk=access_token.pk).exists()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases="__all__")
 def test_refresh_token_admin_revoke_action_revokes_token_family():
     UserModel = get_user_model()
     AccessToken = get_access_token_model()
