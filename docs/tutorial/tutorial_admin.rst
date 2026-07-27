@@ -81,8 +81,7 @@ fields are:
 Reviewing and revoking tokens
 -----------------------------
 The **Access tokens**, **Refresh tokens**, **Grants** and **ID tokens** admins let you inspect
-what the server has issued and revoke it by deleting rows. A few behaviors are specific to these
-credential admins:
+what the server has issued and revoke it. A few behaviors are specific to these credential admins:
 
 * **You cannot create tokens by hand.** Tokens, refresh tokens, authorization codes and ID
   tokens are issued by the OAuth/OIDC flows, so the **Add** button is disabled for all four.
@@ -92,12 +91,16 @@ credential admins:
   non-secret identifiers (application client id / name, and user) — never by the token itself.
   This keeps live, replayable credentials out of the admin UI and out of ``?q=`` search URLs
   captured in server logs and browser history.
-* **Deleting one token does not cascade to the other.** ``RefreshToken.access_token`` is
-  ``SET_NULL``, so deleting an access token in the admin only detaches its refresh token (leaving
-  it active), and deleting a refresh token likewise leaves its access token in place. Neither
-  delete revokes the paired token.
+* **Revoke access and refresh tokens; don't delete them.** The **Access tokens** and
+  **Refresh tokens** admins invalidate tokens through a **"Revoke selected …"** action rather than
+  a raw delete (delete is disabled on those two). Revoking is the *only* consistent way to
+  invalidate a token, because a raw delete would only detach the paired token
+  (``RefreshToken.access_token`` is ``SET_NULL``), leaving an orphaned refresh token that can still
+  mint new access tokens. The revoke action invalidates the whole token family: revoking an access
+  token also revokes its bound refresh token, and revoking a refresh token revokes its access
+  token. **Grants** and **ID tokens** keep the normal delete (there is no separate revoke
+  semantics for them).
 
-To fully revoke a user's access, delete **both** their access token and its refresh token from
-these changelists — otherwise a surviving refresh token can mint a new access token. For bulk,
-scheduled cleanup of *expired* tokens, use the :ref:`cleartokens` management command rather than
-deleting rows by hand.
+To revoke a user's access, select their access and/or refresh tokens in the relevant changelist
+and run the **Revoke selected …** action. For bulk, scheduled cleanup of *expired* tokens, use the
+:ref:`cleartokens` management command instead.
