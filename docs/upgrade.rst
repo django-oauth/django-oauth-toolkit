@@ -80,6 +80,7 @@ Upgrading to 3.0
      migration on your app, computing ``hashlib.sha256(token.encode("utf-8")).hexdigest()`` for each
      existing row (mirroring what ``oauth2_provider``'s ``0012_add_token_checksum`` migration does for
      the default model).
+
 * **Models now use ``pk`` instead of ``id`` (#1446).** This lets swapped models use a different
   primary-key field. If any of your code assumed an ``id`` attribute on the toolkit's models, use
   ``pk`` instead.
