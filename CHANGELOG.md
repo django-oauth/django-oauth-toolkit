@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value (defaults `read`/`write`, e.g. `music:read`, `music:write`), so a bare `music` scope
   is rejected; with the default settings-based scopes backend the suffixed scopes must be
   declared in `SCOPES`.
+* #1157 An "Upgrading" documentation page collecting the breaking changes and upgrade steps for
+  major version bumps (2.0 and 3.0), linked from the documentation index, so upgrade guidance is
+  discoverable outside the CHANGELOG.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a
