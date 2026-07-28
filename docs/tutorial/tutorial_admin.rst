@@ -80,30 +80,16 @@ fields are:
 
 Reviewing and revoking tokens
 -----------------------------
-The **Access tokens**, **Refresh tokens**, **Grants** and **ID tokens** admins let you inspect
-what the server has issued and revoke it. A few behaviors are specific to these credential admins:
+The **Access tokens**, **Refresh tokens**, **Grants** and **ID tokens** admins let you review what
+the server has issued to each application and user. Tokens are always created by the OAuth/OIDC
+flows, so you can browse and revoke them here, but not add them by hand. For your users' safety,
+the admin also masks the secret token values — the changelist shows only a short masked suffix and
+you search by application or user, never by the token itself.
 
-* **You cannot create tokens by hand.** Tokens, refresh tokens, authorization codes and ID
-  tokens are issued by the OAuth/OIDC flows, so the **Add** button is disabled for all four.
-* **Secret values are masked.** By default, access/refresh token values and authorization codes are
-  stored in cleartext, so the admin never shows the usable value: the changelist displays only a
-  short masked suffix, the raw value is hidden on the change form, and you can search only by
-  non-secret identifiers (application client id / name, and user) — never by the token itself.
-  This keeps live, replayable credentials out of the admin UI and out of ``?q=`` search URLs
-  captured in server logs and browser history. (When ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`` is
-  enabled, the raw token is not stored at all — only a checksum — so there is nothing to mask and
-  the value column is simply empty.)
-* **Revoke access and refresh tokens; don't delete them.** The **Access tokens** and
-  **Refresh tokens** admins invalidate tokens through the **"Revoke selected access tokens"** and
-  **"Revoke selected refresh tokens"** actions rather than a raw delete (delete is disabled on
-  those two). Revoking is the *only* consistent way to
-  invalidate a token, because a raw delete would only detach the paired token
-  (``RefreshToken.access_token`` is ``SET_NULL``), leaving an orphaned refresh token that can still
-  mint new access tokens. The revoke action invalidates the whole token family: revoking an access
-  token also revokes its bound refresh token, and revoking a refresh token revokes its access
-  token. **Grants** and **ID tokens** keep the normal delete (there is no separate revoke
-  semantics for them).
+To cut off an application or user's access, open **Access tokens** or **Refresh tokens**, select
+the rows you want to invalidate, and run the **Revoke selected access tokens** / **Revoke selected
+refresh tokens** action from the actions dropdown. Revoking an access token also revokes the
+refresh token issued with it (and vice versa), so the client cannot simply refresh its way back in.
 
-To revoke a user's access, select their access and/or refresh tokens in the relevant changelist
-and run that admin's revoke action. For bulk, scheduled cleanup of *expired* tokens, use the
-:ref:`cleartokens` management command instead.
+For routine cleanup of *expired* tokens across all applications, use the :ref:`cleartokens`
+management command rather than revoking rows by hand.
