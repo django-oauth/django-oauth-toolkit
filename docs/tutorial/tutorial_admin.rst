@@ -5,7 +5,7 @@ Scenario
 --------
 In :doc:`Part 1 <tutorial_01>` you created your own :term:`Authorization Server` and registered
 an application through the front-end ``/o/applications/`` views. Django OAuth Toolkit also
-registers all of its models with the `Django admin site
+registers its user-facing models with the `Django admin site
 <https://docs.djangoproject.com/en/stable/ref/contrib/admin/>`_, which gives staff users a
 single place to review and manage applications, issued tokens, authorization codes and OIDC ID
 tokens. This part walks through that admin UI.
@@ -94,8 +94,9 @@ what the server has issued and revoke it. A few behaviors are specific to these 
   enabled, the raw token is not stored at all — only a checksum — so there is nothing to mask and
   the value column is simply empty.)
 * **Revoke access and refresh tokens; don't delete them.** The **Access tokens** and
-  **Refresh tokens** admins invalidate tokens through a **"Revoke selected …"** action rather than
-  a raw delete (delete is disabled on those two). Revoking is the *only* consistent way to
+  **Refresh tokens** admins invalidate tokens through the **"Revoke selected access tokens"** and
+  **"Revoke selected refresh tokens"** actions rather than a raw delete (delete is disabled on
+  those two). Revoking is the *only* consistent way to
   invalidate a token, because a raw delete would only detach the paired token
   (``RefreshToken.access_token`` is ``SET_NULL``), leaving an orphaned refresh token that can still
   mint new access tokens. The revoke action invalidates the whole token family: revoking an access
@@ -104,5 +105,5 @@ what the server has issued and revoke it. A few behaviors are specific to these 
   semantics for them).
 
 To revoke a user's access, select their access and/or refresh tokens in the relevant changelist
-and run the **Revoke selected …** action. For bulk, scheduled cleanup of *expired* tokens, use the
+and run that admin's revoke action. For bulk, scheduled cleanup of *expired* tokens, use the
 :ref:`cleartokens` management command instead.
