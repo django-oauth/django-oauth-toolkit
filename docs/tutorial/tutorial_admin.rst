@@ -46,15 +46,16 @@ Click **Add application**, or an existing row, to open the application form. The
 usually care about are:
 
 * **User** — the person the application belongs to. Look them up by name or email.
-* **Redirect uris** — the URLs the client is allowed to return to after login, one per line. A
-  client that logs users in (the authorization-code, implicit or OpenID Connect hybrid flows) must
-  list at least one, and the form won't save without it.
+* **Redirect uris** — the URLs the client is allowed to return to after login, one per line (or
+  separated by spaces). A client that logs users in (the authorization-code, implicit or OpenID
+  Connect hybrid flows) must list at least one, and the form won't save without it.
 * **Post logout redirect uris** — the URLs a client may send the user to after they log out.
 * **Allowed origins** — the web origins allowed to call the token endpoint from a browser.
 * **Client type** — **Confidential** for apps that can keep a secret (a server-side app),
   **Public** for apps that cannot (a single-page or mobile app).
-* **Authorization grant type** — how the application obtains tokens: authorization code, device
-  code, implicit, resource-owner password, client credentials, or OpenID Connect hybrid.
+* **Authorization grant type** — how the application obtains tokens. The dropdown options are
+  *Authorization code*, *Device Code*, *Implicit*, *Resource owner password-based*,
+  *Client credentials* and *OpenID connect hybrid*.
 * **Name** — the label users see on the consent screen when they authorize the application.
 * **Skip authorization** — when on, users are never shown the consent screen for this application.
   Turn it on only for applications you completely trust (see :ref:`skip-auth-form`).
