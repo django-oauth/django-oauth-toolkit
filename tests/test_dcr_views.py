@@ -1031,3 +1031,7 @@ class TestDCRRegistrationTokenStorage(TestCase):
         stored = AccessToken.objects.get(token_checksum=hashlib.sha256(rotated.encode()).hexdigest())
         assert stored.token == ""
         assert self.client.get(self.management_url, **_bearer(rotated)).status_code == 200
+        # The superseded token must stop working. Rotation is checked elsewhere with
+        # ``AccessToken.objects.filter(token=...)``, which is vacuous once the column is
+        # blanked, so assert it against the endpoint instead.
+        assert self.client.get(self.management_url, **_bearer(self.registration_token)).status_code == 401

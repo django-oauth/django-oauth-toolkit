@@ -9,10 +9,12 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
+from typing import Any
 
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -20,7 +22,12 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from ..compat import login_not_required
-from ..models import get_access_token_model, get_application_model
+from ..models import (
+    AbstractAccessToken,
+    AbstractApplication,
+    get_access_token_model,
+    get_application_model,
+)
 from ..settings import oauth2_settings
 from ..utils import parse_bearer_token
 
@@ -200,14 +207,14 @@ def _build_application_kwargs(data):
     return kwargs, None
 
 
-def _issue_registration_token(application, user):
+def _issue_registration_token(application: AbstractApplication, user: AbstractBaseUser) -> str:
     """
-    Create a new registration AccessToken for *application*.
+    Create a new registration AccessToken for *application* and return its raw value.
 
-    Returns ``(token, raw_token)``. The raw value is returned alongside the instance
-    because it is the caller's only chance to read it: under
-    ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`` the ``token`` column is left blank and only
-    the lookup checksum is persisted, so reading it back off the row yields "".
+    The raw value is returned rather than the instance because it is the caller's only
+    chance to read it: under ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`` the ``token`` column
+    is left blank and only the lookup checksum is persisted, so reading it back off the
+    row yields "".
 
     Token scope is ``oauth2_settings.DCR_REGISTRATION_SCOPE``.
     Expiry: far-future (year 9999) when ``DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS`` is None,
@@ -235,10 +242,12 @@ def _issue_registration_token(application, user):
     # applies the redaction consistently for every other token this library issues.
     oauth2_settings.OAUTH2_VALIDATOR_CLASS()._set_token_value(token, raw_token)
     token.save()
-    return token, raw_token
+    return raw_token
 
 
-def _application_to_response(application, registration_access_token, request):
+def _application_to_response(
+    application: AbstractApplication, registration_access_token: str, request: HttpRequest
+) -> dict[str, Any]:
     """Build the RFC 7591 response dict for *application*.
 
     *registration_access_token* is the raw token value rather than the model instance:
@@ -329,7 +338,7 @@ class DynamicClientRegistrationView(View):
 
         with transaction.atomic():
             application.save()
-            _, raw_registration_token = _issue_registration_token(application, user)
+            raw_registration_token = _issue_registration_token(application, user)
 
         response_data = _application_to_response(application, raw_registration_token, request)
         if raw_secret:
@@ -352,7 +361,9 @@ class DynamicClientRegistrationManagementView(View):
             return JsonResponse({"error": "not_found"}, status=404)
         return super().dispatch(request, *args, **kwargs)
 
-    def _get_application_from_registration_token(self, request, client_id):
+    def _get_application_from_registration_token(
+        self, request: HttpRequest, client_id: str
+    ) -> tuple[AbstractApplication | None, AbstractAccessToken | JsonResponse, str | None]:
         """
         Validate Bearer token, check scope, check client_id match.
 
@@ -434,11 +445,15 @@ class DynamicClientRegistrationManagementView(View):
         return JsonResponse(_application_to_response(application, raw_token, request))
 
     def put(self, request, client_id, *args, **kwargs):
-        application, result, raw_token = self._get_application_from_registration_token(request, client_id)
+        application, result, presented_token = self._get_application_from_registration_token(
+            request, client_id
+        )
         if application is None:
             return result
 
         registration_token = result
+        # What goes back in the response: the presented token, unless it is rotated below.
+        response_token = presented_token
 
         data, err = _parse_metadata(request.body)
         if err:
@@ -461,10 +476,10 @@ class DynamicClientRegistrationManagementView(View):
 
             if oauth2_settings.DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE:
                 user = application.user
-                _, raw_token = _issue_registration_token(application, user)
+                response_token = _issue_registration_token(application, user)
                 registration_token.delete()
 
-        return JsonResponse(_application_to_response(application, raw_token, request))
+        return JsonResponse(_application_to_response(application, response_token, request))
 
     def delete(self, request, client_id, *args, **kwargs):
         application, result, _ = self._get_application_from_registration_token(request, client_id)
