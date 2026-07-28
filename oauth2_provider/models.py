@@ -1217,6 +1217,15 @@ def redirect_to_uri_allowed(uri, allowed_uris):
         # could append parameters to an otherwise-legitimate redirect URI and
         # have the authorization server reflect them into the client's callback
         # alongside the authorization code (RFC 9700 section 4.1).
+        #
+        # .query is "" both when there is no query component and when there is an
+        # empty one ("https://example.com/cb?"), which are different URIs under
+        # simple string comparison, so the delimiter's presence is compared too.
+        # A "?" cannot appear in a scheme, authority or path -- the first one always
+        # opens the query -- so testing the raw string is equivalent to testing for
+        # the component.  A percent-encoded %3F is not a delimiter and is unaffected.
+        if ("?" in allowed_uri) != ("?" in uri):
+            continue
         if parsed_allowed_uri.query != parsed_uri.query:
             continue  # circuit break
 

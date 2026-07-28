@@ -113,7 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1) requires
   ("authorization servers MUST utilize exact string matching except for port numbers in
   localhost redirection URIs of native apps") and OpenID Connect Core §3.1.2.1 restates
-  via RFC 3986 §6.2.1 Simple String Comparison. Two deviations are closed:
+  via RFC 3986 §6.2.1 Simple String Comparison. Four deviations are closed, each of which
+  let a request differ from the registered URI while still matching it:
   * A request could carry **query parameters that were never registered** — the check
     tested that the registered query was a *subset* of the requested one. An attacker
     could append parameters to an otherwise-legitimate `redirect_uri` and have the

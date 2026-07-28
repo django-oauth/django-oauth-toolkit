@@ -1290,6 +1290,13 @@ exact_redirect_match_params = [
     ("https://example.com/cb?a=1&evil=1", ["https://example.com/cb?a=1"], False),
     # A registered parameter that is missing from the request is also a mismatch.
     ("https://example.com/cb", ["https://example.com/cb?a=1"], False),
+    # A bare trailing "?" is an empty query component, not the absence of one;
+    # .query is "" for both, so the delimiter's presence is what distinguishes them.
+    ("https://example.com/cb?", ["https://example.com/cb"], False),
+    ("https://example.com/cb", ["https://example.com/cb?"], False),
+    ("https://example.com/cb?", ["https://example.com/cb?"], True),
+    # ...but a percent-encoded %3F is not a query delimiter.
+    ("https://example.com/cb%3F", ["https://example.com/cb%3F"], True),
     # Reordered parameters are no longer accepted; matching is by string.
     ("https://example.com/cb?b=2&a=1", ["https://example.com/cb?a=1&b=2"], False),
     # RFC 6749 §3.1.2: the endpoint URI MUST NOT include a fragment component.
