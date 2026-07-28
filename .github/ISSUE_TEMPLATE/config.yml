@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/django-oauth/django-oauth-toolkit/security/advisories/new
+    about: Report an undisclosed vulnerability privately to the maintainers.

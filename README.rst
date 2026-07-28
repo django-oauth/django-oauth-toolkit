@@ -43,7 +43,13 @@ Framework API with OAuth2. It makes extensive use of the excellent
 Reporting security issues
 -------------------------
 
-Please report any security issues to the Django OAuth security team at <django-oauth-security@googlegroups.com>. Do not file an issue on the tracker.
+Please use GitHub's `private vulnerability reporting form
+<https://github.com/django-oauth/django-oauth-toolkit/security/advisories/new>`_
+and follow the repository `security policy
+<https://github.com/django-oauth/django-oauth-toolkit/security/policy>`_. Do not
+file a public issue or pull request for an undisclosed vulnerability. If private
+reporting is unavailable, email the `Django OAuth security team
+<mailto:django-oauth-security@googlegroups.com>`_.
 
 Requirements
 ------------

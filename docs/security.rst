@@ -9,6 +9,11 @@ for OAuth 2.0 Security", BCP 240) updates and extends the security advice in
 relevant recommendation to django-oauth-toolkit (DOT) behavior and the setting that
 controls it.
 
+.. note::
+
+   To report a vulnerability or follow the maintainer vulnerability-response
+   and security-release workflow, see :doc:`security_process`.
+
 .. _rfc9700-gates:
 
 Gated behaviors and the 3.x → 4.0 transition
