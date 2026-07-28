@@ -135,6 +135,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     empty fragment component and is rejected too; a percent-encoded `%23` is not a
     fragment delimiter and is unaffected.
 
+  Registration is tightened to match: `AllowedURIValidator` tested the *parsed* fragment,
+  which is empty both for a URI with no fragment and for one ending in a bare `#`, so
+  `https://example.com/cb#` was accepted at save time. With matching now denying any `#`,
+  such a registration would be stored and then never authorize anything; it is rejected
+  up front instead. Registering a URI ending in `#` now raises a `ValidationError` where
+  it previously succeeded.
+
   Case-insensitive scheme/host comparison (RFC 3986 §6.2.2.1 normalization) and the
   RFC 8252 §7.3 loopback any-port exemption are unchanged; `ALLOW_URI_WILDCARDS` still
   opts out of exact host matching and remains flagged by `oauth2_provider.W009`/`E004`.

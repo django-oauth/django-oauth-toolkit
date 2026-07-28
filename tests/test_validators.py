@@ -69,6 +69,25 @@ class TestAllowedURIValidator(TestCase):
             # Check ValidationError not thrown
             validator(uri)
 
+    def test_bare_fragment_delimiter_rejected(self):
+        # A trailing "#" is an empty fragment component, which RFC 6749 §3.1.2
+        # forbids just as much as a populated one. urlsplit() reports fragment ==
+        # "" for it, so the raw string is what has to be checked -- otherwise it
+        # is stored and then never matches, since redirect_to_uri_allowed()
+        # denies any URI containing "#".
+        validator = AllowedURIValidator(["https"], "test", allow_path=True)
+        for uri in ["https://example.com/cb#", "https://example.com/cb#frag"]:
+            with self.assertRaises(ValidationError):
+                validator(uri)
+
+        # A percent-encoded %23 is not a fragment delimiter and stays valid.
+        validator("https://example.com/cb%23")
+
+        # ...and where fragments are allowed, both forms still pass.
+        permissive = AllowedURIValidator(["https"], "test", allow_path=True, allow_fragments=True)
+        permissive("https://example.com/cb#")
+        permissive("https://example.com/cb#frag")
+
     def test_allow_paths_invalid_urls(self):
         validator = AllowedURIValidator(["https", "myapp"], "test", allow_path=True)
         bad_uris = [
