@@ -157,6 +157,144 @@ to support the authorization code *and* client credentials grants, you might do 
             # Assume, for this example, that self.authorization_grant_type is set to self.GRANT_AUTHORIZATION_CODE
             return bool( set([self.authorization_grant_type, self.GRANT_CLIENT_CREDENTIALS]) & grant_types )
 
+.. _custom-scopes-backend:
+
+Custom scopes backend
+=====================
+
+The set of scopes your server understands does not have to be hard-coded in settings. The
+available scopes and their defaults (the ``SCOPES`` and ``DEFAULT_SCOPES`` settings) are read
+through a *scopes backend*, and you can replace it with one of your own -- for example to store
+scopes in the database and administer them through the Django admin, or to expose a different set
+of scopes per application. (The ``READ_SCOPE`` and ``WRITE_SCOPE`` settings are *not* part of the
+backend: they are read directly from settings by the read/write permission helpers, so they keep
+applying regardless of the backend in use.)
+
+The backend used is controlled by the ``SCOPES_BACKEND_CLASS`` setting, which defaults to
+``oauth2_provider.scopes.SettingsScopes`` (the settings-driven backend). To write your own, subclass
+``oauth2_provider.scopes.BaseScopes`` and implement its three methods::
+
+    class BaseScopes:
+        def get_all_scopes(self):
+            """
+            Return a dict-like mapping of every scope name the system knows about to its
+            human-readable description, e.g. ``{"read": "Read scope", "write": "Write scope"}``.
+            Used to render scope descriptions (for example on the authorization form) and to
+            describe a token's scopes. Requested scopes are validated against
+            ``get_available_scopes``, not this method.
+            """
+
+        def get_available_scopes(self, application=None, request=None, *args, **kwargs):
+            """
+            Return the list of scope names that may be requested for the given
+            ``application``/``request``, e.g. ``["read", "write"]``. A scope not in this list
+            cannot be granted.
+            """
+
+        def get_default_scopes(self, application=None, request=None, *args, **kwargs):
+            """
+            Return the list of scope names granted when a client requests authorization without
+            specifying any scope. This MUST be a subset of ``get_available_scopes``.
+            """
+
+``get_available_scopes`` and ``get_default_scopes`` receive the ``application`` and ``request``
+in play, so a backend can vary the offered scopes per application or per request.
+
+Model-based scopes
+~~~~~~~~~~~~~~~~~~
+
+The following backend keeps scopes in the database. It lets you add or remove scopes (and pick
+which ones a given application may use) from the Django admin without a code deploy or settings
+change.
+
+Define the models in one of your apps::
+
+    from django.db import models
+
+    from oauth2_provider.settings import oauth2_settings
+
+
+    class Scope(models.Model):
+        name = models.CharField(max_length=255, unique=True)
+        description = models.TextField(blank=True)
+        is_default = models.BooleanField(default=False)
+
+        def __str__(self):
+            return self.name
+
+
+    class ApplicationScope(models.Model):
+        # Which scopes each application is allowed to request. If an application has no rows
+        # here, fall back to every scope (see the backend below).
+        # oauth2_settings.APPLICATION_MODEL honors a swapped application model
+        # (OAUTH2_PROVIDER_APPLICATION_MODEL); it is "oauth2_provider.Application" by default.
+        application = models.ForeignKey(
+            oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE, related_name="scopes"
+        )
+        scope = models.ForeignKey(Scope, on_delete=models.CASCADE)
+
+Then implement the backend::
+
+    from oauth2_provider.scopes import BaseScopes
+
+    from .models import ApplicationScope, Scope
+
+
+    class ModelScopes(BaseScopes):
+        def get_all_scopes(self):
+            return dict(Scope.objects.values_list("name", "description"))
+
+        def get_available_scopes(self, application=None, request=None, *args, **kwargs):
+            if application is None:
+                return list(Scope.objects.values_list("name", flat=True))
+            available = list(
+                ApplicationScope.objects.filter(application=application).values_list(
+                    "scope__name", flat=True
+                )
+            )
+            # No per-application restriction configured: allow all known scopes.
+            return available or list(Scope.objects.values_list("name", flat=True))
+
+        def get_default_scopes(self, application=None, request=None, *args, **kwargs):
+            # Defaults MUST be a subset of get_available_scopes, so intersect the flagged
+            # default scopes with what this application is actually allowed to request.
+            available = set(self.get_available_scopes(application, request, *args, **kwargs))
+            defaults = Scope.objects.filter(is_default=True).values_list("name", flat=True)
+            return [name for name in defaults if name in available]
+
+Finally point the setting at your backend::
+
+    OAUTH2_PROVIDER = {
+        # ...
+        "SCOPES_BACKEND_CLASS": "your_app.scopes.ModelScopes",
+    }
+
+With a custom backend in place the ``SCOPES`` and ``DEFAULT_SCOPES`` settings are no longer
+consulted (the backend becomes the single source of truth for the available scopes and their
+defaults), so you can drop them. ``READ_SCOPE`` and ``WRITE_SCOPE`` are read directly from settings
+by the read/write permission helpers (see :doc:`rest-framework/permissions`) and still apply, so
+keep them if you use those helpers.
+
+.. note::
+   If you use the read/write helpers, your backend must offer the configured ``READ_SCOPE`` /
+   ``WRITE_SCOPE`` names (``read`` and ``write`` by default) in **two** places:
+
+   * ``get_available_scopes()`` -- so a token can actually be granted the scope. Requested scopes
+     are validated against ``get_available_scopes()`` (``OAuth2Validator.validate_scopes``), so a
+     name missing here can never be issued, and the read/write check would then always fail.
+   * ``get_all_scopes()`` -- ``rw_protected_resource`` and ``ReadWriteScopedResourceMixin`` look the
+     name up here and raise ``ImproperlyConfigured`` if it is missing. (The DRF permission classes
+     ``TokenHasReadWriteScope`` / ``TokenHasResourceScope`` don't perform this check; they just
+     require the token to carry the scope.)
+
+   In the model-based example above, adding ``Scope`` rows named ``read`` and ``write`` satisfies
+   both, since ``get_all_scopes()`` and the fallback ``get_available_scopes()`` both derive from the
+   ``Scope`` table -- just make sure those rows are also in an application's ``ApplicationScope`` set
+   if you restrict scopes per application.
+
+Register the ``Scope`` and ``ApplicationScope`` models with the admin as usual to manage scopes
+through the admin site.
+
 .. _skip-auth-form:
 
 Skip authorization form

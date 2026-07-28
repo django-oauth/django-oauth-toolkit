@@ -307,6 +307,8 @@ SCOPES_BACKEND_CLASS
 ~~~~~~~~~~~~~~~~~~~~
 **New in 0.12.0**. The import string for the scopes backend class.
 Defaults to ``oauth2_provider.scopes.SettingsScopes``, which reads scopes through the settings defined below.
+See :ref:`custom-scopes-backend` for how to write your own backend (for example to store scopes in the
+database).
 
 SCOPES
 ~~~~~~
@@ -330,15 +332,22 @@ By default this is set to ``'__all__'`` meaning that the whole set of ``SCOPES``
 
 READ_SCOPE
 ~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-The name of the *read* scope.
+The name of the *read* scope. Unlike ``SCOPES``/``DEFAULT_SCOPES``, this is used regardless of
+``SCOPES_BACKEND_CLASS`` -- the read/write permission helpers (``TokenHasReadWriteScope``,
+``TokenHasResourceScope``, ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``) read it
+directly from settings. A custom scopes backend must therefore expose a scope with this name from
+``get_available_scopes()`` so a token can actually be granted it (requested scopes are validated
+against ``get_available_scopes()``; see ``OAuth2Validator.validate_scopes``). ``rw_protected_resource``
+and ``ReadWriteScopedResourceMixin`` additionally require it to be in ``get_all_scopes()`` and raise
+``ImproperlyConfigured`` otherwise (see :ref:`custom-scopes-backend`).
 
 WRITE_SCOPE
 ~~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
-
-The name of the *write* scope.
+The name of the *write* scope. Like ``READ_SCOPE``, this is used regardless of
+``SCOPES_BACKEND_CLASS`` by the read/write permission helpers, so a custom scopes backend must
+expose a scope with this name from ``get_available_scopes()`` (so it can be granted) and, for
+``rw_protected_resource`` / ``ReadWriteScopedResourceMixin``, from ``get_all_scopes()`` (see
+:ref:`custom-scopes-backend`).
 
 ERROR_RESPONSE_WITH_SCOPES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
