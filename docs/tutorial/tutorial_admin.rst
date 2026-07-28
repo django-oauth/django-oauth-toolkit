@@ -45,7 +45,8 @@ client type, grant type and whether authorization is skipped, or search for an a
 Click **Add application**, or an existing row, to open the application form. The fields you will
 usually care about are:
 
-* **User** — the person the application belongs to. Look them up by name or email.
+* **User** — the person the application belongs to. Click the lookup (magnifying-glass) icon next
+  to the field to search for and select them.
 * **Redirect uris** — the URLs the client is allowed to return to after login, one per line (or
   separated by spaces). A client that logs users in (the authorization-code, implicit or OpenID
   Connect hybrid flows) must list at least one, and the form won't save without it.
