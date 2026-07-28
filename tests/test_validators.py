@@ -97,8 +97,9 @@ class TestAllowedURIValidator(TestCase):
             with self.assertRaises(ValidationError):
                 validator(uri)
 
-        # A "?" inside a fragment belongs to the fragment, not to a query
-        # component, so it is the fragment rule that rejects this one.
+        # A "?" inside a fragment belongs to the fragment and does not open a
+        # query component, so it must not trip the allow_query=False gate. With
+        # fragments permitted there is nothing left to reject, and the URI passes.
         fragments_ok = AllowedURIValidator(["https"], "test", allow_fragments=True)
         fragments_ok("https://example.com#a?b")
 
