@@ -56,8 +56,8 @@ fields are:
 * **Post logout redirect uris** — space-separated URIs allowed after an RP-initiated OIDC logout.
 * **Allowed origins** — space-separated origins for which CORS is enabled on the token endpoint.
 * **Client type** — ``confidential`` or ``public`` (:rfc:`2.1`).
-* **Authorization grant type** — the flow this application uses (authorization-code, implicit,
-  password, client-credentials or openid-hybrid).
+* **Authorization grant type** — the flow this application uses (authorization-code, device
+  code, implicit, password, client-credentials or openid-hybrid).
 * **Name** — a friendly label shown to users on the authorization form.
 * **Skip authorization** — when enabled, users are never shown the authorization form for this
   application, even on first use. Enable it only for applications you fully trust (see
