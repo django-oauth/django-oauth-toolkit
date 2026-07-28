@@ -85,12 +85,14 @@ what the server has issued and revoke it. A few behaviors are specific to these 
 
 * **You cannot create tokens by hand.** Tokens, refresh tokens, authorization codes and ID
   tokens are issued by the OAuth/OIDC flows, so the **Add** button is disabled for all four.
-* **Secret values are masked.** Access/refresh token values and authorization codes are stored in
-  cleartext, so the admin never shows the usable value: the changelist displays only a short
-  masked suffix, the raw value is hidden on the change form, and you can search only by
+* **Secret values are masked.** By default, access/refresh token values and authorization codes are
+  stored in cleartext, so the admin never shows the usable value: the changelist displays only a
+  short masked suffix, the raw value is hidden on the change form, and you can search only by
   non-secret identifiers (application client id / name, and user) — never by the token itself.
   This keeps live, replayable credentials out of the admin UI and out of ``?q=`` search URLs
-  captured in server logs and browser history.
+  captured in server logs and browser history. (When ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`` is
+  enabled, the raw token is not stored at all — only a checksum — so there is nothing to mask and
+  the value column is simply empty.)
 * **Revoke access and refresh tokens; don't delete them.** The **Access tokens** and
   **Refresh tokens** admins invalidate tokens through a **"Revoke selected …"** action rather than
   a raw delete (delete is disabled on those two). Revoking is the *only* consistent way to
