@@ -33,7 +33,8 @@ heading you will find five sections:
 * **Applications** — the OAuth clients registered on your site.
 * **Access tokens** — the tokens clients use to call your protected APIs.
 * **Refresh tokens** — the tokens clients use to get a new access token.
-* **Grants** — short-lived authorization codes, created mid-login and exchanged for tokens.
+* **Grants** — short-lived authorization codes, created during the authorization flow and
+  exchanged for tokens.
 * **ID tokens** — OpenID Connect ID tokens (only relevant if you use OIDC).
 
 Managing applications
