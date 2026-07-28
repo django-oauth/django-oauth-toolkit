@@ -261,9 +261,11 @@ When you begin your PR, you'll be asked to provide the following:
 
   * ``Fixed`` for any bug fixes.
 
-  * ``Security`` in case of vulnerabilities. (Please report any security issues to the
-     security team ``<django-oauth-security@googlegroups.com>``. Do not file an issue on the tracker
-     or submit a PR until directed to do so.)
+  * ``Security`` in case of vulnerabilities. Follow the repository
+    `security policy
+    <https://github.com/django-oauth/django-oauth-toolkit/security/policy>`_
+    and use GitHub private vulnerability reporting. Do not file a public issue
+    or submit a public PR until directed to do so.
 
 * Make sure your name is in :file:`AUTHORS`. We want to give credit to all contributors!
 
@@ -486,6 +488,16 @@ Maintainer Checklist
 The following notes are to remind the project maintainers and leads of the steps required to
 review and merge PRs and to publish a new release.
 
+Security Vulnerabilities and Releases
+-------------------------------------
+
+Vulnerability reports and releases containing security fixes follow the public
+:doc:`security vulnerability response and release process <security_process>`.
+That runbook covers advisory collaboration, private maintainer integration,
+full-stack validation, public promotion, package publication, disclosure, and
+failure handling. It supersedes the ordinary public PR workflow until the
+coordinated disclosure begins.
+
 Reviewing and Merging PRs
 -------------------------
 
@@ -527,6 +539,10 @@ Publishing a Release
 
 Only maintainers can publish a release to pypi.org
 and rtfd.io. This checklist is a reminder of the required steps.
+
+For a release containing an undisclosed security fix, first follow
+:doc:`security_process`; the normal release steps below apply where they are not
+superseded by its coordinated cutover procedure.
 
 - When planning a new release, create a `milestone
   <https://github.com/django-oauth/django-oauth-toolkit/milestones>`_

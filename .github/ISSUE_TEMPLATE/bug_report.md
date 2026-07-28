@@ -7,6 +7,12 @@ assignees: ''
 
 ---
 
+> [!WARNING]
+> Do not report an undisclosed security vulnerability in a public issue. Use
+> [private vulnerability reporting](https://github.com/django-oauth/django-oauth-toolkit/security/advisories/new)
+> and follow the
+> [security policy](https://github.com/django-oauth/django-oauth-toolkit/security/policy).
+
 **Describe the bug**
 <!-- A clear and concise description of what the bug is. -->
 
