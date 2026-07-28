@@ -3,7 +3,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse_lazy
 from django.views.generic import DeleteView, ListView
 
-from ..models import get_access_token_model, get_refresh_token_model
+from ..models import get_access_token_model, revoke_access_token
 
 
 class AuthorizedTokensListView(LoginRequiredMixin, ListView):
@@ -43,20 +43,8 @@ class AuthorizedTokenDeleteView(LoginRequiredMixin, DeleteView):
         exchanged for a fresh access token, defeating the revocation. Per
         :rfc:`7009#section-2.1` revoking an access token may also revoke the
         respective refresh token; for a user-initiated "revoke access" action that
-        is the only unsurprising behavior. Revoking the refresh token also deletes
-        the bound access token, so it covers both.
-
-        The bound refresh token is looked up with a forward query on the refresh
-        token model rather than the reverse ``access_token.refresh_token`` accessor,
-        whose name depends on the ``related_name`` a swapped refresh token model may
-        override.
+        is the only unsurprising behavior. ``revoke_access_token`` is the shared
+        revoke path used here, by the ``/revoke/`` endpoint, and by the admin.
         """
-        access_token = self.object
-        refresh_token = get_refresh_token_model().objects.filter(access_token=access_token).first()
-
-        if refresh_token is not None:
-            refresh_token.revoke()
-        else:
-            access_token.revoke()
-
+        revoke_access_token(self.object)
         return HttpResponseRedirect(self.get_success_url())

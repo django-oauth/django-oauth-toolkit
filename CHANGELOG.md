@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
   removal in 4.0.
 ### Changed
+* The `AccessToken` and `RefreshToken` admins now invalidate tokens through a **"Revoke selected"**
+  action instead of raw delete (delete is disabled on those two admins). A raw delete of an access
+  token left its bound refresh token behind (`RefreshToken.access_token` is `SET_NULL`) — an orphan
+  that could still mint new access tokens — and a raw delete of a refresh token discarded the
+  revoked tombstone that `REFRESH_TOKEN_REUSE_PROTECTION` relies on. The revoke action invalidates
+  the whole token family consistently; expired rows are still pruned by `cleartokens`. `Grant` and
+  `IDToken` admins keep the default delete. The access-token revoke logic is now a single shared
+  `oauth2_provider.models.revoke_access_token()` helper used by the admin action, the `/revoke/`
+  endpoint, and `AuthorizedTokenDeleteView`.
 * #522 The `cleartokens` management command now prints a warning to stderr when
   `REFRESH_TOKEN_EXPIRE_SECONDS` is unset (or `0`), explaining that only revoked and
   orphaned refresh tokens are removed and that expired access/ID tokens still bound to a

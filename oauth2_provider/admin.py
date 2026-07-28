@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
+from django.utils.translation import ngettext
 
 from oauth2_provider.forms import ApplicationForm
 from oauth2_provider.models import (
@@ -13,6 +14,7 @@ from oauth2_provider.models import (
     get_id_token_model,
     get_refresh_token_admin_class,
     get_refresh_token_model,
+    revoke_access_token,
 )
 
 
@@ -85,11 +87,35 @@ class AccessTokenAdmin(admin.ModelAdmin):
     # Search by non-secret identifiers only; never by the token itself.
     search_fields = ("application__client_id", "application__name") + USER_SEARCH_FIELDS
     list_filter = ("application",)
+    actions = ("revoke_tokens",)
 
     def has_add_permission(self, request):
         # Access tokens are issued by the OAuth flows, not hand-created in the admin.
         # Disabling add also removes the add form's editable (cleartext) token field.
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Invalidate access tokens with the "Revoke selected access tokens" action, not a raw
+        # delete. Deleting an access token row leaves its bound refresh token behind
+        # (``RefreshToken.access_token`` is ``SET_NULL``), and that orphan can still mint new
+        # access tokens; revoking invalidates the whole token family consistently. Expired rows
+        # are pruned by the :ref:`cleartokens` management command.
+        return False
+
+    @admin.action(description="Revoke selected access tokens")
+    def revoke_tokens(self, request, queryset):
+        # ``revoke_access_token`` is the shared revoke path (also used by the ``/revoke/`` endpoint
+        # and ``AuthorizedTokenDeleteView``): it revokes the bound refresh token when present --
+        # preserving the tombstone ``REFRESH_TOKEN_REUSE_PROTECTION`` relies on -- otherwise
+        # revokes the access token directly.
+        revoked = 0
+        for access_token in queryset:
+            revoke_access_token(access_token)
+            revoked += 1
+        self.message_user(
+            request,
+            ngettext("Revoked %d access token.", "Revoked %d access tokens.", revoked) % revoked,
+        )
 
     def get_exclude(self, request, obj=None):
         # Hide the raw token on the change/view form (obj is set). Adding is disabled
@@ -164,10 +190,32 @@ class RefreshTokenAdmin(admin.ModelAdmin):
     # Search by non-secret identifiers only; never by the token itself.
     search_fields = ("application__client_id", "application__name") + USER_SEARCH_FIELDS
     list_filter = ("application",)
+    actions = ("revoke_tokens",)
 
     def has_add_permission(self, request):
         # Refresh tokens are issued by the OAuth flows, not hand-created in the admin.
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Invalidate refresh tokens with the "Revoke selected refresh tokens" action, not a raw
+        # delete. ``RefreshToken.revoke()`` revokes the bound access token and keeps the refresh
+        # token as a revoked tombstone, which ``REFRESH_TOKEN_REUSE_PROTECTION`` needs to detect
+        # replay of a rotated token; a raw delete would discard that. Revoked/expired rows are
+        # pruned by the :ref:`cleartokens` management command.
+        return False
+
+    @admin.action(description="Revoke selected refresh tokens")
+    def revoke_tokens(self, request, queryset):
+        revoked = 0
+        for refresh_token in queryset:
+            # ``RefreshToken.revoke()`` revokes the bound access token and marks this token
+            # revoked; it is a no-op on an already-revoked token.
+            refresh_token.revoke()
+            revoked += 1
+        self.message_user(
+            request,
+            ngettext("Revoked %d refresh token.", "Revoked %d refresh tokens.", revoked) % revoked,
+        )
 
     def get_exclude(self, request, obj=None):
         # Hide the raw token on the change/view form. Adding is disabled (see
