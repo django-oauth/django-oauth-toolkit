@@ -88,6 +88,25 @@ class TestAllowedURIValidator(TestCase):
         permissive("https://example.com/cb#")
         permissive("https://example.com/cb#frag")
 
+    def test_bare_query_delimiter_rejected(self):
+        # Same shape as the bare "#" above: urlsplit() reports query == "" for a
+        # URI ending in "?", so it slipped past the allow_query=False gate that
+        # allowed_origins relies on.
+        validator = AllowedURIValidator(["https"], "test")
+        for uri in ["https://example.com?", "https://example.com?a=1"]:
+            with self.assertRaises(ValidationError):
+                validator(uri)
+
+        # A "?" inside a fragment belongs to the fragment, not to a query
+        # component, so it is the fragment rule that rejects this one.
+        fragments_ok = AllowedURIValidator(["https"], "test", allow_fragments=True)
+        fragments_ok("https://example.com#a?b")
+
+        # ...and where queries are allowed, both forms still pass.
+        permissive = AllowedURIValidator(["https"], "test", allow_query=True)
+        permissive("https://example.com?")
+        permissive("https://example.com?a=1")
+
     def test_allow_paths_invalid_urls(self):
         validator = AllowedURIValidator(["https", "myapp"], "test", allow_path=True)
         bad_uris = [
