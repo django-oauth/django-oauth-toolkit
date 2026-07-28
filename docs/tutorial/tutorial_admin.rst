@@ -3,18 +3,19 @@ Part 7 - Managing applications and tokens in the Django admin
 
 Scenario
 --------
-In :doc:`Part 1 <tutorial_01>` you created your own :term:`Authorization Server` and registered
-an application through the front-end ``/o/applications/`` views. Django OAuth Toolkit also
-registers its user-facing models with the `Django admin site
-<https://docs.djangoproject.com/en/stable/ref/contrib/admin/>`_, which gives staff users a
-single place to review and manage applications, issued tokens, authorization codes and OIDC ID
-tokens. This part walks through that admin UI.
+In :doc:`Part 1 <tutorial_01>` you set up your own :term:`Authorization Server` and registered an
+application through the ``/o/applications/`` pages. Those pages let each user manage their own
+applications. As a site administrator you often need a broader view — every application on the
+site, and the tokens the server has issued — so you can help users, register applications on their
+behalf, and cut off access when something goes wrong. Django OAuth Toolkit adds all of this to the
+built-in `Django admin site <https://docs.djangoproject.com/en/stable/ref/contrib/admin/>`_. This
+part walks through it.
 
 Enabling the admin
 ------------------
-The admin is set up exactly as in a normal Django project — nothing OAuth-specific is required.
-As shown in :doc:`Part 1 <tutorial_01>`, add ``django.contrib.admin`` to ``INSTALLED_APPS`` and
-route it in your ``urls.py``:
+The admin is the standard Django admin — nothing OAuth-specific is required. As shown in
+:doc:`Part 1 <tutorial_01>`, add ``django.contrib.admin`` to ``INSTALLED_APPS`` and route it in
+your ``urls.py``:
 
 .. code-block:: python
 
@@ -27,69 +28,65 @@ route it in your ``urls.py``:
     ]
 
 Log in at http://localhost:8000/admin/ with a staff account. Under the **Django OAuth Toolkit**
-section (the app's ``verbose_name``) you will find five model admins:
+heading you will find five sections:
 
-* **Applications** — the OAuth clients you have registered.
-* **Access tokens** — bearer tokens issued to those clients.
-* **Refresh tokens** — tokens used to obtain a new access token.
-* **Grants** — short-lived authorization codes exchanged for tokens.
-* **ID tokens** — OpenID Connect ID tokens (only relevant when you use OIDC).
-
-If you have :ref:`swapped any of these models <extend_app_model>`, your custom models appear
-here instead, under their own app.
+* **Applications** — the OAuth clients registered on your site.
+* **Access tokens** — the tokens clients use to call your protected APIs.
+* **Refresh tokens** — the tokens clients use to get a new access token.
+* **Grants** — short-lived authorization codes, created during the authorization flow and
+  exchanged for tokens.
+* **ID tokens** — OpenID Connect ID tokens (only relevant if you use OIDC).
 
 Managing applications
 ---------------------
-Open **Applications** to see the registered clients. The changelist shows the primary key,
-name, owning user, client type, authorization grant type and registration source, and can be
-filtered by client type, grant type, ``skip_authorization`` and registration source, or searched
-by application name (and user email, when your user model has one).
+Open **Applications** to see every client registered on the site. You can filter the list by
+client type, grant type and whether authorization is skipped, or search for an application by name
+(and by owner email, if your users have one).
 
-Click **Add application** (or an existing row) to open the application form. The most important
-fields are:
+Click **Add application**, or an existing row, to open the application form. The fields you will
+usually care about are:
 
-* **User** — the user the application belongs to. It uses a raw-id widget, so enter or look up
-  the user's primary key.
-* **Redirect uris** — a space-separated list of allowed redirect URIs. A client using the
-  authorization-code, implicit or openid-hybrid grant must register at least one (application
-  validation rejects an empty value for those grants).
-* **Post logout redirect uris** — space-separated URIs allowed after an RP-initiated OIDC logout.
-* **Allowed origins** — space-separated origins for which CORS is enabled on the token endpoint.
-* **Client type** — ``confidential`` or ``public`` (:rfc:`2.1`).
-* **Authorization grant type** — the flow this application uses (authorization-code, device
-  code, implicit, password, client-credentials or openid-hybrid).
-* **Name** — a friendly label shown to users on the authorization form.
-* **Skip authorization** — when enabled, users are never shown the authorization form for this
-  application, even on first use. Enable it only for applications you fully trust (see
-  :ref:`skip-auth-form`).
-* **Algorithm** — the OIDC token signing algorithm. The choices are labelled *No OIDC support*
-  (the default, empty value), *RSA with SHA-2 256* (``RS256``) and *HMAC with SHA-2 256*
-  (``HS256``).
-* **Hash client secret** — whether this application's ``client_secret`` is hashed on save (see the
-  note below).
+* **User** — the person the application belongs to. Click the lookup (magnifying-glass) icon next
+  to the field to search for and select them.
+* **Redirect uris** — the URLs the client is allowed to return to after login, one per line (or
+  separated by spaces). A client that logs users in (the authorization-code, implicit or OpenID
+  Connect hybrid flows) must list at least one, and the form won't save without it.
+* **Post logout redirect uris** — the URLs a client may send the user to after they log out.
+* **Allowed origins** — the web origins allowed to call the token endpoint from a browser.
+* **Client type** — **Confidential** for apps that can keep a secret (a server-side app),
+  **Public** for apps that cannot (a single-page or mobile app).
+* **Authorization grant type** — how the application obtains tokens. The dropdown options are
+  *Authorization code*, *Device Code*, *Implicit*, *Resource owner password-based*,
+  *Client credentials* and *OpenID connect hybrid*.
+* **Name** — the label users see on the consent screen when they authorize the application.
+* **Skip authorization** — when on, users are never shown the consent screen for this application.
+  Turn it on only for applications you completely trust (see :ref:`skip-auth-form`).
+* **Algorithm** — the signing algorithm for OpenID Connect ID tokens: **No OIDC support** (the
+  default), **RSA with SHA-2 256**, or **HMAC with SHA-2 256**.
+* **Hash client secret** — whether the client secret is stored as a one-way hash (see the note).
 
 .. note::
-   **Copy a hashed client secret before you save it.** When **Hash client secret** is enabled —
-   the default — the toolkit stores only a hash of ``client_secret`` (like a password), so the raw
-   value cannot be recovered after you save. When you create such an application, or paste a new
-   secret into one, copy the secret *before* clicking **Save**; if you lose it, generate a new one
-   by saving a fresh random value into both the admin and your client. If **Hash client secret** is
-   disabled, the secret is stored (and remains viewable) in cleartext instead. ``registration_source``
-   and ``cimd_expires_at`` are maintained by the toolkit (they mark applications created via Dynamic
-   Client Registration or :doc:`CIMD <../cimd>`) and are read-only.
+   **Copy the client secret before you save.** By default the secret is hashed and stored like a
+   password, so it can never be shown again after you save the form. When you add an application —
+   or set a new secret on an existing one — copy the secret first; if you lose it, your only option
+   is to set a new one in both the admin and the client. (If you turn **Hash client secret** off,
+   the secret stays readable on the form instead.) A few fields are filled in automatically and are
+   read-only — for example, the ones marking applications that registered themselves through
+   :doc:`dynamic client registration <../views/dynamic_client_registration>`.
 
 Reviewing and revoking tokens
 -----------------------------
-The **Access tokens**, **Refresh tokens**, **Grants** and **ID tokens** admins let you review what
-the server has issued to each application and user. Tokens are always created by the OAuth/OIDC
-flows, so you can browse and revoke them here, but not add them by hand. For your users' safety,
-the admin also masks the secret token values — the changelist shows only a short masked suffix and
-you search by application or user, never by the token itself.
+The **Access tokens**, **Refresh tokens**, **Grants** and **ID tokens** sections show what the
+server has issued to each application and user. Tokens are always created for you by the login and
+token flows, so you can review and revoke them here but you can't add them by hand. The token
+values themselves are hidden — the list shows only a short masked ending, and you look tokens up by
+application or user, never by the secret value — so live credentials never sit in plain view.
 
-To cut off an application or user's access, open **Access tokens** or **Refresh tokens**, select
-the rows you want to invalidate, and run the **Revoke selected access tokens** / **Revoke selected
-refresh tokens** action from the actions dropdown. Revoking an access token also revokes the
-refresh token issued with it (and vice versa), so the client cannot simply refresh its way back in.
+To cut off an application or a user's access, open **Access tokens** or **Refresh tokens**, tick
+the rows you want to stop, and choose **Revoke selected access tokens** or **Revoke selected
+refresh tokens** from the actions menu. Revoking a token also revokes its partner — the matching
+refresh or access token issued alongside it — so a revoked client can't quietly refresh its way
+back in.
 
-For routine cleanup of *expired* tokens across all applications, use the :ref:`cleartokens`
-management command rather than revoking rows by hand.
+To clear out tokens that have simply *expired*, run the :ref:`cleartokens` management command on a
+schedule — it removes expired tokens in bulk, so you don't have to hunt them down in the admin.
