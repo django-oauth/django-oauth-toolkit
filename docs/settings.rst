@@ -53,6 +53,14 @@ assigned ports.
 Note that you may override ``Application.get_allowed_schemes()`` to set this on
 a per-application basis.
 
+Native apps using an RFC 8252 §7.1 private-use URI scheme should add that scheme here
+(e.g. ``["https", "com.example.app"]``) and register the redirect URI in the single-slash
+form the RFC prescribes, ``com.example.app:/oauth2redirect``. A private-use scheme has no
+naming authority, so the single-slash and double-slash spellings are *different* URIs and
+are not interchangeable at request time. The redundant ``com.example.app:///oauth2redirect``
+and the rootless ``com.example.app:oauth2redirect`` are rejected. Schemes that require an
+authority (``http``, ``https``, ``ws``, ``wss``, ``ftp``) must still include a host.
+
 ALLOW_URI_WILDCARDS
 ~~~~~~~~~~~~~~~~~~~
 Default: ``False``

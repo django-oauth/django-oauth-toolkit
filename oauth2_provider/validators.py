@@ -17,6 +17,21 @@ class URIValidator(URLValidator):
     path_re = r"(?:[/?#][^\s]*)?"
     regex = re.compile(scheme_re + host_re + port_re + path_re, re.IGNORECASE)
 
+    # RFC 8252 §7.1: a private-use URI scheme redirect has no naming authority
+    # (RFC 3986 §3.2), so exactly one slash follows the scheme component, e.g.
+    # "com.example.app:/oauth2redirect".  Requiring a non-slash after "scheme:/"
+    # also rejects "scheme:", "scheme://" and the redundant "scheme:///path"
+    # spelling; the latter is a valid absolute-URI (an empty authority) but
+    # aliases with the canonical single-slash form under redirect_to_uri_allowed(),
+    # and RFC 9700 §2.1 requires redirect URIs to match by exact string comparison.
+    authorityless_regex = re.compile(r"^[a-z][a-z0-9\.\-\+]*:/(?!/)[^\s]*\Z", re.IGNORECASE)
+
+    # Schemes whose own specifications require an authority component.  A
+    # single-slash URI in one of these is not a private-use scheme redirect:
+    # browsers normalize "https:/example.com" to "https://example.com/", so
+    # accepting it would register something other than what is redirected to.
+    schemes_requiring_authority = frozenset({"http", "https", "ws", "wss", "ftp"})
+
 
 class AllowedURIValidator(URIValidator):
     # TODO: find a way to get these associated with their form fields in place of passing name
@@ -86,6 +101,26 @@ class AllowedURIValidator(URIValidator):
                 "%(name)s URI validation error. %(cause)s: %(value)s",
                 params={"name": self.name, "value": value, "cause": "path not allowed"},
             )
+
+        # A private-use URI scheme redirect (RFC 8252 §7.1) has no authority, so
+        # urlsplit() reports an empty netloc and the "{scheme}://{netloc}{path}"
+        # reassembly below would rebuild "com.example.app:/oauth2redirect" as
+        # "com.example.app:///oauth2redirect".  URIValidator cannot match that:
+        # every alternative in host_re consumes at least one character and the
+        # next one is "/".  Validate the authority-less form here instead — the
+        # scheme is already checked above and there is no host to validate.
+        if not netloc:
+            if scheme in self.schemes_requiring_authority:
+                raise ValidationError(
+                    "%(name)s URI validation error. %(cause)s: %(value)s",
+                    params={"name": self.name, "value": value, "cause": "missing host"},
+                )
+            if not self.authorityless_regex.match(value):
+                raise ValidationError(
+                    "%(name)s URI validation error. %(cause)s: %(value)s",
+                    params={"name": self.name, "value": value, "cause": "invalid URI"},
+                )
+            return
 
         if self.allow_hostname_wildcard and "*" in netloc:
             domain_parts = netloc.split(".")

@@ -1172,11 +1172,15 @@ def redirect_to_uri_allowed(uri, allowed_uris):
             continue
 
         """ check hostname """
-        if oauth2_settings.ALLOW_URI_WILDCARDS and parsed_allowed_uri.hostname.startswith("*"):
+        # A private-use URI scheme redirect (RFC 8252 §7.1) has no naming
+        # authority, so hostname is None on either side; guard before matching.
+        allowed_hostname = parsed_allowed_uri.hostname
+        uri_hostname = parsed_uri.hostname
+        if oauth2_settings.ALLOW_URI_WILDCARDS and allowed_hostname and allowed_hostname.startswith("*"):
             """ wildcard hostname """
-            if not parsed_uri.hostname.endswith(parsed_allowed_uri.hostname[1:]):
+            if not uri_hostname or not uri_hostname.endswith(allowed_hostname[1:]):
                 continue
-        elif parsed_allowed_uri.hostname != parsed_uri.hostname:
+        elif allowed_hostname != uri_hostname:
             continue
 
         # From RFC 8252 (Section 7.3)
