@@ -182,6 +182,7 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
                 client_id=client_id,
                 user_code=user_code,
                 status=model.AUTHORIZATION_PENDING,
+                user=self.request.user,
             )
         return self._device_grant
 
