@@ -109,6 +109,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turning into a server error.
 
 ### Security
+* Redirect URIs are now matched exactly, as
+  [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1) requires
+  ("authorization servers MUST utilize exact string matching except for port numbers in
+  localhost redirection URIs of native apps") and OpenID Connect Core §3.1.2.1 restates
+  via RFC 3986 §6.2.1 Simple String Comparison. Four deviations are closed, each of which
+  let a request differ from the registered URI while still matching it:
+  * A request could carry **query parameters that were never registered** — the check
+    tested that the registered query was a *subset* of the requested one. An attacker
+    could append parameters to an otherwise-legitimate `redirect_uri` and have the
+    authorization server reflect them into the client's callback alongside the
+    authorization code, the redirect-URI manipulation class described in
+    [RFC 9700 §4.1](https://datatracker.ietf.org/doc/html/rfc9700#section-4.1).
+  * A request could carry **path parameters** (`https://example.com/cb;evil=1`). `urlparse()`
+    peels `;params` off the last path segment into a separate attribute, and only `.path`
+    was compared, so these smuggled data to the callback the same way extra query
+    parameters did. Matching now uses `urlsplit()`, which leaves them in the path.
+  * A request could carry **credentials** (`https://evil@example.com/cb`). Only `.hostname`
+    was compared, so userinfo rode along unnoticed. Credentials are not part of a
+    registered callback and are now rejected on either side.
+  * A request could carry a **fragment**, which `urlparse()` split off before comparison,
+    so `https://example.com/cb#x` matched a registered `https://example.com/cb`.
+    [RFC 6749 §3.1.2](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2) states
+    the endpoint URI MUST NOT include a fragment component. A bare trailing `#` is an
+    empty fragment component and is rejected too; a percent-encoded `%23` is not a
+    fragment delimiter and is unaffected.
+
+  Registration is tightened to match: `AllowedURIValidator` tested the *parsed* fragment,
+  which is empty both for a URI with no fragment and for one ending in a bare `#`, so
+  `https://example.com/cb#` was accepted at save time. With matching now denying any `#`,
+  such a registration would be stored and then never authorize anything; it is rejected
+  up front instead. Registering a URI ending in `#` now raises a `ValidationError` where
+  it previously succeeded.
+
+  Case-insensitive scheme/host comparison (RFC 3986 §6.2.2.1 normalization) and the
+  RFC 8252 §7.3 loopback any-port exemption are unchanged; `ALLOW_URI_WILDCARDS` still
+  opts out of exact host matching and remains flagged by `oauth2_provider.W009`/`E004`.
+
+  **Upgrade note:** clients that pass per-request data through the `redirect_uri` query
+  string will now be rejected — every query parameter must be registered, and in the same
+  order. Register the full URI including its query, or move per-request data into the
+  `state` parameter, which is what it is for. Applications whose registered
+  `redirect_uris` already carry no query component are unaffected.
 * #1510 Revoking an access token from the authorized-tokens page
   (`AuthorizedTokenDeleteView`) now also revokes the refresh token issued
   alongside it. Previously only the access token was deleted, leaving the

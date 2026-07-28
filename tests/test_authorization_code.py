@@ -55,7 +55,9 @@ class BaseTest(TestCase):
         cls.application = Application.objects.create(
             name="Test Application",
             redirect_uris=(
-                "http://localhost http://example.com http://example.org custom-scheme://example.com"
+                "http://localhost http://example.com http://example.org custom-scheme://example.com "
+                "http://example.com?foo=bar http://example.org?foo=bar "
+                "http://example.com?bar=baz&foo=bar"
             ),
             user=cls.dev_user,
             client_type=Application.CLIENT_CONFIDENTIAL,
@@ -337,6 +339,30 @@ class TestAuthorizationCodeView(BaseTest):
 
         response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
         self.assertEqual(response.status_code, 400)
+
+    def test_pre_auth_rejects_unregistered_query_parameters(self):
+        """
+        Test error when the redirect_uri carries query parameters that were not
+        registered.  RFC 9700 section 2.1 requires exact matching; accepting a
+        superset would let an attacker append parameters to an otherwise
+        legitimate redirect URI and have the authorization server reflect them
+        into the client's callback alongside the code (RFC 9700 section 4.1).
+        """
+        self.client.login(username="test_user", password="123456")
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "redirect_uri": "http://example.com?next=http://evil.example",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+        self.assertEqual(response.status_code, 400)
+
+        # ...and the registered query on its own is still accepted and retained.
+        query_data["redirect_uri"] = "http://example.com?foo=bar"
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+        self.assertEqual(response.status_code, 200)
 
     def test_pre_auth_wrong_response_type(self):
         """
@@ -2078,7 +2104,7 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         Tests code exchange succeed when redirect uri matches the one used for code request
         """
         self.client.login(username="test_user", password="123456")
-        self.application.redirect_uris = "http://localhost http://example.com?foo=bar"
+        self.application.redirect_uris = "http://localhost http://example.com?bar=baz&foo=bar"
         self.application.save()
 
         # retrieve a valid authorization code
@@ -2154,7 +2180,7 @@ class TestOIDCAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         Tests code exchange succeed when redirect uri matches the one used for code request
         """
         self.client.login(username="test_user", password="123456")
-        self.application.redirect_uris = "http://localhost http://example.com?foo=bar"
+        self.application.redirect_uris = "http://localhost http://example.com?bar=baz&foo=bar"
         self.application.save()
 
         # retrieve a valid authorization code

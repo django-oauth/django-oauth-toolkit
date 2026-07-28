@@ -35,7 +35,7 @@ class BaseTest(TestCase):
 
         cls.application = Application.objects.create(
             name="Test Implicit Application",
-            redirect_uris="http://localhost http://example.com http://example.org",
+            redirect_uris="http://localhost http://example.com http://example.org http://example.com?foo=bar",
             user=cls.dev_user,
             client_type=Application.CLIENT_PUBLIC,
             authorization_grant_type=Application.GRANT_IMPLICIT,

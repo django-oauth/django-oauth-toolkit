@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 from typing import Callable, Optional, Union
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import urlparse, urlsplit
 
 from django.apps import apps
 from django.conf import settings
@@ -1136,10 +1136,36 @@ def redirect_to_uri_allowed(uri, allowed_uris):
     if not isinstance(allowed_uris, list):
         raise ValueError("allowed_uris must be a list")
 
-    parsed_uri = urlparse(uri)
-    uqs_set = set(parse_qsl(parsed_uri.query))
+    # urlsplit() rather than urlparse(): urlparse() peels ";params" off the last
+    # path segment into a separate attribute, so comparing .path alone would let a
+    # request smuggle "/cb;evil=1" past a registered "/cb".  urlsplit() leaves the
+    # parameters in .path, where they are compared like the rest of it.
+    parsed_uri = urlsplit(uri)
+
+    # RFC 6749 section 3.1.2: "The endpoint URI MUST NOT include a fragment
+    # component."  Test the raw string rather than .fragment, which is "" both for
+    # a URI with no fragment and for one ending in a bare "#" -- the latter is a
+    # (empty) fragment component and is not the registered URI.  A percent-encoded
+    # %23 is not a fragment delimiter and is unaffected.
+    if "#" in uri:
+        return False
+
+    # Credentials are not part of a registered callback and must not ride along on
+    # the request; without this "https://evil@example.com/cb" would match a
+    # registered "https://example.com/cb", since only .hostname is compared below.
+    if "@" in parsed_uri.netloc:
+        return False
+
     for allowed_uri in allowed_uris:
-        parsed_allowed_uri = urlparse(allowed_uri)
+        # A registered URI carrying a fragment or credentials cannot authorize
+        # anything: the request forms that would match it are rejected above.
+        if "#" in allowed_uri:
+            continue
+
+        parsed_allowed_uri = urlsplit(allowed_uri)
+
+        if "@" in parsed_allowed_uri.netloc:
+            continue
 
         if parsed_allowed_uri.scheme != parsed_uri.scheme:
             # match failed, continue
@@ -1183,8 +1209,24 @@ def redirect_to_uri_allowed(uri, allowed_uris):
             continue
 
         """ check querystring """
-        aqs_set = set(parse_qsl(parsed_allowed_uri.query))
-        if not aqs_set.issubset(uqs_set):
+        # RFC 9700 section 2.1 requires exact matching of the redirect URI (see
+        # also OpenID Connect Core section 3.1.2.1, which mandates RFC 3986
+        # section 6.2.1 Simple String Comparison).  This previously tested that
+        # the registered query was a *subset* of the requested one, which let a
+        # request carry query parameters that were never registered: an attacker
+        # could append parameters to an otherwise-legitimate redirect URI and
+        # have the authorization server reflect them into the client's callback
+        # alongside the authorization code (RFC 9700 section 4.1).
+        #
+        # .query is "" both when there is no query component and when there is an
+        # empty one ("https://example.com/cb?"), which are different URIs under
+        # simple string comparison, so the delimiter's presence is compared too.
+        # A "?" cannot appear in a scheme, authority or path -- the first one always
+        # opens the query -- so testing the raw string is equivalent to testing for
+        # the component.  A percent-encoded %3F is not a delimiter and is unaffected.
+        if ("?" in allowed_uri) != ("?" in uri):
+            continue
+        if parsed_allowed_uri.query != parsed_uri.query:
             continue  # circuit break
 
         return True

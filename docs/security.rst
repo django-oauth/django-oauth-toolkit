@@ -110,8 +110,11 @@ policy and is not flagged).
 
 Redirect URI matching (§2.1)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-DOT already performs exact redirect-URI matching (scheme, host, port, and path), with
-wildcards off (``ALLOW_URI_WILDCARDS`` defaults to ``False``). Set
+DOT performs exact redirect-URI matching — scheme, host, port, path, **and query** — with
+wildcards off (``ALLOW_URI_WILDCARDS`` defaults to ``False``). A request may not carry
+query parameters that were not registered, and may not carry a fragment at all
+(:rfc:`6749#section-3.1.2`). Clients that need to pass per-request data should use the
+``state`` parameter rather than appending it to the ``redirect_uri``. Set
 ``ALLOWED_REDIRECT_URI_SCHEMES = ["https"]`` to disallow registering plaintext ``http``
 redirect URIs. Two validation gates cover these settings:
 ``COMPLIANT_BCP_RFC9700_REDIRECT_URI_SCHEME`` flags ``http`` in the scheme list

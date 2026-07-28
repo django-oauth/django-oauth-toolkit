@@ -61,12 +61,22 @@ class AllowedURIValidator(URIValidator):
                 params={"name": self.name, "value": value, "cause": "invalid_scheme"},
             )
 
-        if query and not self.allow_query:
+        # As with the fragment below, urlsplit() reports query == "" both for a URI
+        # with no query and for one ending in a bare "?", so the raw string is what
+        # distinguishes them.  Only a "?" ahead of any "#" opens a query component;
+        # one inside a fragment belongs to the fragment.
+        if "?" in value.partition("#")[0] and not self.allow_query:
             raise ValidationError(
                 "%(name)s URI validation error. %(cause)s: %(value)s",
                 params={"name": self.name, "value": value, "cause": "query string not allowed"},
             )
-        if fragment and not self.allow_fragments:
+        # Test the raw string rather than the parsed fragment: urlsplit() reports
+        # fragment == "" both for a URI with no fragment and for one ending in a
+        # bare "#", but the latter carries an (empty) fragment component that
+        # RFC 6749 section 3.1.2 forbids just the same.  Catching it here means a
+        # misconfiguration is reported at save time, rather than being stored and
+        # then never matching -- redirect_to_uri_allowed() denies any "#".
+        if "#" in value and not self.allow_fragments:
             raise ValidationError(
                 "%(name)s URI validation error. %(cause)s: %(value)s",
                 params={"name": self.name, "value": value, "cause": "fragment not allowed"},

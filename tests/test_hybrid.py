@@ -59,7 +59,9 @@ class BaseTest(TestCase):
         cls.application = Application(
             name="Hybrid Test Application",
             redirect_uris=(
-                "http://localhost http://example.com http://example.org custom-scheme://example.com"
+                "http://localhost http://example.com http://example.org custom-scheme://example.com "
+                "http://example.com?foo=bar http://example.org?foo=bar "
+                "http://example.com?bar=baz&foo=bar"
             ),
             user=cls.hy_dev_user,
             client_type=Application.CLIENT_CONFIDENTIAL,
@@ -1107,7 +1109,7 @@ class TestHybridTokenView(BaseTest):
         Tests code exchange succeed when redirect uri matches the one used for code request
         """
         self.client.login(username="hy_test_user", password="123456")
-        self.application.redirect_uris = "http://localhost http://example.com?foo=bar"
+        self.application.redirect_uris = "http://localhost http://example.com?bar=baz&foo=bar"
         self.application.save()
 
         # retrieve a valid authorization code
@@ -1144,7 +1146,7 @@ class TestHybridTokenView(BaseTest):
         Tests code exchange succeed when redirect uri matches the one used for code request
         """
         self.client.login(username="hy_test_user", password="123456")
-        self.application.redirect_uris = "http://localhost http://example.com?foo=bar"
+        self.application.redirect_uris = "http://localhost http://example.com?bar=baz&foo=bar"
         self.application.save()
 
         # retrieve a valid authorization code

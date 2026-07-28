@@ -69,6 +69,45 @@ class TestAllowedURIValidator(TestCase):
             # Check ValidationError not thrown
             validator(uri)
 
+    def test_bare_fragment_delimiter_rejected(self):
+        # A trailing "#" is an empty fragment component, which RFC 6749 §3.1.2
+        # forbids just as much as a populated one. urlsplit() reports fragment ==
+        # "" for it, so the raw string is what has to be checked -- otherwise it
+        # is stored and then never matches, since redirect_to_uri_allowed()
+        # denies any URI containing "#".
+        validator = AllowedURIValidator(["https"], "test", allow_path=True)
+        for uri in ["https://example.com/cb#", "https://example.com/cb#frag"]:
+            with self.assertRaises(ValidationError):
+                validator(uri)
+
+        # A percent-encoded %23 is not a fragment delimiter and stays valid.
+        validator("https://example.com/cb%23")
+
+        # ...and where fragments are allowed, both forms still pass.
+        permissive = AllowedURIValidator(["https"], "test", allow_path=True, allow_fragments=True)
+        permissive("https://example.com/cb#")
+        permissive("https://example.com/cb#frag")
+
+    def test_bare_query_delimiter_rejected(self):
+        # Same shape as the bare "#" above: urlsplit() reports query == "" for a
+        # URI ending in "?", so it slipped past the allow_query=False gate that
+        # allowed_origins relies on.
+        validator = AllowedURIValidator(["https"], "test")
+        for uri in ["https://example.com?", "https://example.com?a=1"]:
+            with self.assertRaises(ValidationError):
+                validator(uri)
+
+        # A "?" inside a fragment belongs to the fragment and does not open a
+        # query component, so it must not trip the allow_query=False gate. With
+        # fragments permitted there is nothing left to reject, and the URI passes.
+        fragments_ok = AllowedURIValidator(["https"], "test", allow_fragments=True)
+        fragments_ok("https://example.com#a?b")
+
+        # ...and where queries are allowed, both forms still pass.
+        permissive = AllowedURIValidator(["https"], "test", allow_query=True)
+        permissive("https://example.com?")
+        permissive("https://example.com?a=1")
+
     def test_allow_paths_invalid_urls(self):
         validator = AllowedURIValidator(["https", "myapp"], "test", allow_path=True)
         bad_uris = [
