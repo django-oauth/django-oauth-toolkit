@@ -69,7 +69,7 @@ usually care about are:
    is to set a new one in both the admin and the client. (If you turn **Hash client secret** off,
    the secret stays readable on the form instead.) A few fields are filled in automatically and are
    read-only — for example, the ones marking applications that registered themselves through
-   :doc:`dynamic client registration <../cimd>`.
+   :doc:`dynamic client registration <../views/dynamic_client_registration>`.
 
 Reviewing and revoking tokens
 -----------------------------
@@ -85,5 +85,5 @@ refresh tokens** from the actions menu. Revoking a token also revokes its partne
 refresh or access token issued alongside it — so a revoked client can't quietly refresh its way
 back in.
 
-To clean up tokens that have simply *expired*, run the :ref:`cleartokens` management command on a
-schedule instead of deleting rows by hand.
+To clear out tokens that have simply *expired*, run the :ref:`cleartokens` management command on a
+schedule — it removes expired tokens in bulk, so you don't have to hunt them down in the admin.
