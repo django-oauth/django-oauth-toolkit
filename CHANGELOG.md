@@ -120,10 +120,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     authorization server reflect them into the client's callback alongside the
     authorization code, the redirect-URI manipulation class described in
     [RFC 9700 §4.1](https://datatracker.ietf.org/doc/html/rfc9700#section-4.1).
+  * A request could carry **path parameters** (`https://example.com/cb;evil=1`). `urlparse()`
+    peels `;params` off the last path segment into a separate attribute, and only `.path`
+    was compared, so these smuggled data to the callback the same way extra query
+    parameters did. Matching now uses `urlsplit()`, which leaves them in the path.
+  * A request could carry **credentials** (`https://evil@example.com/cb`). Only `.hostname`
+    was compared, so userinfo rode along unnoticed. Credentials are not part of a
+    registered callback and are now rejected on either side.
   * A request could carry a **fragment**, which `urlparse()` split off before comparison,
     so `https://example.com/cb#x` matched a registered `https://example.com/cb`.
     [RFC 6749 §3.1.2](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2) states
-    the endpoint URI MUST NOT include a fragment component.
+    the endpoint URI MUST NOT include a fragment component. A bare trailing `#` is an
+    empty fragment component and is rejected too; a percent-encoded `%23` is not a
+    fragment delimiter and is unaffected.
 
   Case-insensitive scheme/host comparison (RFC 3986 §6.2.2.1 normalization) and the
   RFC 8252 §7.3 loopback any-port exemption are unchanged; `ALLOW_URI_WILDCARDS` still

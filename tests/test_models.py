@@ -1293,9 +1293,28 @@ exact_redirect_match_params = [
     # Reordered parameters are no longer accepted; matching is by string.
     ("https://example.com/cb?b=2&a=1", ["https://example.com/cb?a=1&b=2"], False),
     # RFC 6749 §3.1.2: the endpoint URI MUST NOT include a fragment component.
-    # urlparse() splits the fragment off, so this used to match.
+    # urlparse() splits the fragment off, so these used to match.
     ("https://example.com/cb#x", ["https://example.com/cb"], False),
     ("https://example.com/cb?a=1#x", ["https://example.com/cb?a=1"], False),
+    # A bare "#" is an empty fragment component, not the absence of one; .fragment
+    # is "" for both, so the raw string is what has to be tested.
+    ("https://example.com/cb#", ["https://example.com/cb"], False),
+    # ...but a percent-encoded %23 is not a fragment delimiter.
+    ("https://example.com/cb%23", ["https://example.com/cb%23"], True),
+    # A registered URI carrying a fragment cannot authorize anything, since every
+    # request form that would match it is rejected above.
+    ("https://example.com/cb", ["https://example.com/cb#frag"], False),
+    # urlparse() peels ";params" off the last path segment into a separate
+    # attribute, so comparing .path alone let these smuggle data to the callback.
+    ("https://example.com/cb;evil=1", ["https://example.com/cb"], False),
+    ("https://example.com/cb;evil=1?a=1", ["https://example.com/cb?a=1"], False),
+    # ...and a registered URI that genuinely carries parameters still matches.
+    ("https://example.com/cb;a=1", ["https://example.com/cb;a=1"], True),
+    # Credentials are not part of a registered callback: only .hostname was
+    # compared, so userinfo rode along unnoticed.
+    ("https://evil@example.com/cb", ["https://example.com/cb"], False),
+    ("https://user:pw@example.com/cb", ["https://example.com/cb"], False),
+    ("https://example.com/cb", ["https://evil@example.com/cb"], False),
 ]
 
 

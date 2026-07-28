@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 from typing import Callable, Optional, Union
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from django.apps import apps
 from django.conf import settings
@@ -1136,17 +1136,36 @@ def redirect_to_uri_allowed(uri, allowed_uris):
     if not isinstance(allowed_uris, list):
         raise ValueError("allowed_uris must be a list")
 
-    parsed_uri = urlparse(uri)
+    # urlsplit() rather than urlparse(): urlparse() peels ";params" off the last
+    # path segment into a separate attribute, so comparing .path alone would let a
+    # request smuggle "/cb;evil=1" past a registered "/cb".  urlsplit() leaves the
+    # parameters in .path, where they are compared like the rest of it.
+    parsed_uri = urlsplit(uri)
 
     # RFC 6749 section 3.1.2: "The endpoint URI MUST NOT include a fragment
-    # component."  urlparse() splits the fragment off before the component
-    # comparisons below, so without this an appended fragment would be ignored
-    # and the URI would match its registered, fragment-less counterpart.
-    if parsed_uri.fragment:
+    # component."  Test the raw string rather than .fragment, which is "" both for
+    # a URI with no fragment and for one ending in a bare "#" -- the latter is a
+    # (empty) fragment component and is not the registered URI.  A percent-encoded
+    # %23 is not a fragment delimiter and is unaffected.
+    if "#" in uri:
+        return False
+
+    # Credentials are not part of a registered callback and must not ride along on
+    # the request; without this "https://evil@example.com/cb" would match a
+    # registered "https://example.com/cb", since only .hostname is compared below.
+    if "@" in parsed_uri.netloc:
         return False
 
     for allowed_uri in allowed_uris:
-        parsed_allowed_uri = urlparse(allowed_uri)
+        # A registered URI carrying a fragment or credentials cannot authorize
+        # anything: the request forms that would match it are rejected above.
+        if "#" in allowed_uri:
+            continue
+
+        parsed_allowed_uri = urlsplit(allowed_uri)
+
+        if "@" in parsed_allowed_uri.netloc:
+            continue
 
         if parsed_allowed_uri.scheme != parsed_uri.scheme:
             # match failed, continue
