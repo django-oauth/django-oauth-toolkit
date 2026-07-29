@@ -189,9 +189,10 @@ token hash, so a database read no longer discloses usable tokens. Existing clear
 tokens are left in place and age out as they expire or rotate.
 
 This covers the RFC 7592 registration access token as well. Since the server keeps no
-readable copy, that token is returned in full only by the registration response that
-mints it; the management endpoint's ``GET`` echoes back whichever token the request
-presented.
+readable copy, a client only receives that token from a response that mints one: the
+registration response, and — when ``DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE`` is
+enabled — the management ``PUT`` that rotates it. A management ``GET``, or a ``PUT``
+without rotation, echoes back whichever token the request presented.
 
 .. warning::
    Hashed token storage is incompatible with the refresh-token grace period, which
