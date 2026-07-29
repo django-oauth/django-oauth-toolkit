@@ -1010,7 +1010,7 @@ class TestDCRRegistrationTokenStorage(TestCase):
         response = self.client.get(self.management_url, **_bearer(self.registration_token))
         assert response.json()["registration_access_token"] == self.registration_token
 
-    def test_rotated_token_is_returned_and_usable(self):
+    def test_rotation_returns_a_usable_token_and_retires_the_old_one(self):
         response = self.client.put(
             self.management_url,
             data=json.dumps(
@@ -1031,3 +1031,6 @@ class TestDCRRegistrationTokenStorage(TestCase):
         stored = AccessToken.objects.get(token_checksum=hashlib.sha256(rotated.encode()).hexdigest())
         assert stored.token == ""
         assert self.client.get(self.management_url, **_bearer(rotated)).status_code == 200
+
+        rotated_away = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert rotated_away.status_code == 401
