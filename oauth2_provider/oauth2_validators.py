@@ -35,7 +35,9 @@ from . import cimd
 from .bcp import bcp_compliant
 from .exceptions import FatalClientError
 from .models import (
+    AbstractAccessToken,
     AbstractApplication,
+    AbstractRefreshToken,
     get_access_token_model,
     get_application_model,
     get_grant_model,
@@ -43,6 +45,7 @@ from .models import (
     get_refresh_token_model,
     refresh_token_expire_timedelta,
     revoke_access_token,
+    set_token_value,
 )
 from .scopes import get_scopes_backend
 from .settings import oauth2_settings
@@ -1058,29 +1061,15 @@ class OAuth2Validator(RequestValidator):
         else:
             self._create_access_token(expires, request, token)
 
-    def _set_token_value(self, token_instance, raw_token):
+    def _set_token_value(
+        self, token_instance: AbstractAccessToken | AbstractRefreshToken, raw_token: str
+    ) -> None:
         """
-        Assign the raw token to a token instance, redacting the value stored at rest
-        when COMPLIANT_BCP_RFC9700_TOKEN_STORAGE is enabled (RFC 9700).
+        Assign the raw token to a token instance, honouring RFC 9700 token storage.
 
-        The lookup checksum (``token_checksum``) is always derived from the raw token;
-        when redacting, the raw value is stashed on ``_raw_token`` (used only to compute
-        the checksum) and the ``token`` column is left blank so the reusable token is
-        never persisted.
-
-        Plaintext storage is an ambient config posture exercised on every token
-        issuance, so (unlike the request-time gates) it is surfaced by the ``--deploy``
-        system check ``W006`` rather than a per-token warning here. See
-        :mod:`oauth2_provider.bcp`.
+        See :func:`oauth2_provider.models.set_token_value`.
         """
-        if oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE:
-            token_instance._raw_token = raw_token
-            token_instance.token = ""
-        else:
-            token_instance.token = raw_token
-            # Clear any stale redaction marker so a later save recomputes the checksum
-            # from this plaintext token rather than a previously stashed raw value.
-            token_instance._raw_token = None
+        set_token_value(token_instance, raw_token)
 
     def _create_access_token(self, expires, request, token, source_refresh_token=None):
         id_token = token.get("id_token", None)

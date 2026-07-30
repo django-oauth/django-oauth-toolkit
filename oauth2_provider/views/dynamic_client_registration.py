@@ -9,10 +9,12 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
+from typing import Any
 
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -20,7 +22,13 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from ..compat import login_not_required
-from ..models import get_access_token_model, get_application_model
+from ..models import (
+    AbstractAccessToken,
+    AbstractApplication,
+    get_access_token_model,
+    get_application_model,
+    set_token_value,
+)
 from ..settings import oauth2_settings
 from ..utils import parse_bearer_token
 
@@ -200,9 +208,13 @@ def _build_application_kwargs(data):
     return kwargs, None
 
 
-def _issue_registration_token(application, user):
+def _issue_registration_token(application: AbstractApplication, user: AbstractBaseUser | None) -> str:
     """
-    Create and return a new registration AccessToken for *application*.
+    Create a new registration AccessToken for *application* and return its raw value.
+
+    Only the raw value is returned, because reading it back off the row is not an
+    option: under ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`` the ``token`` column is left
+    blank and only the lookup checksum is persisted.
 
     Token scope is ``oauth2_settings.DCR_REGISTRATION_SCOPE``.
     Expiry: far-future (year 9999) when ``DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS`` is None,
@@ -218,18 +230,29 @@ def _issue_registration_token(application, user):
     else:
         expires = timezone.now() + timedelta(seconds=expire_seconds)
 
-    token = AccessToken.objects.create(
+    raw_token = generate_client_secret()
+    token = AccessToken(
         application=application,
         user=user,
-        token=generate_client_secret(),
         expires=expires,
         scope=oauth2_settings.DCR_REGISTRATION_SCOPE,
     )
-    return token
+    # Assigning ``token`` directly would store a reusable credential in cleartext even
+    # when the deployment asked for hashed-at-rest storage.
+    set_token_value(token, raw_token)
+    token.save()
+    return raw_token
 
 
-def _application_to_response(application, registration_token, request):
-    """Build the RFC 7591 response dict for *application*."""
+def _application_to_response(
+    application: AbstractApplication, registration_access_token: str, request: HttpRequest
+) -> dict[str, Any]:
+    """Build the RFC 7591 response dict for *application*.
+
+    *registration_access_token* is the raw token value rather than the model instance:
+    under hashed-at-rest storage the stored column is blank, so the value can only come
+    from whoever just issued it or from the request that presented it.
+    """
     data = {
         "client_id": application.client_id,
         "redirect_uris": application.redirect_uris.split() if application.redirect_uris else [],
@@ -237,7 +260,7 @@ def _application_to_response(application, registration_token, request):
         "token_endpoint_auth_method": (
             "none" if application.client_type == "public" else "client_secret_basic"
         ),
-        "registration_access_token": registration_token.token,
+        "registration_access_token": registration_access_token,
         "registration_client_uri": request.build_absolute_uri(
             reverse("oauth2_provider:dcr-register-management", kwargs={"client_id": application.client_id})
         ),
@@ -314,9 +337,9 @@ class DynamicClientRegistrationView(View):
 
         with transaction.atomic():
             application.save()
-            registration_token = _issue_registration_token(application, user)
+            raw_registration_token = _issue_registration_token(application, user)
 
-        response_data = _application_to_response(application, registration_token, request)
+        response_data = _application_to_response(application, raw_registration_token, request)
         if raw_secret:
             response_data["client_secret"] = raw_secret
 
@@ -337,36 +360,51 @@ class DynamicClientRegistrationManagementView(View):
             return JsonResponse({"error": "not_found"}, status=404)
         return super().dispatch(request, *args, **kwargs)
 
-    def _get_application_from_registration_token(self, request, client_id):
+    def _get_application_from_registration_token(
+        self, request: HttpRequest, client_id: str
+    ) -> tuple[AbstractApplication, AbstractAccessToken, str] | tuple[None, HttpResponse, None]:
         """
         Validate Bearer token, check scope, check client_id match.
 
-        Returns (application, registration_token) or (None, error_response).
+        Returns (application, registration_token, presented_token) or
+        (None, error_response, None).
         """
-        raw_token = parse_bearer_token(request.META.get("HTTP_AUTHORIZATION", ""))
-        if raw_token is None:
-            return None, _error_response(
-                "invalid_token",
-                "Registration access token required",
-                status=401,
+        presented_token = parse_bearer_token(request.META.get("HTTP_AUTHORIZATION", ""))
+        if presented_token is None:
+            return (
+                None,
+                _error_response(
+                    "invalid_token",
+                    "Registration access token required",
+                    status=401,
+                ),
+                None,
             )
 
-        token_checksum = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        token_checksum = hashlib.sha256(presented_token.encode("utf-8")).hexdigest()
         AccessToken = get_access_token_model()
         try:
             token = AccessToken.objects.get(token_checksum=token_checksum)
         except AccessToken.DoesNotExist:
-            return None, _error_response(
-                "invalid_token",
-                "Invalid registration access token",
-                status=401,
+            return (
+                None,
+                _error_response(
+                    "invalid_token",
+                    "Invalid registration access token",
+                    status=401,
+                ),
+                None,
             )
 
         if not token.is_valid([oauth2_settings.DCR_REGISTRATION_SCOPE]):
-            return None, _error_response(
-                "invalid_token",
-                "Registration access token is expired or invalid",
-                status=401,
+            return (
+                None,
+                _error_response(
+                    "invalid_token",
+                    "Registration access token is expired or invalid",
+                    status=401,
+                ),
+                None,
             )
 
         application = token.application
@@ -375,7 +413,7 @@ class DynamicClientRegistrationManagementView(View):
             # belongs on a 401 challenge, and the token simply isn't valid for
             # this registration URI. This also avoids confirming whether the
             # requested client_id exists.
-            return None, _error_response("invalid_token", "Token does not match client_id", status=401)
+            return None, _error_response("invalid_token", "Token does not match client_id", status=401), None
 
         # RFC 7592 management only applies to dynamically registered clients.
         # This stops a regular access token that happens to carry
@@ -386,28 +424,38 @@ class DynamicClientRegistrationManagementView(View):
         # a "not application.registration_source" test would let every
         # application through the management endpoint.
         if application.registration_source != application.RegistrationSource.DCR:
-            return None, _error_response(
-                "invalid_token",
-                "Token was not issued by the registration endpoint",
-                status=401,
+            return (
+                None,
+                _error_response(
+                    "invalid_token",
+                    "Token was not issued by the registration endpoint",
+                    status=401,
+                ),
+                None,
             )
 
-        return application, token
+        return application, token, presented_token
 
-    def get(self, request, client_id, *args, **kwargs):
-        application, result = self._get_application_from_registration_token(request, client_id)
+    def get(self, request: HttpRequest, client_id: str, *args, **kwargs) -> HttpResponse:
+        application, result, presented_token = self._get_application_from_registration_token(
+            request, client_id
+        )
         if application is None:
             return result  # error response
 
-        registration_token = result
-        return JsonResponse(_application_to_response(application, registration_token, request))
+        assert presented_token is not None  # paired with the application by the helper
+        return JsonResponse(_application_to_response(application, presented_token, request))
 
-    def put(self, request, client_id, *args, **kwargs):
-        application, result = self._get_application_from_registration_token(request, client_id)
+    def put(self, request: HttpRequest, client_id: str, *args, **kwargs) -> HttpResponse:
+        application, result, presented_token = self._get_application_from_registration_token(
+            request, client_id
+        )
         if application is None:
             return result
 
+        assert presented_token is not None  # paired with the application by the helper
         registration_token = result
+        response_token = presented_token
 
         data, err = _parse_metadata(request.body)
         if err:
@@ -430,14 +478,13 @@ class DynamicClientRegistrationManagementView(View):
 
             if oauth2_settings.DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE:
                 user = application.user
-                new_token = _issue_registration_token(application, user)
+                response_token = _issue_registration_token(application, user)
                 registration_token.delete()
-                registration_token = new_token
 
-        return JsonResponse(_application_to_response(application, registration_token, request))
+        return JsonResponse(_application_to_response(application, response_token, request))
 
-    def delete(self, request, client_id, *args, **kwargs):
-        application, result = self._get_application_from_registration_token(request, client_id)
+    def delete(self, request: HttpRequest, client_id: str, *args, **kwargs) -> HttpResponse:
+        application, result, _ = self._get_application_from_registration_token(request, client_id)
         if application is None:
             return result
 
