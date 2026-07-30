@@ -1,15 +1,26 @@
+"""Backward-compatible import shim.
+
+``oauth2_provider.compat`` has moved to
+``oauth2_provider.core.compat``.
+
+Importing from this old path still works but is deprecated and will be removed
+in django-oauth-toolkit 4.0.
 """
-The `compat` module provides support for backwards compatibility with older
-versions of Django and Python.
-"""
 
-try:
-    # Django 5.1 introduced LoginRequiredMiddleware, and login_not_required decorator
-    from django.contrib.auth.decorators import login_not_required
-except ImportError:
+import sys
+import warnings
 
-    def login_not_required(view_func):
-        return view_func
+from oauth2_provider.core import compat as _moved
 
 
-__all__ = ["login_not_required"]
+warnings.warn(
+    "oauth2_provider.compat has moved to oauth2_provider.core.compat. "
+    "The old import path is deprecated and will be removed in "
+    "django-oauth-toolkit 4.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Alias the old module name to the moved module so every attribute (including
+# private, underscore-prefixed names) resolves with identical object identity.
+sys.modules[__name__] = _moved

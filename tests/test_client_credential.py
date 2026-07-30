@@ -145,7 +145,14 @@ class TestExtendedRequest(BaseTest):
         with pytest.raises(SuspiciousOperation):
             ExampleView().verify_request(request)
 
-    @patch("oauth2_provider.views.mixins.OAuthLibMixin.get_oauthlib_core")
+    # Patch the imported class object directly rather than a dotted string that
+    # re-resolves through sys.modules: oauth2_provider.views.mixins is a re-export
+    # shim, and a test elsewhere in the suite may pop + re-import it (to re-trigger
+    # its deprecation warning), which rebinds the module's OAuthLibMixin to a fresh
+    # class. A string patch would then target that reloaded class while ExampleView
+    # still subclasses the original, so the mock would never be hit. patch.object
+    # binds to the same class object ExampleView uses and is immune to that.
+    @patch.object(OAuthLibMixin, "get_oauthlib_core")
     def test_reraises_value_errors_as_is(self, patched_core):
         patched_core.return_value.verify_request.side_effect = ValueError("Generic error")
 

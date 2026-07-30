@@ -1,50 +1,24 @@
-from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponseRedirect
-from django.urls import reverse_lazy
-from django.views.generic import DeleteView, ListView
+"""Backward-compatible import shim.
 
-from ..models import get_access_token_model, revoke_access_token
+``oauth2_provider.views.token`` has moved to
+``oauth2_provider.authorization_server.views.token``.
 
+Importing from this old path still works but is deprecated and will be removed
+in django-oauth-toolkit 4.0.
+"""
 
-class AuthorizedTokensListView(LoginRequiredMixin, ListView):
-    """
-    Show a page where the current logged-in user can see his tokens so they can revoke them
-    """
+import sys
+import warnings
 
-    context_object_name = "authorized_tokens"
-    template_name = "oauth2_provider/authorized-tokens.html"
-    model = get_access_token_model()
-
-    def get_queryset(self):
-        """
-        Show only user's tokens
-        """
-        return super().get_queryset().select_related("application").filter(user=self.request.user)
+from oauth2_provider.authorization_server.views import token as _moved
 
 
-class AuthorizedTokenDeleteView(LoginRequiredMixin, DeleteView):
-    """
-    View for revoking a specific token
-    """
+warnings.warn(
+    "oauth2_provider.views.token has moved to oauth2_provider.authorization_server.views.token. "
+    "The old import path is deprecated and will be removed in "
+    "django-oauth-toolkit 4.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-    template_name = "oauth2_provider/authorized-token-delete.html"
-    success_url = reverse_lazy("oauth2_provider:authorized-token-list")
-    model = get_access_token_model()
-
-    def get_queryset(self):
-        return super().get_queryset().filter(user=self.request.user)
-
-    def form_valid(self, form):
-        """
-        Revoke the access token and its associated refresh token.
-
-        Deleting the access token on its own leaves the refresh token usable
-        (the ``RefreshToken.access_token`` FK is ``SET_NULL``), so it can still be
-        exchanged for a fresh access token, defeating the revocation. Per
-        :rfc:`7009#section-2.1` revoking an access token may also revoke the
-        respective refresh token; for a user-initiated "revoke access" action that
-        is the only unsurprising behavior. ``revoke_access_token`` is the shared
-        revoke path used here, by the ``/revoke/`` endpoint, and by the admin.
-        """
-        revoke_access_token(self.object)
-        return HttpResponseRedirect(self.get_success_url())
+sys.modules[__name__] = _moved
