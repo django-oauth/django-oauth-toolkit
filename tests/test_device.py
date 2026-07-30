@@ -451,7 +451,8 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
     def test_device_confirm_view_rejects_different_authenticated_user(self):
         """
         A user must not be able to approve or deny a device grant that was
-        associated with another user during the user-code step.
+        associated with another user during the user-code step, nor view its
+        status.
         """
         UserModel.objects.create_user(
             username="attacker",
@@ -479,6 +480,13 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
 
         post_response = self.client.post(device_confirm_url, data={"action": "accept"})
         assert post_response.status_code == 404
+
+        device_grant_status_url = reverse(
+            "oauth2_provider:device-grant-status",
+            kwargs={"user_code": device.user_code, "client_id": device.client_id},
+        )
+        status_response = self.client.get(device_grant_status_url)
+        assert status_response.status_code == 404
 
         device.refresh_from_db()
         assert device.status == DeviceModel.AUTHORIZATION_PENDING
