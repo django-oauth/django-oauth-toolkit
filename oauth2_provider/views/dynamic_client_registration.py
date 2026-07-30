@@ -22,7 +22,13 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from ..compat import login_not_required
-from ..models import AbstractAccessToken, AbstractApplication, get_access_token_model, get_application_model
+from ..models import (
+    AbstractAccessToken,
+    AbstractApplication,
+    get_access_token_model,
+    get_application_model,
+    set_token_value,
+)
 from ..settings import oauth2_settings
 from ..utils import parse_bearer_token
 
@@ -232,9 +238,8 @@ def _issue_registration_token(application: AbstractApplication, user: AbstractBa
         scope=oauth2_settings.DCR_REGISTRATION_SCOPE,
     )
     # Assigning ``token`` directly would store a reusable credential in cleartext even
-    # when the deployment asked for hashed-at-rest storage; the validator is what
-    # applies the redaction consistently for every other token this library issues.
-    oauth2_settings.OAUTH2_VALIDATOR_CLASS()._set_token_value(token, raw_token)
+    # when the deployment asked for hashed-at-rest storage.
+    set_token_value(token, raw_token)
     token.save()
     return raw_token
 
@@ -438,6 +443,7 @@ class DynamicClientRegistrationManagementView(View):
         if application is None:
             return result  # error response
 
+        assert presented_token is not None  # paired with the application by the helper
         return JsonResponse(_application_to_response(application, presented_token, request))
 
     def put(self, request: HttpRequest, client_id: str, *args, **kwargs) -> HttpResponse:
@@ -447,6 +453,7 @@ class DynamicClientRegistrationManagementView(View):
         if application is None:
             return result
 
+        assert presented_token is not None  # paired with the application by the helper
         registration_token = result
         response_token = presented_token
 
