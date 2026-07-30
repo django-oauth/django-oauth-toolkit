@@ -168,6 +168,7 @@ jobs:
     name: DOT SQLite (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
     runs-on: ubuntu-latest
     permissions:
+      contents: read # An explicit permissions block drops the defaults; checkout on a private repo needs this
       id-token: write # Required for Codecov OIDC token
     strategy:
       fail-fast: false
