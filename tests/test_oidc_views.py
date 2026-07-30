@@ -743,13 +743,44 @@ def test_rp_initiated_logout_get_id_token(logged_in_client, oidc_tokens, rp_sett
 
 @pytest.mark.django_db(databases="__all__")
 def test_rp_initiated_logout_get_revoked_id_token(logged_in_client, oidc_tokens, rp_settings):
+    # A revoked ID Token means the End-User is not logged in with the OP at the requesting RP. Logout
+    # requests are idempotent, so this is explicitly not an error; the End-User is prompted instead,
+    # just as they are for a request that carries no `id_token_hint` at all.
     validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
     validator._load_id_token(oidc_tokens.id_token).revoke()
     rsp = logged_in_client.get(
         reverse("oauth2_provider:rp-initiated-logout"), data={"id_token_hint": oidc_tokens.id_token}
     )
-    assert rsp.status_code == 400
+    assert rsp.status_code == 200
     assert is_logged_in(logged_in_client)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_rp_initiated_logout_second_rp_after_logout(logged_in_client, oidc_tokens, rp_settings):
+    """A second RP's logout request must still be honoured after the first RP logged the user out.
+
+    Both RPs hold an ID Token for the same End-User. Once the first RP logs them out, `do_logout()`
+    deletes the End-User's ID Tokens, so the second RP's `id_token_hint` refers to an IDToken that is
+    gone. That request must not be rejected, and the second RP must still get its redirect.
+
+    """
+    id_token_hint = oidc_tokens.id_token
+
+    # First RP logs the End-User out. This deletes their ID Tokens.
+    rsp = logged_in_client.get(
+        reverse("oauth2_provider:rp-initiated-logout"),
+        data={"id_token_hint": id_token_hint, "post_logout_redirect_uri": "http://example.org"},
+    )
+    assert rsp.status_code == 302
+    assert not is_logged_in(logged_in_client)
+
+    # The second RP now presents its own, now orphaned, id_token_hint.
+    rsp = logged_in_client.get(
+        reverse("oauth2_provider:rp-initiated-logout"),
+        data={"id_token_hint": id_token_hint, "post_logout_redirect_uri": "http://example.org"},
+    )
+    assert rsp.status_code == 302
+    assert rsp["Location"] == "http://example.org"
 
 
 @pytest.mark.django_db(databases="__all__")
