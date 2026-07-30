@@ -7,11 +7,39 @@ cycle, and importing them by their old path must resolve to the exact same
 module/objects as the new canonical path.
 """
 
+import contextlib
 import importlib
 import sys
 import warnings
 
 import pytest
+
+
+@contextlib.contextmanager
+def _reimport_without_leaking(modname):
+    """Re-trigger a shim's import-time warning without leaking a reloaded module.
+
+    Several tests below pop a shim from ``sys.modules`` and import it again so its
+    import-time ``DeprecationWarning`` fires a second time. For a *re-export* shim
+    (e.g. ``oauth2_provider.views.mixins``, which defines the combined
+    ``OAuthLibMixin`` in its own body) re-executing the module creates a brand-new
+    class object for every name it defines. Any code that already subclassed the
+    original class -- test view classes elsewhere in the suite, ``mock.patch``
+    targets -- would then diverge from the freshly imported module, so patching
+    ``<shim>.OAuthLibMixin.<attr>`` no longer affects those subclasses. Under
+    ``pytest -n auto --dist loadfile`` that surfaces as a flaky failure in whatever
+    file happens to share the worker. Restore the original module object afterwards
+    so its identity is preserved for the rest of the session.
+    """
+    saved = sys.modules.get(modname)
+    sys.modules.pop(modname, None)
+    try:
+        yield
+    finally:
+        if saved is not None:
+            sys.modules[modname] = saved
+        else:
+            sys.modules.pop(modname, None)
 
 
 # old dotted path -> new canonical dotted path
@@ -91,15 +119,14 @@ def test_old_path_resolves_to_moved_module(old, new):
 
 @pytest.mark.parametrize("old", sorted(m for m in MOVED_MODULES if m not in SILENT_SHIMS))
 def test_old_path_emits_deprecation_warning(old):
-    # Force the shim file to execute again by dropping the cached alias.
-    sys.modules.pop(old, None)
-    with pytest.warns(DeprecationWarning, match="has moved to"):
+    # Force the shim file to execute again by dropping the cached alias, then
+    # restore the original module so a reloaded re-export shim can't leak.
+    with _reimport_without_leaking(old), pytest.warns(DeprecationWarning, match="has moved to"):
         importlib.import_module(old)
 
 
 def test_admin_shim_is_silent():
-    sys.modules.pop("oauth2_provider.admin", None)
-    with warnings.catch_warnings():
+    with _reimport_without_leaking("oauth2_provider.admin"), warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         importlib.import_module("oauth2_provider.admin")  # must not raise
 
@@ -115,8 +142,7 @@ def test_split_shim_symbol_matches_canonical(old, symbol, new):
 
 @pytest.mark.parametrize("old", sorted({o for o, _, _ in SPLIT_SHIM_SYMBOLS}))
 def test_split_shim_warns(old):
-    sys.modules.pop(old, None)
-    with pytest.warns(DeprecationWarning, match="has moved"):
+    with _reimport_without_leaking(old), pytest.warns(DeprecationWarning, match="has moved"):
         importlib.import_module(old)
 
 
