@@ -193,9 +193,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   §2.2) without disclosing whether the token exists.
 * #1799 RFC 7592 registration access tokens now honour `COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`. The
   dynamic client registration views assigned the token straight onto the model instead of routing it
-  through the validator, so a deployment that had opted into hashed-at-rest storage still had this one
-  token persisted in cleartext. The registration response and the management endpoint continue to
-  return the token to its owner; only what is written to the database changes.
+  through the storage path that honours the setting, so a deployment that had opted into hashed-at-rest
+  storage still had this one token persisted in cleartext. The registration response and the management
+  endpoint continue to return the token to its owner; only what is written to the database changes.
 
 ## [3.4.0] - 2026-07-23
 

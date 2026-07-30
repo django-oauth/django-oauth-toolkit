@@ -17,7 +17,7 @@ from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
-from oauth2_provider.models import get_access_token_model, get_application_model
+from oauth2_provider.models import get_access_token_model, get_application_model, set_token_value
 from oauth2_provider.oauth2_backends import _add_iss_to_redirect
 from oauth2_provider.views import ProtectedResourceView
 
@@ -279,6 +279,32 @@ def test_implicit_response_type_rejected_for_non_implicit_client():
 
     validator = OAuth2Validator()
     assert validator.validate_response_type(None, "token", _Client(), None) is False
+
+
+def test_set_token_value_keeps_plaintext_by_default():
+    # Plaintext storage (the default): the column carries the usable token and no
+    # redaction marker is left behind for TokenChecksumField to pick up.
+    class _Tok:
+        pass
+
+    tok = _Tok()
+    set_token_value(tok, "plaintoken")
+    assert tok.token == "plaintoken"
+    assert tok._raw_token is None
+
+
+def test_set_token_value_redacts_under_hashed_storage(oauth2_settings):
+    # Hashed-at-rest storage: the column is blanked and the raw value is stashed for
+    # TokenChecksumField to hash at save time.
+    oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE = True
+
+    class _Tok:
+        pass
+
+    tok = _Tok()
+    set_token_value(tok, "hashedtoken")
+    assert tok.token == ""
+    assert tok._raw_token == "hashedtoken"
 
 
 def test_set_token_value_clears_stale_raw_token_in_plaintext_mode():
