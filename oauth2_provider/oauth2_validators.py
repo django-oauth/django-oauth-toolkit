@@ -1277,11 +1277,10 @@ class OAuth2Validator(RequestValidator):
             superseded = AccessToken.objects.filter(source_refresh_token=rt).exists()
             if grace_expired or not superseded:
                 if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION and rt.token_family:
-                    # Revoked as a set, not row by row: a rotating client's family grows
-                    # by one row per refresh and never shrinks, and a client stuck on a
-                    # retry timer replays the same stale token over and over, so a
-                    # per-row sweep made every one of those requests cost a locking
-                    # SELECT per token the session had ever been issued (#1809).
+                    # Set-based, not row by row: a family grows by one row per refresh
+                    # and a client on a retry timer replays the stale token, so a per-row
+                    # sweep cost a locking SELECT per token in the family, every time
+                    # (#1809).
                     RefreshToken.revoke_family(rt.token_family)
                 return False
 

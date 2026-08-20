@@ -480,14 +480,16 @@ class TestRefreshTokenModel(BaseTestModels):
     def test_revoke_family_matches_revoking_each_member(self):
         """
         revoke_family() must leave the family in the state a revoke() per row would:
-        live members revoked with their access tokens deleted, already revoked members
-        untouched, and nothing outside the family affected. See issue #1809.
+        live members revoked with their access tokens deleted, the revoked timestamp of
+        an already revoked member kept, and nothing outside the family affected. See
+        issue #1809.
         """
         family = uuid.uuid4()
         live = self._make_refresh_token(family)
         live_access_token_pk = live.access_token_id
         already_revoked_at = timezone.now() - timedelta(minutes=5)
         already_revoked = self._make_refresh_token(family, revoked=already_revoked_at)
+        already_revoked_access_token_pk = already_revoked.access_token_id
         other_family = self._make_refresh_token(uuid.uuid4())
         no_family = self._make_refresh_token(None)
 
@@ -503,7 +505,10 @@ class TestRefreshTokenModel(BaseTestModels):
 
         already_revoked.refresh_from_db()
         self.assertEqual(already_revoked.revoked, already_revoked_at)
-        self.assertIsNotNone(already_revoked.access_token_id, "an already revoked row is a no-op")
+        # revoke() nulls access_token as it deletes it, so a revoked row does not
+        # normally have one. Where it does, the family is compromised: it goes too.
+        self.assertIsNone(already_revoked.access_token_id)
+        self.assertFalse(AccessToken.objects.filter(pk=already_revoked_access_token_pk).exists())
 
         for untouched in (other_family, no_family):
             untouched.refresh_from_db()
