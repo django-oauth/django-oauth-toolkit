@@ -1552,10 +1552,15 @@ def test_check_redirect_to_uri_allowed_agrees_with_redirect_to_uri_allowed(
     uri, allowed_uris, expected, oauth2_settings
 ):
     # check_redirect_to_uri_allowed() is the matcher; redirect_to_uri_allowed() is
-    # a thin wrapper over it.  The two must never diverge.
+    # a thin wrapper over it.  Assert the verdict against `expected` on both, not
+    # just that the two agree -- agreement alone holds by construction and would
+    # survive the matcher returning the wrong answer.  Wildcards are enabled here
+    # because this is the only place the wildcard configuration is exercised
+    # against the exact-match corpus.
     oauth2_settings.ALLOW_URI_WILDCARDS = True
     allowed, _reasons = check_redirect_to_uri_allowed(uri, allowed_uris)
-    assert allowed is redirect_to_uri_allowed(uri, allowed_uris)
+    assert allowed is expected
+    assert redirect_to_uri_allowed(uri, allowed_uris) is expected
 
 
 def test_check_redirect_to_uri_allowed_expects_allowed_uri_list():
@@ -1625,14 +1630,36 @@ class TestRedirectURIMismatchLogging(BaseTestModels):
                 assert not self.application.redirect_uri_allowed("https://example.com/other")
         format_reasons.assert_not_called()
 
-    def test_logged_requested_uri_is_truncated_and_escaped(self):
+    def test_logged_requested_uri_is_escaped(self):
+        # Short enough to survive truncation, so the CRLF really is neutralised by
+        # escaping rather than by being cut off past the truncation point.
+        hostile = "https://example.com/cb?x=1\r\nWARNING forged log line"
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            assert not self.application.redirect_uri_allowed(hostile)
+        message = "\n".join(captured.output)
+        assert "...[truncated]" not in message
+        assert "\r" not in message
+        assert "\\r\\n" in message
+
+    def test_logged_requested_uri_is_truncated(self):
         hostile = "https://example.com/cb?x=" + "a" * 10000 + "\r\nWARNING forged"
         with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
             assert not self.application.redirect_uri_allowed(hostile)
         message = "\n".join(captured.output)
         assert "...[truncated]" in message
-        assert "\r" not in message
         assert "WARNING forged" not in message
+
+    def test_logged_registered_uris_are_escaped_truncated_and_capped(self):
+        # Registered URIs are registrant-supplied under DCR/CIMD, so they get the
+        # same treatment as the requested URI: escaped, truncated, and capped.
+        self.application.redirect_uris = " ".join(
+            ["https://example.com/cb%d" % i for i in range(25)] + ["https://example.com/" + "b" * 10000]
+        )
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            assert not self.application.redirect_uri_allowed("https://example.com/nope")
+        message = "\n".join(captured.output)
+        assert "...and 16 further registered URI(s) not listed" in message
+        assert message.count("path differs") == 10
 
     def test_grant_redirect_uri_mismatch_is_logged_without_the_code(self):
         grant = Grant.objects.create(

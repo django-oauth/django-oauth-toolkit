@@ -1245,11 +1245,14 @@ def clear_expired():
     logger.info("%s Expired grant tokens deleted", grants_deleted_no)
 
 
-# A registered URI is operator configuration and is logged in full; a requested URI
-# is unbounded client input (redirect_uri is a TextField on Grant, see #902) and is
-# not.  256 characters is well past any legitimate redirect URI while still short
-# enough that a flood of junk cannot fill the log.
+# Neither side of the comparison is trusted to be bounded.  The requested URI is
+# client input, and the registered URIs only look like operator configuration: under
+# RFC 7591 dynamic registration and CIMD they are supplied by the registrant, and
+# neither path caps their length or their number.  256 characters is well past any
+# legitimate redirect URI, and 10 candidates past any legitimate client, while both
+# stay short enough that a flood of junk cannot fill the log.
 _MAX_LOGGED_URI_LENGTH = 256
+_MAX_LOGGED_CANDIDATES = 10
 
 
 def _loggable_uri(uri: Optional[str]) -> str:
@@ -1273,15 +1276,22 @@ def _format_uri_mismatch_reasons(reasons: list[tuple[Optional[str], str]]) -> st
     Render the reasons collected by :func:`check_redirect_to_uri_allowed` as one
     log-friendly string.
 
+    Candidates are rendered through :func:`_loggable_uri` for the same reason the
+    requested URI is: a registered URI can be registrant-supplied and unbounded.
+
     :param reasons: ``(candidate, reason)`` pairs; a ``None`` candidate is a
         rejection of the requested URI itself rather than of a registered one
     """
     if not reasons:
         return "no URIs are registered"
-    return "; ".join(
-        reason if candidate is None else "{0!r}: {1}".format(candidate, reason)
-        for candidate, reason in reasons
+    listed = "; ".join(
+        reason if candidate is None else "{0}: {1}".format(_loggable_uri(candidate), reason)
+        for candidate, reason in reasons[:_MAX_LOGGED_CANDIDATES]
     )
+    remaining = len(reasons) - _MAX_LOGGED_CANDIDATES
+    if remaining > 0:
+        listed += "; ...and {0} further registered URI(s) not listed".format(remaining)
+    return listed
 
 
 def _log_registered_uri_mismatch(
@@ -1378,7 +1388,7 @@ def check_redirect_to_uri_allowed(
             continue
 
         """ check hostname """
-        # A private-use URI scheme redirect (RFC 8252 section 7.1) has no naming
+        # A private-use URI scheme redirect (RFC 8252 §7.1) has no naming
         # authority, so hostname is None on either side; guard before matching.
         allowed_hostname = parsed_allowed_uri.hostname
         uri_hostname = parsed_uri.hostname

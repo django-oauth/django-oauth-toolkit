@@ -509,8 +509,10 @@ The same messages cover ``post_logout_redirect_uri`` for RP-initiated logout.
 
 .. note::
 
-    The requested URI is client-controlled input. It is truncated and escaped before
-    being logged, but the registered URIs are printed in full, and the log records that
-    someone attempted a particular callback. Enable ``DEBUG`` on a server whose logs you
-    treat accordingly; leaving the ``oauth2_provider`` logger at its default level keeps
-    these messages off entirely.
+    Both the requested URI and the registered URIs are truncated and escaped before
+    being logged, and at most ten registered candidates are listed per message, since
+    under dynamic client registration the registered URIs are supplied by the registrant
+    rather than by you. The log still records that someone attempted a particular
+    callback, so enable ``DEBUG`` on a server whose logs you treat accordingly; leaving
+    the ``oauth2_provider`` logger at its default level keeps these messages off
+    entirely.
