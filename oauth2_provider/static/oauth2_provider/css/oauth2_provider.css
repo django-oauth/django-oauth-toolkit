@@ -1,0 +1,200 @@
+/*
+ * Default styles for the templates shipped with Django OAuth Toolkit.
+ *
+ * These replace the Bootstrap 2.3.2 stylesheet that ``oauth2_provider/base.html``
+ * used to pull from a third-party CDN, together with the inline ``<style>`` block
+ * that lived in the same template. Both are served from this file so the built-in
+ * pages render without an outbound request (air-gapped installs) and under a strict
+ * Content Security Policy such as ``default-src 'self'``, which blocks a foreign
+ * style host and an inline style block alike.
+ *
+ * The class names are the ones the shipped templates already used, so projects that
+ * override only some of those templates keep a consistent look. To restore Bootstrap
+ * (or any other framework), override the ``css`` block of
+ * ``oauth2_provider/base.html``; see the "Templates" page of the documentation.
+ */
+
+:root {
+    --dot-font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --dot-body-bg: #f5f5f5;
+    --dot-surface-bg: #fff;
+    --dot-text: #333;
+    --dot-muted-text: #6c757d;
+    --dot-border: #e5e5e5;
+    --dot-input-border: #ccc;
+    --dot-error: #b94a48;
+    --dot-link: #0b5ed7;
+    --dot-btn-bg: #f0f0f0;
+    --dot-btn-text: #333;
+    --dot-btn-primary-bg: #0d6efd;
+    --dot-btn-danger-bg: #dc3545;
+    --dot-btn-success-bg: #198754;
+    --dot-btn-inverse-text: #fff;
+    --dot-radius: 5px;
+}
+
+body {
+    margin: 0;
+    padding-top: 40px;
+    padding-bottom: 40px;
+    background-color: var(--dot-body-bg);
+    color: var(--dot-text);
+    font-family: var(--dot-font-family);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+a {
+    color: var(--dot-link);
+}
+
+.container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Centered card holding the content of every shipped page. */
+.block-center {
+    max-width: 500px;
+    padding: 19px 29px 29px;
+    margin: 0 auto 20px;
+    background-color: var(--dot-surface-bg);
+    border: 1px solid var(--dot-border);
+    border-radius: var(--dot-radius);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.block-center .block-center-heading {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+/* Lists rendered without markers (application detail). */
+.unstyled {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* Forms. */
+.control-group {
+    margin-bottom: 15px;
+}
+
+.control-label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.form-horizontal .controls,
+.controls {
+    display: block;
+}
+
+input[type="text"],
+input[type="url"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+    box-sizing: border-box;
+    padding: 6px 8px;
+    color: var(--dot-text);
+    background-color: var(--dot-surface-bg);
+    border: 1px solid var(--dot-input-border);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: inherit;
+}
+
+textarea {
+    min-height: 70px;
+}
+
+/* Full-width control, used for the read-only credential fields. */
+.input-block-level {
+    display: block;
+    width: 100%;
+}
+
+.help-block {
+    display: block;
+    margin-top: 5px;
+    color: var(--dot-muted-text);
+}
+
+.help-inline {
+    display: inline-block;
+    margin-top: 5px;
+    color: var(--dot-error);
+}
+
+.control-group.error .control-label,
+.control-group.error .help-inline {
+    color: var(--dot-error);
+}
+
+.control-group.error input,
+.control-group.error select,
+.control-group.error textarea {
+    border-color: var(--dot-error);
+}
+
+/* Buttons. Applied to <a>, <button> and <input type="submit"> alike. */
+.btn {
+    display: inline-block;
+    padding: 6px 12px;
+    margin-bottom: 0;
+    color: var(--dot-btn-text);
+    background-color: var(--dot-btn-bg);
+    border: 1px solid var(--dot-input-border);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.5;
+    text-align: center;
+    text-decoration: none;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.btn:hover,
+.btn:focus {
+    filter: brightness(0.95);
+    text-decoration: none;
+}
+
+.btn-large {
+    padding: 9px 16px;
+    font-size: 16px;
+}
+
+.btn-primary,
+.btn-danger,
+.btn-success {
+    color: var(--dot-btn-inverse-text);
+    border-color: transparent;
+}
+
+.btn-primary {
+    background-color: var(--dot-btn-primary-bg);
+}
+
+.btn-danger {
+    background-color: var(--dot-btn-danger-bg);
+}
+
+.btn-success {
+    background-color: var(--dot-btn-success-bg);
+}
+
+/* Row of buttons (application detail). */
+.btn-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 15px;
+}

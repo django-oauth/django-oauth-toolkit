@@ -47,6 +47,42 @@ The blocks defined in it are:
 
     See ` Django docs on template inheritance <https://docs.djangoproject.com/en/dev/ref/templates/language/#template-inheritance>`_ for more information on the use of blocks.
 
+.. _default-stylesheet:
+
+Default stylesheet
+~~~~~~~~~~~~~~~~~~
+
+The ``css`` block loads a small stylesheet that ships with the package, from
+``static/oauth2_provider/css/oauth2_provider.css``::
+
+    {% block css %}
+        <link href="{% static 'oauth2_provider/css/oauth2_provider.css' %}" rel="stylesheet">
+    {% endblock css %}
+
+It is served like any other static file, so run ``collectstatic`` (or serve the app's
+static files some other way) for the built-in pages to be styled. Because nothing is
+fetched from a third-party host and no inline ``<style>`` is used, the shipped pages
+render offline and under a strict Content Security Policy such as
+``default-src 'self'`` (see :ref:`csp-authorization-form`).
+
+To use your own styles — a CSS framework, or your site's stylesheet — override the
+``css`` block::
+
+    {% extends "oauth2_provider/base.html" %}
+    {% load static %}
+
+    {% block css %}
+        <link href="{% static 'my_project/css/oauth2.css' %}" rel="stylesheet">
+    {% endblock css %}
+
+The shipped templates use these class names, which a replacement stylesheet needs to
+cover: ``container``, ``block-center``, ``block-center-heading``, ``unstyled``,
+``control-group`` (plus ``error``), ``control-label``, ``controls``, ``form-horizontal``,
+``input-block-level``, ``help-block``, ``help-inline``, ``btn``, ``btn-large``,
+``btn-primary``, ``btn-danger``, ``btn-success`` and ``btn-toolbar``. They are the
+Bootstrap 2 names the templates have always used, so a Bootstrap-based override keeps
+working.
+
 authorize.html
 --------------
 

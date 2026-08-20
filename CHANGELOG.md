@@ -61,6 +61,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now surface the field name alongside the message. A custom `ModelForm` that omits one of
   those fields still gets the message as a non-field error, provided it subclasses
   `oauth2_provider.forms.ApplicationForm`.
+* #730 The templates shipped with the toolkit no longer load Bootstrap 2.3.2 from a
+  third-party CDN. `oauth2_provider/base.html` now links a small stylesheet distributed
+  with the package (`static/oauth2_provider/css/oauth2_provider.css`), which also absorbs
+  the inline `<style>` block that template carried. The built-in pages therefore render in
+  air-gapped installs and under a strict Content Security Policy such as
+  `default-src 'self'`, which blocks a foreign style host and an inline style block alike,
+  and the authorization page no longer makes an unpinned (no Subresource Integrity)
+  third-party request while the user is making a consent decision. The stylesheet is served
+  through `staticfiles`, so run `collectstatic` for the pages to be styled. The Bootstrap 2
+  class names used by the templates are unchanged, and the `css` block of `base.html` is
+  still the supported way to substitute your own styles.
 * The `AccessToken` and `RefreshToken` admins now invalidate tokens through a **"Revoke selected"**
   action instead of raw delete (delete is disabled on those two admins). A raw delete of an access
   token left its bound refresh token behind (`RefreshToken.access_token` is `SET_NULL`) — an orphan
