@@ -57,7 +57,10 @@ class OAuthSettingsWrapper:
         return getattr(_oauth2_settings, attr)
 
     def finalize(self):
-        self.settings.finalize()
+        # pytest-django 4.14 renamed the settings fixture's SettingsWrapper.finalize()
+        # to Settings._finalize(); support both so the suite runs on either version.
+        finalize = getattr(self.settings, "_finalize", None) or self.settings.finalize
+        finalize()
         _oauth2_settings.reload()
 
 

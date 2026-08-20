@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import SystemCheckError
 from django.test import override_settings
 
-from oauth2_provider.checks import validate_swapped_model_consistency
+from oauth2_provider.checks import validate_swapped_model_consistency, validate_token_configuration
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 
@@ -22,6 +22,14 @@ class DjangoChecksTestCase(TestCase):
         message = "The token models are expected to be stored in the same database."
         with self.assertRaisesMessage(SystemCheckError, message):
             call_command("check")
+
+    def test_token_configuration_check_runs_without_a_database_alias(self):
+        # Django 6.1 skips `database`-tagged checks unless an alias is passed explicitly
+        # (`manage.py check --database default`). This check only asks the routers where the
+        # token models would be written -- it never opens a connection -- so it must not carry
+        # that tag, or a plain `manage.py check` would silently stop running it.
+        self.assertNotIn(checks.Tags.database, validate_token_configuration.tags)
+        self.assertIn(checks.Tags.models, validate_token_configuration.tags)
 
 
 @pytest.mark.usefixtures("oauth2_settings")
