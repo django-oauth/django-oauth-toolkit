@@ -121,9 +121,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trip per token in the family, paid again on every replay of the stale token: a client stuck
   on a retry timer could hold a worker and a database connection for tens of seconds per
   request. The sweep now runs in a fixed number of queries whatever the size of the family,
-  through the new `AbstractRefreshToken.revoke_family()`. What gets revoked is unchanged: every
-  live member of the family, and the access tokens bound to them. If you swap in your own refresh
-  token model and override `revoke()`, override `revoke_family()` to match.
+  through the new `AbstractRefreshToken.revoke_family()`, and `token_family` is indexed
+  (migration `0022_refreshtoken_token_family_index`) so it no longer scans the whole refresh
+  token table. What gets revoked is unchanged: every live member of the family, and the access
+  tokens bound to them. If you swap in your own refresh token model, run `makemigrations` to
+  pick up the index, and if you override `revoke()` override `revoke_family()` to match.
 * #1796 Redirect URIs using an RFC 8252 §7.1 private-use URI scheme can now be registered.
   Such a scheme has no naming authority, so only a single slash follows it
   (`com.example.app:/oauth2redirect`), but `Application.clean()` reassembled every URI with

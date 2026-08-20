@@ -301,7 +301,8 @@ The family is revoked as a set, by ``RefreshToken.revoke_family()``, in a fixed 
 queries however large the family is. This matters because a rotating session keeps every
 refresh token it has ever been issued in the same family: the family only grows, and a
 client that keeps replaying the same stale token pays for the sweep on every request.
-If you swap in your own refresh token model and override ``revoke()``, override
+``token_family`` is indexed for this. If you swap in your own refresh token model, run
+``makemigrations`` to pick up that index, and if you override ``revoke()`` override
 ``revoke_family()`` to match, so both paths revoke a token the same way.
 
 More details at https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics-29#name-recommendations

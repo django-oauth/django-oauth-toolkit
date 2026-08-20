@@ -865,6 +865,11 @@ class AbstractRefreshToken(models.Model):
             "token_checksum",
             "revoked",
         )
+        indexes = [
+            # ``revoke_family()`` filters on ``token_family`` on the ``/token/`` path,
+            # and without an index that is a scan of the whole refresh token table.
+            models.Index(fields=["token_family"]),
+        ]
 
 
 class RefreshToken(AbstractRefreshToken):
