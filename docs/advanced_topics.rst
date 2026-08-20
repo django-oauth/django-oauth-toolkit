@@ -456,3 +456,8 @@ by overriding :class:`~oauth2_provider.views.AuthorizationView` (see :ref:`overr
 
 Scope the added origins as narrowly as possible — to the requesting application's redirect
 URIs, as above — rather than relaxing ``form-action`` globally.
+
+The rest of the shipped pages need no CSP exceptions: their styles come from a stylesheet
+served with the package's own static files, so ``style-src 'self'`` is enough — no
+third-party style host and no inline ``<style>``. See :ref:`default-stylesheet` if you
+replace those styles with your own.
