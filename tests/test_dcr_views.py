@@ -998,16 +998,13 @@ class TestDCRRegistrationTokenStorage(TestCase):
         assert token.token == ""
         assert token.token_checksum == checksum
 
-    def test_registration_response_returns_a_usable_token(self):
-        """Redacting the column must not cost the client the token it was issued."""
+    def test_issued_token_authenticates_and_is_echoed_back(self):
+        """Redacting the column must not cost the client the token it was issued, and
+        RFC 7592 §3 still wants that token in the read response. With no readable copy
+        left on the server, the endpoint echoes back whatever the client presented."""
         assert self.registration_token
         response = self.client.get(self.management_url, **_bearer(self.registration_token))
         assert response.status_code == 200
-
-    def test_get_returns_the_presented_token(self):
-        """RFC 7592 §3 puts the registration access token in the read response, and the
-        server no longer holds a readable copy, so it echoes what the client presented."""
-        response = self.client.get(self.management_url, **_bearer(self.registration_token))
         assert response.json()["registration_access_token"] == self.registration_token
 
     def test_rotation_returns_a_usable_token_and_retires_the_old_one(self):
