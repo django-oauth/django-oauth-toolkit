@@ -69,6 +69,29 @@ one transaction with the application rows locked, so a token minted concurrently
 between the check and the delete and be cascade-deleted with its application; batching keeps the
 number of rows locked at once bounded.
 
+.. _cleardcrapplications:
+
+cleardcrapplications
+~~~~~~~~~~~~~~~~~~~~
+
+The ``cleardcrapplications`` management command deletes
+:doc:`DCR-registered <views/dynamic_client_registration>` applications
+(``registration_source="dcr"``) that hold no live access token, ID token, grant, or unrevoked
+refresh token and were registered at least ``--min-age-days`` days ago (default 7). DCR clients such
+as editors and MCP tools sometimes re-register without deregistering their previous client, so
+tokenless "ghost" applications accumulate; because a client simply re-registers on its next request,
+deleting a tokenless ghost only reclaims storage. Run it regularly (eg: via cron, alongside
+``cleartokens``) when :doc:`DCR <views/dynamic_client_registration>` is enabled.
+
+The ``--min-age-days`` grace period avoids racing a client that has just registered but has not yet
+completed its first authorization, and so does not hold a token yet. Pass ``--min-age-days 0`` to
+delete every tokenless DCR application regardless of age.
+
+Deletion is batched (``--batch-size``, default 1000). Each batch's liveness check and delete run in
+one transaction with the application rows locked, so a token minted concurrently cannot slip in
+between the check and the delete and be cascade-deleted with its application; batching keeps the
+number of rows locked at once bounded.
+
 .. _createapplication:
 
 createapplication

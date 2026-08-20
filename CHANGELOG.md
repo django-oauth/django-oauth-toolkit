@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1730 A `cleardcrapplications` management command that deletes DCR-registered applications
+  (`registration_source="dcr"`) which hold no live tokens or grants and were registered at least
+  `--min-age-days` days ago (default 7). DCR clients that re-register without deregistering leave
+  behind tokenless "ghost" applications; the command reclaims that storage, batching its locked
+  liveness-check-and-delete like `clearcimdapplications`.
 * #634 A system check (`oauth2_provider.W011`) that warns when the `AccessToken` and
   `RefreshToken` models are swapped into different apps, and a new
   "Extending the token models" documentation section explaining how to swap the
