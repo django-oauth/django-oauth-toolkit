@@ -171,6 +171,13 @@ This template gets passed the following template context variables:
     In the default implementation this template in extended by `application_registration_form.html`_.
     Be sure to provide the same blocks if you are only overriding this template.
 
+.. note::
+    Application validation errors are attached to the field they belong to (for example a
+    rejected redirect URI to ``redirect_uris``, or a non-https CORS origin to
+    ``allowed_origins``), so a custom template should render ``field.errors`` for every
+    field as the shipped one does. Keep rendering ``form.non_field_errors`` as well: an
+    error for a field the form does not include falls back to a non-field error.
+
 application_registration_form.html
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Rendered in :class:`~oauth2_provider.views.base.ApplicationRegistration` (``applications/register/``).

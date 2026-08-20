@@ -2,6 +2,7 @@ import hashlib
 import logging
 import time
 import uuid
+from collections import defaultdict
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -292,7 +293,13 @@ class AbstractApplication(models.Model):
         """
         return self.allowed_origins and is_origin_allowed(origin, self.allowed_origins.split())
 
-    def clean(self):
+    def clean(self) -> None:
+        """Validate the application, reporting each problem on the field it belongs to.
+
+        Raises a :class:`~django.core.exceptions.ValidationError` keyed by field name, so
+        callers get a per-field ``message_dict`` and a ModelForm renders each message next
+        to its input. Every problem found is reported, not just the first one.
+        """
         from django.core.exceptions import ValidationError
 
         grant_types = (
@@ -304,6 +311,15 @@ class AbstractApplication(models.Model):
             AbstractApplication.GRANT_IMPLICIT,
             AbstractApplication.GRANT_OPENID_HYBRID,
         )
+
+        # Errors are keyed by the field they belong to and raised together at the end,
+        # rather than raised one at a time as they are found. Keying them means
+        # ``full_clean()`` reports them per field (``ValidationError.message_dict``) and a
+        # ModelForm -- the admin and the built-in application views both use one -- renders
+        # each message next to the offending input instead of as an anonymous non-field
+        # error at the top of the form. Collecting them means a single submit reports every
+        # problem at once instead of one per round trip.
+        field_errors = defaultdict(list)
 
         redirect_uris = self.redirect_uris.strip().split()
         allowed_schemes = set(s.lower() for s in self.get_allowed_schemes())
@@ -317,12 +333,17 @@ class AbstractApplication(models.Model):
                 allow_hostname_wildcard=oauth2_settings.ALLOW_URI_WILDCARDS,
             )
             for uri in redirect_uris:
-                validator(uri)
+                try:
+                    validator(uri)
+                except ValidationError as exc:
+                    field_errors["redirect_uris"].extend(exc.error_list)
 
         elif self.authorization_grant_type in grant_types:
-            raise ValidationError(
-                _("redirect_uris cannot be empty with grant_type {grant_type}").format(
-                    grant_type=self.authorization_grant_type
+            field_errors["redirect_uris"].append(
+                ValidationError(
+                    _("redirect_uris cannot be empty with grant_type {grant_type}").format(
+                        grant_type=self.authorization_grant_type
+                    )
                 )
             )
         allowed_origins = self.allowed_origins.strip().split()
@@ -334,11 +355,16 @@ class AbstractApplication(models.Model):
                 allow_hostname_wildcard=oauth2_settings.ALLOW_URI_WILDCARDS,
             )
             for uri in allowed_origins:
-                validator(uri)
+                try:
+                    validator(uri)
+                except ValidationError as exc:
+                    field_errors["allowed_origins"].extend(exc.error_list)
 
         if self.algorithm == AbstractApplication.RS256_ALGORITHM:
             if not oauth2_settings.OIDC_RSA_PRIVATE_KEY:
-                raise ValidationError(_("You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm"))
+                field_errors["algorithm"].append(
+                    ValidationError(_("You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm"))
+                )
 
         if self.algorithm == AbstractApplication.HS256_ALGORITHM:
             if any(
@@ -347,24 +373,35 @@ class AbstractApplication(models.Model):
                     self.client_type == Application.CLIENT_PUBLIC,
                 )
             ):
-                raise ValidationError(_("You cannot use HS256 with public grants or clients"))
+                field_errors["algorithm"].append(
+                    ValidationError(_("You cannot use HS256 with public grants or clients"))
+                )
             if not self.client_secret:
-                raise ValidationError(
-                    _("You cannot use HS256 without a client secret; it is the HMAC signing key.")
+                field_errors["client_secret"].append(
+                    ValidationError(
+                        _("You cannot use HS256 without a client secret; it is the HMAC signing key.")
+                    )
                 )
             # For HS256 the client secret is the shared HMAC signing key, so it must be stored
             # unhashed. Reject both the intent to hash (the flag) and an already-hashed stored
             # value (e.g. the flag was toggled after the secret was hashed, or a legacy row), so
             # the misconfiguration surfaces here instead of only failing later at signing time.
-            if self.hash_client_secret or self._client_secret_is_hashed(self.client_secret):
-                raise ValidationError(
-                    _(
-                        "You cannot use HS256 with a hashed client secret. For HS256 the client "
-                        "secret is the shared signing key and must be stored unhashed so the relying "
-                        "party can verify the token; set hash_client_secret=False and store an "
-                        "unhashed client_secret on this application."
+            # The error goes on whichever field has to change: the flag when it is still set,
+            # otherwise the already-hashed secret itself, which has to be re-entered unhashed.
+            elif self.hash_client_secret or self._client_secret_is_hashed(self.client_secret):
+                field_errors["hash_client_secret" if self.hash_client_secret else "client_secret"].append(
+                    ValidationError(
+                        _(
+                            "You cannot use HS256 with a hashed client secret. For HS256 the client "
+                            "secret is the shared signing key and must be stored unhashed so the relying "
+                            "party can verify the token; set hash_client_secret=False and store an "
+                            "unhashed client_secret on this application."
+                        )
                     )
                 )
+
+        if field_errors:
+            raise ValidationError(field_errors)
 
     def get_absolute_url(self):
         return reverse("oauth2_provider:detail", args=[str(self.pk)])
