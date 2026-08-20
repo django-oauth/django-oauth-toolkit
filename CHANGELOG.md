@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1045 Tutorial ("Managing applications and tokens in the Django admin") walking through the
   admin site for applications and issued tokens, including client-secret hashing, credential
   masking, and that tokens cannot be created by hand.
+* #403 Translatable (`gettext_lazy`) `verbose_name` labels on every field of the
+  `Application`, `Grant`, `AccessToken`, `RefreshToken`, `IDToken` and `DeviceGrant` models, so
+  the Django admin and the authorization UI can be localized. Migration
+  `oauth2_provider.0021_translatable_field_labels` records the label changes; it makes no
+  database schema changes.
 ### Deprecated
 * #1773 `JSONOAuthLibCore` (`OAUTH2_PROVIDER["OAUTH2_BACKEND_CLASS"]` set to
   `oauth2_provider.oauth2_backends.JSONOAuthLibCore`) is deprecated and now emits a

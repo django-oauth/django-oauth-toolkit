@@ -7,8 +7,10 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.db import models as django_models
 from django.test.utils import override_settings
 from django.utils import timezone
+from django.utils.functional import Promise
 
 from oauth2_provider import models as oauth2_models
 from oauth2_provider.models import (
@@ -1458,3 +1460,28 @@ def test_private_use_uri_scheme_redirect_allowed_with_wildcards_enabled(oauth2_s
     assert not redirect_to_uri_allowed("com.example.app:/oauth2redirect", ["https://*.example.com/cb"])
     # ...and from the other side: an authority-less request against a wildcard.
     assert not redirect_to_uri_allowed("https:/oauth2redirect", ["https://*.example.com/cb"])
+
+
+# All model bases whose fields are rendered as labels in the admin and in
+# user-facing forms.
+TRANSLATABLE_LABEL_MODELS = [
+    oauth2_models.AbstractApplication,
+    oauth2_models.AbstractGrant,
+    oauth2_models.AbstractAccessToken,
+    oauth2_models.AbstractRefreshToken,
+    oauth2_models.AbstractIDToken,
+    oauth2_models.AbstractDeviceGrant,
+]
+
+
+@pytest.mark.parametrize("model", TRANSLATABLE_LABEL_MODELS, ids=lambda model: model.__name__)
+def test_model_field_labels_are_translatable(model):
+    # See #403: every user-visible field label must go through gettext_lazy so
+    # deployments can ship the admin and the authorization UI in other languages.
+    # Auto-created primary keys are excluded: Django supplies "ID" itself.
+    untranslated = sorted(
+        field.name
+        for field in model._meta.fields
+        if not isinstance(field, django_models.AutoField) and not isinstance(field.verbose_name, Promise)
+    )
+    assert untranslated == []
