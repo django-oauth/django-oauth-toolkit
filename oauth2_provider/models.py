@@ -194,56 +194,69 @@ class AbstractApplication(models.Model):
     id = models.BigAutoField(primary_key=True)
     # 255 rather than 100 so a Client ID Metadata Document URL fits (CIMD uses
     # the client's https URL as its client_id).
-    client_id = models.CharField(max_length=255, unique=True, default=generate_client_id, db_index=True)
+    client_id = models.CharField(
+        max_length=255, unique=True, default=generate_client_id, db_index=True, verbose_name=_("client ID")
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="%(app_label)s_%(class)s",
         null=True,
         blank=True,
         on_delete=models.CASCADE,
+        verbose_name=_("user"),
     )
 
     redirect_uris = models.TextField(
         blank=True,
         help_text=_("Allowed URIs list, space separated"),
+        verbose_name=_("redirect URIs"),
     )
     post_logout_redirect_uris = models.TextField(
         blank=True,
         help_text=_("Allowed Post Logout URIs list, space separated"),
         default="",
+        verbose_name=_("post logout redirect URIs"),
     )
-    client_type = models.CharField(max_length=32, choices=CLIENT_TYPES)
-    authorization_grant_type = models.CharField(max_length=44, choices=GRANT_TYPES)
+    client_type = models.CharField(max_length=32, choices=CLIENT_TYPES, verbose_name=_("client type"))
+    authorization_grant_type = models.CharField(
+        max_length=44, choices=GRANT_TYPES, verbose_name=_("authorization grant type")
+    )
     client_secret = ClientSecretField(
         max_length=255,
         blank=True,
         default=generate_client_secret,
         db_index=True,
         help_text=_("Client secret for authentication"),
+        verbose_name=_("client secret"),
     )
-    hash_client_secret = models.BooleanField(default=True)
-    name = models.CharField(max_length=255, blank=True)
-    skip_authorization = models.BooleanField(default=False)
+    hash_client_secret = models.BooleanField(default=True, verbose_name=_("hash client secret"))
+    name = models.CharField(max_length=255, blank=True, verbose_name=_("name"))
+    skip_authorization = models.BooleanField(default=False, verbose_name=_("skip authorization"))
 
-    created = models.DateTimeField(auto_now_add=True)
-    updated = models.DateTimeField(auto_now=True)
-    algorithm = models.CharField(max_length=5, choices=ALGORITHM_TYPES, default=NO_ALGORITHM, blank=True)
+    created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
+    updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
+    algorithm = models.CharField(
+        max_length=5, choices=ALGORITHM_TYPES, default=NO_ALGORITHM, blank=True, verbose_name=_("algorithm")
+    )
     allowed_origins = models.TextField(
         blank=True,
         help_text=_("Allowed origins list to enable CORS, space separated"),
         default="",
+        verbose_name=_("allowed origins"),
     )
     registration_source = models.CharField(
         max_length=32,
         choices=RegistrationSource.choices,
         default=RegistrationSource.MANUAL,
         help_text=_("How this application was registered (manual, DCR per RFC 7591, or CIMD)"),
+        verbose_name=_("registration source"),
     )
     cimd_expires_at = models.DateTimeField(
         null=True,
         blank=True,
         default=None,
         help_text=_("When the cached Client ID Metadata Document should be re-fetched"),
+        verbose_name=_("CIMD expires at"),
     )
 
     class Meta:
@@ -498,26 +511,37 @@ class AbstractGrant(models.Model):
 
     id = models.BigAutoField(primary_key=True)
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="%(app_label)s_%(class)s"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("user"),
     )
-    code = models.CharField(max_length=255, unique=True)  # code comes from oauthlib
-    application = models.ForeignKey(oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE)
-    expires = models.DateTimeField()
-    redirect_uri = models.TextField()
-    scope = models.TextField(blank=True)
+    code = models.CharField(max_length=255, unique=True, verbose_name=_("code"))  # code comes from oauthlib
+    application = models.ForeignKey(
+        oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE, verbose_name=_("application")
+    )
+    expires = models.DateTimeField(verbose_name=_("expires"))
+    redirect_uri = models.TextField(verbose_name=_("redirect URI"))
+    scope = models.TextField(blank=True, verbose_name=_("scope"))
 
-    created = models.DateTimeField(auto_now_add=True)
-    updated = models.DateTimeField(auto_now=True)
+    created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
+    updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
 
-    code_challenge = models.CharField(max_length=128, blank=True, default="")
+    code_challenge = models.CharField(
+        max_length=128, blank=True, default="", verbose_name=_("code challenge")
+    )
     code_challenge_method = models.CharField(
-        max_length=10, blank=True, default="", choices=CODE_CHALLENGE_METHODS
+        max_length=10,
+        blank=True,
+        default="",
+        choices=CODE_CHALLENGE_METHODS,
+        verbose_name=_("code challenge method"),
     )
 
-    nonce = models.CharField(max_length=255, blank=True, default="")
-    claims = models.TextField(blank=True)
+    nonce = models.CharField(max_length=255, blank=True, default="", verbose_name=_("nonce"))
+    claims = models.TextField(blank=True, verbose_name=_("claims"))
 
-    resource = ResourceJSONField(blank=True, default=list)
+    resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))
 
     def is_expired(self):
         """
@@ -568,6 +592,7 @@ class AbstractAccessToken(models.Model):
         blank=True,
         null=True,
         related_name="%(app_label)s_%(class)s",
+        verbose_name=_("user"),
     )
     source_refresh_token = models.OneToOneField(
         # unique=True implied by the OneToOneField
@@ -576,13 +601,15 @@ class AbstractAccessToken(models.Model):
         blank=True,
         null=True,
         related_name="refreshed_access_token",
+        verbose_name=_("source refresh token"),
     )
-    token = models.TextField()
+    token = models.TextField(verbose_name=_("token"))
     token_checksum = TokenChecksumField(
         max_length=64,
         blank=False,
         unique=True,
         db_index=True,
+        verbose_name=_("token checksum"),
     )
     id_token = models.OneToOneField(
         oauth2_settings.ID_TOKEN_MODEL,
@@ -590,21 +617,23 @@ class AbstractAccessToken(models.Model):
         blank=True,
         null=True,
         related_name="access_token",
+        verbose_name=_("ID token"),
     )
     application = models.ForeignKey(
         oauth2_settings.APPLICATION_MODEL,
         on_delete=models.CASCADE,
         blank=True,
         null=True,
+        verbose_name=_("application"),
     )
 
-    expires = models.DateTimeField()
-    scope = models.TextField(blank=True)
+    expires = models.DateTimeField(verbose_name=_("expires"))
+    scope = models.TextField(blank=True, verbose_name=_("scope"))
 
-    resource = ResourceJSONField(blank=True, default=list)
+    resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))
 
-    created = models.DateTimeField(auto_now_add=True)
-    updated = models.DateTimeField(auto_now=True)
+    created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
+    updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
 
     def is_valid(self, scopes=None):
         """
@@ -712,28 +741,35 @@ class AbstractRefreshToken(models.Model):
 
     id = models.BigAutoField(primary_key=True)
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="%(app_label)s_%(class)s"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("user"),
     )
-    token = models.TextField()
+    token = models.TextField(verbose_name=_("token"))
     token_checksum = TokenChecksumField(
         max_length=64,
         blank=False,
+        verbose_name=_("token checksum"),
     )
-    application = models.ForeignKey(oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE)
+    application = models.ForeignKey(
+        oauth2_settings.APPLICATION_MODEL, on_delete=models.CASCADE, verbose_name=_("application")
+    )
     access_token = models.OneToOneField(
         oauth2_settings.ACCESS_TOKEN_MODEL,
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="refresh_token",
+        verbose_name=_("access token"),
     )
-    token_family = models.UUIDField(null=True, blank=True, editable=False)
+    token_family = models.UUIDField(null=True, blank=True, editable=False, verbose_name=_("token family"))
 
-    resource = ResourceJSONField(blank=True, default=list)
+    resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))
 
-    created = models.DateTimeField(auto_now_add=True)
-    updated = models.DateTimeField(auto_now=True)
-    revoked = models.DateTimeField(null=True)
+    created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
+    updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
+    revoked = models.DateTimeField(null=True, verbose_name=_("revoked"))
 
     def revoke(self):
         """
@@ -799,19 +835,21 @@ class AbstractIDToken(models.Model):
         blank=True,
         null=True,
         related_name="%(app_label)s_%(class)s",
+        verbose_name=_("user"),
     )
-    jti = models.UUIDField(unique=True, default=uuid.uuid4, editable=False, verbose_name="JWT Token ID")
+    jti = models.UUIDField(unique=True, default=uuid.uuid4, editable=False, verbose_name=_("JWT Token ID"))
     application = models.ForeignKey(
         oauth2_settings.APPLICATION_MODEL,
         on_delete=models.CASCADE,
         blank=True,
         null=True,
+        verbose_name=_("application"),
     )
-    expires = models.DateTimeField()
-    scope = models.TextField(blank=True)
+    expires = models.DateTimeField(verbose_name=_("expires"))
+    scope = models.TextField(blank=True, verbose_name=_("scope"))
 
-    created = models.DateTimeField(auto_now_add=True)
-    updated = models.DateTimeField(auto_now=True)
+    created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
+    updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
 
     def is_valid(self, scopes=None):
         """
@@ -901,19 +939,24 @@ class AbstractDeviceGrant(models.Model):
         null=True,
         blank=True,
         on_delete=models.CASCADE,
+        verbose_name=_("user"),
     )
     # Uniqueness is enforced by the unique_device_code UniqueConstraint (Meta.constraints);
     # adding unique=True here would create a redundant duplicate index (MySQL warns ER_DUP_INDEX 1831).
-    device_code = models.CharField(max_length=100)
-    user_code = models.CharField(max_length=100)
-    scope = models.TextField(blank=True)
-    interval = models.IntegerField(default=5)
-    expires = models.DateTimeField()
+    device_code = models.CharField(max_length=100, verbose_name=_("device code"))
+    user_code = models.CharField(max_length=100, verbose_name=_("user code"))
+    scope = models.TextField(blank=True, verbose_name=_("scope"))
+    interval = models.IntegerField(default=5, verbose_name=_("interval"))
+    expires = models.DateTimeField(verbose_name=_("expires"))
     status = models.CharField(
-        max_length=64, blank=True, choices=DEVICE_FLOW_STATUS, default=AUTHORIZATION_PENDING
+        max_length=64,
+        blank=True,
+        choices=DEVICE_FLOW_STATUS,
+        default=AUTHORIZATION_PENDING,
+        verbose_name=_("status"),
     )
-    client_id = models.CharField(max_length=100, db_index=True)
-    last_checked = models.DateTimeField(auto_now=True)
+    client_id = models.CharField(max_length=100, db_index=True, verbose_name=_("client ID"))
+    last_checked = models.DateTimeField(auto_now=True, verbose_name=_("last checked"))
 
     def is_expired(self):
         """
