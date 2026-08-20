@@ -155,6 +155,12 @@ and point the settings at them::
 
 Then run ``makemigrations`` and ``migrate``. On a fresh database this works out of the box.
 
+.. note:: If your ``RefreshToken`` overrides ``revoke()``, override ``revoke_family()`` as well.
+    ``revoke()`` invalidates a single token; ``revoke_family()`` is the set-based sweep that
+    ``REFRESH_TOKEN_REUSE_PROTECTION`` runs over a whole token family, and it reproduces what
+    ``revoke()`` does in bulk rather than calling it per row. Anything extra your ``revoke()``
+    does needs to happen in ``revoke_family()`` too, or reuse detection will skip it.
+
 .. note:: This is straightforward for a **new** project. Migrating an **existing** deployment that
     already has data in the default ``oauth2_provider`` tables is a data-migration exercise that is
     out of scope here: you would need to create the new tables, copy the rows across (rewriting the

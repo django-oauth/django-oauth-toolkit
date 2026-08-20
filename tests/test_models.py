@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+import uuid
 from datetime import timedelta
 from unittest import mock
 
@@ -7,8 +8,9 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.db import connection
 from django.db import models as django_models
-from django.test.utils import override_settings
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.utils import timezone
 from django.utils.functional import Promise
 
@@ -455,6 +457,86 @@ class TestRefreshTokenModel(BaseTestModels):
 
         self.assertIsNone(active.revoked)
         self.assertEqual(RefreshToken.objects.filter(token_checksum=active.token_checksum).count(), 2)
+
+    def _make_refresh_token(self, token_family, revoked=None, with_access_token=True):
+        access_token = None
+        if with_access_token:
+            access_token = AccessToken.objects.create(
+                user=self.user,
+                token=f"access token for {secrets.token_urlsafe(8)}",
+                application=self.app,
+                expires=timezone.now() + timedelta(hours=1),
+                scope="read write",
+            )
+        return RefreshToken.objects.create(
+            user=self.user,
+            token=secrets.token_urlsafe(32),
+            application=self.app,
+            access_token=access_token,
+            token_family=token_family,
+            revoked=revoked,
+        )
+
+    def test_revoke_family_matches_revoking_each_member(self):
+        """
+        revoke_family() must leave the family in the state a revoke() per row would:
+        live members revoked with their access tokens deleted, already revoked members
+        untouched, and nothing outside the family affected. See issue #1809.
+        """
+        family = uuid.uuid4()
+        live = self._make_refresh_token(family)
+        live_access_token_pk = live.access_token_id
+        already_revoked_at = timezone.now() - timedelta(minutes=5)
+        already_revoked = self._make_refresh_token(family, revoked=already_revoked_at)
+        other_family = self._make_refresh_token(uuid.uuid4())
+        no_family = self._make_refresh_token(None)
+
+        RefreshToken.revoke_family(family)
+
+        live.refresh_from_db()
+        self.assertIsNotNone(live.revoked)
+        self.assertIsNone(live.access_token_id)
+        self.assertFalse(
+            AccessToken.objects.filter(pk=live_access_token_pk).exists(),
+            "the bound access token should have been deleted, as revoke() does",
+        )
+
+        already_revoked.refresh_from_db()
+        self.assertEqual(already_revoked.revoked, already_revoked_at)
+        self.assertIsNotNone(already_revoked.access_token_id, "an already revoked row is a no-op")
+
+        for untouched in (other_family, no_family):
+            untouched.refresh_from_db()
+            self.assertIsNone(untouched.revoked)
+            self.assertIsNotNone(untouched.access_token_id)
+
+    def test_revoke_family_without_a_family_is_a_no_op(self):
+        # token_family is null for tokens issued before rotation was enabled, and those
+        # rows are each their own lineage: sweeping on null would revoke unrelated tokens.
+        no_family = self._make_refresh_token(None)
+
+        RefreshToken.revoke_family(None)
+
+        no_family.refresh_from_db()
+        self.assertIsNone(no_family.revoked)
+        self.assertIsNotNone(no_family.access_token_id)
+
+    def test_revoke_family_query_count_does_not_grow_with_the_family(self):
+        """
+        The whole point of the set-based sweep: a family that has been rotating for weeks
+        costs the same as a fresh one. See issue #1809.
+        """
+
+        def query_count_for(historical_members):
+            family = uuid.uuid4()
+            self._make_refresh_token(family)
+            for _ in range(historical_members):
+                self._make_refresh_token(family, revoked=timezone.now())
+            with CaptureQueriesContext(connection) as captured:
+                RefreshToken.revoke_family(family)
+            return len(captured)
+
+        self.assertEqual(query_count_for(1), query_count_for(30))
 
 
 @pytest.mark.usefixtures("oauth2_settings")

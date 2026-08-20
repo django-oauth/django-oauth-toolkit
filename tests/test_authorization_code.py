@@ -7,7 +7,9 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import RequestFactory
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -1399,6 +1401,69 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
             reverse("oauth2_provider:token"), data=new_token_request_data, **auth_headers
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_reuse_protection_family_revocation_is_constant_in_family_size(self):
+        """
+        Reuse detection has to revoke the family in a constant number of queries.
+        A rotating client adds a row to its family on every refresh and the family never
+        shrinks, so with a per-row sweep a client stuck on a retry timer turned every one
+        of its requests into a locking SELECT per token that session had ever been
+        issued. See issue #1809.
+        """
+        self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = True
+        self.client.login(username="test_user", password="123456")
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+
+        def replay_stale_token(historical_members):
+            """Rotate once, age the family, then replay the stale token. Returns the
+            number of queries the replay took."""
+            response = self.client.post(
+                reverse("oauth2_provider:token"),
+                data={
+                    "grant_type": "authorization_code",
+                    "code": self.get_auth(),
+                    "redirect_uri": "http://example.org",
+                },
+                **auth_headers,
+            )
+            content = json.loads(response.content.decode("utf-8"))
+            refresh_data = {
+                "grant_type": "refresh_token",
+                "refresh_token": content["refresh_token"],
+                "scope": content["scope"],
+            }
+            response = self.client.post(reverse("oauth2_provider:token"), data=refresh_data, **auth_headers)
+            self.assertEqual(response.status_code, 200)
+
+            token_family = RefreshToken.objects.get(token=content["refresh_token"]).token_family
+            for i in range(historical_members):
+                RefreshToken.objects.create(
+                    user=self.test_user,
+                    application=self.application,
+                    token=f"historical refresh token {token_family} {i}",
+                    token_family=token_family,
+                    revoked=timezone.now(),
+                )
+
+            with CaptureQueriesContext(connection) as captured:
+                response = self.client.post(
+                    reverse("oauth2_provider:token"), data=refresh_data, **auth_headers
+                )
+            self.assertEqual(response.status_code, 400)
+            self.assertFalse(
+                RefreshToken.objects.filter(token_family=token_family, revoked__isnull=True).exists(),
+                "the replay must still take the whole family down",
+            )
+            return len(captured.captured_queries)
+
+        young_family = replay_stale_token(2)
+        old_family = replay_stale_token(30)
+        self.assertEqual(
+            young_family,
+            old_family,
+            f"revoking the family cost {young_family} queries for 3 members and "
+            f"{old_family} for 31, so the sweep still scales with the family size",
+        )
 
     def test_refresh_repeating_requests(self):
         """

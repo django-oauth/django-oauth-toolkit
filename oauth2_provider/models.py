@@ -788,6 +788,50 @@ class AbstractRefreshToken(models.Model):
     updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
     revoked = models.DateTimeField(null=True, verbose_name=_("revoked"))
 
+    @classmethod
+    def revoke_family(cls, token_family: uuid.UUID | None) -> None:
+        """
+        Revoke every live refresh token sharing ``token_family`` and delete the access
+        tokens bound to them, in a constant number of queries.
+
+        This is the set-based equivalent of calling :meth:`revoke` on each member of the
+        family. :meth:`revoke` is a no-op on an already revoked token, so only the live
+        rows are touched here, and they get the same treatment they would row by row: the
+        bound access token is deleted, ``access_token`` is cleared and ``revoked`` is
+        stamped. A model that overrides :meth:`revoke` to do more should override this
+        too, so that reuse protection keeps sweeping the family the same way.
+
+        Reuse protection revokes a whole family at once, and a rotating client adds one
+        row to its family on every refresh, so revoking row by row cost one
+        ``SELECT ... FOR UPDATE`` round trip per token ever issued to that session, paid
+        again on every replay of the stale token (#1809).
+
+        Locking each row first is not needed here: unlike rotation this path mints
+        nothing, so there is no read-then-write to protect, and the bulk ``UPDATE`` takes
+        its own locks on the rows it revokes.
+        """
+        if not token_family:
+            return
+
+        access_token_model = get_access_token_model()
+        access_token_database = router.db_for_write(access_token_model)
+
+        with transaction.atomic(using=access_token_database):
+            live_tokens = cls.objects.filter(token_family=token_family, revoked__isnull=True)
+            # The access token ids are read into memory rather than left as a subquery so
+            # that the delete stays a single-database query: the two models may be routed
+            # to different databases. A family only ever has a live token or two anyway,
+            # since rotation revokes the previous one as it goes.
+            access_token_ids = list(
+                live_tokens.exclude(access_token__isnull=True).values_list("access_token_id", flat=True)
+            )
+            # ``AccessToken.revoke()`` is a delete, and ``RefreshToken.access_token`` is
+            # ``SET_NULL``, so this already clears the pointer on the rows below.
+            access_token_model.objects.filter(pk__in=access_token_ids).delete()
+            now = timezone.now()
+            # ``updated`` is ``auto_now``, which a queryset update does not trigger.
+            live_tokens.update(access_token=None, revoked=now, updated=now)
+
     def revoke(self):
         """
         Mark this refresh token revoked and revoke related access token

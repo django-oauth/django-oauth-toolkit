@@ -115,6 +115,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   static analysis; this one only asks the configured routers where the token models would be
   written and never opens a connection, so under the old tag a plain `manage.py check` would
   have silently stopped reporting a cross-database token configuration on Django 6.1.
+* #1809 `REFRESH_TOKEN_REUSE_PROTECTION` now revokes a compromised token family as a set
+  instead of one row at a time. A rotating client keeps every refresh token it has ever been
+  issued in the same family, so the old per-row loop cost one `SELECT ... FOR UPDATE` round
+  trip per token in the family, paid again on every replay of the stale token: a client stuck
+  on a retry timer could hold a worker and a database connection for tens of seconds per
+  request. The sweep now runs in a fixed number of queries whatever the size of the family,
+  through the new `AbstractRefreshToken.revoke_family()`. What gets revoked is unchanged: every
+  live member of the family, and the access tokens bound to them. If you swap in your own refresh
+  token model and override `revoke()`, override `revoke_family()` to match.
 * #1796 Redirect URIs using an RFC 8252 §7.1 private-use URI scheme can now be registered.
   Such a scheme has no naming authority, so only a single slash follows it
   (`com.example.app:/oauth2redirect`), but `Application.clean()` reassembled every URI with
