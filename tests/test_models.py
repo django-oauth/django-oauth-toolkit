@@ -14,6 +14,9 @@ from django.utils.functional import Promise
 
 from oauth2_provider import models as oauth2_models
 from oauth2_provider.models import (
+    _format_uri_mismatch_reasons,
+    _loggable_uri,
+    check_redirect_to_uri_allowed,
     clear_expired,
     get_access_token_model,
     get_application_model,
@@ -1485,3 +1488,178 @@ def test_model_field_labels_are_translatable(model):
         if not isinstance(field, django_models.AutoField) and not isinstance(field.verbose_name, Promise)
     )
     assert untranslated == []
+
+
+# Diagnostics for a redirect URI that matched nothing (#681).  The detail lives in
+# the log and nowhere else: see test_pre_auth_redirect_uri_mismatch_does_not_leak_
+# registered_uris in tests/test_authorization_code.py for the other half of that
+# contract.
+
+mismatch_reason_params = [
+    # (uri, allowed_uris, expected reason)
+    ("https://example.com/cb#frag", ["https://example.com/cb"], "fragment"),
+    ("https://evil@example.com/cb", ["https://example.com/cb"], "userinfo credentials"),
+    ("https://example.com/cb", ["https://example.com/cb#frag"], "registered URI has a fragment"),
+    ("https://example.com/cb", ["https://evil@example.com/cb"], "registered URI carries userinfo"),
+    ("http://example.com/cb", ["https://example.com/cb"], "scheme differs"),
+    ("https://other.com/cb", ["https://example.com/cb"], "hostname differs"),
+    ("https://example.com:8443/cb", ["https://example.com/cb"], "port differs"),
+    ("https://example.com/other", ["https://example.com/cb"], "path differs"),
+    ("https://example.com/cb?a=1", ["https://example.com/cb"], "query component"),
+    ("https://example.com/cb?a=2", ["https://example.com/cb?a=1"], "query string differs"),
+]
+
+
+@pytest.mark.parametrize("uri, allowed_uris, expected_reason", mismatch_reason_params)
+def test_check_redirect_to_uri_allowed_reports_reason(uri, allowed_uris, expected_reason):
+    allowed, reasons = check_redirect_to_uri_allowed(uri, allowed_uris)
+    assert not allowed
+    assert expected_reason in _format_uri_mismatch_reasons(reasons)
+
+
+def test_check_redirect_to_uri_allowed_reports_wildcard_reason(oauth2_settings):
+    oauth2_settings.ALLOW_URI_WILDCARDS = True
+    allowed, reasons = check_redirect_to_uri_allowed("https://other.com/cb", ["https://*.example.com/cb"])
+    assert not allowed
+    assert "registered wildcard" in _format_uri_mismatch_reasons(reasons)
+
+
+def test_check_redirect_to_uri_allowed_reports_every_candidate():
+    allowed, reasons = check_redirect_to_uri_allowed(
+        "https://example.com/cb", ["https://example.com/other", "http://example.com/cb"]
+    )
+    assert not allowed
+    assert [candidate for candidate, _reason in reasons] == [
+        "https://example.com/other",
+        "http://example.com/cb",
+    ]
+    assert _format_uri_mismatch_reasons(reasons) == (
+        "'https://example.com/other': path differs; 'http://example.com/cb': scheme differs"
+    )
+
+
+def test_format_uri_mismatch_reasons_with_nothing_registered():
+    allowed, reasons = check_redirect_to_uri_allowed("https://example.com/cb", [])
+    assert not allowed
+    assert _format_uri_mismatch_reasons(reasons) == "no URIs are registered"
+
+
+@pytest.mark.parametrize(
+    "uri, allowed_uris, expected",
+    exact_redirect_match_params + [(u, a, True) for u, a in valid_wildcard_redirect_to_params],
+)
+def test_check_redirect_to_uri_allowed_agrees_with_redirect_to_uri_allowed(
+    uri, allowed_uris, expected, oauth2_settings
+):
+    # check_redirect_to_uri_allowed() is the matcher; redirect_to_uri_allowed() is
+    # a thin wrapper over it.  The two must never diverge.
+    oauth2_settings.ALLOW_URI_WILDCARDS = True
+    allowed, _reasons = check_redirect_to_uri_allowed(uri, allowed_uris)
+    assert allowed is redirect_to_uri_allowed(uri, allowed_uris)
+
+
+def test_check_redirect_to_uri_allowed_expects_allowed_uri_list():
+    with pytest.raises(ValueError):
+        check_redirect_to_uri_allowed("https://example.com", "https://example.com")
+
+
+def test_loggable_uri_escapes_control_characters():
+    # A raw CR/LF in a client-supplied URI would otherwise forge log lines.
+    rendered = _loggable_uri("https://example.com/cb\r\nWARNING forged log line")
+    assert "\r" not in rendered
+    assert "\n" not in rendered
+    assert "\\r\\n" in rendered
+
+
+def test_loggable_uri_truncates_long_uris():
+    rendered = _loggable_uri("https://example.com/cb?x=" + "a" * 10000)
+    assert len(rendered) < 300
+    assert rendered.endswith("...[truncated]'")
+
+
+def test_loggable_uri_handles_none():
+    assert _loggable_uri(None) == "None"
+
+
+class TestRedirectURIMismatchLogging(BaseTestModels):
+    """The mismatch detail requested in #681 is emitted to the log, at DEBUG."""
+
+    def setUp(self):
+        super().setUp()
+        self.application = Application.objects.create(
+            name="Test Application",
+            redirect_uris="https://example.com/cb",
+            post_logout_redirect_uris="https://example.com/logout",
+            user=self.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+
+    def test_application_redirect_uri_mismatch_is_logged(self):
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            assert not self.application.redirect_uri_allowed("https://example.com/other")
+        message = "\n".join(captured.output)
+        assert "redirect_uri 'https://example.com/other'" in message
+        assert "does not match any redirect_uri registered" in message
+        assert repr(self.application.client_id) in message
+        assert "'https://example.com/cb': path differs" in message
+
+    def test_application_post_logout_redirect_uri_mismatch_is_logged(self):
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            assert not self.application.post_logout_redirect_uri_allowed("https://example.com/elsewhere")
+        message = "\n".join(captured.output)
+        assert "post_logout_redirect_uri 'https://example.com/elsewhere'" in message
+        assert "does not match any post_logout_redirect_uri registered" in message
+        assert "'https://example.com/logout': path differs" in message
+
+    def test_matching_redirect_uri_is_not_logged(self):
+        with self.assertNoLogs("oauth2_provider", level="DEBUG"):
+            assert self.application.redirect_uri_allowed("https://example.com/cb")
+
+    def test_nothing_is_logged_above_debug(self):
+        # The detail must stay out of production logs unless the operator opts in
+        # by lowering the level of the "oauth2_provider" logger, and the message
+        # must not even be assembled when it would be discarded.
+        with mock.patch.object(oauth2_models, "_format_uri_mismatch_reasons") as format_reasons:
+            with self.assertNoLogs("oauth2_provider", level="INFO"):
+                assert not self.application.redirect_uri_allowed("https://example.com/other")
+        format_reasons.assert_not_called()
+
+    def test_logged_requested_uri_is_truncated_and_escaped(self):
+        hostile = "https://example.com/cb?x=" + "a" * 10000 + "\r\nWARNING forged"
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            assert not self.application.redirect_uri_allowed(hostile)
+        message = "\n".join(captured.output)
+        assert "...[truncated]" in message
+        assert "\r" not in message
+        assert "WARNING forged" not in message
+
+    def test_grant_redirect_uri_mismatch_is_logged_without_the_code(self):
+        grant = Grant.objects.create(
+            user=self.user,
+            code="grant_code_that_must_not_be_logged",
+            application=self.application,
+            expires=timezone.now() + timedelta(days=1),
+            redirect_uri="https://example.com/cb",
+            scope="",
+        )
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            assert not grant.redirect_uri_allowed("https://example.com/other")
+        message = "\n".join(captured.output)
+        assert "redirect_uri 'https://example.com/other'" in message
+        assert "'https://example.com/cb'" in message
+        assert "grant #%s" % grant.pk in message
+        # An authorization code is a credential and must never reach the log.
+        assert grant.code not in message
+
+    def test_grant_redirect_uri_match_is_not_logged(self):
+        grant = Grant.objects.create(
+            user=self.user,
+            code="another_grant_code",
+            application=self.application,
+            expires=timezone.now() + timedelta(days=1),
+            redirect_uri="https://example.com/cb",
+            scope="",
+        )
+        with self.assertNoLogs("oauth2_provider", level="DEBUG"):
+            assert grant.redirect_uri_allowed("https://example.com/cb")

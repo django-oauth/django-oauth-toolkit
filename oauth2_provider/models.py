@@ -282,21 +282,27 @@ class AbstractApplication(models.Model):
         # (the assert would also be stripped entirely under `python -O`). See #958.
         raise errors.MissingRedirectURIError()
 
-    def redirect_uri_allowed(self, uri):
+    def redirect_uri_allowed(self, uri: str) -> bool:
         """
         Checks if given url is one of the items in :attr:`redirect_uris` string
 
         :param uri: Url to check
         """
-        return redirect_to_uri_allowed(uri, self.redirect_uris.split())
+        allowed, reasons = check_redirect_to_uri_allowed(uri, self.redirect_uris.split())
+        if not allowed:
+            _log_registered_uri_mismatch("redirect_uri", uri, self.client_id, reasons)
+        return allowed
 
-    def post_logout_redirect_uri_allowed(self, uri):
+    def post_logout_redirect_uri_allowed(self, uri: str) -> bool:
         """
         Checks if given URI is one of the items in :attr:`post_logout_redirect_uris` string
 
         :param uri: URI to check
         """
-        return redirect_to_uri_allowed(uri, self.post_logout_redirect_uris.split())
+        allowed, reasons = check_redirect_to_uri_allowed(uri, self.post_logout_redirect_uris.split())
+        if not allowed:
+            _log_registered_uri_mismatch("post_logout_redirect_uri", uri, self.client_id, reasons)
+        return allowed
 
     def origin_allowed(self, origin):
         """
@@ -552,8 +558,19 @@ class AbstractGrant(models.Model):
 
         return timezone.now() >= self.expires
 
-    def redirect_uri_allowed(self, uri):
-        return uri == self.redirect_uri
+    def redirect_uri_allowed(self, uri: str) -> bool:
+        allowed = uri == self.redirect_uri
+        if not allowed and logger.isEnabledFor(logging.DEBUG):
+            # Never log self.code alongside this: an authorization code in a log
+            # file is a credential, which is why __str__ below omits it too.
+            logger.debug(
+                "redirect_uri %s does not match the redirect_uri %s recorded on grant #%s at "
+                "authorization time; RFC 6749 section 4.1.3 requires them to be identical",
+                _loggable_uri(uri),
+                _loggable_uri(self.redirect_uri),
+                self.pk,
+            )
+        return allowed
 
     def __str__(self):
         # Never render the authorization code itself: __str__ appears in the admin
@@ -1228,11 +1245,88 @@ def clear_expired():
     logger.info("%s Expired grant tokens deleted", grants_deleted_no)
 
 
-def redirect_to_uri_allowed(uri, allowed_uris):
-    """
-    Checks if a given uri can be redirected to based on the provided allowed_uris configuration.
+# A registered URI is operator configuration and is logged in full; a requested URI
+# is unbounded client input (redirect_uri is a TextField on Grant, see #902) and is
+# not.  256 characters is well past any legitimate redirect URI while still short
+# enough that a flood of junk cannot fill the log.
+_MAX_LOGGED_URI_LENGTH = 256
 
-    On top of exact matches, this function also handles loopback IPs based on RFC 8252.
+
+def _loggable_uri(uri: Optional[str]) -> str:
+    """
+    Render a client-supplied URI for inclusion in a log message.
+
+    The value is truncated, and rendered with ``repr()`` so that control
+    characters -- CR/LF above all -- are escaped rather than forging log lines.
+
+    :param uri: URI to render
+    """
+    if uri is None:
+        return "None"
+    if len(uri) > _MAX_LOGGED_URI_LENGTH:
+        uri = uri[:_MAX_LOGGED_URI_LENGTH] + "...[truncated]"
+    return repr(uri)
+
+
+def _format_uri_mismatch_reasons(reasons: list[tuple[Optional[str], str]]) -> str:
+    """
+    Render the reasons collected by :func:`check_redirect_to_uri_allowed` as one
+    log-friendly string.
+
+    :param reasons: ``(candidate, reason)`` pairs; a ``None`` candidate is a
+        rejection of the requested URI itself rather than of a registered one
+    """
+    if not reasons:
+        return "no URIs are registered"
+    return "; ".join(
+        reason if candidate is None else "{0!r}: {1}".format(candidate, reason)
+        for candidate, reason in reasons
+    )
+
+
+def _log_registered_uri_mismatch(
+    uri_type: str, uri: str, client_id: str, reasons: list[tuple[Optional[str], str]]
+) -> None:
+    """
+    Log why a client-supplied URI matched none of the URIs registered for a client.
+
+    Without this the mismatch reaches the developer as nothing but oauthlib's bare
+    "Mismatching redirect URI." (see #681).  The detail is deliberately confined to
+    the log and must never be added to the error response: that response is
+    rendered to whoever made the request, so it would let an unauthenticated caller
+    read back a client's registered URIs by sending a junk URI with a known
+    client_id.
+
+    :param uri_type: name of the parameter being checked, for the log message
+    :param uri: the client-supplied URI that was rejected
+    :param client_id: client whose registered URIs were checked
+    :param reasons: ``(candidate, reason)`` pairs from :func:`check_redirect_to_uri_allowed`
+    """
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    logger.debug(
+        "%s %s does not match any %s registered for client_id %r: %s",
+        uri_type,
+        _loggable_uri(uri),
+        uri_type,
+        client_id,
+        _format_uri_mismatch_reasons(reasons),
+    )
+
+
+def check_redirect_to_uri_allowed(
+    uri: str, allowed_uris: list[str]
+) -> tuple[bool, list[tuple[Optional[str], str]]]:
+    """
+    Same check as :func:`redirect_to_uri_allowed`, additionally reporting why the
+    URI was rejected.
+
+    Returns ``(allowed, reasons)``.  ``reasons`` is only meaningful when
+    ``allowed`` is ``False``: it holds one ``(candidate, reason)`` pair for every
+    registered URI that failed to match, plus pairs with a ``None`` candidate for
+    rejections of the requested URI itself.  A reason names the component that
+    differs instead of echoing the requested URI back, which callers log once and
+    only after passing it through :func:`_loggable_uri`.
 
     :param uri: URI to check
     :param allowed_uris: A list of URIs that are allowed
@@ -1240,6 +1334,8 @@ def redirect_to_uri_allowed(uri, allowed_uris):
 
     if not isinstance(allowed_uris, list):
         raise ValueError("allowed_uris must be a list")
+
+    reasons: list[tuple[Optional[str], str]] = []
 
     # urlsplit() rather than urlparse(): urlparse() peels ";params" off the last
     # path segment into a separate attribute, so comparing .path alone would let a
@@ -1253,39 +1349,46 @@ def redirect_to_uri_allowed(uri, allowed_uris):
     # (empty) fragment component and is not the registered URI.  A percent-encoded
     # %23 is not a fragment delimiter and is unaffected.
     if "#" in uri:
-        return False
+        return False, [(None, "the requested URI has a fragment, which RFC 6749 section 3.1.2 forbids")]
 
     # Credentials are not part of a registered callback and must not ride along on
     # the request; without this "https://evil@example.com/cb" would match a
     # registered "https://example.com/cb", since only .hostname is compared below.
     if "@" in parsed_uri.netloc:
-        return False
+        return False, [(None, "the requested URI carries userinfo credentials in its authority")]
 
     for allowed_uri in allowed_uris:
         # A registered URI carrying a fragment or credentials cannot authorize
         # anything: the request forms that would match it are rejected above.
         if "#" in allowed_uri:
+            reasons.append((allowed_uri, "the registered URI has a fragment and can never match"))
             continue
 
         parsed_allowed_uri = urlsplit(allowed_uri)
 
         if "@" in parsed_allowed_uri.netloc:
+            reasons.append(
+                (allowed_uri, "the registered URI carries userinfo credentials and can never match")
+            )
             continue
 
         if parsed_allowed_uri.scheme != parsed_uri.scheme:
             # match failed, continue
+            reasons.append((allowed_uri, "scheme differs"))
             continue
 
         """ check hostname """
-        # A private-use URI scheme redirect (RFC 8252 §7.1) has no naming
+        # A private-use URI scheme redirect (RFC 8252 section 7.1) has no naming
         # authority, so hostname is None on either side; guard before matching.
         allowed_hostname = parsed_allowed_uri.hostname
         uri_hostname = parsed_uri.hostname
         if oauth2_settings.ALLOW_URI_WILDCARDS and allowed_hostname and allowed_hostname.startswith("*"):
             """ wildcard hostname """
             if not uri_hostname or not uri_hostname.endswith(allowed_hostname[1:]):
+                reasons.append((allowed_uri, "hostname does not match the registered wildcard"))
                 continue
         elif allowed_hostname != uri_hostname:
+            reasons.append((allowed_uri, "hostname differs"))
             continue
 
         # From RFC 8252 (Section 7.3)
@@ -1311,10 +1414,12 @@ def redirect_to_uri_allowed(uri, allowed_uris):
         )
         """ check port """
         if not allowed_uri_is_loopback and parsed_allowed_uri.port != parsed_uri.port:
+            reasons.append((allowed_uri, "port differs"))
             continue
 
         """ check path """
         if parsed_allowed_uri.path != parsed_uri.path:
+            reasons.append((allowed_uri, "path differs"))
             continue
 
         """ check querystring """
@@ -1334,14 +1439,29 @@ def redirect_to_uri_allowed(uri, allowed_uris):
         # opens the query -- so testing the raw string is equivalent to testing for
         # the component.  A percent-encoded %3F is not a delimiter and is unaffected.
         if ("?" in allowed_uri) != ("?" in uri):
+            reasons.append((allowed_uri, "one URI has a query component and the other does not"))
             continue
         if parsed_allowed_uri.query != parsed_uri.query:
+            reasons.append((allowed_uri, "query string differs"))
             continue  # circuit break
 
-        return True
+        return True, []
 
     # if uris matched then it's not allowed
-    return False
+    return False, reasons
+
+
+def redirect_to_uri_allowed(uri: str, allowed_uris: list[str]) -> bool:
+    """
+    Checks if a given uri can be redirected to based on the provided allowed_uris configuration.
+
+    On top of exact matches, this function also handles loopback IPs based on RFC 8252.
+
+    :param uri: URI to check
+    :param allowed_uris: A list of URIs that are allowed
+    """
+    allowed, _reasons = check_redirect_to_uri_allowed(uri, allowed_uris)
+    return allowed
 
 
 def is_origin_allowed(origin, allowed_origins):
