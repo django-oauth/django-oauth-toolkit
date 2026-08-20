@@ -178,7 +178,13 @@ def validate_bcp_configuration(app_configs, **kwargs):
     return messages
 
 
-@checks.register(checks.Tags.database)
+# Registered under the ``models`` tag rather than ``database``: this check only asks the
+# configured routers where the token models would be written, which is static analysis and
+# never opens a connection. Django 6.1 stopped running ``database``-tagged checks unless a
+# database alias is passed explicitly (``manage.py check --database default``), because
+# those checks may do more than static analysis -- keeping this one under that tag would
+# silently disable it for everyone running a plain ``manage.py check``.
+@checks.register(checks.Tags.models)
 def validate_token_configuration(app_configs, **kwargs):
     databases = set(
         router.db_for_write(apps.get_model(model))

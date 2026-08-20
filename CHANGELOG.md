@@ -71,6 +71,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `True` (the `id_token_hint` is a previously issued token per OIDC RP-Initiated Logout)
   and how to harden it.
 ### Fixed
+* The system check that verifies the `AccessToken`, `IDToken`, and `RefreshToken` models are
+  routed to a single database is now registered under the `models` tag instead of `database`.
+  Django 6.1 stopped running `database`-tagged checks unless a database alias is passed
+  explicitly (`manage.py check --database default`), because such checks may do more than
+  static analysis; this one only asks the configured routers where the token models would be
+  written and never opens a connection, so under the old tag a plain `manage.py check` would
+  have silently stopped reporting a cross-database token configuration on Django 6.1.
 * #1796 Redirect URIs using an RFC 8252 §7.1 private-use URI scheme can now be registered.
   Such a scheme has no naming authority, so only a single slash follows it
   (`com.example.app:/oauth2redirect`), but `Application.clean()` reassembled every URI with
