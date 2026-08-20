@@ -67,6 +67,113 @@ class TestApplicationRegistrationView(BaseTest):
 
 
 @pytest.mark.usefixtures("oauth2_settings")
+class TestApplicationFormFieldErrors(BaseTest):
+    """Model validation errors are reported on the field they belong to (#1343)."""
+
+    def _register(self, **overrides):
+        self.client.login(username="foo_user", password="123456")
+        form_data = {
+            "name": "Foo app",
+            "client_id": "client_id",
+            "client_secret": "client_secret",
+            "client_type": Application.CLIENT_CONFIDENTIAL,
+            "redirect_uris": "http://example.com",
+            "post_logout_redirect_uris": "http://other_example.com",
+            "authorization_grant_type": Application.GRANT_AUTHORIZATION_CODE,
+            "algorithm": "",
+        }
+        form_data.update(overrides)
+        return self.client.post(reverse("oauth2_provider:register"), form_data)
+
+    def test_invalid_redirect_uri_error_is_on_redirect_uris(self):
+        response = self._register(redirect_uris="invalid")
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(list(form.errors), ["redirect_uris"])
+        self.assertEqual(form.non_field_errors(), [])
+
+    def test_missing_redirect_uris_error_is_on_redirect_uris(self):
+        response = self._register(redirect_uris="")
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertIn("redirect_uris cannot be empty", form.errors["redirect_uris"][0])
+        self.assertEqual(form.non_field_errors(), [])
+
+    def test_invalid_allowed_origin_error_is_on_allowed_origins(self):
+        response = self._register(allowed_origins="http://example.com")
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(list(form.errors), ["allowed_origins"])
+        self.assertEqual(form.non_field_errors(), [])
+
+    def test_hs256_with_public_client_error_is_on_algorithm(self):
+        response = self._register(
+            algorithm=Application.HS256_ALGORITHM,
+            client_type=Application.CLIENT_PUBLIC,
+        )
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertIn("algorithm", form.errors)
+        self.assertEqual(form.non_field_errors(), [])
+
+    def test_hs256_with_hashed_secret_error_is_on_hash_client_secret(self):
+        response = self._register(
+            algorithm=Application.HS256_ALGORITHM,
+            hash_client_secret="on",
+        )
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(list(form.errors), ["hash_client_secret"])
+        self.assertEqual(form.non_field_errors(), [])
+
+    def test_every_error_is_reported_in_a_single_submit(self):
+        response = self._register(
+            redirect_uris="invalid",
+            allowed_origins="http://example.com",
+            algorithm=Application.HS256_ALGORITHM,
+            client_type=Application.CLIENT_PUBLIC,
+        )
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(
+            set(form.errors),
+            {"redirect_uris", "allowed_origins", "algorithm"},
+        )
+
+    def test_error_is_rendered_next_to_its_field(self):
+        response = self._register(redirect_uris="invalid")
+        self.assertContains(response, "invalid_scheme: invalid")
+        content = response.content.decode()
+        # The message renders inside the redirect_uris control group -- everything from
+        # its label up to the close of the surrounding controls div -- rather than in the
+        # non-field block at the bottom of the form.
+        controls = content.split('for="id_redirect_uris"')[1].split("</div>")[0]
+        self.assertIn("invalid_scheme: invalid", controls)
+
+    def test_error_for_a_field_the_form_omits_falls_back_to_non_field(self):
+        """A narrower form must still show the message rather than raise ValueError.
+
+        Django raises ``ValueError`` when model validation names a field the form does
+        not include; ApplicationForm re-keys those to non-field errors instead.
+        """
+        form_class = modelform_factory(
+            Application,
+            form=ApplicationForm,
+            fields=("name", "client_id", "client_type", "authorization_grant_type"),
+        )
+        form = form_class(
+            data={
+                "name": "Foo app",
+                "client_id": "client_id",
+                "client_type": Application.CLIENT_CONFIDENTIAL,
+                "authorization_grant_type": Application.GRANT_AUTHORIZATION_CODE,
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("redirect_uris cannot be empty", form.non_field_errors()[0])
+
+
+@pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings({"ALLOW_URI_WILDCARDS": True})
 class TestApplicationRegistrationViewRedirectURIWithWildcard(BaseTest):
     def _test_valid(self, redirect_uri):

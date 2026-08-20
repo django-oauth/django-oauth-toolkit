@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.test.utils import override_settings
 from django.utils import timezone
@@ -1104,6 +1104,103 @@ def test_application_clean(oauth2_settings, application):
     assert "allowed origin URI Validation error. invalid_scheme: http://example.com" in str(exc.value)
     application.allowed_origins = "https://example.com"
     application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_errors_are_associated_with_their_field(oauth2_settings, application):
+    """Every ``clean()`` error names the field it belongs to (see #1343)."""
+    # An unusable redirect uri belongs to redirect_uris.
+    application.redirect_uris = "invalid"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["redirect_uris"]
+    assert "invalid_scheme: invalid" in exc.value.message_dict["redirect_uris"][0]
+
+    # So does an empty redirect_uris for a grant type that requires one.
+    application.redirect_uris = ""
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["redirect_uris"]
+    assert "redirect_uris cannot be empty" in exc.value.message_dict["redirect_uris"][0]
+    application.redirect_uris = "https://example.org"
+
+    # A non-https origin belongs to allowed_origins, not to the whole form.
+    application.allowed_origins = "http://example.com"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["allowed_origins"]
+    application.allowed_origins = ""
+
+    # A missing RSA key is only actionable on the algorithm field.
+    oauth2_settings.OIDC_RSA_PRIVATE_KEY = None
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["algorithm"]
+
+    # HS256 with a public client: again the algorithm is what has to change.
+    application.algorithm = Application.HS256_ALGORITHM
+    application.hash_client_secret = False
+    application.client_secret = CLEARTEXT_SECRET
+    application.client_type = Application.CLIENT_PUBLIC
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["algorithm"]
+    application.client_type = Application.CLIENT_CONFIDENTIAL
+
+    # HS256 without a secret: the secret is the missing piece.
+    application.client_secret = ""
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["client_secret"]
+
+    # HS256 while hashing is enabled: the flag is the thing to uncheck.
+    application.client_secret = CLEARTEXT_SECRET
+    application.hash_client_secret = True
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["hash_client_secret"]
+
+    # HS256 with a secret that is already hashed: hashing is off, so the stored
+    # secret itself has to be replaced with an unhashed one.
+    application.hash_client_secret = False
+    application.client_secret = make_password(CLEARTEXT_SECRET)
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["client_secret"]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_reports_every_error_at_once(oauth2_settings, application):
+    """Unrelated problems are collected, not reported one save at a time."""
+    application.redirect_uris = "invalid"
+    application.allowed_origins = "http://example.com"
+    application.algorithm = Application.HS256_ALGORITHM
+    application.client_type = Application.CLIENT_PUBLIC
+    application.hash_client_secret = True
+
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert set(exc.value.message_dict) == {
+        "redirect_uris",
+        "allowed_origins",
+        "algorithm",
+        "hash_client_secret",
+    }
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_reports_every_invalid_uri(oauth2_settings, application):
+    """Each bad uri in a multi-line field gets its own message."""
+    application.redirect_uris = "invalid-one\ninvalid-two"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    messages = exc.value.message_dict["redirect_uris"]
+    assert len(messages) == 2
+    assert "invalid-one" in messages[0]
+    assert "invalid-two" in messages[1]
 
 
 def _test_wildcard_redirect_uris_valid(oauth2_settings, application, uris):

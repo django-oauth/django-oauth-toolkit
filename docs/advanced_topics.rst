@@ -65,6 +65,39 @@ That's all, now Django OAuth Toolkit will use your model wherever an Application
     is because of the way Django currently implements swappable models.
     See `issue #90 <https://github.com/django-oauth/django-oauth-toolkit/issues/90>`_ for details.
 
+Validating a custom Application model
+=====================================
+
+``AbstractApplication.clean()`` validates the fields that OAuth correctness depends on --
+the redirect URIs, the CORS origins, and the signing algorithm together with the client
+secret -- and raises a :class:`~django.core.exceptions.ValidationError` **keyed by field
+name**. Django then reports each message on the field it belongs to: the built-in
+application views and the Django admin render it next to the offending input, and
+``ValidationError.message_dict`` carries the field name for anything calling
+``Application.full_clean()`` directly. All problems found are reported together, so a
+single submit shows every error rather than one per attempt.
+
+When you add validation to a swapped application model, follow the same convention and
+raise field-keyed errors from ``clean()``, calling ``super()`` so the built-in checks still
+run::
+
+    from django.core.exceptions import ValidationError
+    from oauth2_provider.models import AbstractApplication
+
+    class MyApplication(AbstractApplication):
+        logo = models.ImageField()
+        agree = models.BooleanField()
+
+        def clean(self):
+            super().clean()
+            if not self.agree:
+                raise ValidationError({"agree": "You must accept the user agreement."})
+
+.. note:: Django raises ``ValueError`` when model validation names a field that the form
+    does not include, which a custom form with a narrower ``Meta.fields`` can trigger.
+    Subclass :class:`oauth2_provider.forms.ApplicationForm` to get those errors folded into
+    non-field errors instead.
+
 .. _extend_token_models:
 
 Extending the token models

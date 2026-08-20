@@ -1,5 +1,8 @@
+from typing import Any, Optional
+
 from django import forms
 from django.contrib.auth.hashers import identify_hasher
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.utils.translation import gettext_lazy as _
 
 
@@ -133,6 +136,24 @@ class ApplicationForm(forms.ModelForm):
                 ),
             }
         )
+
+    def add_error(self, field: Optional[str], error: Any) -> None:
+        """Fold model errors naming a field this form omits into non-field errors.
+
+        ``Application.clean()`` keys its errors by field so a ModelForm renders each one
+        next to the offending input. Django hands those to ``add_error(None, error_dict)``
+        and raises ``ValueError`` if a key is not a field of the form -- which a subclass
+        with a narrower ``Meta.fields`` can easily trigger (e.g. omitting ``redirect_uris``
+        while keeping ``authorization_grant_type``). Re-key the unknown ones so such a form
+        still shows the message, as a non-field error, instead of raising.
+        """
+        if field is None and hasattr(error, "error_dict"):
+            rekeyed = {}
+            for error_field, messages in error.error_dict.items():
+                key = error_field if error_field in self.fields else NON_FIELD_ERRORS
+                rekeyed.setdefault(key, []).extend(messages)
+            error = ValidationError(rekeyed)
+        super().add_error(field, error)
 
     class Media:
         js = ("oauth2_provider/js/application_form.js",)

@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-standard and breaks interoperability with spec-compliant clients. It is scheduled for
   removal in 4.0.
 ### Changed
+* #1343 `Application.clean()` now reports its validation errors per field instead of as
+  non-field errors, and reports all of them at once instead of stopping at the first
+  problem. The application forms (the built-in registration/edit views and the Django
+  admin) render each message next to the offending input — a rejected redirect URI on
+  `redirect_uris`, a non-https CORS origin on `allowed_origins`, an unusable algorithm on
+  `algorithm`, and the HS256 client-secret conflicts on `client_secret` /
+  `hash_client_secret`. `ValidationError.message_dict` is keyed by those field names, so
+  callers of `Application.full_clean()` (including dynamic client registration and CIMD)
+  now surface the field name alongside the message. A custom `ModelForm` that omits one of
+  those fields still gets the message as a non-field error, provided it subclasses
+  `oauth2_provider.forms.ApplicationForm`.
 * The `AccessToken` and `RefreshToken` admins now invalidate tokens through a **"Revoke selected"**
   action instead of raw delete (delete is disabled on those two admins). A raw delete of an access
   token left its bound refresh token behind (`RefreshToken.access_token` is `SET_NULL`) — an orphan
