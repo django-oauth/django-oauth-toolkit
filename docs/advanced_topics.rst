@@ -461,3 +461,58 @@ The rest of the shipped pages need no CSP exceptions: their styles come from a s
 served with the package's own static files, so ``style-src 'self'`` is enough — no
 third-party style host and no inline ``<style>``. See :ref:`default-stylesheet` if you
 replace those styles with your own.
+
+.. _debug-redirect-uri:
+
+Debugging redirect URI mismatches
+=================================
+
+When a client sends a ``redirect_uri`` that does not match anything registered for it,
+the authorization server answers with oauthlib's ``Mismatching redirect URI.`` and
+nothing more. That is deliberate: the error is rendered to whoever made the request, so
+naming the registered URIs there would let anyone holding a client ID enumerate that
+client's callbacks. The response says nothing, and it stays that way.
+
+The detail goes to the log instead. Django OAuth Toolkit logs to the ``oauth2_provider``
+logger; set it to ``DEBUG`` to see which URIs were compared and which component of each
+one differed::
+
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "handlers": {
+            "console": {"class": "logging.StreamHandler"},
+        },
+        "loggers": {
+            "oauth2_provider": {
+                "handlers": ["console"],
+                "level": "DEBUG",
+            },
+        },
+    }
+
+A failed match on the authorization endpoint then reports every registered candidate::
+
+    DEBUG redirect_uri 'https://app.example.com/callback/' does not match any redirect_uri
+    registered for client_id 'SDbfPCoJIzPeXwPGfMzZ1TIVfjBqvnMYCfSHTPSc':
+    'https://app.example.com/callback': path differs;
+    'http://app.example.com/callback/': scheme differs
+
+The token endpoint compares against the URI recorded on the grant instead, which
+RFC 6749 section 4.1.3 requires to be identical to the one used at authorization::
+
+    DEBUG redirect_uri 'https://app.example.com/callback' does not match the redirect_uri
+    'https://app.example.com/callback/' recorded on grant #42 at authorization time;
+    RFC 6749 section 4.1.3 requires them to be identical
+
+The same messages cover ``post_logout_redirect_uri`` for RP-initiated logout.
+
+.. note::
+
+    Both the requested URI and the registered URIs are truncated and escaped before
+    being logged, and at most ten registered candidates are listed per message, since
+    under dynamic client registration the registered URIs are supplied by the registrant
+    rather than by you. The log still records that someone attempted a particular
+    callback, so enable ``DEBUG`` on a server whose logs you treat accordingly; leaving
+    the ``oauth2_provider`` logger at its default level keeps these messages off
+    entirely.

@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #681 Redirect URI mismatches are now diagnosed on the `oauth2_provider` logger at `DEBUG`,
+  reporting the requested URI, every registered candidate it was compared against, and which
+  component of each one differed (scheme, hostname, port, path, query). The same detail is
+  emitted for `post_logout_redirect_uri` and for the token endpoint's comparison against the
+  URI recorded on the grant. The error response is unchanged: the registered URIs are never
+  disclosed to the requester, only to the server's log. See "Debugging redirect URI
+  mismatches" in the documentation. Note that `AbstractApplication.redirect_uri_allowed()`
+  and `post_logout_redirect_uri_allowed()` now call the new `check_redirect_to_uri_allowed()`
+  (same verdict, plus the mismatch reasons) instead of `redirect_to_uri_allowed()`, so code
+  that wrapped or patched the latter to influence those methods must target the former.
 * #634 A system check (`oauth2_provider.W011`) that warns when the `AccessToken` and
   `RefreshToken` models are swapped into different apps, and a new
   "Extending the token models" documentation section explaining how to swap the

@@ -134,6 +134,48 @@ class TestAuthorizationCodeView(BaseTest):
             "?error=invalid_request&error_description=Invalid+client_id+parameter+value.",
         )
 
+    def test_pre_auth_redirect_uri_mismatch_does_not_leak_registered_uris(self):
+        """
+        A mismatching redirect_uri is diagnosed in the log, never in the response.
+
+        #681 asked for the allowed and the actual redirect URI to be reported when
+        the match fails.  The response is rendered to whoever made the request, so
+        putting the registered URIs there would let an unauthenticated caller
+        enumerate a client's callbacks with nothing but its client_id; the detail
+        goes to the "oauth2_provider" logger at DEBUG instead, and the response is
+        left exactly as it was.
+        """
+        self.client.login(username="test_user", password="123456")
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "read write",
+            # Deliberately not a superstring of any registered URI, so that the
+            # leak assertions below cannot pass on the request's own echo.
+            "redirect_uri": "http://not-registered.example.org/cb",
+        }
+
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error=invalid_request", response.context_data["url"])
+        self.assertIn("error_description=Mismatching+redirect+URI.", response.context_data["url"])
+        # Nothing about the registered URIs may appear anywhere in the response.
+        body = response.content.decode()
+        for registered_uri in self.application.redirect_uris.split():
+            self.assertNotIn(registered_uri, body)
+            self.assertNotIn(registered_uri, response.context_data["url"])
+
+        # ...but the log says exactly which candidates were compared and why each
+        # one failed, which is what the issue asked for.
+        message = "\n".join(captured.output)
+        self.assertIn("redirect_uri 'http://not-registered.example.org/cb'", message)
+        self.assertIn("'http://example.com': hostname differs", message)
+        self.assertIn("'custom-scheme://example.com': scheme differs", message)
+
     def test_pre_auth_client_credentials_app_without_redirect_uri(self):
         """
         An application with no registered redirect_uris (here a client_credentials
@@ -917,6 +959,36 @@ class BaseAuthorizationCodeTokenView(BaseTest):
 
 @pytest.mark.oauth2_settings(presets.DEFAULT_SCOPES_RW)
 class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
+    def test_token_request_redirect_uri_mismatch_does_not_leak_the_grant_uri(self):
+        """
+        Same contract on the token endpoint leg: RFC 6749 section 4.1.3 requires
+        the redirect_uri to be identical to the one used at authorization, and the
+        mismatch is diagnosed in the log rather than in the token response.
+        """
+        self.client.login(username="test_user", password="123456")
+        authorization_code = self.get_auth()
+
+        token_request_data = {
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "http://example.org/not-the-one-used",
+        }
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+
+        with self.assertLogs("oauth2_provider", level="DEBUG") as captured:
+            response = self.client.post(
+                reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("http://example.org?foo=bar", response.content.decode())
+
+        message = "\n".join(captured.output)
+        self.assertIn("redirect_uri 'http://example.org/not-the-one-used'", message)
+        self.assertIn("RFC 6749 section 4.1.3", message)
+        # The authorization code is a credential; it must not reach the log.
+        self.assertNotIn(authorization_code, message)
+
     def test_basic_auth(self):
         """
         Request an access token using basic authentication for client authentication
