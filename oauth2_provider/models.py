@@ -97,6 +97,31 @@ class TokenChecksumField(models.CharField):
         return super().pre_save(model_instance, add)
 
 
+def set_token_value(token_instance: "AbstractAccessToken | AbstractRefreshToken", raw_token: str) -> None:
+    """
+    Assign the raw token to a token instance, redacting the value stored at rest
+    when COMPLIANT_BCP_RFC9700_TOKEN_STORAGE is enabled (RFC 9700).
+
+    The lookup checksum (``token_checksum``) is always derived from the raw token;
+    when redacting, the raw value is stashed on ``_raw_token`` (used only to compute
+    the checksum, see :class:`TokenChecksumField`) and the ``token`` column is left
+    blank so the reusable token is never persisted.
+
+    Plaintext storage is an ambient config posture exercised on every token
+    issuance, so (unlike the request-time gates) it is surfaced by the ``--deploy``
+    system check ``W006`` rather than a per-token warning here. See
+    :mod:`oauth2_provider.bcp`.
+    """
+    if oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE:
+        token_instance._raw_token = raw_token
+        token_instance.token = ""
+    else:
+        token_instance.token = raw_token
+        # Clear any stale redaction marker so a later save recomputes the checksum
+        # from this plaintext token rather than a previously stashed raw value.
+        token_instance._raw_token = None
+
+
 class AbstractApplication(models.Model):
     """
     An Application instance represents a Client on the Authorization server.

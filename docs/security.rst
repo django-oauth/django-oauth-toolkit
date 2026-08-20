@@ -188,6 +188,12 @@ By default DOT stores access and refresh tokens in cleartext (alongside a SHA-25
 token hash, so a database read no longer discloses usable tokens. Existing cleartext
 tokens are left in place and age out as they expire or rotate.
 
+This covers the RFC 7592 registration access token as well. Since the server keeps no
+readable copy, a client only receives that token from a response that mints one: the
+registration response, and — when ``DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE`` is
+enabled — the management ``PUT`` that rotates it. A management ``GET``, or a ``PUT``
+without rotation, echoes back whichever token the request presented.
+
 .. warning::
    Hashed token storage is incompatible with the refresh-token grace period, which
    must return a previously issued (cleartext) token from the database. When

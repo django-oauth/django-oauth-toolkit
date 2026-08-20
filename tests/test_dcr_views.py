@@ -2,6 +2,7 @@
 Tests for Dynamic Client Registration views (RFC 7591 / RFC 7592).
 """
 
+import hashlib
 import json
 
 import pytest
@@ -951,3 +952,82 @@ class TestDCRFullRoundtrip(TestCase):
         delete_response = self.client.delete(mgmt_url, **_bearer(new_token))
         assert delete_response.status_code == 204
         assert not Application.objects.filter(client_id=client_id).exists()
+
+
+# ---------------------------------------------------------------------------
+# RFC 9700 hashed-at-rest token storage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.DCR_SETTINGS,
+        "COMPLIANT_BCP_RFC9700_TOKEN_STORAGE": True,
+    }
+)
+class TestDCRRegistrationTokenStorage(TestCase):
+    """Registration access tokens honour COMPLIANT_BCP_RFC9700_TOKEN_STORAGE.
+
+    These tokens are minted by the DCR views rather than by the validator's normal
+    issuance path, so they are the one kind that can keep being written in cleartext
+    after a deployment enables hashed-at-rest storage.
+    """
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("hashed_user", "hashed@example.com", "pass")
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "client_name": "Hashed App",
+            },
+        )
+        assert response.status_code == 201
+        body = response.json()
+        self.client_id = body["client_id"]
+        self.registration_token = body["registration_access_token"]
+        self.management_url = _management_url(self.client_id)
+        self.client.logout()
+
+    def test_registration_token_is_not_persisted_in_cleartext(self):
+        checksum = hashlib.sha256(self.registration_token.encode()).hexdigest()
+        token = AccessToken.objects.get(token_checksum=checksum)
+        assert token.token == ""
+        assert token.token_checksum == checksum
+
+    def test_issued_token_authenticates_and_is_echoed_back(self):
+        """Redacting the column must not cost the client the token it was issued, and
+        RFC 7592 §3 still wants that token in the read response. With no readable copy
+        left on the server, the endpoint echoes back whatever the client presented."""
+        assert self.registration_token
+        response = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert response.status_code == 200
+        assert response.json()["registration_access_token"] == self.registration_token
+
+    def test_rotation_returns_a_usable_token_and_retires_the_old_one(self):
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "client_name": "Hashed App v2",
+                }
+            ),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        rotated = response.json()["registration_access_token"]
+        assert rotated
+        assert rotated != self.registration_token
+
+        stored = AccessToken.objects.get(token_checksum=hashlib.sha256(rotated.encode()).hexdigest())
+        assert stored.token == ""
+        assert self.client.get(self.management_url, **_bearer(rotated)).status_code == 200
+
+        rotated_away = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert rotated_away.status_code == 401
