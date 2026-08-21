@@ -130,6 +130,11 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
         # the server will actually accept.
         response_types = bcp_filter_response_types(oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED)
         grant_types = bcp_filter_grant_types(oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED, response_types)
+        # RFC 7523: advertise the jwt-bearer grant only when it is actually
+        # accepted at the token endpoint (the grant is off by default).
+        jwt_bearer = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+        if oauth2_settings.JWT_BEARER_GRANT_ENABLED and jwt_bearer not in grant_types:
+            grant_types.append(jwt_bearer)
 
         data = {
             "issuer": issuer_url,
