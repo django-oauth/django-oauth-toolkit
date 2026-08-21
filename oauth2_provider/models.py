@@ -14,7 +14,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.hashers import identify_hasher, make_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.db import models, router, transaction
+from django.db import IntegrityError, models, router, transaction
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -788,6 +788,62 @@ class AbstractRefreshToken(models.Model):
     updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
     revoked = models.DateTimeField(null=True, verbose_name=_("revoked"))
 
+    @classmethod
+    def revoke_family(cls, token_family: uuid.UUID | None) -> None:
+        """
+        Revoke every live refresh token sharing ``token_family`` and delete the family's
+        access tokens, in a constant number of queries.
+
+        This is the set-based equivalent of calling :meth:`revoke` on each member of the
+        family, which is what reuse protection needs: a rotating client adds a row to its
+        family on every refresh, so revoking row by row cost one ``SELECT ... FOR UPDATE``
+        round trip per token ever issued to that session, paid again on every replay of the
+        stale token (#1809). A model that overrides :meth:`revoke` to do more should
+        override this too.
+
+        Rows are not locked up front: unlike rotation this path mints nothing, so there is
+        no read-then-write to protect. The statements take their locks in the same order as
+        :meth:`revoke` -- refresh token, then access token -- so a concurrent rotation in
+        the family cannot deadlock against the sweep.
+
+        Falls back to revoking row by row if the bulk write hits the uniqueness of
+        ``(token_checksum, revoked)``; see the handler below and #1816.
+        """
+        if not token_family:
+            return
+
+        access_token_model = get_access_token_model()
+        access_token_database = router.db_for_write(access_token_model)
+
+        try:
+            with transaction.atomic(using=access_token_database):
+                now = timezone.now()
+                # ``updated`` is ``auto_now``, which a queryset update does not trigger.
+                cls.objects.filter(token_family=token_family, revoked__isnull=True).update(
+                    revoked=now, updated=now
+                )
+                # Deleting is what ``AccessToken.revoke()`` does, and ``access_token`` is
+                # ``SET_NULL``, so this clears the pointer on the rows revoked above as well.
+                # The family is re-read rather than snapshotted before the update, so a member
+                # rotated in concurrently loses its access token too and is left an orphan,
+                # which ``validate_refresh_token`` rejects. Sub-selecting through the forward
+                # FK avoids the reverse accessor, whose name a swapped model may change.
+                access_token_model.objects.filter(
+                    pk__in=cls.objects.filter(token_family=token_family).values("access_token_id")
+                ).delete()
+        except IntegrityError:
+            # Uniqueness is ``(token_checksum, revoked)``, so one shared timestamp cannot
+            # cover two live members holding the same checksum -- a state the constraint
+            # ought to forbid outright but does not, since NULLs compare distinct and live
+            # rows have ``revoked`` NULL (#1816). Reuse detection must not raise on the way
+            # to ``invalid_grant``, so fall back to the pre-#1809 sweep, which gives every
+            # row its own ``timezone.now()``. This costs a locking SELECT per family member
+            # again, but only for a family that is already in a state it cannot reach by
+            # rotating: the ``revoke()`` per row is the whole point of the fallback.
+            # Delete once #1816 takes ``revoked`` out of the unique key.
+            for related_rt in cls.objects.filter(token_family=token_family):
+                related_rt.revoke()
+
     def revoke(self):
         """
         Mark this refresh token revoked and revoke related access token
@@ -821,6 +877,11 @@ class AbstractRefreshToken(models.Model):
             "token_checksum",
             "revoked",
         )
+        indexes = [
+            # ``revoke_family()`` filters on ``token_family`` on the ``/token/`` path,
+            # and without an index that is a scan of the whole refresh token table.
+            models.Index(fields=["token_family"]),
+        ]
 
 
 class RefreshToken(AbstractRefreshToken):

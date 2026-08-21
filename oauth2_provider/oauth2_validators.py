@@ -1277,9 +1277,11 @@ class OAuth2Validator(RequestValidator):
             superseded = AccessToken.objects.filter(source_refresh_token=rt).exists()
             if grace_expired or not superseded:
                 if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION and rt.token_family:
-                    rt_token_family = RefreshToken.objects.filter(token_family=rt.token_family)
-                    for related_rt in rt_token_family.all():
-                        related_rt.revoke()
+                    # Set-based, not row by row: a family grows by one row per refresh
+                    # and a client on a retry timer replays the stale token, so a per-row
+                    # sweep cost a locking SELECT per token in the family, every time
+                    # (#1809).
+                    RefreshToken.revoke_family(rt.token_family)
                 return False
 
         # Enforce REFRESH_TOKEN_EXPIRE_SECONDS at validation time. Historically the setting
