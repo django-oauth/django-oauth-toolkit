@@ -12,6 +12,7 @@ from django.test import RequestFactory
 from django.urls import reverse
 
 import oauth2_provider.models
+from oauth2_provider.core.utils import set_oauthlib_user_to_device_request_user
 from oauth2_provider.models import (
     DeviceCodeResponse,
     DeviceRequest,
@@ -21,7 +22,6 @@ from oauth2_provider.models import (
     get_device_grant_model,
     get_refresh_token_model,
 )
-from oauth2_provider.utils import set_oauthlib_user_to_device_request_user
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -667,7 +667,9 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         }
 
         with mock.patch(
-            "oauth2_provider.views.mixins.OAuthLibMixin.get_oauthlib_core", MockOauthlibCoreClass
+            "oauth2_provider.authorization_server.views.mixins."
+            "AuthorizationServerViewMixin.get_oauthlib_core",
+            MockOauthlibCoreClass,
         ):
             response = self.client.post(
                 "/o/token/",
@@ -1130,7 +1132,9 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         mock_model.DoesNotExist = Application.DoesNotExist
         mock_model.objects.get.side_effect = Application.DoesNotExist
 
-        with mock.patch("oauth2_provider.views.device.get_application_model", return_value=mock_model):
+        with mock.patch(
+            "oauth2_provider.authorization_server.views.device.get_application_model", return_value=mock_model
+        ):
             response = self.client.post(
                 reverse("oauth2_provider:device-authorization"),
                 data=urlencode({"client_id": self.application.client_id}),

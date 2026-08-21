@@ -7,12 +7,11 @@ from django.test import RequestFactory
 from django.views.generic import View
 from oauthlib.oauth2 import Server
 
-from oauth2_provider.oauth2_backends import OAuthLibCore
+from oauth2_provider.authorization_server.oidc.mixins import OIDCLogoutOnlyMixin, OIDCOnlyMixin
+from oauth2_provider.core.backends_oauthlib import OAuthLibCore
+from oauth2_provider.core.views import OAuthLibCoreMixin
 from oauth2_provider.oauth2_validators import OAuth2Validator
-from oauth2_provider.views.mixins import (
-    OAuthLibMixin,
-    OIDCLogoutOnlyMixin,
-    OIDCOnlyMixin,
+from oauth2_provider.resource_server.mixins import (
     ProtectedResourceMetadataMixin,
     ProtectedResourceMixin,
     ReadWriteScopedResourceMixin,
@@ -31,7 +30,7 @@ class BaseTest(TestCase):
         super().setUpClass()
 
 
-class TestOAuthLibMixin(BaseTest):
+class TestOAuthLibCoreMixin(BaseTest):
     def test_missing_oauthlib_backend_class_uses_fallback(self):
         class CustomOauthLibBackend:
             def __init__(self, *args, **kwargs):
@@ -39,7 +38,7 @@ class TestOAuthLibMixin(BaseTest):
 
         self.oauth2_settings.OAUTH2_BACKEND_CLASS = CustomOauthLibBackend
 
-        class TestView(OAuthLibMixin, View):
+        class TestView(OAuthLibCoreMixin, View):
             server_class = Server
             validator_class = OAuth2Validator
 
@@ -56,7 +55,7 @@ class TestOAuthLibMixin(BaseTest):
 
         self.oauth2_settings.OAUTH2_SERVER_CLASS = CustomServer
 
-        class TestView(OAuthLibMixin, View):
+        class TestView(OAuthLibCoreMixin, View):
             validator_class = OAuth2Validator
             oauthlib_backend_class = OAuthLibCore
 
@@ -72,7 +71,7 @@ class TestOAuthLibMixin(BaseTest):
 
         self.oauth2_settings.OAUTH2_VALIDATOR_CLASS = CustomValidator
 
-        class TestView(OAuthLibMixin, View):
+        class TestView(OAuthLibCoreMixin, View):
             server_class = Server
             oauthlib_backend_class = OAuthLibCore
 
@@ -83,7 +82,7 @@ class TestOAuthLibMixin(BaseTest):
         self.assertTrue(isinstance(core.server.request_validator, CustomValidator))
 
     def test_correct_server(self):
-        class TestView(OAuthLibMixin, View):
+        class TestView(OAuthLibCoreMixin, View):
             server_class = Server
             validator_class = OAuth2Validator
             oauthlib_backend_class = OAuthLibCore
@@ -98,7 +97,7 @@ class TestOAuthLibMixin(BaseTest):
         class AnotherOauthLibBackend:
             pass
 
-        class TestView(OAuthLibMixin, View):
+        class TestView(OAuthLibCoreMixin, View):
             server_class = Server
             validator_class = OAuth2Validator
             oauthlib_backend_class = AnotherOauthLibBackend

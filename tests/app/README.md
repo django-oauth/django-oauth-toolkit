@@ -83,7 +83,7 @@ cd tests/app/idp
 #    it prints no banner, so the variable captures only the assertion.
 ASSERTION=$(DJANGO_SETTINGS_MODULE=idp.settings python -c "
 import django; django.setup()
-from oauth2_provider.client_assertions import make_client_assertion
+from oauth2_provider.client import make_client_assertion
 from jwcrypto import jwk
 key = jwk.JWK(**{
     'kty': 'EC', 'crv': 'P-256', 'kid': 'demo-rp-key',

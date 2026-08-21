@@ -10,7 +10,13 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from pytest_django.asserts import assertRedirects
 
-from oauth2_provider.exceptions import (
+from oauth2_provider.authorization_server.oidc.views import (
+    RPInitiatedLogoutView,
+    _load_id_token,
+    _validate_claims,
+)
+from oauth2_provider.authorization_server.views.base import AuthorizationView
+from oauth2_provider.core.exceptions import (
     ClientIdMissmatch,
     InvalidIDTokenError,
     InvalidOIDCClientError,
@@ -24,8 +30,6 @@ from oauth2_provider.models import (
 )
 from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.settings import oauth2_settings
-from oauth2_provider.views.base import AuthorizationView
-from oauth2_provider.views.oidc import RPInitiatedLogoutView, _load_id_token, _validate_claims
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase

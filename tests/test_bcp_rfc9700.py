@@ -17,8 +17,8 @@ from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
+from oauth2_provider.core.backends_oauthlib import _add_iss_to_redirect
 from oauth2_provider.models import get_access_token_model, get_application_model, set_token_value
-from oauth2_provider.oauth2_backends import _add_iss_to_redirect
 from oauth2_provider.views import ProtectedResourceView
 
 from . import presets
@@ -325,7 +325,7 @@ def test_set_token_value_clears_stale_raw_token_in_plaintext_mode():
 def test_bcp_filter_response_types_is_token_order_independent(oauth2_settings):
     # Response types are space-separated sets: implicit types must be filtered
     # regardless of token order; hybrid (code ...) types are kept.
-    from oauth2_provider.views.metadata import bcp_filter_response_types
+    from oauth2_provider.authorization_server.views.metadata import bcp_filter_response_types
 
     oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
     filtered = bcp_filter_response_types(["code", "token id_token", "id_token token", "token", "code token"])
@@ -565,7 +565,7 @@ class TestHashedNonRotatingRefreshToken(TestCase):
 @pytest.mark.usefixtures("oauth2_settings")
 class TestDeployChecks(TestCase):
     def _run(self):
-        from oauth2_provider.checks import validate_bcp_configuration
+        from oauth2_provider.core.checks import validate_bcp_configuration
 
         return validate_bcp_configuration(None)
 
@@ -607,7 +607,7 @@ class TestConfigValidationGates(TestCase):
     insecure value warns while the gate is False and errors once it is True."""
 
     def _run(self):
-        from oauth2_provider.checks import validate_bcp_configuration
+        from oauth2_provider.core.checks import validate_bcp_configuration
 
         return validate_bcp_configuration(None)
 

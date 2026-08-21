@@ -4,13 +4,13 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.utils import timezone
 
-from oauth2_provider.decorators import (
+from oauth2_provider.models import get_access_token_model, get_application_model
+from oauth2_provider.resource_server.decorators import (
     protected_resource,
     protected_resource_metadata,
     rw_protected_resource,
     rw_protected_resource_metadata,
 )
-from oauth2_provider.models import get_access_token_model, get_application_model
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 

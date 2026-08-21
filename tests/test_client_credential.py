@@ -9,11 +9,11 @@ from django.urls import reverse
 from django.views.generic import View
 from oauthlib.oauth2 import BackendApplicationServer
 
+from oauth2_provider.core.backends_oauthlib import OAuthLibCore
 from oauth2_provider.models import get_access_token_model, get_application_model
-from oauth2_provider.oauth2_backends import OAuthLibCore
 from oauth2_provider.oauth2_validators import OAuth2Validator
+from oauth2_provider.resource_server.mixins import ResourceServerViewMixin
 from oauth2_provider.views import ProtectedResourceView
-from oauth2_provider.views.mixins import OAuthLibMixin
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -96,7 +96,7 @@ class TestClientCredential(BaseTest):
         self.assertIsNone(access_token.user)
 
 
-class ExampleView(OAuthLibMixin, View):
+class ExampleView(ResourceServerViewMixin, View):
     server_class = BackendApplicationServer
     validator_class = OAuth2Validator
     oauthlib_backend_class = OAuthLibCore
@@ -145,7 +145,10 @@ class TestExtendedRequest(BaseTest):
         with pytest.raises(SuspiciousOperation):
             ExampleView().verify_request(request)
 
-    @patch("oauth2_provider.views.mixins.OAuthLibMixin.get_oauthlib_core")
+    # Patch the imported class object rather than a dotted string, so the mock lands
+    # on the same class object ExampleView subclasses regardless of how the module was
+    # resolved.
+    @patch.object(ResourceServerViewMixin, "get_oauthlib_core")
     def test_reraises_value_errors_as_is(self, patched_core):
         patched_core.return_value.verify_request.side_effect = ValueError("Generic error")
 

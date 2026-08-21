@@ -1,5 +1,5 @@
 """
-Tests for oauth2_provider.safe_fetch (SSRF-hardened HTTPS fetching).
+Tests for oauth2_provider.core.safe_fetch (SSRF-hardened HTTPS fetching).
 
 The SSRF pinning behavior (IP validation, deadline sharing, redirect refusal)
 is additionally exercised through the CIMD suite; these tests cover the
@@ -8,8 +8,8 @@ generic entry points directly, with DNS and the connection pool faked.
 
 import pytest
 
-from oauth2_provider import safe_fetch
-from oauth2_provider.safe_fetch import SafeFetchError, fetch_https_json
+from oauth2_provider.core import safe_fetch
+from oauth2_provider.core.safe_fetch import SafeFetchError, fetch_https_json
 
 
 class _FakeHTTPResponse:
@@ -41,10 +41,12 @@ def _fake_pool_returning(response):
 
 def _patch_network(mocker, response):
     mocker.patch(
-        "oauth2_provider.safe_fetch.socket.getaddrinfo",
+        "oauth2_provider.core.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
     )
-    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _fake_pool_returning(response))
+    mocker.patch(
+        "oauth2_provider.core.safe_fetch.urllib3.HTTPSConnectionPool", _fake_pool_returning(response)
+    )
 
 
 @pytest.mark.parametrize(
@@ -118,7 +120,7 @@ def test_media_type_is_json():
 
 def test_exhausted_timeout_reports_explicit_message(mocker):
     mocker.patch(
-        "oauth2_provider.safe_fetch.socket.getaddrinfo",
+        "oauth2_provider.core.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
     )
     with pytest.raises(SafeFetchError, match="timeout budget exhausted"):
@@ -137,7 +139,7 @@ def test_path_params_component_is_preserved(mocker):
     # urlparse would split ";v=2.json" off the path as legacy params; the
     # request target must keep the path verbatim.
     mocker.patch(
-        "oauth2_provider.safe_fetch.socket.getaddrinfo",
+        "oauth2_provider.core.safe_fetch.socket.getaddrinfo",
         return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
     )
     captured = {}
@@ -153,6 +155,6 @@ def test_path_params_component_is_preserved(mocker):
         def close(self):
             pass
 
-    mocker.patch("oauth2_provider.safe_fetch.urllib3.HTTPSConnectionPool", _Pool)
+    mocker.patch("oauth2_provider.core.safe_fetch.urllib3.HTTPSConnectionPool", _Pool)
     fetch_https_json("https://example.com/jwks;v=2.json?x=1", timeout=5, max_size=1024)
     assert captured["path"] == "/jwks;v=2.json?x=1"

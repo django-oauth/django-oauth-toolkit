@@ -4,9 +4,9 @@ from django.contrib.auth.hashers import make_password
 from django.forms.models import modelform_factory
 from django.urls import reverse
 
-from oauth2_provider.forms import ApplicationForm, _is_hashed
+from oauth2_provider.authorization_server.forms import ApplicationForm, _is_hashed
+from oauth2_provider.authorization_server.views.application import ApplicationRegistration
 from oauth2_provider.models import get_application_model
-from oauth2_provider.views.application import ApplicationRegistration
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 from .models import SampleApplication

@@ -6,9 +6,9 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.utils.timezone import now, timedelta
 
-from oauth2_provider.backends import get_oauthlib_core
+from oauth2_provider.core.backends_oauthlib import JSONOAuthLibCore, OAuthLibCore
 from oauth2_provider.models import get_access_token_model, get_application_model, redirect_to_uri_allowed
-from oauth2_provider.oauth2_backends import JSONOAuthLibCore, OAuthLibCore
+from oauth2_provider.resource_server.backends import get_oauthlib_core
 from tests.common_testing import OAuth2ProviderTestCase as TestCase
 
 

@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import SystemCheckError
 from django.test import override_settings
 
-from oauth2_provider.checks import (
+from oauth2_provider.core.checks import (
     validate_refresh_token_configuration,
     validate_swapped_model_consistency,
     validate_token_configuration,
