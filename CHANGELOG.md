@@ -126,6 +126,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   token table. What gets revoked is unchanged: every live member of the family, and the
   family's access tokens. If you swap in your own refresh token model, run `makemigrations` to
   pick up the index, and if you override `revoke()` override `revoke_family()` to match.
+  Where a family holds two live tokens sharing a checksum -- which `RefreshToken`'s
+  `(token_checksum, revoked)` uniqueness permits but the bulk write cannot express (#1816) --
+  the sweep falls back to revoking row by row, so reuse detection still returns
+  `invalid_grant` rather than raising.
 * #1796 Redirect URIs using an RFC 8252 §7.1 private-use URI scheme can now be registered.
   Such a scheme has no naming authority, so only a single slash follows it
   (`com.example.app:/oauth2redirect`), but `Application.clean()` reassembled every URI with
