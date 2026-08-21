@@ -8,7 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.db import models as django_models
 from django.test.utils import CaptureQueriesContext, override_settings
 from django.utils import timezone
@@ -441,7 +441,18 @@ class TestRefreshTokenModel(BaseTestModels):
             hashlib.sha256(token.encode()).hexdigest(),
         )
 
-    def test_same_token_allowed_with_different_revoked_timestamps(self):
+    def test_duplicate_token_rejected_against_a_live_row(self):
+        # A refresh token value is the sole lookup key, so a second row carrying it -- live
+        # or revoked -- would leave nothing to say which row a presented token means.
+        token = secrets.token_urlsafe(32)
+        RefreshToken.objects.create(user=self.user, token=token, application=self.app)
+
+        with self.assertRaises(IntegrityError):
+            RefreshToken.objects.create(user=self.user, token=token, application=self.app)
+
+    def test_duplicate_token_rejected_against_a_revoked_row(self):
+        # Revoking does not free the value for re-insertion: ``revoked`` is not part of the
+        # key, so the uniqueness holds across the whole table (see #1816).
         token = secrets.token_urlsafe(32)
         RefreshToken.objects.create(
             user=self.user,
@@ -449,14 +460,9 @@ class TestRefreshTokenModel(BaseTestModels):
             application=self.app,
             revoked=timezone.now(),
         )
-        active = RefreshToken.objects.create(
-            user=self.user,
-            token=token,
-            application=self.app,
-        )
 
-        self.assertIsNone(active.revoked)
-        self.assertEqual(RefreshToken.objects.filter(token_checksum=active.token_checksum).count(), 2)
+        with self.assertRaises(IntegrityError):
+            RefreshToken.objects.create(user=self.user, token=token, application=self.app)
 
     def _make_refresh_token(self, token_family, revoked=None, with_access_token=True):
         access_token = None

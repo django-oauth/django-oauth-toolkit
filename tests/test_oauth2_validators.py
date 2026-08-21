@@ -415,33 +415,6 @@ class TestOAuth2Validator(TransactionTestCase):
         refresh_token.refresh_from_db()
         self.assertIsNotNone(refresh_token.revoked)
 
-    def test_validate_refresh_token_prefers_unrevoked_row_over_revoked_duplicate(self):
-        # (token_checksum, revoked) uniqueness allows the same token value to exist
-        # as both a revoked row and an active row; validation must pick the active one.
-        token = "duplicate-refresh-token"
-        RefreshToken.objects.create(
-            user=self.user,
-            token=token,
-            application=self.application,
-            revoked=timezone.now() - datetime.timedelta(days=1),
-        )
-        access_token = AccessToken.objects.create(
-            user=self.user,
-            token="dup-active-access-token",
-            application=self.application,
-            expires=timezone.now() + datetime.timedelta(days=1),
-        )
-        RefreshToken.objects.create(
-            user=self.user,
-            token=token,
-            application=self.application,
-            access_token=access_token,
-        )
-        request = mock.MagicMock(wraps=Request)
-
-        self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
-        self.assertIsNone(request.refresh_token_instance.revoked)
-
     def test_validate_refresh_token_rejects_revoked_token_that_was_not_superseded(self):
         # A token revoked deliberately (/revoke/, the admin, RP-initiated logout) was never
         # consumed to mint a successor access token, so the grace window must not shield it:
@@ -577,27 +550,6 @@ class TestOAuth2Validator(TransactionTestCase):
         )
         request = mock.MagicMock(wraps=Request)
         self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
-
-    def test_revoke_token_with_duplicate_refresh_token_checksums(self):
-        token = "duplicate-refresh-token"
-        RefreshToken.objects.create(
-            user=self.user,
-            token=token,
-            application=self.application,
-            revoked=timezone.now() - datetime.timedelta(days=1),
-        )
-        active_token = RefreshToken.objects.create(
-            user=self.user,
-            token=token,
-            application=self.application,
-        )
-
-        request = mock.MagicMock(wraps=Request)
-        request.client = self.application
-        self.validator.revoke_token(token, "refresh_token", request)
-
-        active_token.refresh_from_db()
-        self.assertIsNotNone(active_token.revoked)
 
     def test_validate_refresh_token_invalid_expire_seconds_raises(self):
         # A non-numeric REFRESH_TOKEN_EXPIRE_SECONDS is a misconfiguration. Validation
@@ -754,7 +706,11 @@ class TestOAuth2Validator(TransactionTestCase):
         self.assertEqual(1, RefreshToken.objects.count())
         self.assertEqual(1, AccessToken.objects.count())
 
-    def test_save_bearer_token__with_new_token_equal_to_existing_token__revokes_old_tokens(self):
+    def test_save_bearer_token__with_new_token_equal_to_existing_token__fails_the_grant(self):
+        # Rotation mints a fresh value and a non-rotating refresh reuses the existing row,
+        # so a rotated token that collides with a stored one means REFRESH_TOKEN_GENERATOR
+        # is broken. That is a failed grant, not a 500 -- and the atomic block around
+        # save_bearer_token rolls back, so the old pair is left untouched (#1816).
         access_token = AccessToken.objects.create(
             token="123",
             user=self.user,
@@ -772,13 +728,19 @@ class TestOAuth2Validator(TransactionTestCase):
             "refresh_token": "abc",
             "access_token": "123",
         }
+        # A real oauthlib Request: InvalidGrantError reads redirect_uri/client_id/state off
+        # it to build the error response, which the class-wrapping MagicMock cannot supply.
+        request = Request("/token", http_method="POST")
+        request.user = self.user
+        request.client = self.application
+        request.refresh_token_instance = refresh_token
 
+        with self.assertRaises(rfc6749_errors.InvalidGrantError):
+            self.validator.save_bearer_token(token, request)
+
+        refresh_token.refresh_from_db()
+        self.assertIsNone(refresh_token.revoked)
         self.assertEqual(1, RefreshToken.objects.count())
-        self.assertEqual(1, AccessToken.objects.count())
-
-        self.validator.save_bearer_token(token, self.request)
-
-        self.assertEqual(1, RefreshToken.objects.filter(revoked__isnull=True).count())
         self.assertEqual(1, AccessToken.objects.count())
 
     def test_save_bearer_token__with_no_refresh_token__creates_new_access_token_only(self):

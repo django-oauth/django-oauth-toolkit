@@ -17,8 +17,7 @@ import requests
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.hashers import check_password, identify_hasher
-from django.db import router, transaction
-from django.db.models import F
+from django.db import IntegrityError, router, transaction
 from django.http import HttpRequest
 from django.utils import dateformat, timezone
 from django.utils.crypto import constant_time_compare
@@ -1133,7 +1132,29 @@ class OAuth2Validator(RequestValidator):
             resource=getattr(request, "resource", []),  # RFC 8707
         )
         self._set_token_value(refresh_token, refresh_token_code)
-        refresh_token.save()
+        try:
+            refresh_token.save()
+        except IntegrityError as exc:
+            # The row collided with one already stored -- in practice on the unique
+            # ``token_checksum``, since rotation always mints a fresh value and a
+            # non-rotating refresh leaves the existing row in place, so a duplicate points
+            # at a REFRESH_TOKEN_GENERATOR that returns predictable or repeated values.
+            # (The one-to-one ``access_token`` can also collide, if a concurrent rotation
+            # claimed it between the lookup in ``_save_bearer_token`` and this insert.)
+            #
+            # Either way the grant cannot be completed, so fail it rather than letting the
+            # IntegrityError surface as a 500: it propagates out of ``save_bearer_token``'s
+            # atomic block, rolling it back, and ``OAuthLibCore.create_token_response``
+            # renders it as an error response. Nothing is queried in between -- on
+            # PostgreSQL the transaction is already poisoned and any query would raise
+            # TransactionManagementError -- so the cause is reported, not narrowed.
+            log.error(
+                "Refusing to issue a refresh token: it collides with a token already "
+                "stored (%s). If this recurs, check that REFRESH_TOKEN_GENERATOR returns "
+                "unpredictable, unique values.",
+                exc,
+            )
+            raise errors.InvalidGrantError(request=request) from exc
         return refresh_token
 
     def revoke_token(self, token, token_type_hint, request, *args, **kwargs):
@@ -1168,8 +1189,7 @@ class OAuth2Validator(RequestValidator):
         if application_pk is None:
             return
 
-        # RefreshToken uniqueness is (token_checksum, revoked), so several rows may share a
-        # checksum; revoke every match instead of get() to avoid MultipleObjectsReturned.
+        # ``token_checksum`` is unique on both token models, so this matches at most one row.
         lookup = {"token_checksum": token_checksum, "application_id": application_pk}
         tokens = list(token_type.objects.filter(**lookup))
         if not tokens:
@@ -1245,14 +1265,7 @@ class OAuth2Validator(RequestValidator):
         """
 
         token_checksum = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
-        # Several rows may share a checksum (uniqueness is (token_checksum, revoked)):
-        # prefer the unrevoked row, otherwise the most recently revoked one.
-        rt = (
-            RefreshToken.objects.filter(token_checksum=token_checksum)
-            .select_related("access_token")
-            .order_by(F("revoked").desc(nulls_first=True))
-            .first()
-        )
+        rt = RefreshToken.objects.filter(token_checksum=token_checksum).select_related("access_token").first()
 
         if not rt:
             return False

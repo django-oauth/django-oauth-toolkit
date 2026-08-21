@@ -246,3 +246,40 @@ def validate_swapped_model_consistency(app_configs, **kwargs):
         ]
 
     return []
+
+
+@checks.register(checks.Tags.models)
+def validate_refresh_token_configuration(app_configs, **kwargs):
+    """
+    Warn when refresh token reuse protection is enabled without rotation.
+
+    Reuse protection detects a replay by recognizing a refresh token that a *previous*
+    rotation superseded. With ``ROTATE_REFRESH_TOKEN`` disabled nothing ever supersedes a
+    refresh token -- the same value is handed back on every refresh -- so a replayed token
+    is indistinguishable from a legitimate use and the family is never revoked. RFC 9700
+    section 4.14.2 likewise defines replay detection in terms of rotation (or
+    sender-constrained tokens), and ``docs/settings.rst`` already documents the pairing;
+    this check enforces it.
+
+    Unlike the RFC 9700 behavior gates in ``validate_bcp_configuration`` this is an
+    internal-consistency check -- the combination does not do what it says on any setting
+    of the compliance gates -- so it is always on rather than ``--deploy``-only.
+    """
+    if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION and not oauth2_settings.ROTATE_REFRESH_TOKEN:
+        return [
+            checks.Warning(
+                "OAUTH2_PROVIDER['REFRESH_TOKEN_REUSE_PROTECTION'] is enabled but "
+                "OAUTH2_PROVIDER['ROTATE_REFRESH_TOKEN'] is disabled, so refresh token "
+                "replay cannot be detected.",
+                hint=(
+                    "Set OAUTH2_PROVIDER['ROTATE_REFRESH_TOKEN'] = True so each refresh "
+                    "supersedes the previous token and a replay of it is recognizable, or "
+                    "set OAUTH2_PROVIDER['REFRESH_TOKEN_REUSE_PROTECTION'] = False to stop "
+                    "claiming a protection that is not in effect. See RFC 9700 section "
+                    "4.14.2."
+                ),
+                id="oauth2_provider.W012",
+            )
+        ]
+
+    return []

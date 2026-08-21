@@ -1240,6 +1240,23 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         self.oauth2_settings.ROTATE_REFRESH_TOKEN = False
         self._assert_revoked_refresh_token_is_not_honored()
 
+    def test_refresh_token_generator_collision_is_invalid_grant(self):
+        # ``token_checksum`` is unique, so a generator that returns an already-stored value
+        # cannot mint a second row. That must surface as a failed grant, not a 500 (#1816).
+        self.client.login(username="test_user", password="123456")
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        self.oauth2_settings.REFRESH_TOKEN_GENERATOR = lambda request: "a-constant-refresh-token"
+        content = self._issue_token_pair(auth_headers)
+        self.assertEqual(content["refresh_token"], "a-constant-refresh-token")
+
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": content["refresh_token"]},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content.decode("utf-8"))["error"], "invalid_grant")
+
     def test_refresh_invalidates_old_tokens(self):
         """
         Ensure existing refresh tokens are cleaned up when issuing new ones

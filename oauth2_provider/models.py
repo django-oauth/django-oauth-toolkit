@@ -764,9 +764,17 @@ class AbstractRefreshToken(models.Model):
         verbose_name=_("user"),
     )
     token = models.TextField(verbose_name=_("token"))
+    # Unique across every row, live or revoked -- not scoped to the live ones. A refresh
+    # token value is a bearer credential and is the sole lookup key
+    # (``validate_refresh_token``), so two rows sharing one value leave nothing to say
+    # which row a presented token means. Rotation always mints a fresh value, and a
+    # non-rotating refresh leaves the existing row in place instead of inserting a second
+    # one, so a collision here points at a broken REFRESH_TOKEN_GENERATOR.
     token_checksum = TokenChecksumField(
         max_length=64,
         blank=False,
+        unique=True,
+        db_index=True,
         verbose_name=_("token checksum"),
     )
     application = models.ForeignKey(
@@ -873,10 +881,6 @@ class AbstractRefreshToken(models.Model):
 
     class Meta:
         abstract = True
-        unique_together = (
-            "token_checksum",
-            "revoked",
-        )
         indexes = [
             # ``revoke_family()`` filters on ``token_family`` on the ``/token/`` path,
             # and without an index that is a scan of the whole refresh token table.

@@ -13,6 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Fixed -->
 <!-- ### Security -->
 
+## [unreleased]
+### Added
+* #1816 A system check (`oauth2_provider.W012`) that warns when
+  `REFRESH_TOKEN_REUSE_PROTECTION` is enabled while `ROTATE_REFRESH_TOKEN` is disabled.
+  Replay is detected by recognizing a token a previous rotation superseded, so without
+  rotation the protection never fires — a pairing `docs/settings.rst` already documented but
+  nothing enforced.
+### Fixed
+* #1816 `RefreshToken.token_checksum` is now unique. `AbstractRefreshToken.Meta` declared
+  `unique_together = ("token_checksum", "revoked")`, which enforced nothing: live rows have
+  `revoked IS NULL` and every supported backend treats NULLs as distinct in a unique index,
+  so any number of live refresh tokens could share one token value — while for revoked rows
+  it only forbade two revoked at the identical microsecond. Since a refresh token value is
+  the sole lookup key, duplicates left nothing to say which row a presented token meant.
+  `revoked` leaves the key entirely, so the constraint is a plain unique index enforced
+  identically on every backend, and the multi-row workarounds in `revoke_token` and
+  `validate_refresh_token` collapse into single-row lookups.
+
+  **Run `python manage.py migrate`.** Migration
+  `0023_refreshtoken_unique_token_checksum` deletes refresh tokens that share a token value
+  before applying the constraint, keeping the live row where there is one (so no active
+  client is logged out) and otherwise the most recently created row. Deleting refresh
+  tokens does not cascade into access tokens (`AccessToken.source_refresh_token` is
+  `SET_NULL`). **Swapped refresh token models need their own migration:** the schema
+  operations are skipped for a swapped model and the deduplication deliberately no-ops, so
+  run `makemigrations` for your app and add an equivalent cleanup if your rows may contain
+  duplicates.
+
+  A duplicate can now only arise from a custom `REFRESH_TOKEN_GENERATOR` that returns an
+  already-stored value; `_create_refresh_token` logs that and raises `InvalidGrantError`, so
+  the token endpoint answers `400 invalid_grant` rather than raising a 500.
+
 ## [3.4.1] - 2026-08-21
 
 This release is dominated by **security hardening of redirect URI matching, token revocation and
