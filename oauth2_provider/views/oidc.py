@@ -27,6 +27,7 @@ from ..forms import ConfirmLogoutForm
 from ..http import OAuth2ResponseRedirect
 from ..models import (
     AbstractGrant,
+    AbstractIDToken,
     get_access_token_model,
     get_application_model,
     get_id_token_model,
@@ -166,11 +167,20 @@ class UserInfoView(OIDCOnlyMixin, OAuthLibMixin, View):
         return response
 
 
-def _load_id_token(token):
+def _load_id_token(token: str) -> tuple[AbstractIDToken | None, dict | None]:
     """
     Loads an IDToken given its string representation for use with RP-Initiated Logout.
-    A tuple (IDToken, claims) is returned. Depending on the configuration expired tokens may be loaded.
-    If loading failed (None, None) is returned.
+    Depending on the configuration expired tokens may be loaded.
+
+    A tuple `(IDToken, claims)` is returned, with three possible outcomes:
+
+    - `(IDToken, claims)` when the token verified and its IDToken is still stored.
+    - `(None, claims)` when the token verified but its IDToken is no longer stored, which means the
+      End-User is not logged in with the OP at the requesting RP.
+    - `(None, None)` when the token could not be verified at all.
+
+    Callers must distinguish the last two: the second is not an error, because RP-Initiated Logout
+    requests are idempotent, while the third must be rejected.
     """
     IDToken = get_id_token_model()
     validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
@@ -204,7 +214,14 @@ def _load_id_token(token):
     # Assumption: the `sub` claim and `user` property of the corresponding IDToken Object point to the
     # same user.
     # To verify that the IDToken was intended for the user it is therefore sufficient to check the `user`
-    # attribute on the IDToken Object later on.
+    # attribute on the IDToken Object later on, when there is one.
+    #
+    # When the IDToken is gone there is no such object to check, and the user is deliberately *not*
+    # resolved from the `sub` claim instead. Leaving it unresolved keeps `token_user` as `None`, which
+    # makes `must_prompt()` prompt an End-User who still has an OP session, as the specification
+    # requires when the ID Token does not belong to the current OP session with the RP. Resolving the
+    # user from `sub` here would skip that prompt without any evidence of a session, and so would turn
+    # a leaked stale ID Token into a silent logout.
 
     try:
         return IDToken.objects.get(jti=claims["jti"]), claims
@@ -216,12 +233,14 @@ def _load_id_token(token):
         return None, claims
 
 
-def _get_application_from_claims(claims):
+def _get_application_from_claims(claims: dict) -> Application | None:
     """
     Resolves the Application an ID Token was issued for from its `aud` claim.
 
-    This is used when the corresponding IDToken is no longer stored. `_load_id_token()` has already
-    verified the token's signature with this Application's key, so `aud` can be relied upon.
+    This is used when the corresponding IDToken is no longer stored. `aud` can be relied upon because
+    this resolves through the same `_get_client_by_audience()` helper that `_get_key_for_token()`
+    already used to select the key the token's signature was then verified with. The Application
+    returned here is therefore the one that signature was verified against.
     """
     validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
     return validator._get_client_by_audience(claims.get("aud", []))
@@ -347,13 +366,18 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
         if not application.post_logout_redirect_uri_allowed(post_logout_redirect_uri):
             raise InvalidOIDCRedirectURIError("This client does not have this redirect uri registered.")
 
-    def validate_logout_request_user(self, id_token_hint, client_id):
+    def validate_logout_request_user(
+        self, id_token_hint: str | None, client_id: str | None
+    ) -> tuple[AbstractIDToken | None, dict | None]:
         """
         Validate the an OIDC RP-Initiated Logout Request user
 
         `(id_token, claims)` is returned. `claims` are the verified claims of `id_token_hint`, if one was
         given. `id_token` is the stored IDToken that `id_token_hint` refers to; it is `None` when that
         IDToken is no longer stored, meaning the End-User is not logged in with the OP at that RP.
+
+        Note for subclasses overriding this: it previously returned the `IDToken` alone, and now
+        returns a tuple.
         """
 
         if not id_token_hint:
@@ -376,7 +400,19 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
 
         return id_token, claims
 
-    def get_request_application(self, id_token, client_id, claims=None):
+    def get_request_application(
+        self,
+        id_token: AbstractIDToken | None,
+        client_id: str | None,
+        claims: dict | None = None,
+    ) -> Application | None:
+        """
+        Resolve the Application that is requesting the logout.
+
+        Note for subclasses overriding this: `claims` is new, and is the verified claims of the
+        `id_token_hint`. It is what identifies the requesting RP when `id_token` is `None` because
+        the IDToken is no longer stored.
+        """
         if client_id:
             return get_application_model().objects.get(client_id=client_id)
         if id_token:
