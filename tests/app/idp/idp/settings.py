@@ -283,6 +283,20 @@ OAUTH2_PROVIDER = {
     # demo IdP is for local testing only — in production keep the default
     # IsAuthenticatedDCRPermission (or a custom permission class) instead.
     "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+    # Advertise RFC 7523 JWT client authentication (the seed data ships a
+    # private_key_jwt demo application; see tests/app/README.md).
+    "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+        "client_secret_post",
+        "client_secret_basic",
+        "private_key_jwt",
+        "client_secret_jwt",
+    ],
+    "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+        "client_secret_post",
+        "client_secret_basic",
+        "private_key_jwt",
+        "client_secret_jwt",
+    ],
     "CIMD_ENABLED": env("OAUTH2_PROVIDER_CIMD_ENABLED"),
     # The e2e suite points this at idp.cimd.LoopbackMetadataFetcher, which can
     # fetch metadata documents from a plain-HTTP loopback server; production

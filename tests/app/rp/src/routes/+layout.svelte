@@ -60,6 +60,11 @@
 					>Device Authorization Flow</a
 				>
 			</li>
+			<li class="tab">
+				<a href="/private-key-jwt" class:active={$page.url.pathname === '/private-key-jwt'}
+					>RFC 7523 private_key_jwt</a
+				>
+			</li>
 		</ul>
 	</div>
 </nav>

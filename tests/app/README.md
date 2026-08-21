@@ -65,6 +65,65 @@ curl --location 'http://localhost:8000/o/token/' \
 
 The response should include the access token.
 
+### RFC 7523 private_key_jwt example
+
+The seed data includes an "RFC 7523 private_key_jwt demo" application
+(`client_id=private-key-jwt-demo`, client-credentials grant) whose registered `client_jwks`
+holds the public half of the demo keypair below. Like the IDP's own `OIDC_RSA_PRIVATE_KEY`
+default, this is example data for local testing, not a credential.
+
+The RP has a ready-made "RFC 7523 private_key_jwt" tab that runs this exchange for you; the
+equivalent by hand is:
+
+```sh
+cd tests/app/idp
+
+# 1. Sign a client assertion with the demo key (fresh jti per call).
+#    django.setup() configures settings for the import; unlike "manage.py shell"
+#    it prints no banner, so the variable captures only the assertion.
+ASSERTION=$(DJANGO_SETTINGS_MODULE=idp.settings python -c "
+import django; django.setup()
+from oauth2_provider.client_assertions import make_client_assertion
+from jwcrypto import jwk
+key = jwk.JWK(**{
+    'kty': 'EC', 'crv': 'P-256', 'kid': 'demo-rp-key',
+    'x': 'tS3tFvO_rzqp4FW4XU0M8agahChhDCxvfwkAOUf0r1w',
+    'y': 'RXB1hhJu-vYd1Go5VyQ5gcQcxnNmCaCmE05mBrJ1qM4',
+    'd': '0QcXCEERHRwHs1XiJFmnzvTwac93g6tFjwl39dwnWv4',
+})
+print(make_client_assertion(
+    'private-key-jwt-demo', key, 'http://127.0.0.1:8000/o/token/',
+))")
+
+# 2. Exchange it for an access token — no client secret anywhere.
+curl --location 'http://127.0.0.1:8000/o/token/' \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=client_credentials' \
+    --data-urlencode 'client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer' \
+    --data-urlencode "client_assertion=$ASSERTION"
+```
+
+Replaying the same assertion is rejected (`invalid_client`): the `jti` is single-use.
+
+To use your own key instead, generate one and register its public half:
+
+```sh
+python -c "
+import os
+os.umask(0o077)
+from jwcrypto import jwk
+key = jwk.JWK.generate(kty='EC', crv='P-256', kid='my-demo-key')
+open('/tmp/demo-key.pem', 'wb').write(key.export_to_pem(private_key=True, password=None))
+open('/tmp/demo-key.pub.json', 'w').write(key.export_public())
+"
+python manage.py shell -c "
+from oauth2_provider.models import get_application_model
+app = get_application_model().objects.get(client_id='private-key-jwt-demo')
+app.client_jwks = '{\"keys\": [%s]}' % open('/tmp/demo-key.pub.json').read()
+app.save()
+"
+```
+
 ## /test/app/rp
 
 This is an example RP. It is a SPA built with Svelte.
