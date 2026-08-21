@@ -20,8 +20,9 @@ it issues carry an ``authorization`` foreign key back to it.
 .. note::
 
    ``Authorization`` answers *"which act of consent produced these tokens"*. It
-   is not a session: it does not record which browser the user was on, and
-   revoking one does not log anyone out.
+   is not a session: revoking one does not log anyone out. The user agent the
+   consent was given in is the separate :doc:`Session <sessions>` axis, recorded
+   on ``Authorization.session`` for the flows that have one.
 
 When an authorization is recorded
 ---------------------------------

@@ -64,6 +64,7 @@ Index
    templates
    models
    authorizations
+   sessions
    signals
    management_commands
    advanced_topics

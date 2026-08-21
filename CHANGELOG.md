@@ -89,11 +89,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authorization code is deleted, an approved but unredeemed device grant is denied). Revocation,
   not deletion, is the domain action: the token foreign keys are `on_delete=RESTRICT`, and the
   admin exposes a "Revoke selected authorizations" action instead of add/change/delete.
+* #1723 A new swappable `Session` model recording the OpenID Connect authentication session: the
+  period during which a user is authenticated at this server via one user agent. It is minted
+  lazily at the first authorization after login and reused for later authorizations from the same
+  user agent, so one session spans every application signed into from that browser, and it is
+  referenced by `Authorization.session` (NULL for `password` and `client_credentials`, which
+  create no session). Terminated on Django logout or from the admin, and purged by `cleartokens`
+  once no authorization references it. Configurable via `OAUTH2_PROVIDER_SESSION_MODEL` and
+  `SESSION_ADMIN_CLASS`; see `docs/sessions.rst`.
+* #1723 ID tokens issued through a user agent now carry a `sid` claim identifying that session,
+  which is what OpenID Connect Front-Channel and Back-Channel Logout need to scope a logout to one
+  user agent. The `sid` is a distinct UUID, never the Django session key (which is the
+  authentication cookie value and must not reach a relying party).
 ### Changed
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
   being applied inconsistently: `0` previously meant "expire immediately" for the stored token while
   oauthlib reported `3600` to the client, and a negative value issued an already-expired token.
+* #1723 The ID token `auth_time` claim is now taken from the authentication session rather than
+  from `user.last_login`. `last_login` is user-global, so signing in on another device refreshed
+  the authentication freshness asserted to a relying party in this one, defeating `max_age`.
+  Requests with no session (non-interactive flows, or sessions predating this release) still fall
+  back to `last_login`.
 * #1723 An authorization code is no longer deleted when it is exchanged. The row is retained and
   stamped with a new `exchanged_at` timestamp, and `cleartokens` purges it once it expires.
   Retaining it makes a replay recognisable: a code presented after it was exchanged now revokes the

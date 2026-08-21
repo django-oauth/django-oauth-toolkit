@@ -27,7 +27,12 @@ from oauth2_provider.core.http import OAuth2ResponseRedirect
 from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.core.signals import app_authorized
 from oauth2_provider.core.views import FormEncodedRequestMixin
-from oauth2_provider.models import get_access_token_model, get_application_model, get_device_grant_model
+from oauth2_provider.models import (
+    get_access_token_model,
+    get_application_model,
+    get_device_grant_model,
+    get_or_create_oauth2_session,
+)
 from oauth2_provider.resource_server.validators import is_valid_resource_uri
 from oauth2_provider.settings import oauth2_settings
 
@@ -64,6 +69,23 @@ class BaseAuthorizationView(LoginRequiredMixin, AuthorizationServerViewMixin, Vi
 
         status = error_response["error"].status_code
         return self.render_to_response(error_response, status=status)
+
+    def create_authorization_response(self, request, scopes, credentials, allow):
+        """
+        Attach the OP authentication session to the authorization, so every
+        artifact issued for it -- the code, the tokens, the ID token's ``sid``
+        claim -- can be tied back to the user agent the user authorized from.
+
+        This view is the only layer that holds the Django session, so the
+        session's public identifier is handed down as a credential; oauthlib
+        sets each credential on the request it builds, where the validator
+        reads it. The session is minted lazily on the first authorization after
+        login and reused afterwards.
+        """
+        session = get_or_create_oauth2_session(request)
+        if session is not None:
+            credentials = {**credentials, "oauth2_session_sid": str(session.sid)}
+        return super().create_authorization_response(request, scopes, credentials, allow)
 
     def redirect(self, redirect_to, application):
         if application is None:

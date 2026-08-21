@@ -41,6 +41,7 @@ from .models import (
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
+    get_session_model,
     refresh_token_expire_timedelta,
     revoke_access_token,
     set_token_value,
@@ -947,11 +948,27 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             user=request.user,
             client_id=request.client.client_id,
             application=request.client,
+            session=self._resolve_session(request),
             grant_type=grant_type,
             scope=scope,
         )
         request.dot_authorization = authorization
         return authorization
+
+    def _resolve_session(self, request):
+        """
+        Return the OP authentication Session this request was made under, if
+        the authorization endpoint attached one.
+
+        The session is carried from the view -- which is the only layer that
+        has the Django ``request.session`` -- as the ``oauth2_session_sid``
+        credential, so no oauthlib change is needed. Flows that never touch a
+        user agent (``password``, ``client_credentials``) have none.
+        """
+        sid = getattr(request, "oauth2_session_sid", None)
+        if not sid:
+            return None
+        return get_session_model().objects.filter(sid=sid).first()
 
     def _resolve_authorization(self, request):
         """
@@ -1388,7 +1405,16 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
         expiration_time = timezone.now() + timedelta(seconds=oauth2_settings.ID_TOKEN_EXPIRE_SECONDS)
 
-        auth_time = request.user.last_login
+        authorization = self._resolve_authorization(request)
+        session = authorization.session if authorization is not None else None
+
+        if session is not None:
+            # Per-session auth_time. request.user.last_login is user-global, so
+            # a login on another user agent would refresh the freshness claimed
+            # to this relying party and defeat max_age.
+            auth_time = session.authenticated_at
+        else:
+            auth_time = request.user.last_login
         if auth_time is None:
             auth_time = timezone.now()
 
@@ -1412,6 +1438,12 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
                 "jti": str(uuid.uuid4()),
             }
         )
+
+        # OpenID Connect Back-Channel Logout: the sid claim ties this ID token
+        # to the authentication session, which is what lets a logout be scoped
+        # to one user agent instead of every token the user holds.
+        if session is not None:
+            claims["sid"] = str(session.sid)
 
         return claims, expiration_time
 

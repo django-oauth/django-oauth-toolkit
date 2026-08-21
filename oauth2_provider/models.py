@@ -13,8 +13,10 @@ from urllib.parse import urlparse, urlsplit
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.hashers import identify_hasher, make_password
+from django.contrib.auth.signals import user_logged_in, user_logged_out
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import models, router, transaction
+from django.dispatch import receiver
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -743,6 +745,129 @@ class Application(AbstractApplication):
         return (self.client_id,)
 
 
+class AbstractSession(models.Model):
+    """
+    A Session instance represents an OpenID Connect authentication session: the
+    continuous period during which an end user is authenticated at this
+    authorization server *via a particular user agent*, as defined by
+    `OpenID Connect Back-Channel Logout 1.0
+    <https://openid.net/specs/openid-connect-backchannel-1_0.html>`_.
+
+    One session spans every application the user signs into from that user
+    agent, and its lifetime is decoupled from token lifetime in both
+    directions -- ``offline_access`` refresh tokens are defined as tokens that
+    outlive it.
+
+    It is identified by :attr:`sid`, issued as the ``sid`` claim in ID tokens.
+    That is deliberately not the Django session key: the session key is the
+    authentication cookie value, which is a secret and must never reach a
+    relying party, and it rotates on login. :attr:`session_key` is kept only as
+    a correlation aid.
+
+    Sessions are minted lazily, at the first authorization request after login,
+    and reused for subsequent authorizations from the same user agent.
+
+    Terminating a session is the session axis, and is not the same operation as
+    revoking an :class:`AbstractAuthorization`: it records that this user
+    agent's authentication ended, and does not by itself revoke consent.
+
+    Fields:
+
+    * :attr:`sid` Public session identifier, issued as the ``sid`` claim
+    * :attr:`user` The Django user the session belongs to
+    * :attr:`session_key` The Django session key this session was minted under,
+                          kept only as a correlation aid
+    * :attr:`authenticated_at` When the user authenticated for this session;
+                               the source of the ``auth_time`` claim
+    * :attr:`expires` When the session expires
+    * :attr:`terminated_at` Timestamp of when this session was terminated
+    * :attr:`termination_reason` Why the session was terminated
+    """
+
+    TERMINATION_LOGOUT = "logout"
+    TERMINATION_RP_LOGOUT = "rp_logout"
+    TERMINATION_EXPIRED = "expired"
+    TERMINATION_ADMIN = "admin"
+    TERMINATION_REASONS = (
+        (TERMINATION_LOGOUT, _("Logout")),
+        (TERMINATION_RP_LOGOUT, _("RP-Initiated Logout")),
+        (TERMINATION_EXPIRED, _("Expired")),
+        (TERMINATION_ADMIN, _("Terminated by admin")),
+    )
+
+    id = models.BigAutoField(primary_key=True)
+    sid = models.UUIDField(unique=True, default=uuid.uuid4, editable=False, verbose_name=_("session ID"))
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("user"),
+    )
+    session_key = models.CharField(
+        max_length=40, blank=True, default="", db_index=True, verbose_name=_("session key")
+    )
+    authenticated_at = models.DateTimeField(verbose_name=_("authenticated at"))
+    expires = models.DateTimeField(verbose_name=_("expires"))
+
+    created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
+    updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
+    terminated_at = models.DateTimeField(null=True, blank=True, verbose_name=_("terminated at"))
+    termination_reason = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        choices=TERMINATION_REASONS,
+        verbose_name=_("termination reason"),
+    )
+
+    def is_expired(self):
+        """
+        Check session expiration with timezone awareness
+        """
+        if not self.expires:
+            return True
+
+        return timezone.now() >= self.expires
+
+    def is_active(self):
+        """
+        Whether this session is still a live authentication.
+        """
+        return self.terminated_at is None and not self.is_expired()
+
+    def terminate(self, reason=""):
+        """
+        Mark this session terminated.
+
+        This records that the user agent's authentication ended. It does not
+        revoke the authorizations granted during the session, nor the tokens
+        issued under them: that is the consent axis, and session-scoped
+        revocation is a separate policy decision.
+
+        A no-op on an already-terminated session, so the first reason recorded
+        wins -- an RP-initiated logout that terminates with its own reason is
+        not overwritten by the ``user_logged_out`` handler that follows it.
+
+        :param reason: one of :attr:`TERMINATION_REASONS`
+        """
+        if self.terminated_at is not None:
+            return
+        self.terminated_at = timezone.now()
+        self.termination_reason = reason
+        self.save(update_fields=["terminated_at", "termination_reason", "updated"])
+
+    def __str__(self):
+        return "Session {self.sid}".format(self=self)
+
+    class Meta:
+        abstract = True
+
+
+class Session(AbstractSession):
+    class Meta(AbstractSession.Meta):
+        swappable = "OAUTH2_PROVIDER_SESSION_MODEL"
+
+
 class AbstractAuthorization(models.Model):
     """
     An Authorization instance is a durable record of a granted authorization:
@@ -779,6 +904,10 @@ class AbstractAuthorization(models.Model):
                           NULL means the client has no provisioned registration
                           (it was derived, or the registration was deleted) --
                           the client is still identified by :attr:`client_id`.
+    * :attr:`session` The authentication session the authorization was granted
+                      during. NULL for non-interactive flows (``password``,
+                      ``client_credentials``), which create no session, and for
+                      authorizations that predate session tracking.
     * :attr:`grant_type` How the authorization was expressed. Normally one of
                          :attr:`AbstractApplication.GRANT_TYPES`; a grant type
                          with no member there is recorded by its protocol name.
@@ -812,6 +941,17 @@ class AbstractAuthorization(models.Model):
         null=True,
         related_name="%(app_label)s_%(class)s",
         verbose_name=_("application"),
+    )
+    session = models.ForeignKey(
+        oauth2_settings.SESSION_MODEL,
+        # The session is an orthogonal axis, not an owner: an authorization
+        # (and the offline_access tokens under it) legitimately outlives the
+        # session it was granted during.
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("session"),
     )
     grant_type = models.CharField(
         max_length=64, choices=AbstractApplication.GRANT_TYPES, verbose_name=_("grant type")
@@ -1628,6 +1768,11 @@ def get_authorization_model():
     return apps.get_model(oauth2_settings.AUTHORIZATION_MODEL)
 
 
+def get_session_model():
+    """Return the Session model that is active in this project."""
+    return apps.get_model(oauth2_settings.SESSION_MODEL)
+
+
 def get_device_grant_model():
     """Return the DeviceGrant model that is active in this project."""
     return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
@@ -1668,6 +1813,99 @@ def get_authorization_admin_class():
     """Return the Authorization admin class that is active in this project."""
     authorization_admin_class = oauth2_settings.AUTHORIZATION_ADMIN_CLASS
     return authorization_admin_class
+
+
+# Keys under which the OP session's public identifier and the moment of
+# authentication are stashed in the Django session. Both are namespaced so they
+# cannot collide with a project's own session data.
+SESSION_SID_KEY = "_oauth2_provider_session_sid"
+SESSION_AUTH_TIME_KEY = "_oauth2_provider_auth_time"
+
+
+@receiver(user_logged_in)
+def _remember_auth_time(sender, request, user, **kwargs):
+    """
+    Record the moment of authentication in the Django session, so a Session
+    minted later can assert an accurate, per-user-agent ``auth_time``.
+
+    ``user.last_login`` cannot serve: it is user-global, so signing in on a
+    phone would refresh the ``auth_time`` asserted to relying parties in a
+    laptop's session, which is exactly what ``max_age`` exists to prevent.
+    """
+    if request is None or not hasattr(request, "session"):
+        return
+    request.session[SESSION_AUTH_TIME_KEY] = timezone.now().isoformat()
+
+
+@receiver(user_logged_out)
+def _terminate_session_on_logout(sender, request, user, **kwargs):
+    """
+    End the OP authentication session when the user logs out of the OP.
+
+    Django sends ``user_logged_out`` before ``logout()`` flushes the session,
+    so the sid is still readable here. ``terminate()`` is a no-op on an
+    already-terminated session, so an RP-initiated logout that terminated it
+    with its own reason keeps that reason.
+    """
+    if request is None or not hasattr(request, "session"):
+        return
+    sid = request.session.get(SESSION_SID_KEY)
+    if not sid:
+        return
+    session_model = get_session_model()
+    session = session_model.objects.filter(sid=sid, terminated_at__isnull=True).first()
+    if session is not None:
+        session.terminate(reason=session_model.TERMINATION_LOGOUT)
+
+
+def get_or_create_oauth2_session(request):
+    """
+    Return the live OP authentication Session for this user agent, minting one
+    on the first authorization request after login.
+
+    The public ``sid`` is stored in the Django session so that subsequent
+    authorizations from the same user agent reuse the same Session -- that
+    reuse is what makes one session span every relying party the user signs
+    into from that browser.
+
+    :param request: the Django request handling an authorization
+    :returns: the Session, or None when there is no authenticated user
+    """
+    if not getattr(request, "user", None) or not request.user.is_authenticated:
+        return None
+
+    session_model = get_session_model()
+
+    sid = request.session.get(SESSION_SID_KEY)
+    if sid:
+        session = session_model.objects.filter(sid=sid, user=request.user, terminated_at__isnull=True).first()
+        if session is not None and not session.is_expired():
+            return session
+
+    stored_auth_time = request.session.get(SESSION_AUTH_TIME_KEY)
+    if stored_auth_time:
+        authenticated_at = datetime.fromisoformat(stored_auth_time)
+    else:
+        # No login was observed in this session -- the user was authenticated
+        # before this was deployed, or by a backend that does not send
+        # user_logged_in. last_login is the best available approximation, and
+        # is what auth_time was taken from before sessions existed.
+        authenticated_at = request.user.last_login or timezone.now()
+
+    session = session_model.objects.create(
+        user=request.user,
+        session_key=request.session.session_key or "",
+        authenticated_at=authenticated_at,
+        expires=request.session.get_expiry_date(),
+    )
+    request.session[SESSION_SID_KEY] = str(session.sid)
+    return session
+
+
+def get_session_admin_class():
+    """Return the Session admin class that is active in this project."""
+    session_admin_class = oauth2_settings.SESSION_ADMIN_CLASS
+    return session_admin_class
 
 
 def get_access_token_admin_class():
@@ -1865,6 +2103,22 @@ def clear_expired():
 
     authorizations_deleted_no = batch_delete(authorizations, authorizations_query)
     logger.info("%s Revoked authorizations deleted", authorizations_deleted_no)
+
+    # Ended sessions -- terminated, or past their expiry -- are purged once no
+    # authorization references them, so the sid linkage survives for as long as
+    # the authorizations granted during the session do. The foreign key is
+    # SET_NULL rather than RESTRICT, so purging early would not fail loudly; it
+    # would silently discard the session an authorization was granted during,
+    # which is the link back-channel logout needs.
+    session_model = get_session_model()
+    has_no_authorizations = ~models.Exists(authorization_model.objects.filter(session=models.OuterRef("pk")))
+    sessions_query = (
+        models.Q(terminated_at__isnull=False) | models.Q(expires__lt=now)
+    ) & has_no_authorizations
+    sessions = session_model.objects.filter(sessions_query)
+
+    sessions_deleted_no = batch_delete(sessions, sessions_query)
+    logger.info("%s Ended sessions deleted", sessions_deleted_no)
 
     # Pushed authorization requests (RFC 9126) are consumed one-time at the
     # authorization endpoint, but a request_uri that is pushed and never redeemed

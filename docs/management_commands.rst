@@ -41,6 +41,10 @@ replayed code stays recognisable -- and purges revoked :doc:`authorizations <aut
 only once every token issued under an authorization is gone, so the lineage those tokens point at
 survives for as long as they do.
 
+Ended :doc:`sessions <sessions>` -- terminated, or past their expiry -- are purged on the same
+principle: only once no authorization references them, so the ``sid`` linkage survives for as long
+as the authorizations granted during the session do.
+
 Refresh tokens that have already been revoked (for example by refresh token rotation) are removed as
 soon as their ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` grace period has passed, without waiting for
 ``REFRESH_TOKEN_EXPIRE_SECONDS``. The exception is when ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled:

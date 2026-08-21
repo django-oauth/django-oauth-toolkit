@@ -25,6 +25,7 @@ from oauth2_provider.models import (
     get_application_model,
     get_authorization_model,
     get_device_grant_model,
+    get_or_create_oauth2_session,
 )
 
 
@@ -232,12 +233,18 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         """
         Record the user's approval of the device as an Authorization. The tokens
         issued when the device redeems its device code inherit it.
+
+        The session recorded is the browser the user approved the device in --
+        the verification page's -- not the device's own: the device is not a
+        user agent the user is authenticated in, which is the whole premise of
+        the device flow.
         """
         application = get_application_model().objects.filter(client_id=device.client_id).first()
         return get_authorization_model().objects.create(
             user=self.request.user,
             client_id=device.client_id,
             application=application,
+            session=get_or_create_oauth2_session(self.request),
             grant_type=AbstractApplication.GRANT_DEVICE_CODE,
             scope=device.scope or "",
         )

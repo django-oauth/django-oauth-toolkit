@@ -17,6 +17,8 @@ from oauth2_provider.models import (
     get_par_request_model,
     get_refresh_token_admin_class,
     get_refresh_token_model,
+    get_session_admin_class,
+    get_session_model,
     revoke_access_token,
 )
 
@@ -157,8 +159,8 @@ class AuthorizationAdmin(admin.ModelAdmin):
     """
 
     list_display = ("pk", "client_id", "user", "grant_type", "created", "revoked_at")
-    list_select_related = ("application", "user")
-    raw_id_fields = ("user", "application")
+    list_select_related = ("application", "user", "session")
+    raw_id_fields = ("user", "application", "session")
     search_fields = ("client_id", "application__name") + USER_SEARCH_FIELDS
     list_filter = ("grant_type", "application")
     actions = ("revoke_authorizations",)
@@ -190,6 +192,61 @@ class AuthorizationAdmin(admin.ModelAdmin):
         self.message_user(
             request,
             ngettext("Revoked %d authorization.", "Revoked %d authorizations.", revoked) % revoked,
+        )
+
+
+class SessionAdmin(admin.ModelAdmin):
+    """
+    Sessions are system-created records of a user agent's authentication at
+    this authorization server: the admin can inspect and *terminate* them, but
+    not create, edit or delete them. Termination is the domain action; row
+    deletion is reserved for :ref:`cleartokens` once no authorization
+    references the session.
+    """
+
+    list_display = ("sid", "user", "authenticated_at", "expires", "terminated_at", "termination_reason")
+    list_select_related = ("user",)
+    # sid is a public identifier -- it is issued to relying parties as the sid
+    # claim -- so unlike the token admins, searching by it leaks nothing. The
+    # session_key is the authentication cookie value and is neither displayed
+    # nor searchable.
+    search_fields = ("sid",) + USER_SEARCH_FIELDS
+    list_filter = ("termination_reason",)
+    actions = ("terminate_sessions",)
+
+    def has_add_permission(self, request):
+        # Sessions are minted by the authorization flow, not hand-created here.
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # A session records when and how a user agent authenticated; editing it
+        # after the fact would falsify the auth_time asserted to relying parties.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # End sessions with the "Terminate selected sessions" action, not a raw
+        # delete: deleting the row discards the sid that ties ID tokens to this
+        # session, which is what session-scoped logout needs.
+        return False
+
+    def get_exclude(self, request, obj=None):
+        # The Django session key is the authentication cookie value; never
+        # render it, even to a staff user with view access.
+        exclude = tuple(super().get_exclude(request, obj) or ())
+        if obj is not None and "session_key" not in exclude:
+            exclude += ("session_key",)
+        return exclude
+
+    @admin.action(description="Terminate selected sessions")
+    def terminate_sessions(self, request, queryset):
+        terminated = 0
+        for session in queryset:
+            if session.terminated_at is None:
+                session.terminate(reason=session.TERMINATION_ADMIN)
+                terminated += 1
+        self.message_user(
+            request,
+            ngettext("Terminated %d session.", "Terminated %d sessions.", terminated) % terminated,
         )
 
 
@@ -326,6 +383,7 @@ access_token_model = get_access_token_model()
 grant_model = get_grant_model()
 id_token_model = get_id_token_model()
 refresh_token_model = get_refresh_token_model()
+session_model = get_session_model()
 par_request_model = get_par_request_model()
 
 application_admin_class = get_application_admin_class()
@@ -334,6 +392,7 @@ access_token_admin_class = get_access_token_admin_class()
 grant_admin_class = get_grant_admin_class()
 id_token_admin_class = get_id_token_admin_class()
 refresh_token_admin_class = get_refresh_token_admin_class()
+session_admin_class = get_session_admin_class()
 
 admin.site.register(application_model, application_admin_class)
 admin.site.register(authorization_model, authorization_admin_class)
@@ -341,4 +400,5 @@ admin.site.register(access_token_model, access_token_admin_class)
 admin.site.register(grant_model, grant_admin_class)
 admin.site.register(id_token_model, id_token_admin_class)
 admin.site.register(refresh_token_model, refresh_token_admin_class)
+admin.site.register(session_model, session_admin_class)
 admin.site.register(par_request_model, PushedAuthorizationRequestAdmin)

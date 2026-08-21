@@ -275,6 +275,10 @@ Adding claims to the ID token
 By default the ID token will just have a ``sub`` claim (in addition to the
 required claims, eg ``iss``, ``aud``, ``exp``, ``iat``, ``auth_time`` etc),
 and the ``sub`` claim will use the primary key of the user as the value.
+An ID token issued through a user agent also carries a ``sid`` claim
+identifying the :doc:`authentication session <sessions>` it belongs to, and
+takes its ``auth_time`` from that session rather than from the user-global
+``last_login``.
 You'll probably want to customize this and add additional claims or change
 what is sent for the ``sub`` claim. To do so, you will need to add a method to
 our custom validator. It takes one of two forms:
