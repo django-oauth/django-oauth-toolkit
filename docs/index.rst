@@ -64,6 +64,7 @@ Index
    oauth2_server_metadata
    protected_resource_metadata
    rfc7523
+   pushed_authorization_requests
    cimd
    signals
    settings
