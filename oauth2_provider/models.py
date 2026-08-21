@@ -343,7 +343,7 @@ class AbstractApplication(models.Model):
     )
     backchannel_logout_uri = models.URLField(
         blank=True,
-        null=True,
+        default="",
         help_text=_("Backchannel Logout URI where logout tokens will be sent"),
         verbose_name=_("backchannel logout uri"),
     )

@@ -201,6 +201,35 @@ allows the OP to send direct requests to terminate sessions at the RP.
 To make use of this, the application being created needs to provide a
 valid ``backchannel_logout_uri``.
 
+Which Relying Parties are notified
+----------------------------------
+
+DOT does not yet model the OP authentication session, so it has no ``sid`` to scope a
+logout to and advertises ``backchannel_logout_session_supported: false``. Logout tokens
+carry the ``sub`` claim only, which per `Backchannel Logout`_ section 2.4 is a valid
+Logout Token: it asks the RP to end *all* of that user's sessions, not one of them.
+
+Participation is likewise approximated: on logout, DOT notifies every application that
+registered a ``backchannel_logout_uri`` and holds an unexpired ID Token for the user,
+skipping those whose ID Token was issued with the ``offline_access`` scope (those grants
+are defined to outlive the session). ID Token lifetime and RP session lifetime are not
+the same thing, so an RP whose server-side session is still live but whose ID Token row
+has expired will not be notified. Both bounds are lifted by the session entity in the
+`Authorization and Session entities ADR
+<https://github.com/django-oauth/django-oauth-toolkit/issues/1723>`_.
+
+Delivery
+--------
+
+The default handler sends each logout token inline, from the logout request itself, one
+application at a time. A user logging out of an OP with several registered Relying
+Parties therefore waits on those requests, bounded by
+``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT`` per application. Failures are logged and never
+propagate -- an unreachable RP cannot prevent a user from logging out -- but they do cost
+that wait. Deployments with more than a couple of applications, or with strict logout
+latency requirements, should set ``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` to a callable that
+hands the work to a task queue instead.
+
 
 Setting up OIDC enabled clients
 ===============================
