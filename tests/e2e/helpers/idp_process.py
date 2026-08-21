@@ -129,6 +129,9 @@ class IdpServer:
         env["DJANGO_SETTINGS_MODULE"] = "idp.settings"
         env["DATABASE_URL"] = f"sqlite:///{self._tmpdir}/db.sqlite3"
         env["ALLOWED_HOSTS"] = ",".join(self.allowed_hosts)
+        # The demo settings hardcode the `runserver` default; this instance binds an
+        # arbitrary host/port, and an issuer that does not match it fails OIDC validation.
+        env["OAUTH2_PROVIDER_OIDC_ISS_ENDPOINT"] = self.issuer
         if self.scopes:
             env["OAUTH2_PROVIDER_SCOPES"] = _encode_env_dict(self.scopes)
         if self.default_scopes:

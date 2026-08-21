@@ -1,6 +1,7 @@
 <script>
 	import { browser } from '$app/environment';
 	import { clientId, issuer, rpOrigin } from '$lib/oidc-config';
+	import OidcBackchannelLogoutHandler from '../components/OidcBackchannelLogoutHandler.svelte';
 	import {
 		EventLog,
 		LoginButton,
@@ -30,11 +31,13 @@
 			mergeClaims: true
 		}}
 	>
+		<OidcBackchannelLogoutHandler />
 		<div class="row">
 			<div class="col s12">
 				<LoginButton>Login</LoginButton>
 				<LogoutButton>Logout</LogoutButton>
 				<RefreshTokenButton>refreshToken</RefreshTokenButton>
+				<a href="http://localhost:8000/admin">IDP Admin</a>
 			</div>
 		</div>
 		<div class="row">
