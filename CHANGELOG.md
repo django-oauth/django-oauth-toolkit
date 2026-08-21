@@ -13,7 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Fixed -->
 <!-- ### Security -->
 
-## [unreleased]
+## [3.4.1] - 2026-08-21
+
+This release is dominated by **security hardening of redirect URI matching, token revocation and
+refresh token handling**. Several entries below change behavior that was previously accepted and
+carry an **Upgrade note**; read the Security section before upgrading. Of particular note: redirect
+URIs are now matched exactly per [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1),
+so a request may no longer carry query parameters, path parameters, credentials or a fragment that
+the registered URI does not have; and `REFRESH_TOKEN_EXPIRE_SECONDS`, where set, is now enforced when
+a refresh token is presented rather than only by the `cleartokens` sweep.
+
+Two migrations ship with this release, `0021_translatable_field_labels` (no schema change) and
+`0022_refreshtoken_token_family_index` (adds an index); run `migrate` after upgrading, and
+`makemigrations` as well if you swap in your own token models.
+
 ### Added
 * #681 Redirect URI mismatches are now diagnosed on the `oauth2_provider` logger at `DEBUG`,
   reporting the requested URI, every registered candidate it was compared against, and which
@@ -185,6 +198,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turning into a server error.
 
 ### Security
+* #1819 The device authorization flow's confirmation and status views now act only on a device
+  grant that belongs to the signed-in user. `DeviceUserCodeView` claims a pending grant for the
+  user who enters the `user_code`, but `DeviceConfirmView` and `DeviceGrantStatusView` looked the
+  grant up by `client_id` and `user_code` alone. Any *other* authenticated user who learned that
+  short, human-readable code — it is displayed on the device's screen for a person to read and
+  type — could therefore approve the pending authorization, handing the device tokens bound to
+  the account of the user who entered it, or deny it, or read its status page. RFC 8628 §3.3 has
+  the user who is being asked to authorize the device grant that authorization. Both views now
+  filter on `user=request.user` and return `404` to anyone else; a grant that has not yet been
+  claimed through the user-code step likewise can no longer be confirmed by navigating straight
+  to the confirmation URL.
 * #1816 A refresh token that was **deliberately revoked** is no longer honored inside
   `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`. The grace window exists to shield the token a
   client retries when it did not receive the rotated response, but `revoked` records both
