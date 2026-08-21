@@ -1,22 +1,23 @@
 Upgrading
 =========
 
-This page collects the breaking changes and upgrade steps for **major** version bumps of Django
-OAuth Toolkit, so you don't have to reconstruct them from the :doc:`changelog`. The changelog
-remains the authoritative, complete record — always read the entries between your current version
-and your target version before upgrading. This page summarizes the changes most likely to break a
-running deployment.
+This page collects the upgrade steps for every release of Django OAuth Toolkit that needs one, so
+you don't have to reconstruct them from the :doc:`changelog`. If a release required something of
+you — a breaking change to accommodate, a behavior change that can surface in a running deployment,
+an action to take on the way through — it has a section here. Releases that need nothing beyond
+installing them are deliberately absent, so an empty gap between two versions is an answer, not an
+omission. The changelog remains the authoritative, complete record — always read the entries
+between your current version and your target version before upgrading.
 
 General upgrade procedure
 -------------------------
 
 #. **Read the changelog** for every release between your current and target version, not only the
-   target — breaking changes are sometimes introduced in a major release and then have follow-ups
-   in later ones.
+   target — breaking changes are sometimes introduced in one release and then have follow-ups in
+   later ones.
 #. **Pin the exact version** you are upgrading to and test in a staging environment before
    production.
-#. **Run migrations.** After upgrading the package, run ``python manage.py migrate``. Major
-   releases frequently ship model changes.
+#. **Run migrations.** After upgrading the package, run ``python manage.py migrate``.
 #. **Regenerate migrations for swapped models.** If you have :ref:`swapped any of the toolkit's
    models <extend_app_model>` (application or token models), run ``python manage.py makemigrations``
    for your app and then ``migrate``, so your custom models pick up the same schema changes.
@@ -94,6 +95,79 @@ Upgrading to 3.0
   ensure your routers direct the token models to the correct database (see
   :ref:`the multiple-databases note <extend_token_models>`).
 
+Upgrading to 3.4.1
+------------------
+
+3.4.1 tightens redirect URI matching and refresh token handling. Most deployments need to do
+nothing beyond installing it, running ``migrate`` and running ``collectstatic``, but several
+behaviors that were previously accepted are now rejected, so work through this list before rolling
+it out.
+
+* **Redirect URIs are now matched exactly (RFC 9700 §2.1).** A request may no longer carry query
+  parameters, path parameters (``;key=value``), credentials (``https://user@host/cb``) or a
+  fragment that the registered URI does not have. If any of your clients pass per-request data
+  through the ``redirect_uri`` query string, they will start failing with
+  ``redirect_uri_mismatch``: either register the full URI including its query (matched in the same
+  order), or move that data into the ``state`` parameter, which is what it is for. Applications
+  whose registered ``redirect_uris`` carry no query component are unaffected.
+
+* **Some registered redirect URIs are no longer valid and must be re-registered.** A URI ending in
+  a bare ``#`` is now rejected at registration (#1801); previously it was stored and would then
+  never match anything. A rootless private-use scheme URI (``com.example.app:oauth2redirect``) is
+  also rejected (#1796) — it used to be silently rewritten to ``com.example.app://oauth2redirect``,
+  registering ``oauth2redirect`` as a *hostname*, which no client matches. Re-register those in the
+  RFC 8252 §7.1 single-slash form, ``com.example.app:/oauth2redirect``.
+
+* **Run ``collectstatic``.** The shipped templates no longer load Bootstrap from a third-party CDN
+  (#730); ``oauth2_provider/base.html`` links a stylesheet distributed with the package instead,
+  served through ``staticfiles``. Until you collect static files, the built-in authorization and
+  application pages render unstyled. Substituting your own styles through the ``css`` block of
+  ``base.html`` works exactly as before.
+
+* **``REFRESH_TOKEN_EXPIRE_SECONDS`` is now enforced when a refresh token is presented (#746),**
+  not only by the ``cleartokens`` sweep. Expiry is idle-based — a refresh token is rejected that
+  many seconds after its access token expires, and the deadline slides forward on every refresh —
+  so actively-used tokens are unaffected. If you set this, expect idle tokens that are already past
+  their lifetime to be rejected on upgrade, forcing those clients to re-authenticate. The default
+  (``None``) still never expires refresh tokens.
+
+* **Revoking an access token now revokes the refresh token bound to it** — through the RFC 7009
+  ``/revoke/`` endpoint (#746), the authorized-tokens page (#1510) and the admin. Previously the
+  refresh token survived and could immediately mint a new access token, defeating the revocation.
+  If you depend on the old behavior, note that whether a refresh token may survive access-token
+  revocation becomes a configurable policy in 4.0.
+
+* **The revocation endpoint only revokes tokens issued to the authenticated client (#727).** If you
+  have automation that revokes another application's tokens through ``/o/revoke_token/``, it will
+  silently stop having an effect — the endpoint still returns ``200`` (RFC 7009 §2.2) without
+  disclosing whether the token exists.
+
+* **A revoked refresh token is no longer honored inside the grace window (#1816).** This only
+  affects deployments that set a non-zero ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``; the default of
+  ``0`` was never exposed. Genuine rotation retries inside the window still work.
+
+* **If you swap in your own refresh token model,** run ``makemigrations`` for your app to pick up
+  the new index on ``token_family`` (#1809), and if you override ``revoke()``, override
+  ``revoke_family()`` to match — reuse detection now revokes a compromised family as a set rather
+  than row by row, so anything extra your ``revoke()`` does has to happen in ``revoke_family()``
+  too. See :ref:`extend_token_models`.
+
+* **If you wrapped or patched ``redirect_to_uri_allowed()``** to influence
+  ``AbstractApplication.redirect_uri_allowed()`` or ``post_logout_redirect_uri_allowed()``, target
+  the new ``check_redirect_to_uri_allowed()`` instead (#681) — those methods now call it rather
+  than the old helper.
+
+* **``Application.clean()`` now reports validation errors per field (#1343)** instead of as
+  non-field errors, and reports all of them at once. ``ValidationError.message_dict`` is keyed by
+  field name, so callers of ``Application.full_clean()`` see the field alongside the message. A
+  custom ``ModelForm`` that omits one of those fields still receives the message as a non-field
+  error, provided it subclasses ``oauth2_provider.forms.ApplicationForm``.
+
+* **``JSONOAuthLibCore`` is deprecated (#1773)** and now emits a ``DeprecationWarning``. If you set
+  ``OAUTH2_BACKEND_CLASS`` to it, plan to move off it: the JSON request-body mode is non-standard
+  (RFC 6749, RFC 7662 and RFC 7009 define those endpoints as
+  ``application/x-www-form-urlencoded``), and it is scheduled for removal in 4.0.
+
 .. note::
-   For the full, authoritative list of changes in every release — including minor and patch
-   releases not covered here — see the :doc:`changelog`.
+   For the full, authoritative list of changes in every release — including the releases that
+   asked nothing of you and so have no section here — see the :doc:`changelog`.

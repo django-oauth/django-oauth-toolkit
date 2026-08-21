@@ -13,7 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- ### Fixed -->
 <!-- ### Security -->
 
-## [unreleased]
+## [3.4.1] - 2026-08-21
+
+This release is dominated by **security hardening of redirect URI matching, token revocation and
+refresh token handling**. Several entries below change behavior that was previously accepted, and
+they are spread across *Fixed* and *Security*: the **"Upgrading to 3.4.1"** section of the
+Upgrading guide collects everything you need to act on in one place, so start there. Of particular
+note: redirect URIs are now matched exactly per
+[RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1), so a request may no
+longer carry query parameters, path parameters, credentials or a fragment that the registered URI
+does not have; `REFRESH_TOKEN_EXPIRE_SECONDS`, where set, is now enforced when a refresh token is
+presented rather than only by the `cleartokens` sweep; and the built-in templates now link a
+stylesheet shipped with the package instead of a CDN, so run `collectstatic` or the pages render
+unstyled.
+
 ### Added
 * #681 Redirect URI mismatches are now diagnosed on the `oauth2_provider` logger at `DEBUG`,
   reporting the requested URI, every registered candidate it was compared against, and which
@@ -38,8 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is rejected; with the default settings-based scopes backend the suffixed scopes must be
   declared in `SCOPES`.
 * #1157 An "Upgrading" documentation page collecting the breaking changes and upgrade steps for
-  major version bumps (2.0 and 3.0), linked from the documentation index, so upgrade guidance is
-  discoverable outside the CHANGELOG.
+  every release that needs them — 2.0, 3.0 and this release — linked from the documentation index,
+  so upgrade guidance is discoverable outside the CHANGELOG. A release that asks nothing of you has
+  no section there, so a gap between two versions is an answer rather than an omission.
 * #452 Documentation ("Custom scopes backend") explaining how to replace the default
   settings-driven scopes backend via `SCOPES_BACKEND_CLASS`, including a worked model-based
   example that stores scopes in the database.
@@ -185,6 +199,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turning into a server error.
 
 ### Security
+* #1819 The device authorization flow's confirmation and status views now act only on a device
+  grant that belongs to the signed-in user. `DeviceUserCodeView` claims a pending grant for the
+  user who enters the `user_code`, but `DeviceConfirmView` and `DeviceGrantStatusView` looked the
+  grant up by `client_id` and `user_code` alone. Any *other* authenticated user who learned that
+  short, human-readable code — it is displayed on the device's screen for a person to read and
+  type — could therefore approve the pending authorization, handing the device tokens bound to
+  the account of the user who entered it, or deny it, or read its status page. RFC 8628 §3.3 has
+  the user who is being asked to authorize the device grant that authorization. Both views now
+  filter on `user=request.user` and return `404` to anyone else; a grant that has not yet been
+  claimed through the user-code step likewise can no longer be confirmed by navigating straight
+  to the confirmation URL.
 * #1816 A refresh token that was **deliberately revoked** is no longer honored inside
   `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`. The grace window exists to shield the token a
   client retries when it did not receive the rotated response, but `revoked` records both
