@@ -35,7 +35,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` or per client via the application's
   `require_pushed_authorization_requests` field, and the endpoint is advertised in the RFC 8414
   metadata document. See `docs/pushed_authorization_requests.rst`.
+### Changed
+* #1287 RP-Initiated Logout no longer rejects an `id_token_hint` whose ID Token is no longer stored.
+  Such a request previously returned HTTP 400; it now takes the prompt-or-logout path, so deployments
+  relying on the 400 will see 200 (prompt) or 302 (redirect) instead. "No longer stored" covers an ID
+  Token deliberately revoked (`IDToken.revoke()` deletes the row) and one that never existed, not only
+  one another RP's logout deleted. Verification itself is unchanged: a hint that cannot be verified is
+  still rejected, and a `client_id` supplied alongside it is still required to match the RP the ID
+  Token was issued for.
+* #1287 Orphaned-`id_token_hint` requests that are still rejected now report the error they actually
+  hit rather than a blanket invalid-ID-Token error, because the checks past that point are now
+  reached. A mismatched `client_id` reports "Mismatch between the Client ID of the ID Token and the
+  Client ID that was provided" and a `post_logout_redirect_uri` that is not the requesting RP's
+  reports "Invalid post logout redirect URI", both still `invalid_request` with HTTP 400; declining
+  the logout confirmation form now reports `logout_denied` rather than `invalid_request`. Deployments
+  that branch on the `error` code or match on the description -- in a custom `error_response()`, an
+  overridden `logout_confirm.html`, or log-based alerting -- should check those paths.
+* #1287 `RPInitiatedLogoutView.validate_logout_request_user()` now returns an `(id_token, claims)`
+  tuple rather than the `IDToken` alone, and `RPInitiatedLogoutView.get_request_application()` takes a
+  third `claims` argument. Subclasses overriding either method must be updated.
+
 ### Fixed
+* #1287 RP-Initiated Logout is now idempotent, as the specification requires. Once one RP logged an
+  End-User out, `do_logout()` deleted that user's ID Tokens, so every other RP's `id_token_hint`
+  referred to an IDToken that no longer existed and their logout requests failed with HTTP 400 and
+  never reached their `post_logout_redirect_uri`. A verified hint whose IDToken is gone is now
+  distinguished from one that could not be verified, and the requesting RP is recovered from the
+  token's verified `aud` claim so that the `client_id` and `post_logout_redirect_uri` checks still
+  apply.
 * #1816 `RefreshToken.token_checksum` is now unique. `AbstractRefreshToken.Meta` declared
   `unique_together = ("token_checksum", "revoked")`, which enforced nothing: live rows have
   `revoked IS NULL` and every supported backend treats NULLs as distinct in a unique index,

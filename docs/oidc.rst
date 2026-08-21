@@ -168,6 +168,16 @@ This feature has to be enabled separately as it is an extension to the core stan
        # ... any other settings you want
    }
 
+Logout requests are idempotent, as the specification requires. An ``id_token_hint`` that verifies but
+whose ID Token is no longer stored is therefore not treated as an error: this is the case once another
+RP has already logged the same End-User out, since that deletes their ID Tokens, and equally for an ID
+Token that was deliberately revoked or that this OP never issued. The End-User is
+prompted if they still have a session with the OP, just as they are for a request carrying no
+``id_token_hint`` at all. The requesting RP is still identified, from the ID Token's ``aud`` claim, so
+a ``post_logout_redirect_uri`` is still validated against it. An ``id_token_hint`` that cannot be
+verified is still rejected, and a ``client_id`` given alongside it is still required to match the RP
+the ID Token was issued for.
+
 
 Setting up OIDC enabled clients
 ===============================
