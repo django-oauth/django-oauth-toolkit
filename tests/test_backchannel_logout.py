@@ -284,6 +284,13 @@ class TestBackchannelLogout(TestCase):
                 send_backchannel_logout_request(self.id_token)
             self.assertIn("Backchannel logout not enabled", str(context.exception))
 
+    def test_raises_exception_when_iss_endpoint_not_set(self):
+        """A logout token carries the issuer as an absolute URL, so it cannot be minted."""
+        self.oauth2_settings.OIDC_ISS_ENDPOINT = ""
+        with self.assertRaises(BackchannelLogoutRequestError) as context:
+            send_backchannel_logout_request(self.id_token)
+        self.assertIn("OIDC_ISS_ENDPOINT is not set", str(context.exception))
+
     def test_raises_exception_when_backchannel_logout_uri_not_provided(self):
         """BackchannelLogoutRequestError is raised for an application with no logout URI."""
         self.application.backchannel_logout_uri = ""

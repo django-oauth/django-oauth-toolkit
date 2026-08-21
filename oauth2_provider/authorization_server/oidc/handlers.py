@@ -83,8 +83,6 @@ def send_backchannel_logout_request(id_token, *args, **kwargs):
             timeout=oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_TIMEOUT,
         )
         response.raise_for_status()
-    except BackchannelLogoutRequestError:
-        raise
     except Exception as exc:
         raise BackchannelLogoutRequestError(str(exc)) from exc
 
