@@ -41,6 +41,21 @@ def jwk_from_pem(pem_string):
     return jwk.JWK.from_pem(pem_string.encode("utf-8"))
 
 
+def jwk_allows_verification(key):
+    """True when the JWK's own restrictions permit signature verification.
+
+    RFC 7517: ``use`` and ``key_ops`` each constrain what a key may do; honor
+    whichever is present (a key declaring only e.g. encryption operations must
+    never be tried for JWS verification).
+    """
+    if key.get("use", "sig") != "sig":
+        return False
+    key_ops = key.get("key_ops")
+    if key_ops is not None and "verify" not in key_ops:
+        return False
+    return True
+
+
 def get_timezone(time_zone):
     """
     Return the given time zone name as a tzinfo instance.
