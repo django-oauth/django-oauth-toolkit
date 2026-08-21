@@ -442,6 +442,45 @@ class TestOAuth2Validator(TransactionTestCase):
         self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
         self.assertIsNone(request.refresh_token_instance.revoked)
 
+    def test_validate_refresh_token_rejects_revoked_token_that_was_not_superseded(self):
+        # A token revoked deliberately (/revoke/, the admin, RP-initiated logout) was never
+        # consumed to mint a successor access token, so the grace window must not shield it:
+        # "the token cannot be used again after the revocation" (RFC 7009 section 2.1).
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 120
+        token = "repudiated-refresh-token"
+        RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            revoked=timezone.now(),
+        )
+        request = mock.MagicMock(wraps=Request)
+
+        self.assertFalse(self.validator.validate_refresh_token(token, self.application, request))
+
+    def test_validate_refresh_token_accepts_revoked_token_superseded_by_rotation(self):
+        # The counterpart: a token the rotation superseded still owns the access token it
+        # minted, which is what the grace window exists to shield -- a client that retried
+        # because it never received the rotated response.
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 120
+        token = "superseded-refresh-token"
+        refresh_token = RefreshToken.objects.create(
+            user=self.user,
+            token=token,
+            application=self.application,
+            revoked=timezone.now(),
+        )
+        AccessToken.objects.create(
+            user=self.user,
+            token="superseded-successor-access-token",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            source_refresh_token=refresh_token,
+        )
+        request = mock.MagicMock(wraps=Request)
+
+        self.assertTrue(self.validator.validate_refresh_token(token, self.application, request))
+
     def test_validate_refresh_token_rejects_orphan_without_access_token(self):
         # A non-revoked refresh token whose access token was deleted out of band is an
         # orphan (access_token is SET_NULL). There is nothing left to refresh against, so

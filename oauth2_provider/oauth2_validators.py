@@ -1261,18 +1261,21 @@ class OAuth2Validator(RequestValidator):
             grace_expired = rt.revoked <= timezone.now() - timedelta(
                 seconds=oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS
             )
-            # With reuse protection the grace period must only shield the
-            # *immediately preceding* refresh token -- a client that retried
-            # because it did not receive the rotated token. That token still owns
-            # the access token it minted; once the chain rotates again that access
-            # token is revoked (deleted), so its absence marks a stale token being
-            # replayed several generations down the chain. Honoring such a token
-            # within the grace window would defeat reuse protection (#1617).
-            stale_replay = (
-                oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION
-                and not AccessToken.objects.filter(source_refresh_token=rt).exists()
-            )
-            if grace_expired or stale_replay:
+            # The grace window exists only to shield the *immediately preceding* refresh
+            # token -- a client that retried because it did not receive the rotated
+            # response. Rotation records that supersession in the same ``revoked`` column
+            # as a deliberate revocation (the RFC 7009 /revoke/ endpoint, the admin,
+            # RP-initiated logout, ``revoke_access_token``), so the two are told apart by
+            # whether this token was ever consumed to mint a successor access token.
+            #
+            # A token that was repudiated rather than superseded was never consumed, and
+            # must never be honored again: "the invalidation takes place immediately, and
+            # the token cannot be used again after the revocation" (RFC 7009 section 2.1).
+            # The same test also rejects a token replayed several generations down a
+            # rotated chain, whose access token a later rotation has since revoked
+            # (deleted) -- honoring that would defeat reuse protection (#1617).
+            superseded = AccessToken.objects.filter(source_refresh_token=rt).exists()
+            if grace_expired or not superseded:
                 if oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION and rt.token_family:
                     rt_token_family = RefreshToken.objects.filter(token_family=rt.token_family)
                     for related_rt in rt_token_family.all():

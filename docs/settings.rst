@@ -276,10 +276,16 @@ The ``cleartokens`` management command removes revoked refresh tokens once the
 grace period has passed, unless ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled.
 Check :ref:`cleartokens` management command for further info.
 
-When ``REFRESH_TOKEN_REUSE_PROTECTION`` is enabled the grace period applies only to
-the *immediately preceding* refresh token (the token a client retries when it did not
-receive the rotated response). A token that has already been rotated past is rejected
-as a reuse even within the grace window — see ``REFRESH_TOKEN_REUSE_PROTECTION`` below.
+The grace period only ever shields a refresh token that a rotation *superseded* — the
+token a client retries when it did not receive the rotated response. A refresh token that
+was deliberately revoked (through the ``/revoke/`` endpoint, the admin, RP-initiated
+logout, or by revoking its access token) is rejected immediately, whatever the grace
+period: :rfc:`7009#section-2.1` requires that a revoked token "cannot be used again after
+the revocation". The same applies to a token that has already been rotated past — see
+``REFRESH_TOKEN_REUSE_PROTECTION`` below.
+
+With ``ROTATE_REFRESH_TOKEN`` disabled nothing supersedes a refresh token, so the grace
+period has no effect: the same token stays valid until it is revoked or expires.
 
 REFRESH_TOKEN_REUSE_PROTECTION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
