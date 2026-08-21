@@ -31,6 +31,11 @@ from .validators import AllowedURIValidator
 
 logger = logging.getLogger(__name__)
 
+# The canonical width of a client identifier, declared once so the models that
+# record one do not drift apart. 255 rather than 100 so a Client ID Metadata
+# Document URL fits (CIMD uses the client's https URL as its client_id).
+CLIENT_ID_MAX_LENGTH = 255
+
 
 class ResourceJSONField(models.JSONField):
     """
@@ -218,10 +223,12 @@ class AbstractApplication(models.Model):
     )
 
     id = models.BigAutoField(primary_key=True)
-    # 255 rather than 100 so a Client ID Metadata Document URL fits (CIMD uses
-    # the client's https URL as its client_id).
     client_id = models.CharField(
-        max_length=255, unique=True, default=generate_client_id, db_index=True, verbose_name=_("client ID")
+        max_length=CLIENT_ID_MAX_LENGTH,
+        unique=True,
+        default=generate_client_id,
+        db_index=True,
+        verbose_name=_("client ID"),
     )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -689,6 +696,159 @@ class Application(AbstractApplication):
         return (self.client_id,)
 
 
+class AbstractAuthorization(models.Model):
+    """
+    An Authorization instance is a durable record of a granted authorization:
+    the fact that a user -- or a client acting on its own behalf -- authorized
+    a client for a set of scopes at a point in time, via a particular grant
+    type.
+
+    :rfc:`6749#section-1.3` defines an authorization grant as the *credential*
+    representing the resource owner's authorization: the authorization code,
+    the resource owner's password, the client's own credentials, the device
+    code. Those credentials are transient and flow-specific; this model records
+    the durable fact they all represent, so that a token can be traced back to
+    the act of consent that produced it whichever flow issued it.
+
+    Tokens issued under an authorization reference it; revoking an
+    authorization revokes every token issued under it, on every device.
+
+    Deletion is not a domain action -- :meth:`revoke` is. The token foreign
+    keys are ``RESTRICT``, so an authorization cannot be deleted while tokens
+    issued under it exist (except through a cascade that is deleting those
+    tokens too, e.g. deleting the user). Row deletion is reserved for cleanup
+    (``cleartokens``) once every token is gone.
+
+    Fields:
+
+    * :attr:`user` The Django user who granted the authorization. NULL for
+                   ``client_credentials``, where the "consent" is the client
+                   registration itself.
+    * :attr:`client_id` The client the authorization was granted to. This is
+                        the durable client identity: it is recorded as a value,
+                        not as a foreign key, so a token stays attributable to
+                        a client whose registration no longer exists.
+    * :attr:`application` The registration backing :attr:`client_id`, if any.
+                          NULL means the client has no provisioned registration
+                          (it was derived, or the registration was deleted) --
+                          the client is still identified by :attr:`client_id`.
+    * :attr:`grant_type` How the authorization was expressed. Normally one of
+                         :attr:`AbstractApplication.GRANT_TYPES`; a grant type
+                         with no member there is recorded by its protocol name.
+    * :attr:`scope` Scopes granted, space separated
+    * :attr:`authorization_details` Reserved for :rfc:`9396` (Rich
+                                    Authorization Requests). Nothing writes or
+                                    enforces it yet; the column exists so RAR
+                                    can describe "what was granted" alongside
+                                    :attr:`scope` without a further migration
+                                    of every downstream token table.
+    * :attr:`revoked_at` Timestamp of when this authorization was revoked
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("user"),
+    )
+    client_id = models.CharField(max_length=CLIENT_ID_MAX_LENGTH, db_index=True, verbose_name=_("client ID"))
+    application = models.ForeignKey(
+        oauth2_settings.APPLICATION_MODEL,
+        # The registration is not the identity: deleting it leaves the
+        # authorization attributed to its client_id rather than destroying the
+        # record of the consent.
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("application"),
+    )
+    grant_type = models.CharField(
+        max_length=64, choices=AbstractApplication.GRANT_TYPES, verbose_name=_("grant type")
+    )
+    scope = models.TextField(blank=True, verbose_name=_("scope"))
+    authorization_details = models.JSONField(
+        null=True, blank=True, default=None, verbose_name=_("authorization details")
+    )
+
+    created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
+    updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
+    revoked_at = models.DateTimeField(null=True, blank=True, verbose_name=_("revoked at"))
+
+    def is_active(self):
+        """
+        Whether this authorization can still be used to issue tokens.
+        """
+        return self.revoked_at is None
+
+    def allow_scopes(self, scopes):
+        """
+        Check if the authorization covers the provided scopes
+
+        :param scopes: An iterable containing the scopes to check
+        """
+        if not scopes:
+            return True
+
+        provided_scopes = set(self.scope.split())
+        resource_scopes = set(scopes)
+
+        return resource_scopes.issubset(provided_scopes)
+
+    def revoke(self):
+        """
+        Revoke this authorization: every token issued under it, and every
+        outstanding credential (unexchanged authorization code, approved but
+        not yet redeemed device grant) that could still mint tokens under it.
+
+        This is the consent axis: it kills the authorization's token chains on
+        every device, but it does not log anyone out.
+        """
+        access_token_model = get_access_token_model()
+        refresh_token_model = get_refresh_token_model()
+        id_token_model = get_id_token_model()
+        grant_model = get_grant_model()
+        device_grant_model = get_device_grant_model()
+
+        # Use the AccessToken's database instead of making the assumption it is in 'default'.
+        with transaction.atomic(using=router.db_for_write(access_token_model)):
+            if self.revoked_at is None:
+                self.revoked_at = timezone.now()
+                self.save(update_fields=["revoked_at", "updated"])
+
+            # Close the paths that could still issue tokens under this
+            # authorization: codes not yet exchanged, and devices approved but
+            # not yet redeemed. Exchanged codes are kept as replay evidence.
+            grant_model.objects.filter(authorization=self, exchanged_at__isnull=True).delete()
+            device_grant_model.objects.filter(
+                authorization=self, status=device_grant_model.AUTHORIZED
+            ).update(status=device_grant_model.DENIED)
+
+            # Refresh tokens first: RefreshToken.revoke() deletes the access
+            # token it is bound to, so the access token sweep below has less to
+            # do and never races it.
+            for refresh_token in refresh_token_model.objects.filter(authorization=self, revoked__isnull=True):
+                refresh_token.revoke()
+            for access_token in access_token_model.objects.filter(authorization=self):
+                access_token.revoke()
+            for id_token in id_token_model.objects.filter(authorization=self):
+                id_token.revoke()
+
+    def __str__(self):
+        return "Authorization #{self.pk}".format(self=self)
+
+    class Meta:
+        abstract = True
+
+
+class Authorization(AbstractAuthorization):
+    class Meta(AbstractAuthorization.Meta):
+        swappable = "OAUTH2_PROVIDER_AUTHORIZATION_MODEL"
+
+
 class AbstractGrant(models.Model):
     """
     A Grant instance represents a token with a short lifetime that can
@@ -706,6 +866,11 @@ class AbstractGrant(models.Model):
     * :attr:`code_challenge` PKCE code challenge
     * :attr:`code_challenge_method` PKCE code challenge transform algorithm
     * :attr:`resource` RFC 8707 resource indicator(s), JSON-encoded array of URIs
+    * :attr:`authorization` The Authorization this code was issued under
+    * :attr:`exchanged_at` When this code was exchanged for tokens. A code
+                           presented again after this is set is a replay:
+                           :rfc:`6749#section-4.1.2` calls for revoking the
+                           tokens previously issued on it.
     """
 
     CODE_CHALLENGE_PLAIN = "plain"
@@ -745,6 +910,18 @@ class AbstractGrant(models.Model):
     claims = models.TextField(blank=True, verbose_name=_("claims"))
 
     resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))
+
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        # A code is only a claim ticket on its authorization: if the
+        # authorization is gone the code must not remain exchangeable.
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("authorization"),
+    )
+    exchanged_at = models.DateTimeField(null=True, blank=True, verbose_name=_("exchanged at"))
 
     def is_expired(self):
         """
@@ -794,6 +971,7 @@ class AbstractAccessToken(models.Model):
     * :attr:`source_refresh_token` If from a refresh, the consumed RefeshToken
     * :attr:`token` Access token
     * :attr:`application` Application instance
+    * :attr:`authorization` The Authorization this token was issued under
     * :attr:`expires` Date and time of token expiration, in DateTime format
     * :attr:`scope` Allowed scopes
     * :attr:`resource` RFC 8707 resource indicator(s) - JSON-encoded array of URIs
@@ -841,6 +1019,18 @@ class AbstractAccessToken(models.Model):
         verbose_name=_("application"),
     )
 
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        # RESTRICT preserves token lineage: an authorization cannot be deleted
+        # while tokens issued under it exist, except through a cascade (user
+        # deletion) that deletes those tokens too. Revocation, not deletion, is
+        # the domain action.
+        on_delete=models.RESTRICT,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("authorization"),
+    )
     expires = models.DateTimeField(verbose_name=_("expires"))
     scope = models.TextField(blank=True, verbose_name=_("scope"))
 
@@ -949,6 +1139,7 @@ class AbstractRefreshToken(models.Model):
     * :attr:`application` Application instance
     * :attr:`access_token` AccessToken instance this refresh token is
                            bounded to
+    * :attr:`authorization` The Authorization this token was issued under
     * :attr:`revoked` Timestamp of when this refresh token was revoked
     * :attr:`resource` RFC 8707 resource indicator(s), JSON-encoded array of URIs
     """
@@ -984,6 +1175,18 @@ class AbstractRefreshToken(models.Model):
         null=True,
         related_name="refresh_token",
         verbose_name=_("access token"),
+    )
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        # RESTRICT preserves token lineage: an authorization cannot be deleted
+        # while tokens issued under it exist, except through a cascade (user
+        # deletion) that deletes those tokens too. Revocation, not deletion, is
+        # the domain action.
+        on_delete=models.RESTRICT,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("authorization"),
     )
     token_family = models.UUIDField(null=True, blank=True, editable=False, verbose_name=_("token family"))
 
@@ -1089,6 +1292,7 @@ class AbstractIDToken(models.Model):
     * :attr:`user` The Django user representing resources' owner
     * :attr:`jti` ID token JWT Token ID, to identify an individual token
     * :attr:`application` Application instance
+    * :attr:`authorization` The Authorization this token was issued under
     * :attr:`expires` Date and time of token expiration, in DateTime format
     * :attr:`scope` Allowed scopes
     * :attr:`created` Date and time of token creation, in DateTime format
@@ -1111,6 +1315,18 @@ class AbstractIDToken(models.Model):
         blank=True,
         null=True,
         verbose_name=_("application"),
+    )
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        # RESTRICT preserves token lineage: an authorization cannot be deleted
+        # while tokens issued under it exist, except through a cascade (user
+        # deletion) that deletes those tokens too. Revocation, not deletion, is
+        # the domain action.
+        on_delete=models.RESTRICT,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("authorization"),
     )
     expires = models.DateTimeField(verbose_name=_("expires"))
     scope = models.TextField(blank=True, verbose_name=_("scope"))
@@ -1223,6 +1439,16 @@ class AbstractDeviceGrant(models.Model):
         verbose_name=_("status"),
     )
     client_id = models.CharField(max_length=100, db_index=True, verbose_name=_("client ID"))
+    authorization = models.ForeignKey(
+        oauth2_settings.AUTHORIZATION_MODEL,
+        # Like the authorization code, an approved device code is only a claim
+        # ticket on its authorization.
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s",
+        verbose_name=_("authorization"),
+    )
     last_checked = models.DateTimeField(auto_now=True, verbose_name=_("last checked"))
 
     def is_expired(self):
@@ -1350,6 +1576,11 @@ def get_application_model():
     return apps.get_model(oauth2_settings.APPLICATION_MODEL)
 
 
+def get_authorization_model():
+    """Return the Authorization model that is active in this project."""
+    return apps.get_model(oauth2_settings.AUTHORIZATION_MODEL)
+
+
 def get_device_grant_model():
     """Return the DeviceGrant model that is active in this project."""
     return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
@@ -1384,6 +1615,12 @@ def get_application_admin_class():
     """Return the Application admin class that is active in this project."""
     application_admin_class = oauth2_settings.APPLICATION_ADMIN_CLASS
     return application_admin_class
+
+
+def get_authorization_admin_class():
+    """Return the Authorization admin class that is active in this project."""
+    authorization_admin_class = oauth2_settings.AUTHORIZATION_ADMIN_CLASS
+    return authorization_admin_class
 
 
 def get_access_token_admin_class():
@@ -1564,6 +1801,23 @@ def clear_expired():
 
     grants_deleted_no = batch_delete(grants, grants_query)
     logger.info("%s Expired grant tokens deleted", grants_deleted_no)
+
+    # Revoked authorizations are purged only once every token issued under them
+    # is gone, so the lineage the Authorization exists to record survives for as
+    # long as the tokens do. The token foreign keys are RESTRICT, so deleting
+    # one early would raise rather than silently orphan a token; the Exists()
+    # guards keep that from happening at all.
+    authorization_model = get_authorization_model()
+    has_no_tokens = (
+        ~models.Exists(access_token_model.objects.filter(authorization=models.OuterRef("pk")))
+        & ~models.Exists(refresh_token_model.objects.filter(authorization=models.OuterRef("pk")))
+        & ~models.Exists(id_token_model.objects.filter(authorization=models.OuterRef("pk")))
+    )
+    authorizations_query = models.Q(revoked_at__isnull=False) & has_no_tokens
+    authorizations = authorization_model.objects.filter(authorizations_query)
+
+    authorizations_deleted_no = batch_delete(authorizations, authorizations_query)
+    logger.info("%s Revoked authorizations deleted", authorizations_deleted_no)
 
     # Pushed authorization requests (RFC 9126) are consumed one-time at the
     # authorization endpoint, but a request_uri that is pushed and never redeemed

@@ -170,6 +170,13 @@ The import string of the class (model) representing your grants. Overwrite
 this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.Grant``).
 
+AUTHORIZATION_MODEL
+~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) recording granted authorizations -- the
+durable record of consent that the tokens issued under it point back at. See
+:doc:`authorizations`. Overwrite this value if you wrote your own implementation
+(subclass of ``oauth2_provider.models.AbstractAuthorization``).
+
 APPLICATION_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your application admin class.
@@ -187,6 +194,12 @@ GRANT_ADMIN_CLASS
 The import string of the class (model) representing your grant admin class.
 Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.admin.GrantAdmin``).
+
+AUTHORIZATION_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class representing your authorization admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.AuthorizationAdmin``).
 
 REFRESH_TOKEN_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -900,6 +913,12 @@ OAUTH2_PROVIDER_GRANT_MODEL
 The import string of the class (model) representing your OAuth2 grants.
 Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.Grant``).
+
+OAUTH2_PROVIDER_AUTHORIZATION_MODEL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) recording granted authorizations.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.models.AbstractAuthorization``). See :doc:`authorizations`.
 
 OAUTH2_PROVIDER_DEVICE_GRANT_MODEL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

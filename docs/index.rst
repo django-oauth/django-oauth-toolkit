@@ -57,6 +57,7 @@ Index
    templates
    views/details
    models
+   authorizations
    advanced_topics
    security
    security_process

@@ -14,11 +14,13 @@ from oauthlib.oauth2 import DeviceApplicationServer
 
 from oauth2_provider.compat import login_not_required
 from oauth2_provider.models import (
+    AbstractApplication,
     AbstractDeviceGrant,
     DeviceCodeResponse,
     DeviceRequest,
     create_device_grant,
     get_application_model,
+    get_authorization_model,
     get_device_grant_model,
 )
 from oauth2_provider.scopes import get_scopes_backend
@@ -214,7 +216,8 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
 
         if action == "accept":
             device.status = device.AUTHORIZED
-            device.save(update_fields=["status"])
+            device.authorization = self.create_authorization(device)
+            device.save(update_fields=["status", "authorization"])
             return super().form_valid(form)
         elif action == "deny":
             device.status = device.DENIED
@@ -222,6 +225,20 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
             return super().form_valid(form)
         else:
             return http.HttpResponseBadRequest()
+
+    def create_authorization(self, device):
+        """
+        Record the user's approval of the device as an Authorization. The tokens
+        issued when the device redeems its device code inherit it.
+        """
+        application = get_application_model().objects.filter(client_id=device.client_id).first()
+        return get_authorization_model().objects.create(
+            user=self.request.user,
+            client_id=device.client_id,
+            application=application,
+            grant_type=AbstractApplication.GRANT_DEVICE_CODE,
+            scope=device.scope or "",
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
