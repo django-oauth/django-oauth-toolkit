@@ -468,7 +468,7 @@ class TestResourceValidatorThroughViewStack(TestCase):
     def setUp(self):
         from django.http import HttpResponse
 
-        from oauth2_provider.views.generic import ProtectedResourceView
+        from oauth2_provider.resource_server.views.generic import ProtectedResourceView
 
         class ResourceView(ProtectedResourceView):
             def get(self, request, *args, **kwargs):

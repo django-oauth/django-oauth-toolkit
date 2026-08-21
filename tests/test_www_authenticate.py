@@ -1,7 +1,7 @@
 import pytest
 from django.test import RequestFactory, override_settings
 
-from oauth2_provider.www_authenticate import build_bearer_challenge, challenge_status
+from oauth2_provider.resource_server.www_authenticate import build_bearer_challenge, challenge_status
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 

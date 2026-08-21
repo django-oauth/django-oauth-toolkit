@@ -78,7 +78,9 @@ DCR_SETTINGS = {
     "READ_SCOPE": "read",
     "WRITE_SCOPE": "write",
     "DCR_ENABLED": True,
-    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.IsAuthenticatedDCRPermission",),
+    "DCR_REGISTRATION_PERMISSION_CLASSES": (
+        "oauth2_provider.authorization_server.dcr.IsAuthenticatedDCRPermission",
+    ),
     "DCR_REGISTRATION_SCOPE": "oauth2_provider:registration",
     "ALLOWED_REDIRECT_URI_SCHEMES": ["https", "http"],
 }

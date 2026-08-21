@@ -1,4 +1,4 @@
-from oauth2_provider.scopes import SettingsScopes
+from oauth2_provider.core.scopes import SettingsScopes
 
 
 def test_settings_scopes_get_available_scopes():

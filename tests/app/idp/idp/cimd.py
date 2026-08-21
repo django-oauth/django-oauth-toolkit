@@ -1,7 +1,7 @@
 """
 A CIMD metadata fetcher for local end-to-end testing.
 
-The stock :class:`~oauth2_provider.cimd.SafeMetadataFetcher` deliberately
+The stock :class:`~oauth2_provider.authorization_server.cimd.SafeMetadataFetcher` deliberately
 refuses loopback addresses and requires a CA-verified TLS connection, so it
 can never fetch from a test server on 127.0.0.1. The e2e compliance suite
 serves its client ID metadata documents from a local plain-HTTP server
@@ -16,7 +16,7 @@ never use it outside a local test IdP.
 
 import urllib3
 
-from oauth2_provider.cimd import CIMDError, SafeMetadataFetcher, _validate_client_id_url
+from oauth2_provider.authorization_server.cimd import CIMDError, SafeMetadataFetcher, _validate_client_id_url
 from oauth2_provider.settings import oauth2_settings
 
 

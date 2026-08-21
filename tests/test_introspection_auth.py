@@ -2,6 +2,7 @@ import calendar
 import datetime
 
 import pytest
+import requests
 from django.conf import settings
 from django.conf.urls import include
 from django.contrib.auth import get_user_model
@@ -11,7 +12,7 @@ from django.urls import path
 from django.utils import timezone
 from oauthlib.common import Request
 
-from oauth2_provider.compat import login_not_required
+from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.models import get_access_token_model, get_application_model
 from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.settings import oauth2_settings
@@ -224,7 +225,7 @@ class TestTokenIntrospectionAuth(TestCase):
                 return local_naive_now
             return utc_now.astimezone(tz)
 
-        with mock.patch("oauth2_provider.oauth2_validators.datetime") as mocked_datetime:
+        with mock.patch("oauth2_provider.resource_server.validators.datetime") as mocked_datetime:
             mocked_datetime.now.side_effect = mocked_now
             mocked_datetime.fromtimestamp.side_effect = datetime.datetime.fromtimestamp
             access_token = self.validator._get_token_from_authentication_server(
@@ -305,7 +306,7 @@ class TestTokenIntrospectionAuth(TestCase):
         """
         from django.utils.timezone import make_aware
 
-        from oauth2_provider.utils import get_timezone
+        from oauth2_provider.core.utils import get_timezone
 
         self.oauth2_settings.AUTHENTICATION_SERVER_EXP_TIME_ZONE = "Europe/Amsterdam"
 
@@ -369,6 +370,58 @@ class TestTokenIntrospectionAuth(TestCase):
         finally:
             settings.USE_TZ = settings_use_tz_backup
             settings.TIME_ZONE = settings_time_zone_backup
+
+    @mock.patch("requests.post", side_effect=mocked_requests_post)
+    def test_get_token_from_authentication_server_uses_basic_auth_credentials(self, mock_get):
+        """When only introspection credentials are configured (no bearer token), the
+        request is authenticated with an HTTP Basic ``Authorization`` header."""
+        token = self.validator._get_token_from_authentication_server(
+            "foo",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            None,
+            ("client_id", "client_secret"),
+        )
+        self.assertIsInstance(token, AccessToken)
+        _, kwargs = mock_get.call_args
+        self.assertTrue(kwargs["headers"]["Authorization"].startswith("Basic "))
+
+    @mock.patch("requests.post", side_effect=requests.exceptions.RequestException("boom"))
+    def test_get_token_from_authentication_server_request_exception_returns_none(self, mock_get):
+        """A failed POST to the introspection endpoint yields ``None`` rather than an error."""
+        token = self.validator._get_token_from_authentication_server(
+            "foo",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsNone(token)
+
+    @mock.patch("requests.post")
+    def test_get_token_from_authentication_server_invalid_json_returns_none(self, mock_post):
+        """A 200 response whose body is not valid JSON yields ``None``."""
+        response = mock.Mock(status_code=200)
+        response.json.side_effect = ValueError("no json")
+        mock_post.return_value = response
+        token = self.validator._get_token_from_authentication_server(
+            "foo",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsNone(token)
+
+    @mock.patch("requests.post")
+    def test_get_token_from_authentication_server_active_without_username(self, mock_post):
+        """An active introspection response without a ``username`` yields a user-less token."""
+        mock_post.return_value = MockResponse({"active": True, "scope": "read"}, 200)
+        token = self.validator._get_token_from_authentication_server(
+            "foo",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsInstance(token, AccessToken)
+        self.assertIsNone(token.user)
 
     @mock.patch("requests.post", side_effect=mocked_requests_post)
     def test_validate_bearer_token(self, mock_get):

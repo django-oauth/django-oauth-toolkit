@@ -14,14 +14,14 @@ from jwcrypto import jwt
 from oauthlib.common import Request
 from oauthlib.oauth2.rfc6749 import errors as rfc6749_errors
 
-from oauth2_provider.exceptions import FatalClientError
+from oauth2_provider.core.backends_oauthlib import get_oauthlib_core
+from oauth2_provider.core.exceptions import FatalClientError
 from oauth2_provider.models import (
     get_access_token_model,
     get_application_model,
     get_grant_model,
     get_refresh_token_model,
 )
-from oauth2_provider.oauth2_backends import get_oauthlib_core
 from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets

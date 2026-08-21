@@ -22,10 +22,10 @@ from jwcrypto import jwk
 from jwcrypto.common import JWException, base64url_encode
 from oauthlib.oauth2.rfc6749 import errors
 
+from .core.scopes import get_scopes_backend
+from .core.utils import jwk_allows_verification, jwk_from_pem
 from .generators import generate_client_id, generate_client_secret
-from .scopes import get_scopes_backend
 from .settings import oauth2_settings
-from .utils import jwk_allows_verification, jwk_from_pem
 from .validators import AllowedURIValidator
 
 
@@ -644,7 +644,7 @@ class AbstractApplication(models.Model):
         assertions, or None when no inline JWKS is registered.
 
         Remote ``client_jwks_uri`` resolution deliberately lives in
-        :mod:`oauth2_provider.client_assertions` so the model stays network-free.
+        :mod:`oauth2_provider.authorization_server.client_assertions` so the model stays network-free.
         """
         if not self.client_jwks:
             return None

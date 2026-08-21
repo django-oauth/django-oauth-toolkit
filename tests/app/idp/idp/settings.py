@@ -15,7 +15,7 @@ from pathlib import Path
 
 import environ
 
-from oauth2_provider.utils import set_oauthlib_user_to_device_request_user, user_code_generator
+from oauth2_provider.core.utils import set_oauthlib_user_to_device_request_user, user_code_generator
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -30,7 +30,10 @@ env = environ.FileAwareEnv(
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED=(bool, True),
     OAUTH2_PROVIDER_DCR_ENABLED=(bool, True),
     OAUTH2_PROVIDER_CIMD_ENABLED=(bool, False),
-    OAUTH2_PROVIDER_CIMD_METADATA_FETCHER=(str, "oauth2_provider.cimd.SafeMetadataFetcher"),
+    OAUTH2_PROVIDER_CIMD_METADATA_FETCHER=(
+        str,
+        "oauth2_provider.authorization_server.cimd.SafeMetadataFetcher",
+    ),
     OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY=(
         str,
         """
@@ -282,7 +285,9 @@ OAUTH2_PROVIDER = {
     # Open registration so the DCR endpoints can be exercised with curl; this
     # demo IdP is for local testing only — in production keep the default
     # IsAuthenticatedDCRPermission (or a custom permission class) instead.
-    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+    "DCR_REGISTRATION_PERMISSION_CLASSES": (
+        "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
+    ),
     # Advertise RFC 7523 JWT client authentication (the seed data ships a
     # private_key_jwt demo application; see tests/app/README.md).
     "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [

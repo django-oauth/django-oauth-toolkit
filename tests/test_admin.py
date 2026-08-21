@@ -15,7 +15,7 @@ from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory
 from django.utils import timezone
 
-from oauth2_provider.admin import (
+from oauth2_provider.authorization_server.admin import (
     AccessTokenAdmin,
     GrantAdmin,
     IDTokenAdmin,

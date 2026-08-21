@@ -3,7 +3,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.test.utils import override_settings
 from oauthlib.common import Request
 
-from oauth2_provider.admin import (
+from oauth2_provider.authorization_server.admin import (
     get_access_token_admin_class,
     get_application_admin_class,
     get_grant_admin_class,
@@ -224,7 +224,7 @@ class TestRefreshTokenAdminSelectRelated(TestCase):
         from django.contrib.auth import get_user_model
         from django.test import RequestFactory
 
-        from oauth2_provider.admin import RefreshTokenAdmin
+        from oauth2_provider.authorization_server.admin import RefreshTokenAdmin
         from oauth2_provider.models import get_refresh_token_model
 
         UserModel = get_user_model()

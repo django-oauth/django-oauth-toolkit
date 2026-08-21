@@ -1,5 +1,6 @@
 """
-Tests for RFC 7523 JWT client authentication (oauth2_provider.client_assertions).
+Tests for RFC 7523 JWT client authentication
+(oauth2_provider.authorization_server.client_assertions and oauth2_provider.client).
 
 Module-level tests use lightweight fake oauthlib requests and unsaved
 Application instances; endpoint integration tests (token / introspection /
@@ -14,7 +15,9 @@ from django.core.cache import cache
 from jwcrypto import jwk, jwt
 from jwcrypto.common import base64url_encode
 
-from oauth2_provider import client_assertions
+from oauth2_provider.authorization_server import client_assertions
+from oauth2_provider.client.client_assertions import make_client_assertion
+from oauth2_provider.core.rfc7523 import JWT_BEARER_CLIENT_ASSERTION_TYPE
 from oauth2_provider.models import get_application_model
 
 from . import presets
@@ -71,7 +74,7 @@ class FakeRequest:
     def __init__(
         self,
         assertion=None,
-        assertion_type=client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
+        assertion_type=JWT_BEARER_CLIENT_ASSERTION_TYPE,
         headers=None,
         uri="/o/token/",
         client_id=None,
@@ -163,9 +166,7 @@ def test_private_key_jwt_ps_family(alg):
     rather than assumed.
     """
     app = pkj_app()
-    assertion = client_assertions.make_client_assertion(
-        "pkj-client", RSA_KEY, TOKEN_AUDIENCE, alg=alg, kid="unit-rsa"
-    )
+    assertion = make_client_assertion("pkj-client", RSA_KEY, TOKEN_AUDIENCE, alg=alg, kid="unit-rsa")
     token = jwt.JWT(algs=[alg])
     token.deserialize(assertion, RSA_KEY)
     assert json.loads(token.token.objects["protected"])["alg"] == alg
@@ -183,9 +184,7 @@ def test_private_key_jwt_without_kid_tries_all_keys():
 
 def test_client_secret_jwt_hs256():
     app = csj_app()
-    assertion = client_assertions.make_client_assertion(
-        "csj-client", CLEARTEXT_SECRET, TOKEN_AUDIENCE, alg="HS256"
-    )
+    assertion = make_client_assertion("csj-client", CLEARTEXT_SECRET, TOKEN_AUDIENCE, alg="HS256")
     ok, request = authenticate(assertion, app)
     assert ok is True
     assert request.client is app
@@ -520,7 +519,7 @@ def test_remote_jwks_without_usable_keys_fails():
 
 
 def test_make_client_assertion_claims_and_header():
-    assertion = client_assertions.make_client_assertion("rp-client", RSA_KEY, "https://as.example.com/token")
+    assertion = make_client_assertion("rp-client", RSA_KEY, "https://as.example.com/token")
     token = jwt.JWT(algs=["RS256"])
     token.deserialize(assertion, RSA_KEY)
     claims = json.loads(token.claims)
@@ -535,8 +534,8 @@ def test_make_client_assertion_claims_and_header():
 
 
 def test_make_client_assertion_fresh_jti_per_call():
-    first = client_assertions.make_client_assertion("rp", RSA_KEY, "aud")
-    second = client_assertions.make_client_assertion("rp", RSA_KEY, "aud")
+    first = make_client_assertion("rp", RSA_KEY, "aud")
+    second = make_client_assertion("rp", RSA_KEY, "aud")
     jtis = set()
     for assertion in (first, second):
         token = jwt.JWT(algs=["RS256"])
@@ -546,37 +545,35 @@ def test_make_client_assertion_fresh_jti_per_call():
 
 
 def test_make_client_assertion_alg_inference_ec():
-    assertion = client_assertions.make_client_assertion("rp", EC_KEY, "aud")
+    assertion = make_client_assertion("rp", EC_KEY, "aud")
     token = jwt.JWT(algs=["ES256"])
     token.deserialize(assertion, EC_KEY)
 
 
 def test_make_client_assertion_from_pem():
     pem = RSA_KEY.export_to_pem(private_key=True, password=None).decode()
-    assertion = client_assertions.make_client_assertion("rp", pem, "aud")
+    assertion = make_client_assertion("rp", pem, "aud")
     token = jwt.JWT(algs=["RS256"])
     token.deserialize(assertion, RSA_KEY)
 
 
 def test_make_client_assertion_from_jwk_json():
-    assertion = client_assertions.make_client_assertion("rp", RSA_KEY.export_private(), "aud")
+    assertion = make_client_assertion("rp", RSA_KEY.export_private(), "aud")
     token = jwt.JWT(algs=["RS256"])
     token.deserialize(assertion, RSA_KEY)
 
 
 def test_make_client_assertion_raw_secret_requires_hs_alg():
     with pytest.raises(ValueError):
-        client_assertions.make_client_assertion("rp", CLEARTEXT_SECRET, "aud")
-    assertion = client_assertions.make_client_assertion("rp", CLEARTEXT_SECRET, "aud", alg="HS256")
+        make_client_assertion("rp", CLEARTEXT_SECRET, "aud")
+    assertion = make_client_assertion("rp", CLEARTEXT_SECRET, "aud", alg="HS256")
     key = jwk.JWK(kty="oct", k=base64url_encode(CLEARTEXT_SECRET))
     token = jwt.JWT(algs=["HS256"])
     token.deserialize(assertion, key)
 
 
 def test_make_client_assertion_extra_claims_and_lifetime():
-    assertion = client_assertions.make_client_assertion(
-        "rp", RSA_KEY, "aud", lifetime=120, extra_claims={"custom": "x"}
-    )
+    assertion = make_client_assertion("rp", RSA_KEY, "aud", lifetime=120, extra_claims={"custom": "x"})
     token = jwt.JWT(algs=["RS256"])
     token.deserialize(assertion, RSA_KEY)
     claims = json.loads(token.claims)
@@ -606,8 +603,8 @@ def test_token_endpoint_auth_signing_algs():
 
 def _assertion_post_data(application, key, audience=TOKEN_AUDIENCE, **extra):
     data = {
-        "client_assertion_type": client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
-        "client_assertion": client_assertions.make_client_assertion(application.client_id, key, audience),
+        "client_assertion_type": JWT_BEARER_CLIENT_ASSERTION_TYPE,
+        "client_assertion": make_client_assertion(application.client_id, key, audience),
     }
     data.update(extra)
     return data
@@ -638,14 +635,14 @@ def test_token_endpoint_private_key_jwt_es256(client, private_key_jwt_applicatio
 def test_token_endpoint_client_secret_jwt(client, client_secret_jwt_application):
     from django.urls import reverse
 
-    assertion = client_assertions.make_client_assertion(
+    assertion = make_client_assertion(
         client_secret_jwt_application.client_id, CLEARTEXT_SECRET, TOKEN_AUDIENCE, alg="HS256"
     )
     response = client.post(
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "client_credentials",
-            "client_assertion_type": client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
+            "client_assertion_type": JWT_BEARER_CLIENT_ASSERTION_TYPE,
             "client_assertion": assertion,
         },
     )
@@ -672,7 +669,7 @@ def test_token_endpoint_invalid_assertion_does_not_fall_back(client, private_key
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "client_credentials",
-            "client_assertion_type": client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE,
+            "client_assertion_type": JWT_BEARER_CLIENT_ASSERTION_TYPE,
             "client_assertion": "garbage",
             # Even correct secret credentials must not rescue the request.
             "client_id": private_key_jwt_application.client_id,
@@ -798,7 +795,7 @@ def test_rs_introspection_authenticates_with_client_assertion(oauth2_settings, m
     body = kwargs.get("data") or post.call_args[0][1]
     assert body["token"] == "remote-token"
     assert body["client_id"] == "rs-client"
-    assert body["client_assertion_type"] == client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE
+    assert body["client_assertion_type"] == JWT_BEARER_CLIENT_ASSERTION_TYPE
     assert kwargs.get("headers") is None
 
     token = jwt.JWT(algs=["RS256"])
@@ -957,19 +954,19 @@ def test_remote_jwks_skips_non_dict_entries():
 def test_make_client_assertion_accepts_pem_bytes():
     pem = RSA_KEY.export_to_pem(private_key=True, password=None)
     assert isinstance(pem, bytes)
-    assertion = client_assertions.make_client_assertion("rp", pem, "aud")
+    assertion = make_client_assertion("rp", pem, "aud")
     token = jwt.JWT(algs=["RS256"])
     token.deserialize(assertion, RSA_KEY)
 
 
 def test_make_client_assertion_rejects_non_key_types():
     with pytest.raises(TypeError):
-        client_assertions.make_client_assertion("rp", 12345, "aud")
+        make_client_assertion("rp", 12345, "aud")
 
 
 def test_make_client_assertion_infers_hs256_for_oct_jwk():
     key = jwk.JWK(kty="oct", k=base64url_encode(CLEARTEXT_SECRET))
-    assertion = client_assertions.make_client_assertion("rp", key, "aud")
+    assertion = make_client_assertion("rp", key, "aud")
     token = jwt.JWT(algs=["HS256"])
     token.deserialize(assertion, key)
 
@@ -977,7 +974,7 @@ def test_make_client_assertion_infers_hs256_for_oct_jwk():
 def test_make_client_assertion_cannot_infer_alg_for_okp():
     key = jwk.JWK.generate(kty="OKP", crv="Ed25519")
     with pytest.raises(ValueError):
-        client_assertions.make_client_assertion("rp", key, "aud")
+        make_client_assertion("rp", key, "aud")
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -1112,7 +1109,7 @@ def test_partial_assertion_parameters_still_require_client_authentication():
     validator = OAuth2Validator()
     body = (
         "grant_type=authorization_code"
-        f"&client_assertion_type={client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE}"
+        f"&client_assertion_type={JWT_BEARER_CLIENT_ASSERTION_TYPE}"
         "&client_assertion="
     )
     request = OauthlibRequest("/o/token/", http_method="POST", body=body)
@@ -1122,7 +1119,7 @@ def test_partial_assertion_parameters_still_require_client_authentication():
     only_type = OauthlibRequest(
         "/o/token/",
         http_method="POST",
-        body=f"grant_type=authorization_code&client_assertion_type={client_assertions.JWT_BEARER_CLIENT_ASSERTION_TYPE}",
+        body=f"grant_type=authorization_code&client_assertion_type={JWT_BEARER_CLIENT_ASSERTION_TYPE}",
     )
     assert validator.client_authentication_required(only_type) is True
     assert validator.authenticate_client(only_type) is False

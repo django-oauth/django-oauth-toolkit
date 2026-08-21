@@ -1,6 +1,6 @@
 from django.urls import path
 
-from oauth2_provider.views.oidc import ConnectDiscoveryInfoView
+from oauth2_provider.authorization_server.oidc.views import ConnectDiscoveryInfoView
 
 
 # Only the OIDC discovery route is registered — the authorize/token/userinfo/

@@ -1,6 +1,6 @@
 import pytest
 
-from oauth2_provider import utils
+from oauth2_provider.core import utils
 
 
 def test_jwk_from_pem_caches_jwk():
@@ -94,7 +94,7 @@ def test_user_code_generator_uses_csprng(mocker):
     source (``secrets``), not the predictable ``random`` module, per RFC 8628
     sections 5.1/5.2.
     """
-    secrets_choice = mocker.patch("oauth2_provider.utils.secrets.choice", return_value="A")
+    secrets_choice = mocker.patch("oauth2_provider.core.utils.secrets.choice", return_value="A")
 
     user_code = utils.user_code_generator(user_code_length=8)
 

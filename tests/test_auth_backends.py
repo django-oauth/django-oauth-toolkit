@@ -9,9 +9,9 @@ from django.test import RequestFactory
 from django.test.utils import modify_settings, override_settings
 from django.utils.timezone import now, timedelta
 
-from oauth2_provider.backends import OAuth2Backend
-from oauth2_provider.middleware import OAuth2ExtraTokenMiddleware, OAuth2TokenMiddleware
 from oauth2_provider.models import get_access_token_model, get_application_model
+from oauth2_provider.resource_server.backends import OAuth2Backend
+from oauth2_provider.resource_server.middleware import OAuth2ExtraTokenMiddleware, OAuth2TokenMiddleware
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 
@@ -64,7 +64,7 @@ class TestOAuth2Backend(BaseTest):
         with pytest.raises(SuspiciousOperation):
             OAuth2Backend().authenticate(**credentials)
 
-    @patch("oauth2_provider.backends.OAuthLibCore.verify_request")
+    @patch("oauth2_provider.resource_server.backends.OAuthLibCore.verify_request")
     def test_value_errors_are_reraised(self, patched_verify_request):
         patched_verify_request.side_effect = ValueError("Generic error")
 
@@ -92,13 +92,13 @@ class TestOAuth2Backend(BaseTest):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=(
-        "oauth2_provider.backends.OAuth2Backend",
+        "oauth2_provider.resource_server.backends.OAuth2Backend",
         "django.contrib.auth.backends.ModelBackend",
     ),
 )
 @modify_settings(
     MIDDLEWARE={
-        "append": "oauth2_provider.middleware.OAuth2TokenMiddleware",
+        "append": "oauth2_provider.resource_server.middleware.OAuth2TokenMiddleware",
     }
 )
 class TestOAuth2Middleware(BaseTest):
@@ -181,13 +181,13 @@ class TestOAuth2Middleware(BaseTest):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=(
-        "oauth2_provider.backends.OAuth2Backend",
+        "oauth2_provider.resource_server.backends.OAuth2Backend",
         "django.contrib.auth.backends.ModelBackend",
     ),
 )
 @modify_settings(
     MIDDLEWARE={
-        "append": "oauth2_provider.middleware.OAuth2TokenMiddleware",
+        "append": "oauth2_provider.resource_server.middleware.OAuth2TokenMiddleware",
     }
 )
 class TestOAuth2ExtraTokenMiddleware(BaseTest):

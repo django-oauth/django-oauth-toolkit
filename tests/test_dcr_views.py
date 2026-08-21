@@ -96,7 +96,7 @@ class TestDynamicClientRegistration(TestCase):
         """
         from django.contrib.admin.sites import AdminSite
 
-        from oauth2_provider.admin import ApplicationAdmin
+        from oauth2_provider.authorization_server.admin import ApplicationAdmin
 
         model_admin = ApplicationAdmin(Application, AdminSite())
         assert "registration_source" in model_admin.get_readonly_fields(request=None)
@@ -337,7 +337,9 @@ class TestDynamicClientRegistration(TestCase):
         """Non-field ValidationErrors serialize via their messages list."""
         from django.core.exceptions import ValidationError
 
-        from oauth2_provider.views.dynamic_client_registration import _validation_error_description
+        from oauth2_provider.authorization_server.views.dynamic_client_registration import (
+            _validation_error_description,
+        )
 
         assert _validation_error_description(ValidationError("plain message")) == "plain message"
 
@@ -351,7 +353,9 @@ class TestDynamicClientRegistration(TestCase):
 @pytest.mark.oauth2_settings(
     {
         **presets.DCR_SETTINGS,
-        "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+        "DCR_REGISTRATION_PERMISSION_CLASSES": (
+            "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
+        ),
     }
 )
 class TestOpenRegistration(TestCase):
@@ -427,7 +431,9 @@ class TestDCRCsrfSessionAuthenticated(TestCase):
 @pytest.mark.oauth2_settings(
     {
         **presets.DCR_SETTINGS,
-        "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+        "DCR_REGISTRATION_PERMISSION_CLASSES": (
+            "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
+        ),
     }
 )
 class TestDCRCsrfOpenRegistration(TestCase):
@@ -784,7 +790,9 @@ class TestDynamicClientRegistrationManagement(TestCase):
 @pytest.mark.oauth2_settings(
     {
         **presets.DCR_SETTINGS,
-        "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+        "DCR_REGISTRATION_PERMISSION_CLASSES": (
+            "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
+        ),
         "DCR_REGISTRATION_SCOPE": "my:custom:scope",
     }
 )
@@ -803,7 +811,9 @@ class TestDCRCustomScope(TestCase):
 @pytest.mark.oauth2_settings(
     {
         **presets.DCR_SETTINGS,
-        "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+        "DCR_REGISTRATION_PERMISSION_CLASSES": (
+            "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
+        ),
         "DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS": 3600,
     }
 )
@@ -859,7 +869,7 @@ class TestDCRCustomPermissionClass(TestCase):
         from unittest.mock import patch
 
         with patch(
-            "oauth2_provider.views.dynamic_client_registration._check_permissions",
+            "oauth2_provider.authorization_server.views.dynamic_client_registration._check_permissions",
             return_value=False,
         ):
             data = {
@@ -905,7 +915,9 @@ class TestDCRDisabled(TestCase):
 @pytest.mark.oauth2_settings(
     {
         **presets.DCR_SETTINGS,
-        "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+        "DCR_REGISTRATION_PERMISSION_CLASSES": (
+            "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
+        ),
         "DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE": True,
     }
 )

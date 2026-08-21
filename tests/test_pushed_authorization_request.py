@@ -6,13 +6,13 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
+from oauth2_provider.authorization_server.par import REQUEST_URI_PREFIX
 from oauth2_provider.models import (
     create_pushed_authorization_request,
     get_application_model,
     get_grant_model,
     get_par_request_model,
 )
-from oauth2_provider.par import REQUEST_URI_PREFIX
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase

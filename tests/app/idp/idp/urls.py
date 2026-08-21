@@ -20,8 +20,8 @@ from django.http import JsonResponse
 from django.urls import include, path
 from django.views.generic import TemplateView
 
+from oauth2_provider.resource_server.views.generic import ProtectedResourceMetadataView
 from oauth2_provider.urls import metadata_urlpatterns
-from oauth2_provider.views.generic import ProtectedResourceMetadataView
 
 
 class DemoProtectedResourceView(ProtectedResourceMetadataView):
