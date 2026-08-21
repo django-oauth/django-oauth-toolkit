@@ -303,14 +303,14 @@ class JSONOAuthLibCore(OAuthLibCore):
     def __init__(self, server=None):
         warnings.warn(
             "JSONOAuthLibCore (OAUTH2_PROVIDER['OAUTH2_BACKEND_CLASS'] = "
-            "'oauth2_provider.oauth2_backends.JSONOAuthLibCore') is deprecated and will be "
+            "'oauth2_provider.core.backends_oauthlib.JSONOAuthLibCore') is deprecated and will be "
             "removed in django-oauth-toolkit 4.0. The OAuth token, "
             "introspection, and revocation endpoints are defined to use "
             "application/x-www-form-urlencoded request bodies (RFC 6749, RFC 7662, RFC 7009); "
             "reading application/json on them is non-standard and breaks interoperability "
             "with spec-compliant clients. To migrate, remove the "
             "OAUTH2_PROVIDER['OAUTH2_BACKEND_CLASS'] override (the default "
-            "'oauth2_provider.oauth2_backends.OAuthLibCore' reads form-encoded bodies) and "
+            "'oauth2_provider.core.backends_oauthlib.OAuthLibCore' reads form-encoded bodies) and "
             "have clients send application/x-www-form-urlencoded request bodies.",
             DeprecationWarning,
             stacklevel=2,
@@ -335,8 +335,9 @@ class JSONOAuthLibCore(OAuthLibCore):
 
 def get_oauthlib_core():
     """
-    Utility function that returns an instance of
-    `oauth2_provider.backends.OAuthLibCore`
+    Utility function that returns an instance of the configured
+    ``OAUTH2_BACKEND_CLASS`` (by default
+    :class:`oauth2_provider.core.backends_oauthlib.OAuthLibCore`).
     """
     validator_class = oauth2_settings.OAUTH2_VALIDATOR_CLASS
     validator = validator_class()

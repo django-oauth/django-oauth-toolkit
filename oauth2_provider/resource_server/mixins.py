@@ -6,8 +6,6 @@ mixins below layer scope handling and RFC 9728 metadata advertisement on top. Al
 build on the shared :class:`oauth2_provider.core.views.OAuthLibCoreMixin`.
 """
 
-import logging
-
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.http import HttpResponse, HttpResponseForbidden
 
@@ -16,8 +14,6 @@ from oauth2_provider.core.views import OAuthLibCoreMixin
 from oauth2_provider.resource_server.www_authenticate import build_bearer_challenge, challenge_status
 from oauth2_provider.settings import oauth2_settings
 
-
-log = logging.getLogger("oauth2_provider")
 
 SAFE_HTTP_METHODS = ["GET", "HEAD", "OPTIONS"]
 

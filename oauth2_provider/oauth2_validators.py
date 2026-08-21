@@ -49,6 +49,7 @@ from .models import (
 # RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR default pointed here). They now live in
 # oauth2_provider.resource_server.validators; keep the old import path working.
 from .resource_server.validators import (
+    _SCHEME_DEFAULT_PORTS,  # noqa: F401
     ResourceServerValidatorMixin,
     _parse_and_validate_uri,
     is_valid_resource_uri,
