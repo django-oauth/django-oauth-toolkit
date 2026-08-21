@@ -168,6 +168,72 @@ it out.
   (RFC 6749, RFC 7662 and RFC 7009 define those endpoints as
   ``application/x-www-form-urlencoded``), and it is scheduled for removal in 4.0.
 
+Upgrading to 3.5
+----------------
+
+3.5 reorganizes ``oauth2_provider`` by OAuth2 role. Every import path that shipped in an earlier
+release still works — the old modules remain as shims that re-export from the new canonical
+location and emit a ``DeprecationWarning`` — so ordinary use needs no change beyond silencing or
+acting on those warnings before 4.0, when the shims are removed. Run your test suite with
+``python -W error::DeprecationWarning`` to find the paths you still import.
+
+Two changes go beyond a moved import and can bite code that *subclasses* or *patches* the
+toolkit rather than merely importing from it.
+
+* **``OAuthLibMixin`` is no longer a base class of the shipped views (#1765).** It was a single
+  mixin carrying both authorization-server and resource-server behavior; it is now decomposed into
+  a shared ``oauth2_provider.core.views.OAuthLibCoreMixin`` plus
+  ``AuthorizationServerViewMixin`` and ``ResourceServerViewMixin``. The combined class is still
+  importable from ``oauth2_provider.views.mixins`` and still usable as a base, but it is now a
+  *recombination* of the two halves rather than their ancestor, so it no longer appears in any
+  shipped view's MRO. Two consequences, both silent:
+
+  - ``issubclass(TokenView, OAuthLibMixin)`` and the equivalent ``isinstance`` checks are now
+    ``False`` for every shipped view. Dispatch or registry code keyed on that check stops matching.
+  - Setting or patching an attribute on the combined mixin — ``OAuthLibMixin.server_class = ...``,
+    or ``mock.patch("oauth2_provider.views.mixins.OAuthLibMixin.get_oauthlib_core")`` — no longer
+    reaches the views. Nothing raises; the patch simply has no effect and the real code path runs.
+    Retarget to the role mixin that actually defines the attribute, or to the concrete view class.
+
+  Relatedly, each view now exposes only its own role's methods. Authorization-server views no
+  longer have ``verify_request``, ``authenticate_client`` or ``unauthenticated_response``;
+  resource-server views no longer have ``error_response`` or the ``create_*_response`` builders.
+  A subclass that called across roles gets an ``AttributeError`` and should inherit the mixin for
+  the role it needs.
+
+* **Some module-level patch targets moved with their code (#1765).** The resource-server slice of
+  ``OAuth2Validator`` now lives in ``oauth2_provider.resource_server.validators``. The public class
+  and its behavior are unchanged, but names that were module globals of
+  ``oauth2_provider.oauth2_validators`` — including ``requests``, ``datetime`` and the
+  ``AccessToken`` model reference — are globals of the new module now. Tests doing
+  ``mock.patch("oauth2_provider.oauth2_validators.requests")`` (or ``.datetime``, ``.AccessToken``)
+  must patch ``oauth2_provider.resource_server.validators`` instead. This affects test doubles
+  only; runtime behavior is identical.
+
+  The same applies to the split view mixins: patching a module global such as
+  ``SAFE_HTTP_METHODS`` at the old path no longer affects the code that reads it, because a
+  re-export shim binds a *copy of the reference*, not the defining module's namespace. The name is
+  still importable from the old path; patch it at
+  ``oauth2_provider.resource_server.mixins`` to change behavior.
+
+* **``OAuthLibMixin`` is no longer importable from the view modules it sat beside.** Through 3.4.1
+  ``oauth2_provider.views.base``, ``.device`` and ``.oidc`` each imported the mixin to use as a base
+  class, so ``from oauth2_provider.views.base import OAuthLibMixin`` happened to work. Those modules
+  no longer reference it, and they are now whole-module aliases to their canonical replacements, so
+  the name is gone from them. Import it from ``oauth2_provider.views.mixins`` — or better, from the
+  role mixin that replaces it. The same applies to other names that were only ever incidentally
+  visible because a module imported them for its own use (``requests`` and ``datetime`` on
+  ``oauth2_provider.oauth2_validators``, ``socket`` and ``ssl`` on ``oauth2_provider.cimd``, and
+  similar): import them from their real homes.
+
+* **Submodules are no longer bound as attributes by a bare ``import oauth2_provider``.** The package
+  now loads its submodules lazily, so ``import oauth2_provider`` followed by
+  ``oauth2_provider.utils.…`` raises ``AttributeError`` where it previously worked by accident of
+  import order. Use an explicit import — ``from oauth2_provider import utils`` or
+  ``import oauth2_provider.utils`` — which works for every submodule, on both the old and the new
+  paths. The laziness is deliberate: it keeps importing the package from touching the app registry
+  before ``django.setup()``.
+
 .. note::
    For the full, authoritative list of changes in every release — including the releases that
    asked nothing of you and so have no section here — see the :doc:`changelog`.

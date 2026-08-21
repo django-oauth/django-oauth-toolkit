@@ -145,17 +145,15 @@ Acting as the client (RP side)
 ------------------------------
 
 For Django applications on the *other* side of the exchange — authenticating to some remote
-authorization server — :func:`oauth2_provider.client_assertions.make_client_assertion` builds a
+authorization server — :func:`oauth2_provider.client.make_client_assertion` builds a
 correctly shaped assertion. It accepts a ``jwcrypto.jwk.JWK``, a private-key PEM string, a JWK JSON
 string, or (for HS algorithms) the raw client secret, and generates a fresh ``jti`` per call:
 
 .. code-block:: python
 
     import requests
-    from oauth2_provider.client_assertions import (
-        JWT_BEARER_CLIENT_ASSERTION_TYPE,
-        make_client_assertion,
-    )
+    from oauth2_provider.core.rfc7523 import JWT_BEARER_CLIENT_ASSERTION_TYPE
+    from oauth2_provider.client import make_client_assertion
 
     assertion = make_client_assertion(
         client_id="my-client-id",
