@@ -23,6 +23,7 @@ from oauth2_provider.models import (
 )
 from oauth2_provider.oauth2_backends import get_oauthlib_core
 from oauth2_provider.oauth2_validators import OAuth2Validator
+from oauth2_provider.settings import oauth2_settings
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -1028,7 +1029,9 @@ class TestOAuth2ValidatorErrorResourceToken(TestCase):
 
     def test_response_when_auth_server_response_not_200(self):
         """
-        Ensure we log the error when the authentication server returns a non-200 response.
+        A non-200 response from the authentication server is logged as a warning,
+        not an exception: the branch is not inside an exception handler, so
+        ``log.exception`` would append a meaningless ``NoneType: None`` record.
         """
         mock_response = requests.Response()
         mock_response.status_code = 404
@@ -1040,12 +1043,48 @@ class TestOAuth2ValidatorErrorResourceToken(TestCase):
                     self.token, self.introspection_url, self.introspection_token, None
                 )
                 self.assertIn(
-                    "ERROR:oauth2_provider:Introspection: Failed to "
+                    "WARNING:oauth2_provider:Introspection: Failed to "
                     "get a valid response from authentication server. "
-                    "Status code: 404, Reason: "
-                    "Not Found.\nNoneType: None",
+                    "Status code: 404, Reason: Not Found.",
                     mock_log.output,
                 )
+
+    def test_introspection_post_uses_configured_timeout(self):
+        """
+        The introspection POST must be time-bounded: ``requests`` has no default
+        timeout, so without one a stalled authorization server pins a worker for
+        every request carrying a bearer token.
+        """
+        mock_response = requests.Response()
+        mock_response.status_code = 200
+        mock_response.reason = "OK"
+        mock_response._content = b'{"active": false}'
+        with mock.patch("requests.post") as mock_post:
+            mock_post.return_value = mock_response
+            self.validator._get_token_from_authentication_server(
+                self.token, self.introspection_url, self.introspection_token, None
+            )
+            self.assertEqual(
+                mock_post.call_args.kwargs.get("timeout"),
+                oauth2_settings.RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS,
+            )
+
+    def test_introspection_inactive_token_returns_none(self):
+        """
+        An introspection response with "active": false returns None explicitly,
+        rather than by falling off the end of the function.
+        """
+        mock_response = requests.Response()
+        mock_response.status_code = 200
+        mock_response.reason = "OK"
+        mock_response._content = b'{"active": false}'
+        with mock.patch("requests.post") as mock_post:
+            mock_post.return_value = mock_response
+            self.assertIsNone(
+                self.validator._get_token_from_authentication_server(
+                    self.token, self.introspection_url, self.introspection_token, None
+                )
+            )
 
 
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)

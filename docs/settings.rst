@@ -387,6 +387,12 @@ authorization token (``RESOURCE_SERVER_AUTH_TOKEN``), HTTP Basic Auth client cre
 (``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS``), or an RFC 7523 client assertion configuration
 (``RESOURCE_SERVER_INTROSPECTION_JWT_*``).
 
+RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Timeout in seconds for the HTTP request to the introspection endpoint (RFC7662). Without a
+timeout, a stalled authorization server would hold a worker for every request carrying a
+bearer token until the worker pool is exhausted. Defaults to ``5``.
+
 RESOURCE_SERVER_AUTH_TOKEN
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 The bearer token to authenticate the introspection request towards the introspection endpoint (RFC7662).

@@ -59,7 +59,10 @@ class OAuth2ExtraTokenMiddleware:
                 token_checksum = hashlib.sha256(tokenstring.encode("utf-8")).hexdigest()
                 token = AccessToken.objects.get(token_checksum=token_checksum)
                 request.access_token = token
-            except AccessToken.DoesNotExist as e:
-                log.exception(e)
+            except AccessToken.DoesNotExist:
+                # A bearer token that does not resolve is the normal
+                # outcome for expired, revoked or bogus tokens; debug is
+                # enough and keeps the hot path cheap.
+                log.debug("Bearer token not found in the database")
         response = self.get_response(request)
         return response

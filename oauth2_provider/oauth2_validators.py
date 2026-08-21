@@ -617,17 +617,23 @@ class OAuth2Validator(RequestValidator):
             )
 
         try:
-            response = requests.post(introspection_url, data=body, headers=headers)
+            response = requests.post(
+                introspection_url,
+                data=body,
+                headers=headers,
+                timeout=oauth2_settings.RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS,
+            )
         except requests.exceptions.RequestException:
             log.exception("Introspection: Failed POST to %r in token lookup", introspection_url)
             return None
 
-        # Log an exception when response from auth server is not successful
+        # Log a warning when response from auth server is not successful
         if response.status_code != http.client.OK:
-            log.exception(
+            log.warning(
                 "Introspection: Failed to get a valid response "
-                "from authentication server. Status code: {}, "
-                "Reason: {}.".format(response.status_code, response.reason)
+                "from authentication server. Status code: %s, Reason: %s.",
+                response.status_code,
+                response.reason,
             )
             return None
 
@@ -693,6 +699,11 @@ class OAuth2Validator(RequestValidator):
             )
 
             return access_token
+
+        # Inactive or missing "active" claim: the token is not valid on the
+        # authorization server. Return explicitly rather than falling off
+        # the end of the function.
+        return None
 
     @staticmethod
     def _build_introspection_client_assertion():
