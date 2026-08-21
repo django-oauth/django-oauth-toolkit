@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 import requests
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
@@ -48,7 +49,7 @@ class TestBackchannelLogout(TestCase):
             redirect_uris="http://rp.example.com/callback",
             algorithm=Application.RS256_ALGORITHM,
             client_secret="1234567890asdfghjkqwertyuiopzxcvbnm",
-            backchannel_logout_uri="http://rp.example.com/logout",
+            backchannel_logout_uri="https://rp.example.com/logout",
         )
         now = timezone.now()
         expiration_date = now + datetime.timedelta(minutes=180)
@@ -183,7 +184,7 @@ class TestBackchannelLogout(TestCase):
             redirect_uris="http://rp2.example.com/callback",
             algorithm=Application.RS256_ALGORITHM,
             client_secret="another_secret",
-            backchannel_logout_uri="http://rp2.example.com/logout",
+            backchannel_logout_uri="https://rp2.example.com/logout",
         )
 
         # Create ID token for the second application
@@ -283,6 +284,85 @@ class TestBackchannelLogout(TestCase):
             with self.assertRaises(BackchannelLogoutRequestError) as context:
                 send_backchannel_logout_request(self.id_token)
             self.assertIn("Backchannel logout not enabled", str(context.exception))
+
+    def _validate_uri(self, uri, client_type=Application.CLIENT_CONFIDENTIAL):
+        """Run Application.clean() for one backchannel_logout_uri, returning its errors."""
+        app = Application(
+            name="uri_probe",
+            user=self.developer,
+            client_type=client_type,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            redirect_uris="https://rp.example.com/callback",
+            backchannel_logout_uri=uri,
+        )
+        try:
+            app.clean()
+        except ValidationError as exc:
+            return exc.message_dict.get("backchannel_logout_uri", [])
+        return []
+
+    def test_https_backchannel_logout_uri_is_accepted(self):
+        # Section 2.2 allows port, path and query components.
+        for uri in (
+            "https://rp.example.com",
+            "https://rp.example.com/logout",
+            "https://rp.example.com:8443/logout?tenant=1",
+        ):
+            with self.subTest(uri=uri):
+                self.assertEqual(self._validate_uri(uri), [])
+
+    def test_backchannel_logout_uri_rejects_other_schemes(self):
+        # Django's URLField alone would accept ftp/ftps, which the OP cannot POST to.
+        for uri in ("ftp://rp.example.com/logout", "ftps://rp.example.com/logout"):
+            with self.subTest(uri=uri):
+                self.assertIn("invalid_scheme", " ".join(self._validate_uri(uri)))
+
+    def test_backchannel_logout_uri_rejects_fragment(self):
+        errors = self._validate_uri("https://rp.example.com/logout#frag")
+        self.assertIn("fragment not allowed", " ".join(errors))
+
+    def test_backchannel_logout_uri_rejects_http_by_default(self):
+        # OIDC_LOGOUT_URI_ALLOWED_SCHEMES defaults to ["https"].
+        errors = self._validate_uri("http://rp.example.com/logout")
+        self.assertIn("invalid_scheme", " ".join(errors))
+
+    def test_http_backchannel_logout_uri_allowed_for_confidential_client(self):
+        # Section 2.2: http "MAY" be used "provided that the Client Type is confidential".
+        self.oauth2_settings.OIDC_LOGOUT_URI_ALLOWED_SCHEMES = ["https", "http"]
+        self.assertEqual(
+            self._validate_uri("http://rp.example.com/logout", Application.CLIENT_CONFIDENTIAL), []
+        )
+
+    def test_http_backchannel_logout_uri_rejected_for_public_client(self):
+        self.oauth2_settings.OIDC_LOGOUT_URI_ALLOWED_SCHEMES = ["https", "http"]
+        errors = self._validate_uri("http://rp.example.com/logout", Application.CLIENT_PUBLIC)
+        self.assertIn("only allowed for a confidential", " ".join(errors))
+
+    def test_http_backchannel_logout_uri_allowed_on_loopback_for_public_client(self):
+        self.oauth2_settings.OIDC_LOGOUT_URI_ALLOWED_SCHEMES = ["https", "http"]
+        for uri in ("http://127.0.0.1:5173/api/backchannel-logout", "http://[::1]:5173/logout"):
+            with self.subTest(uri=uri):
+                self.assertEqual(self._validate_uri(uri, Application.CLIENT_PUBLIC), [])
+
+    def test_localhost_backchannel_logout_uri_follows_allow_localhost_loopback(self):
+        # The localhost hostname resolves through DNS and can point off-box, so it is
+        # opt-in -- the same rule redirect_to_uri_allowed() applies to RFC 8252 loopback.
+        self.oauth2_settings.OIDC_LOGOUT_URI_ALLOWED_SCHEMES = ["https", "http"]
+        uri = "http://localhost:5173/api/backchannel-logout"
+
+        self.oauth2_settings.ALLOW_LOCALHOST_LOOPBACK = False
+        self.assertIn(
+            "only allowed for a confidential",
+            " ".join(self._validate_uri(uri, Application.CLIENT_PUBLIC)),
+        )
+
+        self.oauth2_settings.ALLOW_LOCALHOST_LOOPBACK = True
+        self.assertEqual(self._validate_uri(uri, Application.CLIENT_PUBLIC), [])
+
+    def test_valid_backchannel_logout_uri_reports_no_error(self):
+        # Regression: field_errors is a defaultdict, so touching the key with an empty
+        # list would make clean() raise a ValidationError carrying no messages.
+        self.application.full_clean(exclude=["client_secret", "client_id", "user"])
 
     def test_raises_exception_when_iss_endpoint_not_set(self):
         """A logout token carries the issuer as an absolute URL, so it cannot be minted."""

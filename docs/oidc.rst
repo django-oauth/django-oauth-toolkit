@@ -199,7 +199,10 @@ allows the OP to send direct requests to terminate sessions at the RP.
 .. _Backchannel Logout: https://openid.net/specs/openid-connect-backchannel-1_0.html
 
 To make use of this, the application being created needs to provide a
-valid ``backchannel_logout_uri``.
+valid ``backchannel_logout_uri``. It is validated against
+``OIDC_LOGOUT_URI_ALLOWED_SCHEMES`` (``["https"]`` by default) and may carry a port,
+path and query, but not a fragment. Plaintext ``http`` is accepted only for a confidential
+client, or on a loopback address for local development.
 
 Which Relying Parties are notified
 ----------------------------------

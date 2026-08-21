@@ -893,6 +893,33 @@ Timeout in seconds applied to each logout token request sent by the default
 ``OIDC_BACKCHANNEL_LOGOUT_HANDLER``. Because the default handler runs inline with the user's logout
 request, an unresponsive :term:`Client` (Relying Party) would otherwise hold that request open.
 
+OIDC_LOGOUT_URI_ALLOWED_SCHEMES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["https"]``
+
+A list of schemes that a logout URI registered on an application is validated against —
+today the ``backchannel_logout_uri`` field. Keeping this at ``["https"]`` in production is
+strongly recommended: a logout token is a signed assertion that a named subject's session has
+ended, so delivering it over plaintext exposes the subject identifier to anyone on the path.
+Adding ``"http"`` to the list is considered to be safe only for local development and testing.
+
+Adding ``"http"`` does not make every plaintext URI acceptable. `OpenID Connect Back-Channel
+Logout 1.0 <https://openid.net/specs/openid-connect-backchannel-1_0.html>`_ section 2.2 permits
+``http`` only for a :term:`Client` whose type is confidential, so a public client is still
+restricted to a loopback address (``127.0.0.1`` or ``[::1]``; the ``localhost`` hostname resolves
+through DNS and is only accepted under ``ALLOW_LOCALHOST_LOOPBACK``).
+
+The setting is named for logout URIs in general rather than for back-channel logout alone
+because `OpenID Connect Front-Channel Logout 1.0
+<https://openid.net/specs/openid-connect-frontchannel-1_0.html>`_ section 2 states the identical
+rule for its own ``frontchannel_logout_uri``. Should that mechanism be implemented, it validates
+against this same list.
+
+This is deliberately *not* ``ALLOWED_REDIRECT_URI_SCHEMES``. That list governs URIs the user
+agent is redirected to, and may legitimately contain an RFC 8252 private-use scheme such as
+``com.example.app``; a logout URI is contacted by the :term:`Authorization Server` itself, so
+such a scheme has nothing to send a logout token to.
+
 OIDC_RP_INITIATED_LOGOUT_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``
