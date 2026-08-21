@@ -182,6 +182,7 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
                 client_id=client_id,
                 user_code=user_code,
                 status=model.AUTHORIZATION_PENDING,
+                user=self.request.user,
             )
         return self._device_grant
 
@@ -248,4 +249,9 @@ class DeviceGrantStatusView(LoginRequiredMixin, DetailView):
 
     def get_object(self):
         client_id, user_code = self.kwargs.get("client_id"), self.kwargs.get("user_code")
-        return get_object_or_404(self.get_queryset(), client_id=client_id, user_code=user_code)
+        return get_object_or_404(
+            self.get_queryset(),
+            client_id=client_id,
+            user_code=user_code,
+            user=self.request.user,
+        )

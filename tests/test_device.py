@@ -381,7 +381,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         The /token View returning the appropriate message for the "denied" state is covered
         in test_token_view_returns_error_if_device_in_invalid_state.
         """
-        UserModel.objects.create_user(
+        user = UserModel.objects.create_user(
             username="test_user_device_flow",
             email="test_device@example.com",
             password="password123",
@@ -395,6 +395,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             scope="scope",
             expires=datetime.now() + timedelta(days=1),
             status=DeviceModel.AUTHORIZATION_PENDING,
+            user=user,
         )
         device.save()
 
@@ -421,7 +422,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         This test asserts that the confirm view returns 400 if action is not
         "accept" or "deny".
         """
-        UserModel.objects.create_user(
+        user = UserModel.objects.create_user(
             username="test_user_device_flow",
             email="test_device@example.com",
             password="password123",
@@ -435,6 +436,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             scope="scope",
             expires=datetime.now() + timedelta(days=1),
             status=DeviceModel.AUTHORIZATION_PENDING,
+            user=user,
         )
         device.save()
 
@@ -445,6 +447,49 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         response = self.client.post(device_confirm_url, data={"action": "inccorect_action"})
 
         assert response.status_code == 400
+
+    def test_device_confirm_view_rejects_different_authenticated_user(self):
+        """
+        A user must not be able to approve or deny a device grant that was
+        associated with another user during the user-code step, nor view its
+        status.
+        """
+        UserModel.objects.create_user(
+            username="attacker",
+            email="attacker@example.com",
+            password="password123",
+        )
+        self.client.login(username="attacker", password="password123")
+
+        device = DeviceModel.objects.create(
+            client_id=self.application.client_id,
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now() + timedelta(days=1),
+            status=DeviceModel.AUTHORIZATION_PENDING,
+            user=self.test_user,
+        )
+        device_confirm_url = reverse(
+            "oauth2_provider:device-confirm",
+            kwargs={"user_code": device.user_code, "client_id": device.client_id},
+        )
+
+        get_response = self.client.get(device_confirm_url)
+        assert get_response.status_code == 404
+
+        post_response = self.client.post(device_confirm_url, data={"action": "accept"})
+        assert post_response.status_code == 404
+
+        device_grant_status_url = reverse(
+            "oauth2_provider:device-grant-status",
+            kwargs={"user_code": device.user_code, "client_id": device.client_id},
+        )
+        status_response = self.client.get(device_grant_status_url)
+        assert status_response.status_code == 404
+
+        device.refresh_from_db()
+        assert device.status == DeviceModel.AUTHORIZATION_PENDING
 
     def test_device_flow_authorization_device_invalid_state_returns_form_error(self):
         """
