@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.4.1] - 2026-08-21
 
 This release is dominated by **security hardening of redirect URI matching, token revocation and
-refresh token handling**. Several entries below change behavior that was previously accepted and
-carry an **Upgrade note**; read the Security section before upgrading. Of particular note: redirect
+refresh token handling**. Several entries below change behavior that was previously accepted, and
+each one carries an **Upgrade note** — under *Fixed* as well as *Security*, so search this release
+for that phrase before upgrading rather than reading a single section. Of particular note: redirect
 URIs are now matched exactly per [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1),
 so a request may no longer carry query parameters, path parameters, credentials or a fragment that
 the registered URI does not have; and `REFRESH_TOKEN_EXPIRE_SECONDS`, where set, is now enforced when
