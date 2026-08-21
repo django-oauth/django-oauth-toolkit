@@ -6,7 +6,12 @@ from django.contrib.auth.hashers import check_password
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from oauth2_provider.models import get_application_model
+from oauth2_provider.models import (
+    create_pushed_authorization_request,
+    get_application_model,
+    get_par_request_model,
+)
+from oauth2_provider.par import REQUEST_URI_PREFIX
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -173,3 +178,24 @@ class ClearTokensTest(TestCase):
         stderr = StringIO()
         call_command("cleartokens", stderr=stderr)
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_clears_expired_pushed_authorization_requests(self):
+        # A pushed authorization request that is never redeemed would otherwise
+        # linger past its expiry; cleartokens reaps the expired rows and keeps the
+        # ones still within their lifetime.
+        par_model = get_par_request_model()
+        create_pushed_authorization_request(
+            request_uri=f"{REQUEST_URI_PREFIX}expired",
+            client_id="some-client",
+            parameters={"client_id": "some-client"},
+            expires_in=-10,
+        )
+        create_pushed_authorization_request(
+            request_uri=f"{REQUEST_URI_PREFIX}active",
+            client_id="some-client",
+            parameters={"client_id": "some-client"},
+            expires_in=60,
+        )
+        call_command("cleartokens")
+        remaining = list(par_model.objects.values_list("request_uri", flat=True))
+        self.assertEqual(remaining, [f"{REQUEST_URI_PREFIX}active"])

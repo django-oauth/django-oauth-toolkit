@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Replay is detected by recognizing a token a previous rotation superseded, so without
   rotation the protection never fires — a pairing `docs/settings.rst` already documented but
   nothing enforced.
+* Support for OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126). A new `par/` endpoint
+  (`PushedAuthorizationRequestView`) lets clients push authorization request parameters over an
+  authenticated back channel in exchange for a single-use `request_uri`, stored on the swappable
+  `PushedAuthorizationRequest` model. Enforcement can be required server-wide via
+  `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` or per client via the application's
+  `require_pushed_authorization_requests` field, and the endpoint is advertised in the RFC 8414
+  metadata document. See `docs/pushed_authorization_requests.rst`.
 ### Fixed
 * #1816 `RefreshToken.token_checksum` is now unique. `AbstractRefreshToken.Meta` declared
   `unique_together = ("token_checksum", "revoked")`, which enforced nothing: live rows have
