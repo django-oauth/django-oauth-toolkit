@@ -29,6 +29,10 @@ env = environ.FileAwareEnv(
     OAUTH2_PROVIDER_OIDC_ENABLED=(bool, True),
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED=(bool, True),
     OAUTH2_PROVIDER_DCR_ENABLED=(bool, True),
+    # RFC 7523 §2.1 JWT bearer grant, demonstrated by the "e2e-jwt-bearer"
+    # seeded application (see fixtures/e2e_seed.json).
+    OAUTH2_PROVIDER_JWT_BEARER_GRANT_ENABLED=(bool, True),
+    OAUTH2_PROVIDER_JWT_BEARER_AUDIENCES=(list, []),
     OAUTH2_PROVIDER_CIMD_ENABLED=(bool, False),
     # Return the profile/email/address/phone scope claims from UserInfo rather than the
     # ID Token when an access token is issued (OIDC Core §5.4). On by default in the demo;
@@ -314,6 +318,9 @@ OAUTH2_PROVIDER = {
     "PKCE_REQUIRED": pkce_required,
     "ALLOWED_SCHEMES": env("OAUTH2_PROVIDER_ALLOWED_SCHEMES"),
     "DCR_ENABLED": env("OAUTH2_PROVIDER_DCR_ENABLED"),
+    # RFC 7523 §2.1 JWT bearer authorization grant.
+    "JWT_BEARER_GRANT_ENABLED": env("OAUTH2_PROVIDER_JWT_BEARER_GRANT_ENABLED"),
+    "JWT_BEARER_AUDIENCES": env("OAUTH2_PROVIDER_JWT_BEARER_AUDIENCES"),
     # RFC 9700 compliance gates (see docs/security.rst).
     "COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT": env("OAUTH2_PROVIDER_COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT"),
     "COMPLIANT_BCP_RFC9700_PASSWORD_GRANT": env("OAUTH2_PROVIDER_COMPLIANT_BCP_RFC9700_PASSWORD_GRANT"),

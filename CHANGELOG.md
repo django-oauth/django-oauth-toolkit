@@ -257,6 +257,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   swapped Application model, so run `makemigrations` for your app (no data step is needed). The
   demo IdP's login page (`tests/app/idp`) shows them too, for the OpenID certification
   `oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` review modules.
+* RFC 7523 §2.1 JWT bearer authorization grant (`urn:ietf:params:oauth:grant-type:jwt-bearer`): a client can
+  exchange a signed JWT assertion at the token endpoint for an access token. Opt-in via `JWT_BEARER_GRANT_ENABLED`;
+  trust is established per application (reusing the `client_jwks` / `client_jwks_uri` fields) or via
+  `JWT_BEARER_TRUSTED_ISSUERS`, and the assertion subject is mapped to a user through the swappable
+  `JWT_BEARER_SUBJECT_RESOLVER`. The default resolver refuses privileged (`is_staff` / `is_superuser`) subjects
+  unless `JWT_BEARER_ALLOW_PRIVILEGED_SUBJECTS` is set. Shares the assertion machinery (SSRF-hardened JWK Set fetch,
+  `CLIENT_ASSERTION_*` low-level settings) with the JWT client-authentication profile. Includes a library-only
+  `oauth2_provider.client.build_jwt_bearer_assertion()` client helper. See `docs/jwt_bearer_grant.rst`.
 ### Changed
 * #1896 `Application.clean()` now validates each entry in `post_logout_redirect_uris` with the
   `REDIRECT_URI_VALIDATOR` (by default against `ALLOWED_REDIRECT_URI_SCHEMES`), reporting problems on
