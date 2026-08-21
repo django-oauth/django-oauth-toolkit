@@ -1,0 +1,84 @@
+# Table 3 — Suite × Competitor rollup (profiles as rows)
+
+> Part of the [IDP compliance & competitive comparison](./README.md). Last verified **2026-07**.
+
+This is the **summary heat-map**: each row is a *profile / suite*, each column a product, and
+each cell a rollup of how well that product covers the suite's **required** specs. It is
+**derived** — the required specs come from [Table 2 (membership)](./suite-membership.md) and
+the per-spec support from [Table 1 (detail)](./idp-op-comparison.md). This is where your
+"should suites be rows?" question lands: **yes — here, in the aggregate view**, never mixed
+into the per-spec detail table (that would double-count).
+
+## Legend
+
+✅ **Strong** — meets the suite's required specs (certified where a certification exists) ·
+◑ **Partial** — core present, one or more required pieces missing/gated · 🧩 **Add-on** —
+achievable only on a paid/enterprise tier · ❌ **Gaps** — key required specs absent ·
+**N/A** — role doesn't apply
+
+Column keys: **DOT** · **oalib** = oauthlib · **Alib** = Authlib · **Autk** = Authentik ·
+**KC** = Keycloak · **Hyd** = Ory Hydra · **WSO2** · **Zit** = Zitadel · **Jans** = Janssen ·
+**Okta** · **Au0** = Auth0 · **Entra** · **Ping**.
+
+| Suite | DOT | oalib | Alib | Autk | KC | Hyd | WSO2 | Zit | Jans | Okta | Au0 | Entra | Ping |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| **OAuth 2.0** (classic) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ◑ | ✅ |
+| **OAuth 2.1** (draft) | ✅ | ◑ | ◑ | ◑ | ✅ | ✅ | ◑ | ✅ | ◑ | ◑ | ◑ | ◑ | ◑ |
+| **OIDC** (Core+Discovery) | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Native apps** (RFC 8252) | ◑ | ◑ | ◑ | ◑ | ◑ | ✅ | ◑ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **FAPI 2.0** | ◑ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ◑ | ❌ | 🧩 | ❌ | ✅ |
+| **MCP authorization** | ✅ | ❌ | ❌ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ | ❌ | ◑ |
+| **RS** (resource-server role) | ✅ | ◑ | ✅ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| **RP** (client role) | N/A | N/A | ◑ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+
+*The last two rows are separate **roles**, not provider profiles. **RS** (resource server):
+DOT itself protects APIs (✅), oauthlib gives building blocks (◑), Authlib ships a
+ResourceProtector (✅) — the rest are providers, compared as RS products in
+[Table 5](./rs-comparison.md). **RP** (client): only Authlib ships a client here (◑); DOT is
+N/A — see [Table 4](./rp-comparison.md).*
+
+## How each verdict is reached (gating specs)
+
+- **OAuth 2.0** — core framework (6749) + bearer (6750), with the common extensions (PKCE,
+  revocation, introspection). Everyone here clears it; Entra is ◑ only because it omits the
+  standard revocation and introspection endpoints.
+- **OAuth 2.1** — PKCE mandatory + the implicit/password grants removable + Security-BCP
+  alignment. ✅ goes to servers with an explicit 2.1 posture (Keycloak's 2.1 client profile,
+  Hydra's OAuth-2.1 mode, Zitadel's no-ROPC/PKCE-first design). The remaining ◑ servers have
+  PKCE on but leave the legacy grants available with no named 2.1 switch. **DOT is now ✅** —
+  its RFC 9700 Security-BCP compliance gates let you reject the implicit and password grants,
+  enforce S256-only PKCE, and add the RFC 9207 `iss` parameter, giving it a configurable 2.1
+  posture (the gate defaults are legacy in 3.4 and flip to compliant in 4.0).
+- **OIDC** — OIDC Core + Discovery (+ JWT ID tokens). Every dedicated server/SaaS is
+  OpenID-certified here; **DOT is ✅ but opt-in and *not* certified**, oauthlib is ◑
+  (flows only, no discovery).
+- **Native apps** — RFC 8252 + PKCE + external user-agent. ✅ where the vendor documents the
+  native-app BCP; ◑ where only the PKCE building block is present.
+- **FAPI 2.0** — the demanding one: PAR + sender-constraining (mTLS **or** DPoP) +
+  private_key_jwt + metadata, usually with certification. ✅ = certified/conformant
+  (Keycloak, WSO2, Ping); ◑ = partial — FAPI 1.0 only (Janssen), or the building blocks minus
+  sender-constraining: **DOT now has PAR, private_key_jwt, PKCE, and metadata, but no
+  mTLS/DPoP**, so it can't meet FAPI 2.0 yet; 🧩 = enterprise add-on (Auth0); ❌ = missing
+  prerequisites (the leaner servers).
+- **MCP authorization** — OAuth 2.1 + Protected Resource Metadata (9728) + resource
+  indicators (8707) + AS metadata, DCR recommended. **Nascent industry-wide**: 9728 is
+  barely implemented anywhere, so the best anyone scores today is ◑ (has resource
+  indicators and/or experimental MCP resource-server support). **DOT is now ✅** — it ships
+  every required MCP spec: 9728 (protected-resource metadata), 8707 (resource indicators),
+  8414 (AS metadata), PKCE, DCR, and — via the new RFC 9700 gates — an OAuth 2.1 posture.
+  It has the most complete *confirmed* 9728 + 8707 coverage in this table; several ◑
+  competitors are unverified on those. (Compliant behavior is opt-in: enable the 9700 gates
+  and add the protected-resource-metadata mixin/authenticator to your resource server.)
+
+## The one-line story for DOT
+
+DOT is **strong on OAuth 2.0 and OIDC** (the two suites most projects actually need),
+**configurably compliant on OAuth 2.1** (its RFC 9700 Security-BCP gates can reject the
+legacy grants and enforce S256 PKCE + the `iss` parameter — legacy by default in 3.4,
+compliant by default in 4.0), **MCP-ready** (it now ships every required MCP spec — 9728,
+8707, 8414, PKCE, DCR, and the 2.1 gates), and **partway on FAPI 2.0** (it now has PAR,
+private_key_jwt, PKCE, and metadata — only sender-constrained tokens, mTLS or DPoP, are
+missing). That's a coherent, defensible position for a general-purpose Django
+provider — and it makes the roadmap obvious: an OAuth-2.1 mode is low-hanging; sender-constrained
+tokens are the
+larger investment.
