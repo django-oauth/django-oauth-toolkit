@@ -90,7 +90,9 @@ class TestOAuth2ExtraTokenMiddleware(TestCase):
         """
         request = self.factory.get("/", HTTP_AUTHORIZATION="Bearer invalid-token-xyz")
 
-        with self.assertNoLogs(logger="oauth2_provider", level="WARNING"):
+        # assertNoLogs raises the logger level to the given one, so pin the
+        # behavior to debug-only logging: nothing at INFO or above.
+        with self.assertNoLogs(logger="oauth2_provider", level="INFO"):
             _ = self.middleware(request)
 
     def test_no_authorization_header(self):
