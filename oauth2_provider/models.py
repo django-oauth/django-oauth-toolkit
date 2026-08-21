@@ -14,7 +14,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.hashers import identify_hasher, make_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.db import IntegrityError, models, router, transaction
+from django.db import models, router, transaction
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -814,8 +814,9 @@ class AbstractRefreshToken(models.Model):
         :meth:`revoke` -- refresh token, then access token -- so a concurrent rotation in
         the family cannot deadlock against the sweep.
 
-        Falls back to revoking row by row if the bulk write hits the uniqueness of
-        ``(token_checksum, revoked)``; see the handler below and #1816.
+        One ``timezone.now()`` is stamped across the whole family. That is safe because
+        ``token_checksum`` is unique on its own: two live members cannot share a checksum,
+        so the shared timestamp has no uniqueness to collide with (#1816).
         """
         if not token_family:
             return
@@ -823,34 +824,21 @@ class AbstractRefreshToken(models.Model):
         access_token_model = get_access_token_model()
         access_token_database = router.db_for_write(access_token_model)
 
-        try:
-            with transaction.atomic(using=access_token_database):
-                now = timezone.now()
-                # ``updated`` is ``auto_now``, which a queryset update does not trigger.
-                cls.objects.filter(token_family=token_family, revoked__isnull=True).update(
-                    revoked=now, updated=now
-                )
-                # Deleting is what ``AccessToken.revoke()`` does, and ``access_token`` is
-                # ``SET_NULL``, so this clears the pointer on the rows revoked above as well.
-                # The family is re-read rather than snapshotted before the update, so a member
-                # rotated in concurrently loses its access token too and is left an orphan,
-                # which ``validate_refresh_token`` rejects. Sub-selecting through the forward
-                # FK avoids the reverse accessor, whose name a swapped model may change.
-                access_token_model.objects.filter(
-                    pk__in=cls.objects.filter(token_family=token_family).values("access_token_id")
-                ).delete()
-        except IntegrityError:
-            # Uniqueness is ``(token_checksum, revoked)``, so one shared timestamp cannot
-            # cover two live members holding the same checksum -- a state the constraint
-            # ought to forbid outright but does not, since NULLs compare distinct and live
-            # rows have ``revoked`` NULL (#1816). Reuse detection must not raise on the way
-            # to ``invalid_grant``, so fall back to the pre-#1809 sweep, which gives every
-            # row its own ``timezone.now()``. This costs a locking SELECT per family member
-            # again, but only for a family that is already in a state it cannot reach by
-            # rotating: the ``revoke()`` per row is the whole point of the fallback.
-            # Delete once #1816 takes ``revoked`` out of the unique key.
-            for related_rt in cls.objects.filter(token_family=token_family):
-                related_rt.revoke()
+        with transaction.atomic(using=access_token_database):
+            now = timezone.now()
+            # ``updated`` is ``auto_now``, which a queryset update does not trigger.
+            cls.objects.filter(token_family=token_family, revoked__isnull=True).update(
+                revoked=now, updated=now
+            )
+            # Deleting is what ``AccessToken.revoke()`` does, and ``access_token`` is
+            # ``SET_NULL``, so this clears the pointer on the rows revoked above as well.
+            # The family is re-read rather than snapshotted before the update, so a member
+            # rotated in concurrently loses its access token too and is left an orphan,
+            # which ``validate_refresh_token`` rejects. Sub-selecting through the forward
+            # FK avoids the reverse accessor, whose name a swapped model may change.
+            access_token_model.objects.filter(
+                pk__in=cls.objects.filter(token_family=token_family).values("access_token_id")
+            ).delete()
 
     def revoke(self):
         """
