@@ -23,6 +23,7 @@ from oauth2_provider.authorization_server.oidc.mixins import (  # noqa: F401
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.views import OAuthLibCoreMixin  # noqa: F401
 from oauth2_provider.resource_server.mixins import (  # noqa: F401
+    SAFE_HTTP_METHODS,
     ClientProtectedResourceMixin,
     ProtectedResourceMetadataMixin,
     ProtectedResourceMixin,
@@ -44,6 +45,7 @@ __all__ = [
     "ProtectedResourceMetadataMixin",
     "OIDCOnlyMixin",
     "OIDCLogoutOnlyMixin",
+    "SAFE_HTTP_METHODS",
 ]
 
 

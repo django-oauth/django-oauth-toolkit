@@ -101,7 +101,38 @@ SPLIT_SHIM_SYMBOLS = {
         "OAuthProtectedResourceMetadataView",
         "oauth2_provider.resource_server.views.metadata",
     ),
+    # Not classes: module-level names that were part of the 3.4.1 public surface and
+    # had to be re-exported explicitly after their defining code moved elsewhere.
+    ("oauth2_provider.views.mixins", "SAFE_HTTP_METHODS", "oauth2_provider.resource_server.mixins"),
+    ("oauth2_provider.cimd", "NAT64_PREFIX", "oauth2_provider.core.safe_fetch"),
 }
+
+# Modules that are NOT deprecated -- they keep their import path on purpose -- but
+# that re-export a name whose defining code moved. Identity must hold; these must
+# NOT warn, so they are kept out of SPLIT_SHIM_SYMBOLS.
+NON_DEPRECATED_REEXPORTS = {
+    (
+        "oauth2_provider.oauth2_validators",
+        "_SCHEME_DEFAULT_PORTS",
+        "oauth2_provider.resource_server.validators",
+    ),
+}
+
+# The complete public surface ``oauth2_provider.views.mixins`` exposed before the
+# split. A re-export shim only re-exports what it is told to, so a name dropped from
+# its import list fails with ImportError at the old path and nothing else notices.
+# Freeze the list here: it is the compatibility contract until 4.0.
+VIEWS_MIXINS_PUBLIC_NAMES = [
+    "OAuthLibMixin",
+    "SAFE_HTTP_METHODS",
+    "ScopedResourceMixin",
+    "ProtectedResourceMixin",
+    "ReadWriteScopedResourceMixin",
+    "ClientProtectedResourceMixin",
+    "ProtectedResourceMetadataMixin",
+    "OIDCOnlyMixin",
+    "OIDCLogoutOnlyMixin",
+]
 
 # The admin shim is intentionally silent (Django imports oauth2_provider.admin
 # during admin autodiscovery at startup, so it must not warn).
@@ -142,6 +173,16 @@ def test_split_shim_symbol_matches_canonical(old, symbol, new):
     assert old_obj is new_obj
 
 
+@pytest.mark.parametrize("mod, symbol, canonical", sorted(NON_DEPRECATED_REEXPORTS))
+def test_non_deprecated_reexport_matches_canonical(mod, symbol, canonical):
+    """A retained module re-exporting a moved name: same object, and no warning."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        held = getattr(importlib.import_module(mod), symbol)
+    canonical_obj = getattr(importlib.import_module(canonical), symbol)
+    assert held is canonical_obj
+
+
 @pytest.mark.parametrize("old", sorted({o for o, _, _ in SPLIT_SHIM_SYMBOLS}))
 def test_split_shim_warns(old):
     with _reimport_without_leaking(old), pytest.warns(DeprecationWarning, match="has moved"):
@@ -167,6 +208,24 @@ def test_combined_oauthlib_mixin_warns_on_subclass():
     assert issubclass(_LegacyView, OAuthLibMixin)
     assert hasattr(_LegacyView, "create_token_response")
     assert hasattr(_LegacyView, "verify_request")
+
+
+def test_views_mixins_shim_reexports_full_public_surface():
+    """Every public name the pre-split module exported must survive at the old path.
+
+    Regression: ``SAFE_HTTP_METHODS`` was dropped from the shim's import list, so
+    ``from oauth2_provider.views.mixins import SAFE_HTTP_METHODS`` raised ImportError
+    even though the constant still existed at its new home.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        shim = importlib.import_module("oauth2_provider.views.mixins")
+
+    missing = [n for n in VIEWS_MIXINS_PUBLIC_NAMES if not hasattr(shim, n)]
+    assert not missing, f"dropped from the views.mixins shim: {missing}"
+    # __all__ must advertise them too -- Sphinx autodoc honors __all__ for imported
+    # members, and docs/views/details.rst still automodules this path.
+    assert not [n for n in VIEWS_MIXINS_PUBLIC_NAMES if n not in shim.__all__]
 
 
 def test_private_names_resolve_via_old_path():

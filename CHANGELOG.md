@@ -73,9 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   application can use it; the resource server imports from it when authenticating to a *remote*
   authorization server's introspection endpoint, where it is itself acting as a client. The RFC 7523
   verification half lives in `oauth2_provider.authorization_server.client_assertions` and the
-  SSRF-hardened fetcher in `oauth2_provider.core.safe_fetch`. Because all three modules are new in
-  this unreleased cycle, they move without shims or deprecations. The package layout and its
+  SSRF-hardened fetcher in `oauth2_provider.core.safe_fetch`. The RFC 9126 PAR modules moved the same
+  way, to `oauth2_provider.authorization_server.{par,views.par}`. Because all of these modules are new
+  in this unreleased cycle, they move without shims or deprecations. The package layout and its
   conventions are documented in `docs/package_layout.rst` (and summarized for agents in `AGENTS.md`).
+
 ### Deprecated
 * Several modules moved into role-based subpackages (see Changed below). The old top-level import paths
   still work but now emit a `DeprecationWarning` and will be removed in 4.0. Update imports as follows:
@@ -97,7 +99,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `oauth2_provider.views.metadata` split into the authorization-server (RFC 8414) and resource-server
   (RFC 9728) metadata modules. `from oauth2_provider.views import <View>` and the combined
   `oauth2_provider.views.mixins.OAuthLibMixin` still work; the combined mixin emits a
-  `DeprecationWarning` when subclassed.
+  `DeprecationWarning` when subclassed. Note that it is now a *recombination* of the two role mixins
+  rather than their ancestor, so it no longer appears in any shipped view's MRO: `issubclass(TokenView,
+  OAuthLibMixin)` is now `False`, and setting or patching an attribute on the combined mixin no longer
+  reaches the views — silently, without raising. Each view also exposes only its own role's methods
+  now (authorization-server views lose `verify_request`/`authenticate_client`/`unauthenticated_response`;
+  resource-server views lose `error_response` and the `create_*_response` builders). Likewise, module
+  globals used as patch targets moved with their code — patch
+  `oauth2_provider.resource_server.validators` rather than `oauth2_provider.oauth2_validators` for
+  `requests`, `datetime` and `AccessToken`. See `docs/upgrade.rst` for the full list; runtime behavior
+  is unchanged in every case, only subclassing and patching are affected.
+
 ### Fixed
 * #1287 RP-Initiated Logout is now idempotent, as the specification requires. Once one RP logged an
   End-User out, `do_logout()` deleted that user's ID Tokens, so every other RP's `id_token_hint`

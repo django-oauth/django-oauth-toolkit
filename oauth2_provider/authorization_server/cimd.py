@@ -31,6 +31,11 @@ from django.http.request import validate_host
 from django.utils import timezone
 
 from oauth2_provider.core import safe_fetch
+
+# Re-exported for backward compatibility: NAT64_PREFIX was a public module constant
+# of oauth2_provider.cimd through 3.4.1. The NAT64 check moved into the shared
+# SSRF-hardened fetcher, so keep the old name importable from this module.
+from oauth2_provider.core.safe_fetch import NAT64_PREFIX  # noqa: F401
 from oauth2_provider.models import get_application_model
 from oauth2_provider.settings import oauth2_settings
 
