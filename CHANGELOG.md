@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1762 RFC 7523 JWT client authentication (`private_key_jwt` / `client_secret_jwt`) at the token, introspection and
   revocation endpoints. Applications gain `token_endpoint_auth_method`, `client_jwks` and `client_jwks_uri` fields
   (deployments with a swapped/custom Application model must add an equivalent migration); remote JWK Sets are fetched
-  with the same SSRF hardening as CIMD and cached. Includes a public `oauth2_provider.client_assertions.make_client_assertion()`
+  with the same SSRF hardening as CIMD and cached. Includes a public `oauth2_provider.client.make_client_assertion()`
   helper for apps acting as OAuth clients, optional `private_key_jwt` authentication to a remote introspection endpoint
   (`RESOURCE_SERVER_INTROSPECTION_JWT_*` settings), Dynamic Client Registration support for both methods with
   `jwks`/`jwks_uri` metadata, and `*_auth_signing_alg_values_supported` advertisement in the discovery documents.
@@ -54,7 +54,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1287 `RPInitiatedLogoutView.validate_logout_request_user()` now returns an `(id_token, claims)`
   tuple rather than the `IDToken` alone, and `RPInitiatedLogoutView.get_request_application()` takes a
   third `claims` argument. Subclasses overriding either method must be updated.
-
+* Reorganized the package by OAuth2 role. Shared plumbing now lives under `oauth2_provider.core`,
+  authorization-server / OpenID Connect Provider code under `oauth2_provider.authorization_server`
+  (with an `authorization_server.oidc` facet), and resource-server code under
+  `oauth2_provider.resource_server`. The role packages re-export their public API for imports by role
+  (e.g. `from oauth2_provider.resource_server import ProtectedResourceView`). The resource-server slice
+  of `OAuth2Validator` (bearer-token validation, the RFC 7662 introspection client, and the RFC 8707
+  resource-indicator helpers) moved to `oauth2_provider.resource_server.validators` as a
+  `ResourceServerValidatorMixin` that `OAuth2Validator` composes; the public validator class, its
+  import path, and its behavior are unchanged. The view layer, its mixins, and the URL patterns were
+  likewise moved/split by role (with `oauth2_provider/urls.py` kept as a back-compat aggregator that
+  preserves `app_name`, `urlpatterns`, and the public `*_urlpatterns` names), and `OAuthLibMixin` was
+  decomposed into a shared `OAuthLibCoreMixin` plus role-specific view mixins. All moves ship with
+  backward-compatible import shims (see Deprecated); the swappable-model, generator, and settings
+  modules were intentionally left in place. A new `oauth2_provider.client` package holds the
+  *client*-side helpers — currently the RFC 7523 assertion builder `make_client_assertion()` — kept
+  standalone (no `authorization_server` imports, no app-registry or model access) so a plain client
+  application can use it; the resource server imports from it when authenticating to a *remote*
+  authorization server's introspection endpoint, where it is itself acting as a client. The RFC 7523
+  verification half lives in `oauth2_provider.authorization_server.client_assertions` and the
+  SSRF-hardened fetcher in `oauth2_provider.core.safe_fetch`. Because all three modules are new in
+  this unreleased cycle, they move without shims or deprecations. The package layout and its
+  conventions are documented in `docs/package_layout.rst` (and summarized for agents in `AGENTS.md`).
+### Deprecated
+* Several modules moved into role-based subpackages (see Changed below). The old top-level import paths
+  still work but now emit a `DeprecationWarning` and will be removed in 4.0. Update imports as follows:
+  `oauth2_provider.{compat,exceptions,http,scopes,signals,utils,checks,bcp}` →
+  `oauth2_provider.core.*`; `oauth2_provider.oauth2_backends` →
+  `oauth2_provider.core.backends_oauthlib`; `oauth2_provider.{dcr,cimd,forms,admin}` →
+  `oauth2_provider.authorization_server.*`;
+  `oauth2_provider.{www_authenticate,backends,decorators,middleware}` →
+  `oauth2_provider.resource_server.*`. `oauth2_provider.admin` keeps working silently (no warning) so
+  Django admin autodiscovery is unaffected. `oauth2_provider.oauth2_validators.OAuth2Validator` and the
+  RFC 8707 helper functions keep their import paths.
+* The view layer moved into role packages too: `oauth2_provider.views.{base,introspect,device,
+  dynamic_client_registration,application,token}` → `oauth2_provider.authorization_server.views.*`;
+  `oauth2_provider.views.oidc` → `oauth2_provider.authorization_server.oidc.views`;
+  `oauth2_provider.views.generic` → `oauth2_provider.resource_server.views.generic`. The view mixins
+  split by role (`oauth2_provider.views.mixins` → `oauth2_provider.core.views.OAuthLibCoreMixin`,
+  `oauth2_provider.authorization_server.views.mixins.AuthorizationServerViewMixin`,
+  `oauth2_provider.resource_server.mixins`, `oauth2_provider.authorization_server.oidc.mixins`), and
+  `oauth2_provider.views.metadata` split into the authorization-server (RFC 8414) and resource-server
+  (RFC 9728) metadata modules. `from oauth2_provider.views import <View>` and the combined
+  `oauth2_provider.views.mixins.OAuthLibMixin` still work; the combined mixin emits a
+  `DeprecationWarning` when subclassed.
 ### Fixed
 * #1287 RP-Initiated Logout is now idempotent, as the specification requires. Once one RP logged an
   End-User out, `do_logout()` deleted that user's ID Tokens, so every other RP's `id_token_hint`

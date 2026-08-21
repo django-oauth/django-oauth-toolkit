@@ -21,178 +21,23 @@ For example:
 
 A big *thank you* to the guys from Django REST Framework for inspiring this.
 
+The namespaced ``OAUTH2_PROVIDER`` settings are grouped below by the OAuth2/OIDC
+role they configure, so related knobs sit together:
 
-List of available settings within OAUTH2_PROVIDER
--------------------------------------------------
+* **Core / shared settings** — server plumbing, scopes, and swappable
+  models/admin used across every role.
+* **Authorization Server settings** — the provider side: issuing
+  authorization/tokens, client registration, grant behavior, the RFC 9700 gates,
+  and RFC 8414 authorization-server metadata.
+* **OpenID Connect Provider settings** — the OIDC identity layer on top of the
+  Authorization Server (ID tokens, discovery, JWKS, userinfo, and the
+  RP-Initiated Registration/Logout endpoints that serve external relying
+  parties). This library is the OpenID Provider, not a relying party/client.
+* **Resource Server settings** — validating bearer tokens via remote
+  introspection (RFC 7662) and advertising RFC 9728 protected-resource metadata.
 
-ACCESS_TOKEN_EXPIRE_SECONDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``36000``
-
-The number of seconds an access token remains valid. Requesting a protected
-resource after this duration will fail. Keep this value high enough so clients
-can cache the token for a reasonable amount of time.
-
-ACCESS_TOKEN_GENERATOR
-~~~~~~~~~~~~~~~~~~~~~~
-Import path of a callable used to generate access tokens.
-``oauthlib.oauth2.rfc6749.tokens.random_token_generator`` is (normally) used if not provided.
-
-ALLOWED_REDIRECT_URI_SCHEMES
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["http", "https"]``
-
-A list of schemes that the ``redirect_uri`` field will be validated against.
-Setting this to ``["https"]`` only in production is strongly recommended.
-
-For Native Apps the ``http`` scheme can be safely used with loopback addresses in the
-Application (``[::1]`` or ``127.0.0.1``). In this case the ``redirect_uri`` can be
-configured without explicit port specification, so that the Application accepts randomly
-assigned ports.
-
-Note that you may override ``Application.get_allowed_schemes()`` to set this on
-a per-application basis.
-
-Native apps using an RFC 8252 §7.1 private-use URI scheme should add that scheme here
-(e.g. ``["https", "com.example.app"]``) and register the redirect URI in the single-slash
-form the RFC prescribes, ``com.example.app:/oauth2redirect``. A private-use scheme has no
-naming authority, so the single-slash and double-slash spellings are *different* URIs and
-are not interchangeable at request time. The redundant ``com.example.app:///oauth2redirect``
-and the rootless ``com.example.app:oauth2redirect`` are rejected. Schemes that require an
-authority (``http``, ``https``, ``ws``, ``wss``, ``ftp``) must still include a host.
-
-ALLOW_URI_WILDCARDS
-~~~~~~~~~~~~~~~~~~~
-Default: ``False``
-
-SECURITY WARNING: Enabling this setting can introduce security vulnerabilities. Only enable
-this setting if you understand the risks. https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2
-states "The redirection endpoint URI MUST be an absolute URI as defined by [RFC3986] Section 4.3." The
-intent of the URI restrictions is to prevent open redirects and phishing attacks. If you do enable this
-ensure that the wildcards restrict URIs to resources under your control. You are strongly encouragd not
-to use this feature in production.
-
-When set to ``True``, the server will allow wildcard characters in the domains for allowed_origins and
-redirect_uris.
-
-``*`` is the only wildcard character allowed.
-
-``*`` can only be used as a prefix to a domain, must be the first character in
-the domain, and cannot be in the top or second level domain.  Matching is done using an
-endsWith check.
-
-For example,
-``https://*.example.com`` is allowed,
-``https://*.sub.example.com`` is allowed,
-``https://*-myproject.example.com`` is allowed,
-``https://*--sitename.netlify.app`` is allowed for Netlify deploy previews,
-``https://*.com`` is not allowed, and
-``https://example.*.com`` is not allowed.
-
-Single-dash patterns such as ``https://*-sitename.netlify.app`` are syntactically allowed for
-backward compatibility, but they are unsafe for Netlify because they can match unrelated hosts such
-as ``something-sitename.netlify.app``. Use the double-dash form for Netlify deploy previews.
-
-This feature is useful for working with CI service such as cloudflare, netlify, and vercel that offer branch
-deployments for development previews and user acceptance testing.
-
-ALLOW_LOCALHOST_LOOPBACK
-~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``False``
-
-`RFC 8252 section 7.3 <https://datatracker.ietf.org/doc/html/rfc8252#section-7.3>`_ requires the
-authorization server to accept any port on a loopback ``redirect_uri`` at request time, so a native
-app can bind whatever ephemeral port the OS assigns. The toolkit applies that exemption to the loopback
-IP literals ``127.0.0.1`` and ``[::1]`` unconditionally. `Section 8.3
-<https://datatracker.ietf.org/doc/html/rfc8252#section-8.3>`_ notes that ``localhost`` redirect URIs
-"function similarly" but that their use is NOT RECOMMENDED, so ``localhost`` is *not* granted the
-any-port exemption by default.
-
-Some native clients nonetheless register ``http://localhost/callback`` and then receive the callback on
-an ephemeral port. When set to ``True``, the ``http://localhost`` hostname is treated as loopback and
-granted the same any-port exemption as the IP literals. The hostname must still match exactly, so
-``localhost`` is never conflated with ``127.0.0.1`` / ``[::1]``, and scheme, path, and query matching
-are unchanged.
-
-SECURITY WARNING: Per RFC 8252 section 8.3, prefer registering the loopback IP literals over
-``localhost``: a ``localhost`` redirect can resolve to a non-loopback interface on a host with
-misconfigured name resolution, whereas ``127.0.0.1`` / ``[::1]`` cannot. Only enable this if you must
-support clients that register ``localhost``.
-
-ALLOWED_SCHEMES
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["https"]``
-
-A list of schemes that the ``allowed_origins`` field will be validated against.
-Setting this to ``["https"]`` only in production is strongly recommended.
-Adding ``"http"`` to the list is considered to be safe only for local development and testing.
-Note that `OAUTHLIB_INSECURE_TRANSPORT <https://oauthlib.readthedocs.io/en/latest/oauth2/security.html#envvar-OAUTHLIB_INSECURE_TRANSPORT>`_
-environment variable should be also set to allow HTTP origins.
-
-AUTHORIZATION_CODE_EXPIRE_SECONDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``60``
-
-The number of seconds an authorization code remains valid. Requesting an access
-token after this duration will fail. :rfc:`4.1.2` recommends expire after a short lifetime,
-with 10 minutes (600 seconds) being the maximum acceptable.
-
-CLIENT_ID_GENERATOR_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class responsible for generating client identifiers.
-These are usually random strings.
-
-CLIENT_SECRET_GENERATOR_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class responsible for generating client secrets.
-These are usually random strings.
-
-CLIENT_SECRET_GENERATOR_LENGTH
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The length of the generated secrets, in characters. If this value is too low,
-secrets may become subject to bruteforce guessing.
-
-CLIENT_SECRET_HASHER
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The hasher for storing generated secrets. By default library will use the first hasher in PASSWORD_HASHERS.
-
-EXTRA_SERVER_KWARGS
-~~~~~~~~~~~~~~~~~~~
-A dictionary to be passed to oauthlib's Server class. Three options
-are natively supported: token_expires_in, token_generator,
-refresh_token_generator. There's no extra processing so callables (every one
-of those three can be a callable) must be passed here directly and classes
-must be instantiated (callables should accept request as their only argument).
-
-GRANT_MODEL
-~~~~~~~~~~~
-The import string of the class (model) representing your grants. Overwrite
-this value if you wrote your own implementation (subclass of
-``oauth2_provider.models.Grant``).
-
-APPLICATION_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your application admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.ApplicationAdmin``).
-
-ACCESS_TOKEN_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your access token admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.AccessTokenAdmin``).
-
-GRANT_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your grant admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.GrantAdmin``).
-
-REFRESH_TOKEN_ADMIN_CLASS
-~~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your refresh token admin class.
-Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.RefreshTokenAdmin``).
+Core / shared settings
+----------------------
 
 OAUTH2_SERVER_CLASS
 ~~~~~~~~~~~~~~~~~~~
@@ -224,6 +69,154 @@ to get a ``Server`` instance. Defaults to
     ``application/x-www-form-urlencoded`` (RFC 6749, RFC 7662, RFC 7009). The JSON mode is
     non-standard and breaks interoperability with spec-compliant clients; every client can
     send a form-encoded body, so it provides no capability that the default backend lacks.
+
+EXTRA_SERVER_KWARGS
+~~~~~~~~~~~~~~~~~~~
+A dictionary to be passed to oauthlib's Server class. Three options
+are natively supported: token_expires_in, token_generator,
+refresh_token_generator. There's no extra processing so callables (every one
+of those three can be a callable) must be passed here directly and classes
+must be instantiated (callables should accept request as their only argument).
+
+SCOPES_BACKEND_CLASS
+~~~~~~~~~~~~~~~~~~~~
+**New in 0.12.0**. The import string for the scopes backend class.
+Defaults to ``oauth2_provider.core.scopes.SettingsScopes``, which reads scopes through the settings defined below.
+(The pre-4.0 alias ``oauth2_provider.scopes.SettingsScopes`` still resolves but is deprecated.)
+See :ref:`custom-scopes-backend` for how to write your own backend (for example to store scopes in the
+database).
+
+SCOPES
+~~~~~~
+.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+
+A dictionary mapping each scope name to its human description.
+
+.. _settings_default_scopes:
+
+DEFAULT_SCOPES
+~~~~~~~~~~~~~~
+.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+
+A list of scopes that should be returned by default.
+This is a subset of the keys of the ``SCOPES`` setting.
+By default this is set to ``'__all__'`` meaning that the whole set of ``SCOPES`` will be returned.
+
+.. code-block:: python
+
+  DEFAULT_SCOPES = ['read', 'write']
+
+READ_SCOPE
+~~~~~~~~~~
+The name of the *read* scope. Unlike ``SCOPES``/``DEFAULT_SCOPES``, this is used regardless of
+``SCOPES_BACKEND_CLASS`` -- the read/write permission helpers (``TokenHasReadWriteScope``,
+``TokenHasResourceScope``, ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``) read it
+directly from settings. A custom scopes backend must therefore expose a scope with this name from
+``get_available_scopes()`` so a token can actually be granted it (requested scopes are validated
+against ``get_available_scopes()``; see ``OAuth2Validator.validate_scopes``). ``rw_protected_resource``
+and ``ReadWriteScopedResourceMixin`` additionally require it to be in ``get_all_scopes()`` and raise
+``ImproperlyConfigured`` otherwise (see :ref:`custom-scopes-backend`).
+
+WRITE_SCOPE
+~~~~~~~~~~~
+The name of the *write* scope. Like ``READ_SCOPE``, this is used regardless of
+``SCOPES_BACKEND_CLASS`` by the read/write permission helpers, so a custom scopes backend must
+expose a scope with this name from ``get_available_scopes()`` (so it can be granted) and, for
+``rw_protected_resource`` / ``ReadWriteScopedResourceMixin``, from ``get_all_scopes()`` (see
+:ref:`custom-scopes-backend`).
+
+GRANT_MODEL
+~~~~~~~~~~~
+The import string of the class (model) representing your grants. Overwrite
+this value if you wrote your own implementation (subclass of
+``oauth2_provider.models.Grant``).
+
+APPLICATION_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your application admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.ApplicationAdmin``).
+
+ACCESS_TOKEN_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your access token admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.AccessTokenAdmin``).
+
+GRANT_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your grant admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.GrantAdmin``).
+
+REFRESH_TOKEN_ADMIN_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your refresh token admin class.
+Overwrite this value if you wrote your own implementation (subclass of
+``oauth2_provider.admin.RefreshTokenAdmin``).
+
+CLEAR_EXPIRED_TOKENS_BATCH_SIZE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``10000``
+
+The size of delete batches used by ``cleartokens`` management command.
+
+CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``0``
+
+Time of sleep in seconds used by ``cleartokens`` management command between batch deletions.
+
+Set this to a non-zero value (e.g. ``0.1``) to add a pause between batch sizes to reduce system
+load when clearing large batches of expired tokens.
+
+Authorization Server settings
+-----------------------------
+
+CLIENT_ID_GENERATOR_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class responsible for generating client identifiers.
+These are usually random strings.
+
+CLIENT_SECRET_GENERATOR_CLASS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class responsible for generating client secrets.
+These are usually random strings.
+
+CLIENT_SECRET_GENERATOR_LENGTH
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The length of the generated secrets, in characters. If this value is too low,
+secrets may become subject to bruteforce guessing.
+
+CLIENT_SECRET_HASHER
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The hasher for storing generated secrets. By default library will use the first hasher in PASSWORD_HASHERS.
+
+ACCESS_TOKEN_GENERATOR
+~~~~~~~~~~~~~~~~~~~~~~
+Import path of a callable used to generate access tokens.
+``oauthlib.oauth2.rfc6749.tokens.random_token_generator`` is (normally) used if not provided.
+
+REFRESH_TOKEN_GENERATOR
+~~~~~~~~~~~~~~~~~~~~~~~
+See `ACCESS_TOKEN_GENERATOR`_. This is the same but for refresh tokens.
+Defaults to access token generator if not provided.
+
+ACCESS_TOKEN_EXPIRE_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``36000``
+
+The number of seconds an access token remains valid. Requesting a protected
+resource after this duration will fail. Keep this value high enough so clients
+can cache the token for a reasonable amount of time.
+
+AUTHORIZATION_CODE_EXPIRE_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``60``
+
+The number of seconds an authorization code remains valid. Requesting an access
+token after this duration will fail. :rfc:`4.1.2` recommends expire after a short lifetime,
+with 10 minutes (600 seconds) being the maximum acceptable.
 
 REFRESH_TOKEN_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -319,178 +312,106 @@ See also: validator's rotate_refresh_token method can be overridden to make this
 (could be usable with expiring refresh tokens, in particular, so that they are rotated
 when close to expiration, theoretically).
 
-REFRESH_TOKEN_GENERATOR
-~~~~~~~~~~~~~~~~~~~~~~~
-See `ACCESS_TOKEN_GENERATOR`_. This is the same but for refresh tokens.
-Defaults to access token generator if not provided.
+ERROR_RESPONSE_WITH_SCOPES
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+When authorization fails due to insufficient scopes include the required scopes in the response.
+Only applicable when used with `Django REST Framework <http://django-rest-framework.org/>`_
 
 REQUEST_APPROVAL_PROMPT
 ~~~~~~~~~~~~~~~~~~~~~~~
 Can be ``'force'`` or ``'auto'``.
 The strategy used to display the authorization form. Refer to :ref:`skip-auth-form`.
 
-SCOPES_BACKEND_CLASS
-~~~~~~~~~~~~~~~~~~~~
-**New in 0.12.0**. The import string for the scopes backend class.
-Defaults to ``oauth2_provider.scopes.SettingsScopes``, which reads scopes through the settings defined below.
-See :ref:`custom-scopes-backend` for how to write your own backend (for example to store scopes in the
-database).
+ALLOWED_REDIRECT_URI_SCHEMES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["http", "https"]``
 
-SCOPES
-~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+A list of schemes that the ``redirect_uri`` field will be validated against.
+Setting this to ``["https"]`` only in production is strongly recommended.
 
-A dictionary mapping each scope name to its human description.
+For Native Apps the ``http`` scheme can be safely used with loopback addresses in the
+Application (``[::1]`` or ``127.0.0.1``). In this case the ``redirect_uri`` can be
+configured without explicit port specification, so that the Application accepts randomly
+assigned ports.
 
-.. _settings_default_scopes:
+Note that you may override ``Application.get_allowed_schemes()`` to set this on
+a per-application basis.
 
-DEFAULT_SCOPES
-~~~~~~~~~~~~~~
-.. note:: (0.12.0+) Only used if ``SCOPES_BACKEND_CLASS`` is set to the SettingsScopes default.
+Native apps using an RFC 8252 §7.1 private-use URI scheme should add that scheme here
+(e.g. ``["https", "com.example.app"]``) and register the redirect URI in the single-slash
+form the RFC prescribes, ``com.example.app:/oauth2redirect``. A private-use scheme has no
+naming authority, so the single-slash and double-slash spellings are *different* URIs and
+are not interchangeable at request time. The redundant ``com.example.app:///oauth2redirect``
+and the rootless ``com.example.app:oauth2redirect`` are rejected. Schemes that require an
+authority (``http``, ``https``, ``ws``, ``wss``, ``ftp``) must still include a host.
 
-A list of scopes that should be returned by default.
-This is a subset of the keys of the ``SCOPES`` setting.
-By default this is set to ``'__all__'`` meaning that the whole set of ``SCOPES`` will be returned.
+ALLOWED_SCHEMES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["https"]``
 
-.. code-block:: python
+A list of schemes that the ``allowed_origins`` field will be validated against.
+Setting this to ``["https"]`` only in production is strongly recommended.
+Adding ``"http"`` to the list is considered to be safe only for local development and testing.
+Note that `OAUTHLIB_INSECURE_TRANSPORT <https://oauthlib.readthedocs.io/en/latest/oauth2/security.html#envvar-OAUTHLIB_INSECURE_TRANSPORT>`_
+environment variable should be also set to allow HTTP origins.
 
-  DEFAULT_SCOPES = ['read', 'write']
+ALLOW_URI_WILDCARDS
+~~~~~~~~~~~~~~~~~~~
+Default: ``False``
 
-READ_SCOPE
-~~~~~~~~~~
-The name of the *read* scope. Unlike ``SCOPES``/``DEFAULT_SCOPES``, this is used regardless of
-``SCOPES_BACKEND_CLASS`` -- the read/write permission helpers (``TokenHasReadWriteScope``,
-``TokenHasResourceScope``, ``rw_protected_resource``, ``ReadWriteScopedResourceMixin``) read it
-directly from settings. A custom scopes backend must therefore expose a scope with this name from
-``get_available_scopes()`` so a token can actually be granted it (requested scopes are validated
-against ``get_available_scopes()``; see ``OAuth2Validator.validate_scopes``). ``rw_protected_resource``
-and ``ReadWriteScopedResourceMixin`` additionally require it to be in ``get_all_scopes()`` and raise
-``ImproperlyConfigured`` otherwise (see :ref:`custom-scopes-backend`).
+SECURITY WARNING: Enabling this setting can introduce security vulnerabilities. Only enable
+this setting if you understand the risks. https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2
+states "The redirection endpoint URI MUST be an absolute URI as defined by [RFC3986] Section 4.3." The
+intent of the URI restrictions is to prevent open redirects and phishing attacks. If you do enable this
+ensure that the wildcards restrict URIs to resources under your control. You are strongly encouraged not
+to use this feature in production.
 
-WRITE_SCOPE
-~~~~~~~~~~~
-The name of the *write* scope. Like ``READ_SCOPE``, this is used regardless of
-``SCOPES_BACKEND_CLASS`` by the read/write permission helpers, so a custom scopes backend must
-expose a scope with this name from ``get_available_scopes()`` (so it can be granted) and, for
-``rw_protected_resource`` / ``ReadWriteScopedResourceMixin``, from ``get_all_scopes()`` (see
-:ref:`custom-scopes-backend`).
+When set to ``True``, the server will allow wildcard characters in the domains for allowed_origins and
+redirect_uris.
 
-ERROR_RESPONSE_WITH_SCOPES
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-When authorization fails due to insufficient scopes include the required scopes in the response.
-Only applicable when used with `Django REST Framework <http://django-rest-framework.org/>`_
+``*`` is the only wildcard character allowed.
 
-RESOURCE_SERVER_INTROSPECTION_URL
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The introspection endpoint for validating token remotely (RFC7662). This URL requires an
-authorization token (``RESOURCE_SERVER_AUTH_TOKEN``), HTTP Basic Auth client credentials
-(``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS``), or an RFC 7523 client assertion configuration
-(``RESOURCE_SERVER_INTROSPECTION_JWT_*``).
+``*`` can only be used as a prefix to a domain, must be the first character in
+the domain, and cannot be in the top or second level domain.  Matching is done using an
+endsWith check.
 
-RESOURCE_SERVER_AUTH_TOKEN
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-The bearer token to authenticate the introspection request towards the introspection endpoint (RFC7662).
+For example,
+``https://*.example.com`` is allowed,
+``https://*.sub.example.com`` is allowed,
+``https://*-myproject.example.com`` is allowed,
+``https://*--sitename.netlify.app`` is allowed for Netlify deploy previews,
+``https://*.com`` is not allowed, and
+``https://example.*.com`` is not allowed.
 
-RESOURCE_SERVER_INTROSPECTION_CREDENTIALS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The HTTP Basic Auth Client_ID and Client_Secret to authenticate the introspection request
-towards the introspect endpoint (RFC7662) as a tuple: ``(client_id, client_secret)``.
+Single-dash patterns such as ``https://*-sitename.netlify.app`` are syntactically allowed for
+backward compatibility, but they are unsafe for Netlify because they can match unrelated hosts such
+as ``something-sitename.netlify.app``. Use the double-dash form for Netlify deploy previews.
 
-RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``None``
+This feature is useful for working with CI service such as cloudflare, netlify, and vercel that offer branch
+deployments for development previews and user acceptance testing.
 
-The client_id to authenticate the introspection request with an RFC 7523 ``private_key_jwt``
-client assertion (see :doc:`rfc7523`). All of ``RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID``,
-``RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY`` and ``RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE``
-must be set; ``RESOURCE_SERVER_AUTH_TOKEN`` and ``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS`` take
-precedence when configured. A fresh assertion (new ``jti``, short expiry) is generated per request.
+ALLOW_LOCALHOST_LOOPBACK
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
 
-RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``None``
+`RFC 8252 section 7.3 <https://datatracker.ietf.org/doc/html/rfc8252#section-7.3>`_ requires the
+authorization server to accept any port on a loopback ``redirect_uri`` at request time, so a native
+app can bind whatever ephemeral port the OS assigns. The toolkit applies that exemption to the loopback
+IP literals ``127.0.0.1`` and ``[::1]`` unconditionally. `Section 8.3
+<https://datatracker.ietf.org/doc/html/rfc8252#section-8.3>`_ notes that ``localhost`` redirect URIs
+"function similarly" but that their use is NOT RECOMMENDED, so ``localhost`` is *not* granted the
+any-port exemption by default.
 
-The signing key for the introspection client assertion: a private-key PEM string or a JWK JSON
-string.
+Some native clients nonetheless register ``http://localhost/callback`` and then receive the callback on
+an ephemeral port. When set to ``True``, the ``http://localhost`` hostname is treated as loopback and
+granted the same any-port exemption as the IP literals. The hostname must still match exactly, so
+``localhost`` is never conflated with ``127.0.0.1`` / ``[::1]``, and scheme, path, and query matching
+are unchanged.
 
-RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``None``
-
-The ``aud`` claim for the introspection client assertion — the remote authorization server's
-issuer or its introspection endpoint URL, per the remote server's policy.
-
-RESOURCE_SERVER_INTROSPECTION_JWT_ALG
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``None``
-
-The JWS algorithm for the introspection client assertion. ``None`` infers it from the key type
-(RSA → ``RS256``, EC → ``ES256``/``ES384``/``ES512`` by curve).
-
-RESOURCE_SERVER_INTROSPECTION_JWT_LIFETIME
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``60``
-
-Lifetime in seconds of each generated introspection client assertion.
-
-RESOURCE_SERVER_INTROSPECTION_JWT_KID
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``None``
-
-Optional ``kid`` header for the introspection client assertion; defaults to the signing key's own
-``kid`` when it has one.
-
-RESOURCE_SERVER_TOKEN_CACHING_SECONDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The number of seconds an authorization token received from the introspection endpoint remains valid.
-If the expire time of the received token is less than ``RESOURCE_SERVER_TOKEN_CACHING_SECONDS`` the expire time
-will be used.
-
-RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``"oauth2_provider.oauth2_validators.validate_resource_as_url_prefix"``
-
-A callable that validates whether an access token's audience (RFC 8707 resource indicators) matches
-a request URI. The callable receives ``(request_uri, audiences)`` where ``request_uri`` is a string
-and ``audiences`` is a list of audience URIs from the token. Returns ``True`` if the token
-is authorized for the request, ``False`` otherwise.
-
-The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
-will accept requests to ``https://api.example.com/v1/users`` but reject ``https://api.example.com/v2``.
-
-The default validator expects both the request URI and the audience values to be **absolute URIs
-with a scheme and host**, without userinfo or fragment components, because it compares
-``(scheme, host, port)`` and then the path. A query component is permitted on resource indicators
-(RFC 8707 allows one) but plays no part in matching: the request URI is compared with its query
-string stripped. Other absolute-URI forms, such as URNs, never match. Supporting them requires
-both a custom validator here (for matching on the resource server) and a custom
-``OAUTH2_VALIDATOR_CLASS`` overriding ``_validate_resource_uris()`` (the authorization server
-rejects authority-less URIs at issuance).
-
-To use exact matching instead:
-
-.. code-block:: python
-
-    def exact_match_validator(request_uri, audiences):
-        if not audiences:
-            return True  # Unrestricted token
-        return request_uri in audiences
-
-    OAUTH2_PROVIDER = {
-        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': 'myapp.validators.exact_match_validator',
-    }
-
-Set to ``None`` to disable automatic audience validation entirely.
-
-AUTHENTICATION_SERVER_EXP_TIME_ZONE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-.. deprecated:: 3.3.1
-    This setting is deprecated and will be removed in a future release.
-
-Token introspection ``exp`` (expiration) values are Unix timestamps and are interpreted as UTC per
-:rfc:`7662` and :rfc:`7519`. For backwards compatibility, setting this to a non-UTC time zone keeps
-the previous workaround behavior of reinterpreting the ``exp`` wall-clock time as being in the
-configured time zone, but configuring it now emits a ``DeprecationWarning``.
+SECURITY WARNING: Per RFC 8252 section 8.3, prefer registering the loopback IP literals over
+``localhost``: a ``localhost`` redirect can resolve to a non-loopback interface on a host with
+misconfigured name resolution, whereas ``127.0.0.1`` / ``[::1]`` cannot. Only enable this if you must
+support clients that register ``localhost``.
 
 PKCE_REQUIRED
 ~~~~~~~~~~~~~
@@ -592,6 +513,42 @@ a non-compliant value: ``False`` (default) → Warning, ``True`` → Error.
     Default: ``False``. Flags ``PKCE_REQUIRED = False`` (RFC 9700 §2.1.1) as ``W010`` /
     ``E005``. A callable ``PKCE_REQUIRED`` (per-client policy) is not flagged.
 
+OAUTH2_RESPONSE_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["code", "token"]``
+
+The response types advertised by the :doc:`oauth2_server_metadata` endpoint.
+
+OAUTH2_GRANT_TYPES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default::
+
+    [
+        "authorization_code",
+        "implicit",
+        "password",
+        "client_credentials",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    ]
+
+The grant types advertised by the :doc:`oauth2_server_metadata` endpoint.
+
+OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["client_secret_post", "client_secret_basic"]``
+
+The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
+Add ``"private_key_jwt"`` and/or ``"client_secret_jwt"`` to advertise :doc:`RFC 7523 JWT client
+authentication <rfc7523>`; the metadata document then also emits the matching
+``*_auth_signing_alg_values_supported`` fields.
+
+OpenID Connect Provider settings
+--------------------------------
+
+These settings configure the OpenID Connect Provider (OP) — the identity layer on
+top of the Authorization Server. See :doc:`oidc` for the full guide.
+
 OIDC_ENABLED
 ~~~~~~~~~~~~
 Default: ``False``
@@ -643,93 +600,6 @@ this you must also provide the service at that endpoint.
 If unset, the default location is used, eg if ``django-oauth-toolkit`` is
 mounted at ``/o/``, it will be ``<server-address>/o/userinfo/``.
 
-OIDC_RP_INITIATED_LOGOUT_ENABLED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``False``
-
-When is set to ``False`` (default) the `OpenID Connect RP-Initiated Logout <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_
-endpoint is not enabled. OpenID Connect RP-Initiated Logout enables an :term:`Client` (Relying Party)
-to request that a :term:`Resource Owner` (End User) is logged out at the :term:`Authorization Server` (OpenID Provider).
-
-OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``True``
-
-Whether to always prompt the :term:`Resource Owner` (End User) to confirm a logout requested by a
-:term:`Client` (Relying Party). If it is disabled the :term:`Resource Owner` (End User) will only be prompted if required by the standard.
-
-OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``False``
-
-Enable this setting to require `https` in post logout redirect URIs. `http` is only allowed when a :term:`Client` is `confidential`.
-
-OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``True``
-
-Whether expired ID tokens are accepted for RP-Initiated Logout. The token must still be
-signed by the OP, carry a matching ``iss`` claim, and resolve to a stored ``IDToken``;
-only the ``exp`` and ``nbf`` claims are skipped.
-
-The default is ``True`` because `OpenID Connect RP-Initiated Logout 1.0
-<https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ treats ``id_token_hint``
-as a *previously issued* ID token, used only as a hint about which session to end. Logout
-frequently happens long after the ID token's (typically short) ``exp``, so rejecting an
-expired hint would break the normal logout flow. Set this to ``False`` if you additionally
-want to require that the ``id_token_hint`` is still within its validity period.
-
-OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``True``
-
-Whether to delete the access, refresh and ID tokens of the user that is being logged out.
-The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
-The default is to delete the tokens of all applications if this flag is enabled.
-
-OIDC_RP_INITIATED_REGISTRATION_ENABLED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``False``
-
-Whether to allow the Relying Party (RP) to direct a user to an OpenID
-Provider (OP) to create a new account rather than authenticate with an
-existing one, per `OpenID Connect Prompt Create 1.0
-<https://openid.net/specs/openid-connect-prompt-create-1_0.html>`_.
-This is done by adding a ``prompt=create`` parameter to the
-authorization request. When enabled,
-``OIDC_RP_INITIATED_REGISTRATION_URL`` must also be set.
-
-Only unauthenticated users are redirected to registration. For a user
-with an existing authenticated session, ``create`` is a no-op and the
-authorization request proceeds as if it was not present — matching how
-major providers treat a signup hint alongside an active session. A
-Relying Party that wants re-authentication instead can combine prompt
-values, e.g. ``prompt=create login``.
-
-OIDC_RP_INITIATED_REGISTRATION_URL
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``None``
-
-Where users are sent to create an account when an authorization request
-contains ``prompt=create``. Like ``LOGIN_URL``, the value is resolved with
-:func:`django.shortcuts.resolve_url` and so accepts a URL pattern name, a
-path, or an absolute URL. For example, with `django-allauth
-<https://docs.allauth.org>`_::
-
-    OAUTH2_PROVIDER = {
-        # ...
-        "OIDC_RP_INITIATED_REGISTRATION_ENABLED": True,
-        "OIDC_RP_INITIATED_REGISTRATION_URL": "account_signup",
-    }
-
-The registration page receives a ``next`` query parameter pointing back to
-the authorization endpoint, and must redirect the user there after a
-successful registration so the OAuth flow can complete.
-
-This setting is required when ``OIDC_RP_INITIATED_REGISTRATION_ENABLED`` is
-``True``: if it is unset or cannot be resolved, ``ImproperlyConfigured`` is
-raised when a ``prompt=create`` request is received.
-
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~
 Default: ``""``
@@ -774,35 +644,208 @@ The authentication methods that are advertised to be supported by this server. A
 authentication <rfc7523>`; the discovery document then also emits
 ``token_endpoint_auth_signing_alg_values_supported``.
 
-OAUTH2_RESPONSE_TYPES_SUPPORTED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["code", "token"]``
+OIDC_RP_INITIATED_REGISTRATION_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
 
-The response types advertised by the :doc:`oauth2_server_metadata` endpoint.
+Whether to allow the Relying Party (RP) to direct a user to an OpenID
+Provider (OP) to create a new account rather than authenticate with an
+existing one, per `OpenID Connect Prompt Create 1.0
+<https://openid.net/specs/openid-connect-prompt-create-1_0.html>`_.
+This is done by adding a ``prompt=create`` parameter to the
+authorization request. When enabled,
+``OIDC_RP_INITIATED_REGISTRATION_URL`` must also be set.
 
-OAUTH2_GRANT_TYPES_SUPPORTED
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default::
+Only unauthenticated users are redirected to registration. For a user
+with an existing authenticated session, ``create`` is a no-op and the
+authorization request proceeds as if it was not present — matching how
+major providers treat a signup hint alongside an active session. A
+Relying Party that wants re-authentication instead can combine prompt
+values, e.g. ``prompt=create login``.
 
-    [
-        "authorization_code",
-        "implicit",
-        "password",
-        "client_credentials",
-        "refresh_token",
-        "urn:ietf:params:oauth:grant-type:device_code",
-    ]
+OIDC_RP_INITIATED_REGISTRATION_URL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
 
-The grant types advertised by the :doc:`oauth2_server_metadata` endpoint.
+Where users are sent to create an account when an authorization request
+contains ``prompt=create``. Like ``LOGIN_URL``, the value is resolved with
+:func:`django.shortcuts.resolve_url` and so accepts a URL pattern name, a
+path, or an absolute URL. For example, with `django-allauth
+<https://docs.allauth.org>`_::
 
-OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+    OAUTH2_PROVIDER = {
+        # ...
+        "OIDC_RP_INITIATED_REGISTRATION_ENABLED": True,
+        "OIDC_RP_INITIATED_REGISTRATION_URL": "account_signup",
+    }
+
+The registration page receives a ``next`` query parameter pointing back to
+the authorization endpoint, and must redirect the user there after a
+successful registration so the OAuth flow can complete.
+
+This setting is required when ``OIDC_RP_INITIATED_REGISTRATION_ENABLED`` is
+``True``: if it is unset or cannot be resolved, ``ImproperlyConfigured`` is
+raised when a ``prompt=create`` request is received.
+
+OIDC_RP_INITIATED_LOGOUT_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When is set to ``False`` (default) the `OpenID Connect RP-Initiated Logout <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_
+endpoint is not enabled. OpenID Connect RP-Initiated Logout enables an :term:`Client` (Relying Party)
+to request that a :term:`Resource Owner` (End User) is logged out at the :term:`Authorization Server` (OpenID Provider).
+
+OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
+
+Whether to always prompt the :term:`Resource Owner` (End User) to confirm a logout requested by a
+:term:`Client` (Relying Party). If it is disabled the :term:`Resource Owner` (End User) will only be prompted if required by the standard.
+
+OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``["client_secret_post", "client_secret_basic"]``
+Default: ``False``
 
-The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
-Add ``"private_key_jwt"`` and/or ``"client_secret_jwt"`` to advertise :doc:`RFC 7523 JWT client
-authentication <rfc7523>`; the metadata document then also emits the matching
-``*_auth_signing_alg_values_supported`` fields.
+Enable this setting to require `https` in post logout redirect URIs. `http` is only allowed when a :term:`Client` is `confidential`.
+
+OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
+
+Whether expired ID tokens are accepted for RP-Initiated Logout. The token must still be
+signed by the OP, carry a matching ``iss`` claim, and resolve to a stored ``IDToken``;
+only the ``exp`` and ``nbf`` claims are skipped.
+
+The default is ``True`` because `OpenID Connect RP-Initiated Logout 1.0
+<https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ treats ``id_token_hint``
+as a *previously issued* ID token, used only as a hint about which session to end. Logout
+frequently happens long after the ID token's (typically short) ``exp``, so rejecting an
+expired hint would break the normal logout flow. Set this to ``False`` if you additionally
+want to require that the ``id_token_hint`` is still within its validity period.
+
+OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
+
+Whether to delete the access, refresh and ID tokens of the user that is being logged out.
+The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
+The default is to delete the tokens of all applications if this flag is enabled.
+
+Resource Server settings
+------------------------
+
+RESOURCE_SERVER_INTROSPECTION_URL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The introspection endpoint for validating token remotely (RFC7662). This URL requires an
+authorization token (``RESOURCE_SERVER_AUTH_TOKEN``), HTTP Basic Auth client credentials
+(``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS``), or an RFC 7523 client assertion configuration
+(``RESOURCE_SERVER_INTROSPECTION_JWT_*``).
+
+RESOURCE_SERVER_AUTH_TOKEN
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+The bearer token to authenticate the introspection request towards the introspection endpoint (RFC7662).
+
+RESOURCE_SERVER_INTROSPECTION_CREDENTIALS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The HTTP Basic Auth Client_ID and Client_Secret to authenticate the introspection request
+towards the introspect endpoint (RFC7662) as a tuple: ``(client_id, client_secret)``.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The client_id to authenticate the introspection request with an RFC 7523 ``private_key_jwt``
+client assertion (see :doc:`rfc7523`). All of ``RESOURCE_SERVER_INTROSPECTION_JWT_CLIENT_ID``,
+``RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY`` and ``RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE``
+must be set; ``RESOURCE_SERVER_AUTH_TOKEN`` and ``RESOURCE_SERVER_INTROSPECTION_CREDENTIALS`` take
+precedence when configured. A fresh assertion (new ``jti``, short expiry) is generated per request.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_PRIVATE_KEY
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The signing key for the introspection client assertion: a private-key PEM string or a JWK JSON
+string.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_AUDIENCE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The ``aud`` claim for the introspection client assertion — the remote authorization server's
+issuer or its introspection endpoint URL, per the remote server's policy.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_ALG
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The JWS algorithm for the introspection client assertion. ``None`` infers it from the key type
+(RSA → ``RS256``, EC → ``ES256``/``ES384``/``ES512`` by curve).
+
+RESOURCE_SERVER_INTROSPECTION_JWT_LIFETIME
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``60``
+
+Lifetime in seconds of each generated introspection client assertion.
+
+RESOURCE_SERVER_INTROSPECTION_JWT_KID
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+Optional ``kid`` header for the introspection client assertion; defaults to the signing key's own
+``kid`` when it has one.
+
+RESOURCE_SERVER_TOKEN_CACHING_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The number of seconds an authorization token received from the introspection endpoint remains valid.
+If the expire time of the received token is less than ``RESOURCE_SERVER_TOKEN_CACHING_SECONDS`` the expire time
+will be used.
+
+RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.resource_server.validators.validate_resource_as_url_prefix"``
+(the pre-4.0 alias ``oauth2_provider.oauth2_validators.validate_resource_as_url_prefix`` still resolves).
+
+A callable that validates whether an access token's audience (RFC 8707 resource indicators) matches
+a request URI. The callable receives ``(request_uri, audiences)`` where ``request_uri`` is a string
+and ``audiences`` is a list of audience URIs from the token. Returns ``True`` if the token
+is authorized for the request, ``False`` otherwise.
+
+The default validator uses **prefix matching**: a token with audience ``https://api.example.com/v1``
+will accept requests to ``https://api.example.com/v1/users`` but reject ``https://api.example.com/v2``.
+
+The default validator expects both the request URI and the audience values to be **absolute URIs
+with a scheme and host**, without userinfo or fragment components, because it compares
+``(scheme, host, port)`` and then the path. A query component is permitted on resource indicators
+(RFC 8707 allows one) but plays no part in matching: the request URI is compared with its query
+string stripped. Other absolute-URI forms, such as URNs, never match. Supporting them requires
+both a custom validator here (for matching on the resource server) and a custom
+``OAUTH2_VALIDATOR_CLASS`` overriding ``_validate_resource_uris()`` (the authorization server
+rejects authority-less URIs at issuance).
+
+To use exact matching instead:
+
+.. code-block:: python
+
+    def exact_match_validator(request_uri, audiences):
+        if not audiences:
+            return True  # Unrestricted token
+        return request_uri in audiences
+
+    OAUTH2_PROVIDER = {
+        'RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR': 'myapp.validators.exact_match_validator',
+    }
+
+Set to ``None`` to disable automatic audience validation entirely.
+
+AUTHENTICATION_SERVER_EXP_TIME_ZONE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. deprecated:: 3.3.1
+    This setting is deprecated and will be removed in a future release.
+
+Token introspection ``exp`` (expiration) values are Unix timestamps and are interpreted as UTC per
+:rfc:`7662` and :rfc:`7519`. For backwards compatibility, setting this to a non-UTC time zone keeps
+the previous workaround behavior of reinterpreting the ``exp`` wall-clock time as being in the
+configured time zone, but configuring it now emits a ``DeprecationWarning``.
 
 OAUTH2_PROTECTED_RESOURCE_IDENTIFIER
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -853,21 +896,6 @@ Default: ``""``
 
 ``resource_tos_uri`` URL advertised by the :doc:`protected_resource_metadata`
 endpoint. Omitted from the document when empty.
-
-CLEAR_EXPIRED_TOKENS_BATCH_SIZE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``10000``
-
-The size of delete batches used by ``cleartokens`` management command.
-
-CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Default: ``0``
-
-Time of sleep in seconds used by ``cleartokens`` management command between batch deletions.
-
-Set this to a non-zero value (e.g. ``0.1``) to add a pause between batch sizes to reduce system
-load when clearing large batches of expired tokens.
 
 List of non-namespaced settings
 -------------------------------
