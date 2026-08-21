@@ -778,6 +778,10 @@ def test_rp_initiated_logout_second_rp_after_logout(
     assert rsp.status_code == 302
     assert not is_logged_in(logged_in_client)
 
+    # Pin the condition under test: the second RP's ID Token really is gone, so the request below
+    # cannot quietly take the stored-IDToken path and still satisfy the assertions.
+    assert not get_id_token_model().objects.exists()
+
     # The second RP now presents its own, now orphaned, id_token_hint. Redirecting to the second RP's
     # own URI shows that it was validated against the second Application, recovered from `aud`.
     rsp = logged_in_client.get(
@@ -804,6 +808,33 @@ def test_rp_initiated_logout_orphaned_id_token_matching_client_id(logged_in_clie
         },
     )
     assert rsp.status_code == 200
+    # The prompt, not an error page rendered with some other status.
+    assert "error" not in rsp.context
+    assert is_logged_in(logged_in_client)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_rp_initiated_logout_orphaned_id_token_other_rps_redirect_uri(
+    logged_in_client, oidc_tokens, oidc_non_confidential_tokens, rp_settings
+):
+    """An orphaned `id_token_hint` may not redirect to an RP other than the one it was issued for.
+
+    The requesting RP is recovered from the verified `aud` claim precisely so that
+    `post_logout_redirect_uri` is still validated against it rather than skipped.
+    """
+    assert oidc_tokens.application != oidc_non_confidential_tokens.application
+    validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
+    validator._load_id_token(oidc_tokens.id_token).revoke()
+    rsp = logged_in_client.get(
+        reverse("oauth2_provider:rp-initiated-logout"),
+        data={
+            "id_token_hint": oidc_tokens.id_token,
+            # Registered to the *other* application, not to the one this hint names in `aud`.
+            "post_logout_redirect_uri": "http://other.org",
+        },
+    )
+    assert rsp.status_code == 400
+    assert isinstance(rsp.context["error"], InvalidOIDCRedirectURIError)
     assert is_logged_in(logged_in_client)
 
 
@@ -822,6 +853,10 @@ def test_rp_initiated_logout_orphaned_id_token_missmatch_client_id(
         data={"id_token_hint": oidc_tokens.id_token, "client_id": "not-the-right-one"},
     )
     assert rsp.status_code == 400
+    # Assert which check rejected this. Before the orphaned hint was distinguished from an
+    # unverifiable one it also produced a 400, but as an InvalidIDTokenError raised before the
+    # `client_id` comparison was ever reached, so the status code alone cannot tell them apart.
+    assert isinstance(rsp.context["error"], ClientIdMissmatch)
     assert is_logged_in(logged_in_client)
 
 
@@ -984,6 +1019,23 @@ def test_load_id_token_deny_expired(expired_id_token):
     id_token, claims = _load_id_token(expired_id_token)
     assert id_token is None
     assert claims is None
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RP_LOGOUT)
+def test_load_id_token_orphaned(oidc_tokens):
+    """A token that verifies but whose IDToken is gone returns its claims, not `(None, None)`.
+
+    This is the state that lets callers tell "the End-User is not logged in with the OP at this RP",
+    which is not an error, apart from "this token could not be verified", which is.
+    """
+    validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
+    validator._load_id_token(oidc_tokens.id_token).revoke()
+
+    id_token, claims = _load_id_token(oidc_tokens.id_token)
+    assert id_token is None
+    assert claims is not None
+    assert claims["aud"] == oidc_tokens.application.client_id
 
 
 @pytest.mark.django_db(databases="__all__")

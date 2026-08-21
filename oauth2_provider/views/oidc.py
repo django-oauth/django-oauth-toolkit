@@ -237,10 +237,18 @@ def _get_application_from_claims(claims: dict) -> Application | None:
     """
     Resolves the Application an ID Token was issued for from its `aud` claim.
 
-    This is used when the corresponding IDToken is no longer stored. `aud` can be relied upon because
-    this resolves through the same `_get_client_by_audience()` helper that `_get_key_for_token()`
-    already used to select the key the token's signature was then verified with. The Application
-    returned here is therefore the one that signature was verified against.
+    This is used when the corresponding IDToken is no longer stored.
+
+    `aud` can be relied upon because it is covered by the signature `_load_id_token()` has already
+    verified, and this OP only ever sets it to the issuing client's `client_id`, which is unique. Note
+    that verification alone does not identify the RP: under `RS256` every Application signs with the
+    same OP key, so a signature that verifies for one RS256 Application verifies for all of them. It
+    is `aud` that names the RP, not the key that checked the signature.
+
+    For a deployment that issues a multi-valued `aud`, `_get_client_by_audience()` returns one member
+    of it, and which one is not defined -- it is a `.first()` over an unordered queryset. Such a
+    deployment should override that hook, which exists to be overridden, if it needs a particular
+    member chosen.
     """
     validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
     return validator._get_client_by_audience(claims.get("aud", []))
