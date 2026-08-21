@@ -305,6 +305,10 @@ client that keeps replaying the same stale token pays for the sweep on every req
 ``makemigrations`` to pick up that index, and if you override ``revoke()`` override
 ``revoke_family()`` to match, so both paths revoke a token the same way.
 
+This requires ``ROTATE_REFRESH_TOKEN``: replay is detected by recognizing a token that a
+previous rotation superseded, and without rotation nothing ever does. Enabling reuse
+protection while rotation is off raises the ``oauth2_provider.W012`` system check.
+
 More details at https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics-29#name-recommendations
 
 ROTATE_REFRESH_TOKEN

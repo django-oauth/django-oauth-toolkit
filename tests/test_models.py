@@ -8,7 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.db import models as django_models
 from django.test.utils import CaptureQueriesContext, override_settings
 from django.utils import timezone
@@ -441,7 +441,18 @@ class TestRefreshTokenModel(BaseTestModels):
             hashlib.sha256(token.encode()).hexdigest(),
         )
 
-    def test_same_token_allowed_with_different_revoked_timestamps(self):
+    def test_duplicate_token_rejected_against_a_live_row(self):
+        # A refresh token value is the sole lookup key, so a second row carrying it -- live
+        # or revoked -- would leave nothing to say which row a presented token means.
+        token = secrets.token_urlsafe(32)
+        RefreshToken.objects.create(user=self.user, token=token, application=self.app)
+
+        with self.assertRaises(IntegrityError):
+            RefreshToken.objects.create(user=self.user, token=token, application=self.app)
+
+    def test_duplicate_token_rejected_against_a_revoked_row(self):
+        # Revoking does not free the value for re-insertion: ``revoked`` is not part of the
+        # key, so the uniqueness holds across the whole table (see #1816).
         token = secrets.token_urlsafe(32)
         RefreshToken.objects.create(
             user=self.user,
@@ -449,14 +460,9 @@ class TestRefreshTokenModel(BaseTestModels):
             application=self.app,
             revoked=timezone.now(),
         )
-        active = RefreshToken.objects.create(
-            user=self.user,
-            token=token,
-            application=self.app,
-        )
 
-        self.assertIsNone(active.revoked)
-        self.assertEqual(RefreshToken.objects.filter(token_checksum=active.token_checksum).count(), 2)
+        with self.assertRaises(IntegrityError):
+            RefreshToken.objects.create(user=self.user, token=token, application=self.app)
 
     def _make_refresh_token(self, token_family, revoked=None, with_access_token=True):
         access_token = None
@@ -525,49 +531,6 @@ class TestRefreshTokenModel(BaseTestModels):
         no_family.refresh_from_db()
         self.assertIsNone(no_family.revoked)
         self.assertIsNotNone(no_family.access_token_id)
-
-    def test_revoke_family_falls_back_when_two_live_members_share_a_checksum(self):
-        """
-        Uniqueness is (token_checksum, revoked), so the bulk update cannot stamp one
-        timestamp across two live members holding the same checksum. No request path mints
-        that state today -- rotation draws a fresh token every time, and #1818 closed the
-        non-rotating re-issue that used to resurrect a revoked token as a live row with the
-        same value -- but the schema still permits it (#1816), so a custom
-        REFRESH_TOKEN_GENERATOR, a data migration or a direct write can leave a family in
-        it. Reuse detection is a security path and must not raise on the way to
-        invalid_grant, so fall back to the pre-#1809 per-row sweep instead.
-        """
-        family = uuid.uuid4()
-        first = self._make_refresh_token(family)
-        first_access_token_pk = first.access_token_id
-        second = RefreshToken.objects.create(
-            user=self.user,
-            token=first.token,
-            application=self.app,
-            access_token=AccessToken.objects.create(
-                user=self.user,
-                token=f"access token for {secrets.token_urlsafe(8)}",
-                application=self.app,
-                expires=timezone.now() + timedelta(hours=1),
-                scope="read write",
-            ),
-            token_family=family,
-        )
-        second_access_token_pk = second.access_token_id
-        self.assertEqual(first.token_checksum, second.token_checksum)
-
-        RefreshToken.revoke_family(family)
-
-        for member in (first, second):
-            member.refresh_from_db()
-            self.assertIsNotNone(member.revoked, "every live member must still be revoked")
-            self.assertIsNone(member.access_token_id)
-        # The per-row fallback gives each row its own timezone.now(), which is what keeps
-        # the two rows apart under the constraint.
-        self.assertNotEqual(first.revoked, second.revoked)
-        self.assertFalse(
-            AccessToken.objects.filter(pk__in=[first_access_token_pk, second_access_token_pk]).exists()
-        )
 
     def test_revoke_family_query_count_does_not_grow_with_the_family(self):
         """

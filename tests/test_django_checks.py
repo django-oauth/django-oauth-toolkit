@@ -4,7 +4,11 @@ from django.core.management import call_command
 from django.core.management.base import SystemCheckError
 from django.test import override_settings
 
-from oauth2_provider.checks import validate_swapped_model_consistency, validate_token_configuration
+from oauth2_provider.checks import (
+    validate_refresh_token_configuration,
+    validate_swapped_model_consistency,
+    validate_token_configuration,
+)
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 
@@ -68,3 +72,40 @@ class SwappedModelConsistencyCheckTestCase(TestCase):
         self.oauth2_settings.ACCESS_TOKEN_MODEL = "app_a.AccessToken"
         self.oauth2_settings.REFRESH_TOKEN_MODEL = "app_b.RefreshToken"
         self.assertIn("oauth2_provider.W011", self._ids())
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class RefreshTokenConfigurationCheckTestCase(TestCase):
+    def _ids(self):
+        return {m.id for m in validate_refresh_token_configuration(None)}
+
+    def test_check_is_registered(self):
+        from django.core.checks.registry import registry as checks_registry
+
+        self.assertIn(
+            validate_refresh_token_configuration,
+            checks_registry.get_checks(include_deployment_checks=True),
+        )
+
+    def test_defaults_pass(self):
+        # ROTATE_REFRESH_TOKEN defaults to True and reuse protection to False.
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
+    def test_reuse_protection_with_rotation_passes(self):
+        self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = True
+        self.oauth2_settings.ROTATE_REFRESH_TOKEN = True
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
+    def test_rotation_off_without_reuse_protection_passes(self):
+        # Non-rotating refresh tokens are legitimate for confidential clients
+        # (RFC 6749 section 6); only the combination with reuse protection is incoherent.
+        self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = False
+        self.oauth2_settings.ROTATE_REFRESH_TOKEN = False
+        self.assertNotIn("oauth2_provider.W012", self._ids())
+
+    def test_reuse_protection_without_rotation_warns(self):
+        self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = True
+        self.oauth2_settings.ROTATE_REFRESH_TOKEN = False
+        messages = validate_refresh_token_configuration(None)
+        self.assertEqual([m.id for m in messages], ["oauth2_provider.W012"])
+        self.assertIsInstance(messages[0], checks.Warning)
