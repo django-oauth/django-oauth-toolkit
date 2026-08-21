@@ -56,13 +56,15 @@ validates every step of the OAuth2 process.
 
 OAUTH2_BACKEND_CLASS
 ~~~~~~~~~~~~~~~~~~~~
-The import string for the ``oauthlib_backend_class`` used in the ``OAuthLibMixin``,
-to get a ``Server`` instance. Defaults to
-``oauth2_provider.oauth2_backends.OAuthLibCore``, which reads request bodies as
+The import string for the ``oauthlib_backend_class`` used by the view mixins, to get a
+``Server`` instance. Defaults to
+``oauth2_provider.core.backends_oauthlib.OAuthLibCore``, which reads request bodies as
 ``application/x-www-form-urlencoded`` as required by the OAuth specifications.
+(The pre-4.0 alias ``oauth2_provider.oauth2_backends.OAuthLibCore`` still resolves but is
+deprecated.)
 
 .. note::
-    The ``oauth2_provider.oauth2_backends.JSONOAuthLibCore`` backend value is deprecated
+    The ``oauth2_provider.core.backends_oauthlib.JSONOAuthLibCore`` backend value is deprecated
     (since 3.4.1) and will be removed in 4.0. It makes the OAuth token, introspection, and
     revocation endpoints
     read ``application/json`` request bodies, but those endpoints are defined to use
