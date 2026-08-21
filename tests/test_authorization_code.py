@@ -1189,6 +1189,55 @@ class TestAuthorizationCodeTokenView(BaseAuthorizationCodeTokenView):
         self.assertTrue("refresh_token" in content)
         self.assertEqual(content["refresh_token"], first_refresh_token)
 
+    def _issue_token_pair(self, auth_headers):
+        """Run the authorization code flow and return the token endpoint's response body."""
+        authorization_code = self.get_auth()
+        token_request_data = {
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "http://example.org",
+        }
+        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        self.assertEqual(response.status_code, 200)
+        return json.loads(response.content.decode("utf-8"))
+
+    def _assert_revoked_refresh_token_is_not_honored(self):
+        # A refresh token killed through the RFC 7009 endpoint must stay dead even inside
+        # the grace window: "the token cannot be used again after the revocation"
+        # (RFC 7009 section 2.1). The window exists for a rotation retry, and a revoked
+        # token was never superseded by one (#1816).
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 120
+        self.client.login(username="test_user", password="123456")
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        content = self._issue_token_pair(auth_headers)
+        refresh_token = content["refresh_token"]
+
+        response = self.client.post(
+            reverse("oauth2_provider:revoke-token"),
+            data={"token": refresh_token, "token_type_hint": "refresh_token"},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+            **auth_headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content.decode("utf-8"))["error"], "invalid_grant")
+        # ...and it was not resurrected as a fresh live row carrying the same value.
+        checksum = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+        self.assertFalse(RefreshToken.objects.filter(token_checksum=checksum, revoked__isnull=True).exists())
+
+    def test_revoked_refresh_token_not_honored_in_grace_period_with_rotation(self):
+        self.oauth2_settings.ROTATE_REFRESH_TOKEN = True
+        self._assert_revoked_refresh_token_is_not_honored()
+
+    def test_revoked_refresh_token_not_honored_in_grace_period_without_rotation(self):
+        self.oauth2_settings.ROTATE_REFRESH_TOKEN = False
+        self._assert_revoked_refresh_token_is_not_honored()
+
     def test_refresh_invalidates_old_tokens(self):
         """
         Ensure existing refresh tokens are cleaned up when issuing new ones

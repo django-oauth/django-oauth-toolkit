@@ -170,6 +170,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turning into a server error.
 
 ### Security
+* #1816 A refresh token that was **deliberately revoked** is no longer honored inside
+  `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`. The grace window exists to shield the token a
+  client retries when it did not receive the rotated response, but `revoked` records both
+  that supersession *and* a deliberate revocation (the RFC 7009 `/revoke/` endpoint,
+  `AuthorizedTokenDeleteView`, the admin, RP-initiated logout, revoking the bound access
+  token), and validation could not tell them apart. A revoked token was therefore usable
+  for the length of the window, contrary to
+  [RFC 7009 §2.1](https://datatracker.ietf.org/doc/html/rfc7009#section-2.1) ("the
+  invalidation takes place immediately, and the token cannot be used again after the
+  revocation"). With `ROTATE_REFRESH_TOKEN = False` it was additionally re-issued as a new
+  live row carrying the same token value, bringing the repudiated credential back to life
+  in the database. The two are now distinguished by whether the token was ever consumed to
+  mint a successor access token. A genuine rotation retry inside the window is unaffected,
+  and deployments on the default `REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 0` were never
+  exposed.
+
+  This generalizes a test that previously applied only when
+  `REFRESH_TOKEN_REUSE_PROTECTION` was enabled, so it is also a behavior change with reuse
+  protection off: a superseded token whose successor access token has since been deleted is
+  now rejected inside the window rather than accepted.
 * Redirect URIs are now matched exactly, as
   [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1) requires
   ("authorization servers MUST utilize exact string matching except for port numbers in
