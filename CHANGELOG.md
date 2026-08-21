@@ -74,6 +74,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   safe because claims are still only released to a caller holding a valid one, and
   `Access-Control-Allow-Credentials` is never sent. Set the new `OIDC_USERINFO_CORS_ENABLED` setting
   to `False` to opt out.
+* RFC 7523 §2.1 JWT bearer authorization grant (`urn:ietf:params:oauth:grant-type:jwt-bearer`): a client can
+  exchange a signed JWT assertion at the token endpoint for an access token. Opt-in via `JWT_BEARER_GRANT_ENABLED`;
+  trust is established per application (reusing the `client_jwks` / `client_jwks_uri` fields) or via
+  `JWT_BEARER_TRUSTED_ISSUERS`, and the assertion subject is mapped to a user through the swappable
+  `JWT_BEARER_SUBJECT_RESOLVER`. The default resolver refuses privileged (`is_staff` / `is_superuser`) subjects
+  unless `JWT_BEARER_ALLOW_PRIVILEGED_SUBJECTS` is set. Shares the assertion machinery (SSRF-hardened JWK Set fetch,
+  `CLIENT_ASSERTION_*` low-level settings) with the JWT client-authentication profile. Includes a library-only
+  `oauth2_provider.client.build_jwt_bearer_assertion()` client helper. See `docs/jwt_bearer_grant.rst`.
 ### Changed
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of

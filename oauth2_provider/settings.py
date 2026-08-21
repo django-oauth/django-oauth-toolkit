@@ -64,7 +64,7 @@ DEFAULTS = {
     # =====================================================================
     # Core / shared
     # =====================================================================
-    "OAUTH2_SERVER_CLASS": "oauthlib.oauth2.Server",
+    "OAUTH2_SERVER_CLASS": "oauth2_provider.authorization_server.servers.OAuth2Server",
     "OAUTH2_VALIDATOR_CLASS": "oauth2_provider.oauth2_validators.OAuth2Validator",
     "OAUTH2_BACKEND_CLASS": "oauth2_provider.core.backends_oauthlib.OAuthLibCore",
     "EXTRA_SERVER_KWARGS": {},
@@ -217,6 +217,17 @@ DEFAULTS = {
     "PAR_ENABLED": True,
     "PAR_REQUEST_URI_LIFETIME_SECONDS": 60,  # RFC 9126 §2.2 suggests 5-600 seconds
     "REQUIRE_PUSHED_AUTHORIZATION_REQUESTS": False,
+    # RFC 7523 §2.1 JWT bearer authorization grant. Reuses the shared
+    # CLIENT_ASSERTION_* knobs (leeway, JWK Set fetch) for the low-level
+    # assertion machinery; the settings below are grant-specific policy.
+    "JWT_BEARER_GRANT_ENABLED": False,
+    "JWT_BEARER_SUBJECT_RESOLVER": "oauth2_provider.authorization_server.rfc7523.resolve_subject_by_username",
+    "JWT_BEARER_ALLOW_PRIVILEGED_SUBJECTS": False,
+    "JWT_BEARER_TRUSTED_ISSUERS": {},
+    "JWT_BEARER_AUDIENCES": [],
+    "JWT_BEARER_ISSUE_REFRESH_TOKENS": False,
+    "JWT_BEARER_MAX_ASSERTION_LIFETIME_SECONDS": 3600,
+    "JWT_BEARER_REQUIRE_JTI": True,
     # RFC 8414 Authorization Server Metadata
     "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code", "token"],
     "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
@@ -232,7 +243,7 @@ DEFAULTS = {
         "urn:ietf:params:oauth:grant-type:device_code",
     ],
     # --- OpenID Connect Provider (identity layer on the Authorization Server) ---
-    "OIDC_SERVER_CLASS": "oauthlib.openid.Server",
+    "OIDC_SERVER_CLASS": "oauth2_provider.authorization_server.servers.OIDCServer",
     "ID_TOKEN_EXPIRE_SECONDS": 36000,
     "OIDC_ENABLED": False,
     "OIDC_ISS_ENDPOINT": "",
@@ -343,6 +354,7 @@ IMPORT_STRINGS = (
     "ALLOWED_ORIGIN_VALIDATOR",
     "CIMD_METADATA_FETCHER",
     "CIMD_REGISTRATION_PERMISSION_CLASSES",
+    "JWT_BEARER_SUBJECT_RESOLVER",
 )
 
 

@@ -14,3 +14,11 @@ lives here rather than in any one role package:
 
 # RFC 7523 section 2.2 / RFC 7521 section 4.2.
 JWT_BEARER_CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+
+# RFC 7523 section 2.1 / RFC 7521 section 4.1: the grant-type identifier for the
+# JWT bearer *authorization* grant, presented at the token endpoint. The
+# authorization server's grant handler
+# (:mod:`oauth2_provider.authorization_server.grants`) accepts it and a client
+# builds an assertion for it with
+# :func:`oauth2_provider.client.rfc7523.build_jwt_bearer_assertion`.
+JWT_BEARER_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer"
