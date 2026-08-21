@@ -307,6 +307,47 @@ def test_client_assertion_halves_are_split_by_role():
     assert not hasattr(client_half, "authenticate_client_assertion")
 
 
+def test_type_checking_imports_resolve():
+    """Every ``if TYPE_CHECKING:`` import must name a module that exists.
+
+    Regression: ``authorization_server/par.py`` kept a relative
+    ``from .oauth2_backends import OAuthLibCore`` after the module moved into the
+    role package, where it resolved to a non-existent
+    ``oauth2_provider.authorization_server.oauth2_backends``. Nothing catches this
+    -- the block never executes at runtime, ruff does not resolve it, and the test
+    suite is unaffected -- but type checkers break on the annotation that uses it.
+    """
+    import importlib.util
+
+    package_root = pathlib.Path(importlib.import_module("oauth2_provider").__file__).parent
+    unresolved = []
+    for path in sorted(package_root.rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            # Only look inside `if TYPE_CHECKING:` bodies.
+            if not (isinstance(node, ast.If) and ast.unparse(node.test).endswith("TYPE_CHECKING")):
+                continue
+            for child in ast.walk(node):
+                if not isinstance(child, ast.ImportFrom):
+                    continue
+                if child.level:  # relative -- resolve against this module's package
+                    parts = path.relative_to(package_root.parent).with_suffix("").parts
+                    base = ".".join(parts[: len(parts) - child.level])
+                    target = f"{base}.{child.module}" if child.module else base
+                else:
+                    target = child.module
+                if not target or not target.startswith("oauth2_provider"):
+                    continue
+                try:
+                    found = importlib.util.find_spec(target) is not None
+                except (ImportError, AttributeError, ValueError):
+                    found = False
+                if not found:
+                    unresolved.append(f"{path.name}:{child.lineno} -> {target}")
+
+    assert not unresolved, f"TYPE_CHECKING imports that do not resolve: {unresolved}"
+
+
 def test_role_facades_reexport_public_api():
     from oauth2_provider.authorization_server import (
         AuthorizationView,

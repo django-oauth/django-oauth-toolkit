@@ -22,7 +22,7 @@ from oauth2_provider.settings import oauth2_settings
 
 
 if TYPE_CHECKING:
-    from .oauth2_backends import OAuthLibCore
+    from oauth2_provider.core.backends_oauthlib import OAuthLibCore
 
 
 # Request URIs use the IANA-registered URN sub-namespace (RFC 9126 §2.2 / §9.3).
@@ -91,7 +91,7 @@ def collect_pushed_parameters(request: HttpRequest) -> dict:
     The query string and body are merged so the stored parameters reflect exactly
     what oauthlib validated (it merges the request URI and body). The body wins on
     conflicts — applied last, matching oauthlib and
-    :meth:`oauth2_provider.oauth2_backends.OAuthLibCore.extract_body`. Repeated
+    :meth:`oauth2_provider.core.backends_oauthlib.OAuthLibCore.extract_body`. Repeated
     ``resource`` values (RFC 8707) are preserved as a list; all other parameters
     keep their last value.
     """
