@@ -17,16 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This release is dominated by **security hardening of redirect URI matching, token revocation and
 refresh token handling**. Several entries below change behavior that was previously accepted, and
-each one carries an **Upgrade note** — under *Fixed* as well as *Security*, so search this release
-for that phrase before upgrading rather than reading a single section. Of particular note: redirect
-URIs are now matched exactly per [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1),
-so a request may no longer carry query parameters, path parameters, credentials or a fragment that
-the registered URI does not have; and `REFRESH_TOKEN_EXPIRE_SECONDS`, where set, is now enforced when
-a refresh token is presented rather than only by the `cleartokens` sweep.
-
-Two migrations ship with this release, `0021_translatable_field_labels` (no schema change) and
-`0022_refreshtoken_token_family_index` (adds an index); run `migrate` after upgrading, and
-`makemigrations` as well if you swap in your own token models.
+they are spread across *Fixed* and *Security*: the **"Upgrading to 3.4.1"** section of the
+Upgrading guide collects everything you need to act on in one place, so start there. Of particular
+note: redirect URIs are now matched exactly per
+[RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1), so a request may no
+longer carry query parameters, path parameters, credentials or a fragment that the registered URI
+does not have; `REFRESH_TOKEN_EXPIRE_SECONDS`, where set, is now enforced when a refresh token is
+presented rather than only by the `cleartokens` sweep; and the built-in templates now link a
+stylesheet shipped with the package instead of a CDN, so run `collectstatic` or the pages render
+unstyled.
 
 ### Added
 * #681 Redirect URI mismatches are now diagnosed on the `oauth2_provider` logger at `DEBUG`,
@@ -52,8 +51,9 @@ Two migrations ship with this release, `0021_translatable_field_labels` (no sche
   is rejected; with the default settings-based scopes backend the suffixed scopes must be
   declared in `SCOPES`.
 * #1157 An "Upgrading" documentation page collecting the breaking changes and upgrade steps for
-  major version bumps (2.0 and 3.0), linked from the documentation index, so upgrade guidance is
-  discoverable outside the CHANGELOG.
+  every release that needs them — 2.0, 3.0 and this release — linked from the documentation index,
+  so upgrade guidance is discoverable outside the CHANGELOG. A release that asks nothing of you has
+  no section there, so a gap between two versions is an answer rather than an omission.
 * #452 Documentation ("Custom scopes backend") explaining how to replace the default
   settings-driven scopes backend via `SCOPES_BACKEND_CLASS`, including a worked model-based
   example that stores scopes in the database.
