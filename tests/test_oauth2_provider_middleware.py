@@ -81,6 +81,20 @@ class TestOAuth2ExtraTokenMiddleware(TestCase):
         # Should not have access_token attribute
         self.assertFalse(hasattr(request, "access_token"))
 
+    def test_invalid_bearer_token_logs_at_debug_level(self):
+        """A token that does not resolve is the normal outcome for an expired, revoked or
+        bogus token, so it is logged at DEBUG and without a traceback rather than as an error.
+        """
+        request = self.factory.get("/", HTTP_AUTHORIZATION="Bearer invalid-token-xyz")
+
+        with self.assertLogs(logger="oauth2_provider.resource_server.middleware", level="DEBUG") as logs:
+            _ = self.middleware(request)
+
+        self.assertEqual(
+            ["DEBUG:oauth2_provider.resource_server.middleware:Bearer token not found in the database"],
+            logs.output,
+        )
+
     def test_no_authorization_header(self):
         """Test that request without Authorization header works normally"""
         request = self.factory.get("/")

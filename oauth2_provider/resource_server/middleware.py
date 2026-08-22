@@ -59,7 +59,7 @@ class OAuth2ExtraTokenMiddleware:
                 token_checksum = hashlib.sha256(tokenstring.encode("utf-8")).hexdigest()
                 token = AccessToken.objects.get(token_checksum=token_checksum)
                 request.access_token = token
-            except AccessToken.DoesNotExist as e:
-                log.exception(e)
+            except AccessToken.DoesNotExist:
+                log.debug("Bearer token not found in the database")
         response = self.get_response(request)
         return response
