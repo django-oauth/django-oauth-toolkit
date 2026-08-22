@@ -93,7 +93,7 @@ class FormEncodedRequestMixin:
 
         received = request.content_type or "no Content-Type header"
         detail = (
-            f"{self.form_encoded_endpoint} takes its parameters in a "
+            f"{self.form_encoded_endpoint} takes its parameters in an "
             f"{FORM_URLENCODED_MEDIA_TYPE} request body; got {received}."
         )
         if not oauth2_settings.REQUIRE_FORM_ENCODED_REQUEST_BODY:
