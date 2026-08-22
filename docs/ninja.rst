@@ -160,3 +160,10 @@ Ninja has no built-in default rate for either scope, so pass one to the construc
 above, or add ``oauth2_client`` / ``oauth2`` keys to the ``NINJA_DEFAULT_THROTTLE_RATES``
 setting. Throttle state lives in Django's cache, so a cache shared by every process
 serving the API is what makes the limit a limit.
+
+.. note:: Both classes read the access token from ``request.auth``. If you subclass
+    ``HttpOAuth2`` and return something else from ``authenticate``, as `Custom
+    Authorization Behavior`_ allows, they can no longer identify the client:
+    ``OAuth2ClientRateThrottle`` stops throttling those requests altogether, and
+    ``OAuth2UserOrClientRateThrottle`` falls back to the IP address. Keep returning the
+    access token itself when you use these throttles.

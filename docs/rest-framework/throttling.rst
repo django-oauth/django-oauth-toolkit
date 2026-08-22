@@ -27,18 +27,25 @@ view's traffic:
 
 .. code-block:: python
 
-    from rest_framework.throttling import UserRateThrottle
+    from rest_framework.views import APIView
     from oauth2_provider.contrib.rest_framework import (
         OAuth2Authentication,
         OAuth2ClientRateThrottle,
         TokenHasScope,
     )
 
-    class SongView(views.APIView):
+    class SongView(APIView):
         authentication_classes = [OAuth2Authentication]
         permission_classes = [TokenHasScope]
-        throttle_classes = [OAuth2ClientRateThrottle, UserRateThrottle]
+        throttle_classes = [OAuth2ClientRateThrottle]
         required_scopes = ["music"]
+
+.. note:: DRF evaluates **every** throttle in ``throttle_classes``, and this class
+    declining a request does not excuse the others. Listing ``UserRateThrottle`` or
+    ``AnonRateThrottle`` beside it puts ``client_credentials`` requests back into an
+    IP-keyed bucket through those classes -- the very behavior this page exists to
+    avoid. When one view serves both interactive and machine-to-machine clients, reach
+    for :ref:`oauth2-user-or-client-rate-throttle` instead of them.
 
 Its rate is configured under the ``oauth2_client`` scope:
 
@@ -49,6 +56,8 @@ Its rate is configured under the ``oauth2_client`` scope:
             "oauth2_client": "10000/day",
         }
     }
+
+.. _oauth2-user-or-client-rate-throttle:
 
 OAuth2UserOrClientRateThrottle
 ------------------------------
