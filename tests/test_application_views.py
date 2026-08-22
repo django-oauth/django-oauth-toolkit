@@ -5,10 +5,15 @@ from django.forms.models import modelform_factory
 from django.urls import reverse
 
 from oauth2_provider.authorization_server.forms import ApplicationForm, _is_hashed
-from oauth2_provider.authorization_server.views.application import ApplicationRegistration
+from oauth2_provider.authorization_server.views.application import (
+    APPLICATION_FIELDS,
+    ApplicationRegistration,
+    get_application_form_class,
+)
 from oauth2_provider.models import get_application_model
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .forms import SampleApplicationForm
 from .models import SampleApplication
 
 
@@ -599,3 +604,117 @@ class TestApplicationAdminHashClientSecretUX(BaseTest):
         self.assertContains(response, 'data-client-secret-stored-hashed="true"')
         self.assertContains(response, "must be stored unhashed")
         self.assertContains(response, "oauth2_provider/js/application_form.js")
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class TestApplicationFormClassSetting(BaseTest):
+    """``APPLICATION_FORM_CLASS`` drives the registration and update views.
+
+    Fields added to a swapped application model are not on the built-in forms by
+    default -- the shipped ``APPLICATION_FIELDS`` list the OAuth fields only. Pointing
+    the setting at a form that declares its own ``Meta.fields`` puts them there.
+    """
+
+    def test_default_form_class_uses_application_fields(self):
+        form_class = get_application_form_class()
+        self.assertEqual(Application, form_class._meta.model)
+        self.assertEqual(list(APPLICATION_FIELDS), list(form_class.base_fields))
+
+    @pytest.mark.oauth2_settings({"APPLICATION_MODEL": "tests.SampleApplication"})
+    def test_custom_model_field_absent_without_custom_form(self):
+        form_class = get_application_form_class()
+        self.assertEqual(SampleApplication, form_class._meta.model)
+        self.assertNotIn("custom_field", form_class.base_fields)
+
+    @pytest.mark.oauth2_settings(
+        {
+            "APPLICATION_MODEL": "tests.SampleApplication",
+            "APPLICATION_FORM_CLASS": "tests.forms.SampleApplicationForm",
+        }
+    )
+    def test_custom_form_class_adds_custom_model_field(self):
+        form_class = get_application_form_class()
+        # Rebound to the swapped model, keeping the form's own field set.
+        self.assertEqual(SampleApplication, form_class._meta.model)
+        self.assertIn("custom_field", form_class.base_fields)
+        self.assertTrue(issubclass(form_class, SampleApplicationForm))
+
+    @pytest.mark.oauth2_settings(
+        {
+            "APPLICATION_MODEL": "tests.SampleApplication",
+            "APPLICATION_FORM_CLASS": "tests.forms.ExcludeApplicationForm",
+        }
+    )
+    def test_custom_form_class_may_use_meta_exclude(self):
+        form_class = get_application_form_class()
+        self.assertEqual(SampleApplication, form_class._meta.model)
+        self.assertNotIn("custom_field", form_class.base_fields)
+        self.assertIn("name", form_class.base_fields)
+
+    @pytest.mark.oauth2_settings(
+        {
+            "APPLICATION_MODEL": "tests.SampleApplication",
+            "APPLICATION_FORM_CLASS": "tests.forms.SampleApplicationForm",
+        }
+    )
+    def test_custom_field_is_rendered_and_saved_by_the_registration_view(self):
+        self.client.login(username="foo_user", password="123456")
+
+        response = self.client.get(reverse("oauth2_provider:register"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("custom_field", response.context["form"].fields)
+        self.assertContains(response, 'name="custom_field"')
+
+        form_data = {
+            "name": "Custom app",
+            "client_id": "custom_client_id",
+            "client_secret": "custom_client_secret",
+            "client_type": SampleApplication.CLIENT_CONFIDENTIAL,
+            "authorization_grant_type": SampleApplication.GRANT_AUTHORIZATION_CODE,
+            "redirect_uris": "http://example.com",
+            "algorithm": "",
+            "custom_field": "custom value",
+        }
+        response = self.client.post(reverse("oauth2_provider:register"), form_data)
+        self.assertEqual(response.status_code, 302)
+
+        app = SampleApplication.objects.get(name="Custom app")
+        self.assertEqual(app.user, self.foo_user)
+        self.assertEqual(app.custom_field, "custom value")
+
+    @pytest.mark.oauth2_settings(
+        {
+            "APPLICATION_MODEL": "tests.SampleApplication",
+            "APPLICATION_FORM_CLASS": "tests.forms.SampleApplicationForm",
+        }
+    )
+    def test_custom_field_is_editable_by_the_update_view(self):
+        app = SampleApplication.objects.create(
+            name="Custom app",
+            redirect_uris="http://example.com",
+            client_type=SampleApplication.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=SampleApplication.GRANT_AUTHORIZATION_CODE,
+            user=self.foo_user,
+            custom_field="before",
+        )
+        self.client.login(username="foo_user", password="123456")
+
+        response = self.client.get(reverse("oauth2_provider:update", args=(app.pk,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "before")
+
+        form_data = {
+            "name": app.name,
+            "client_id": app.client_id,
+            "client_secret": app.client_secret,
+            "client_type": app.client_type,
+            "authorization_grant_type": app.authorization_grant_type,
+            "redirect_uris": app.redirect_uris,
+            "algorithm": "",
+            "custom_field": "after",
+        }
+        response = self.client.post(reverse("oauth2_provider:update", args=(app.pk,)), form_data)
+        self.assertEqual(response.status_code, 302)
+
+        app.refresh_from_db()
+        self.assertEqual(app.custom_field, "after")

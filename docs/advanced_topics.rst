@@ -65,6 +65,52 @@ That's all, now Django OAuth Toolkit will use your model wherever an Application
     is because of the way Django currently implements swappable models.
     See `issue #90 <https://github.com/django-oauth/django-oauth-toolkit/issues/90>`_ for details.
 
+.. _custom-application-form:
+
+Showing custom Application fields on the registration form
+==========================================================
+
+The built-in registration and update views (``oauth2_provider:register`` and
+``oauth2_provider:update``) render a fixed set of fields -- the OAuth ones every
+application has. Adding a field to a swapped application model therefore does *not* make it
+appear on those forms: a field a user could set without the site asking for it is rarely
+what you want, so the extra fields are opt-in.
+
+To expose them, write a ``ModelForm`` naming the fields you want and point the
+``APPLICATION_FORM_CLASS`` setting at it::
+
+    # your_app_name/forms.py
+    from oauth2_provider.authorization_server.forms import ApplicationForm
+    from oauth2_provider.authorization_server.views.application import APPLICATION_FIELDS
+
+    class MyApplicationForm(ApplicationForm):
+        class Meta:
+            fields = APPLICATION_FIELDS + ("logo", "agree")
+
+::
+
+    # settings.py
+    OAUTH2_PROVIDER = {
+        ...
+        "APPLICATION_FORM_CLASS": "your_app_name.forms.MyApplicationForm",
+    }
+
+``APPLICATION_FIELDS`` is the default field list; reusing it keeps the OAuth fields and
+their order and picks up fields added in later releases. Listing the fields yourself
+instead -- or using ``Meta.exclude`` -- works just as well, and is how you drop a field
+(say ``algorithm``) that your deployment does not let clients choose.
+
+Subclassing ``ApplicationForm`` is recommended but not required: it carries the client
+secret help text and the HS256 warnings the shipped templates and the admin render. The
+form is always rebound to the model named by ``OAUTH2_PROVIDER_APPLICATION_MODEL``, so
+``Meta.model`` is not needed (and is ignored if given). Both the registration and the
+update view use it; validation stays with the model, so anything
+``AbstractApplication.clean()`` enforces still applies (see below).
+
+Only the forms are affected. ``oauth2_provider/templates/oauth2_provider/application_detail.html``
+lists the built-in fields explicitly, so override that template to show a custom field
+there too.
+
 Validating a custom Application model
 =====================================
 
