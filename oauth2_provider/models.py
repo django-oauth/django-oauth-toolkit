@@ -26,7 +26,6 @@ from .core.scopes import get_scopes_backend
 from .core.utils import jwk_allows_verification, jwk_from_pem
 from .generators import generate_client_id, generate_client_secret
 from .settings import oauth2_settings
-from .validators import AllowedURIValidator
 
 
 logger = logging.getLogger(__name__)
@@ -415,19 +414,12 @@ class AbstractApplication(models.Model):
         field_errors = defaultdict(list)
 
         redirect_uris = self.redirect_uris.strip().split()
-        allowed_schemes = set(s.lower() for s in self.get_allowed_schemes())
 
         if redirect_uris:
-            validator = AllowedURIValidator(
-                allowed_schemes,
-                name="redirect uri",
-                allow_path=True,
-                allow_query=True,
-                allow_hostname_wildcard=oauth2_settings.ALLOW_URI_WILDCARDS,
-            )
+            redirect_uri_validator = self.get_redirect_uri_validator()
             for uri in redirect_uris:
                 try:
-                    validator(uri)
+                    redirect_uri_validator(uri)
                 except ValidationError as exc:
                     field_errors["redirect_uris"].extend(exc.error_list)
 
@@ -441,15 +433,10 @@ class AbstractApplication(models.Model):
             )
         allowed_origins = self.allowed_origins.strip().split()
         if allowed_origins:
-            # oauthlib allows only https scheme for CORS
-            validator = AllowedURIValidator(
-                oauth2_settings.ALLOWED_SCHEMES,
-                "allowed origin",
-                allow_hostname_wildcard=oauth2_settings.ALLOW_URI_WILDCARDS,
-            )
+            allowed_origin_validator = self.get_allowed_origin_validator()
             for uri in allowed_origins:
                 try:
-                    validator(uri)
+                    allowed_origin_validator(uri)
                 except ValidationError as exc:
                     field_errors["allowed_origins"].extend(exc.error_list)
 
@@ -594,6 +581,35 @@ class AbstractApplication(models.Model):
         By default, returns `ALLOWED_REDIRECT_URI_SCHEMES`.
         """
         return oauth2_settings.ALLOWED_REDIRECT_URI_SCHEMES
+
+    def get_redirect_uri_validator(self):
+        """
+        Returns the validator ``clean()`` applies to each entry in ``redirect_uris``.
+        By default, builds one from the `REDIRECT_URI_VALIDATOR` setting.
+
+        The setting names a factory called with this application; the object it returns is
+        called once per URI and raises ``ValidationError`` for anything unacceptable.
+        Because the factory runs once per ``clean()`` rather than once per URI, a policy
+        backed by the database queries once per save. Note this application may be unsaved
+        (``pk is None``) when registration goes through Dynamic Client Registration, CIMD
+        or the admin add form, so an override must not assume reverse relations exist.
+
+        This gates what may be *stored*. At request time a redirect uri is still matched by
+        exact string comparison (see ``check_redirect_to_uri_allowed()``), and the scheme is
+        separately gated by ``get_allowed_schemes()``, which no validator here can relax.
+        """
+        return oauth2_settings.REDIRECT_URI_VALIDATOR(self)
+
+    def get_allowed_origin_validator(self):
+        """
+        Returns the validator ``clean()`` applies to each entry in ``allowed_origins``.
+        By default, builds one from the `ALLOWED_ORIGIN_VALIDATOR` setting.
+
+        Follows the same factory contract as ``get_redirect_uri_validator()``. An origin
+        whose scheme is outside ``ALLOWED_SCHEMES`` is still rejected at request time by
+        ``is_origin_allowed()`` even if a custom validator lets it be stored.
+        """
+        return oauth2_settings.ALLOWED_ORIGIN_VALIDATOR(self)
 
     def allows_grant_type(self, *grant_types):
         return self.authorization_grant_type in grant_types

@@ -181,3 +181,57 @@ class AllowedURIValidator(URIValidator):
                 "%(name)s URI validation error. %(cause)s: %(value)s",
                 params={"name": self.name, "value": value, "cause": e},
             )
+
+
+def default_redirect_uri_validator(application):
+    """Build the validator applied to each entry in ``Application.redirect_uris``.
+
+    This is the default for the ``REDIRECT_URI_VALIDATOR`` setting, which names a
+    *factory*: a callable taking the application and returning a callable that takes a
+    single URI string and raises :class:`~django.core.exceptions.ValidationError` when it
+    is not acceptable. ``AbstractApplication.clean()`` calls the factory once per
+    validation pass, so a policy backed by the database queries once per save rather than
+    once per URI. The application may be unsaved (``pk is None``) on the registration
+    paths -- Dynamic Client Registration, CIMD and the admin add form -- so a custom
+    factory must not assume reverse relations exist.
+
+    A class is a callable too, so a custom validator can subclass
+    :class:`AllowedURIValidator` and take the application in ``__init__``, keeping all of
+    the RFC 3986 / RFC 8252 parsing above.
+    """
+    # Imported here rather than at module scope: this module is referenced from migration
+    # 0001 and must stay importable before Django settings are configured, and settings.py
+    # holds direct references to some defaults (e.g. OAUTH_DEVICE_USER_CODE_GENERATOR), so
+    # a module-level import would risk a cycle the moment a default here became one.
+    from oauth2_provider.settings import oauth2_settings
+
+    # urlsplit() lowercases the scheme, so the allowed schemes have to be lowercased for
+    # AllowedURIValidator's membership test to match. A swapped application model's
+    # get_allowed_schemes() may legitimately return e.g. "HTTPS".
+    schemes = set(s.lower() for s in application.get_allowed_schemes())
+    return AllowedURIValidator(
+        schemes,
+        name="redirect uri",
+        allow_path=True,
+        allow_query=True,
+        allow_hostname_wildcard=oauth2_settings.ALLOW_URI_WILDCARDS,
+    )
+
+
+def default_allowed_origin_validator(application):
+    """Build the validator applied to each entry in ``Application.allowed_origins``.
+
+    This is the default for the ``ALLOWED_ORIGIN_VALIDATOR`` setting. It follows the same
+    factory contract as :func:`default_redirect_uri_validator`.
+    """
+    from oauth2_provider.settings import oauth2_settings
+
+    # Unlike the redirect schemes above, ALLOWED_SCHEMES is passed through as configured.
+    # Origins are compared against it verbatim at request time by is_origin_allowed(), so
+    # lowercasing here would let clean() accept an origin the request-time check rejects.
+    # oauthlib allows only https scheme for CORS.
+    return AllowedURIValidator(
+        oauth2_settings.ALLOWED_SCHEMES,
+        "allowed origin",
+        allow_hostname_wildcard=oauth2_settings.ALLOW_URI_WILDCARDS,
+    )

@@ -121,6 +121,13 @@ DEFAULTS = {
     "ALLOWED_SCHEMES": ["https"],
     "ALLOW_URI_WILDCARDS": False,
     "ALLOW_LOCALHOST_LOOPBACK": False,
+    # Factories building the validators Application.clean() applies to each redirect uri
+    # and each allowed origin. Each is called with the application and returns a callable
+    # taking one URI string. Keep these as import strings rather than direct references:
+    # oauth2_provider.validators imports this module lazily, and a direct reference here
+    # would make that a cycle.
+    "REDIRECT_URI_VALIDATOR": "oauth2_provider.validators.default_redirect_uri_validator",
+    "ALLOWED_ORIGIN_VALIDATOR": "oauth2_provider.validators.default_allowed_origin_validator",
     # Device Authorization Grant (RFC 8628)
     "OAUTH_DEVICE_VERIFICATION_URI": None,
     "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE": None,
@@ -304,6 +311,11 @@ MANDATORY = (
     "OAUTH2_BACKEND_CLASS",
     "SCOPES",
     "ALLOWED_REDIRECT_URI_SCHEMES",
+    # Mandatory so that a None here fails loudly on first access instead of silently
+    # skipping registration-time URI validation. A deliberate no-op is still available as
+    # a factory returning ``lambda uri: None``.
+    "REDIRECT_URI_VALIDATOR",
+    "ALLOWED_ORIGIN_VALIDATOR",
     "OIDC_RESPONSE_TYPES_SUPPORTED",
     "OIDC_SUBJECT_TYPES_SUPPORTED",
     "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED",
@@ -327,6 +339,8 @@ IMPORT_STRINGS = (
     "REFRESH_TOKEN_ADMIN_CLASS",
     "DCR_REGISTRATION_PERMISSION_CLASSES",
     "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR",
+    "REDIRECT_URI_VALIDATOR",
+    "ALLOWED_ORIGIN_VALIDATOR",
     "CIMD_METADATA_FETCHER",
     "CIMD_REGISTRATION_PERMISSION_CLASSES",
 )

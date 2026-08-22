@@ -29,6 +29,7 @@ from oauth2_provider.models import (
     redirect_to_uri_allowed,
     refresh_token_expire_timedelta,
 )
+from oauth2_provider.validators import AllowedURIValidator
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -1300,6 +1301,176 @@ def test_application_clean_reports_every_invalid_uri(oauth2_settings, applicatio
     assert len(messages) == 2
     assert "invalid-one" in messages[0]
     assert "invalid-two" in messages[1]
+
+
+# --- Pluggable redirect uri / allowed origin validators (see #490) -------------------
+#
+# Module-level so the settings can name them by import string, which is what exercises
+# the IMPORT_STRINGS wiring.
+
+
+def private_use_scheme_factory(application):
+    """Accepts one RFC 8252 private-use scheme, ignoring ALLOWED_REDIRECT_URI_SCHEMES."""
+    return AllowedURIValidator(["com.example.app"], name="redirect uri", allow_path=True, allow_query=True)
+
+
+def deny_all_redirect_uri_factory(application):
+    def validate(uri):
+        raise ValidationError("nope: %(value)s", params={"value": uri})
+
+    return validate
+
+
+def http_origin_factory(application):
+    """Allows a plain-http origin, which the default ALLOWED_SCHEMES rejects."""
+    return AllowedURIValidator(["http", "https"], "allowed origin")
+
+
+class ApplicationSchemeValidator(AllowedURIValidator):
+    """A class used directly as a factory: ``Cls(application)`` is the factory call."""
+
+    def __init__(self, application):
+        schemes = [s.lower() for s in application.get_allowed_schemes()] + ["com.example.app"]
+        super().__init__(schemes, name="redirect uri", allow_path=True, allow_query=True)
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_builds_the_redirect_uri_validator_once(oauth2_settings, application):
+    """The factory runs once per clean(), not once per uri.
+
+    This is what lets a database-backed policy query once per save.
+    """
+    seen = []
+    hook = mock.Mock(side_effect=lambda: seen.append)
+    application.redirect_uris = "https://a.example/cb https://b.example/cb"
+    with mock.patch.object(type(application), "get_redirect_uri_validator", hook):
+        application.clean()
+
+    assert hook.call_count == 1
+    assert seen == ["https://a.example/cb", "https://b.example/cb"]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_builds_the_allowed_origin_validator_once(oauth2_settings, application):
+    seen = []
+    hook = mock.Mock(side_effect=lambda: seen.append)
+    application.allowed_origins = "https://a.example https://b.example"
+    with mock.patch.object(type(application), "get_allowed_origin_validator", hook):
+        application.clean()
+
+    assert hook.call_count == 1
+    assert seen == ["https://a.example", "https://b.example"]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_uses_the_default_validators(oauth2_settings, application):
+    """Out of the box the hooks build exactly what clean() used to construct inline."""
+    redirect_uri_validator = application.get_redirect_uri_validator()
+    assert isinstance(redirect_uri_validator, AllowedURIValidator)
+    assert redirect_uri_validator.name == "redirect uri"
+    assert redirect_uri_validator.allow_path
+    assert redirect_uri_validator.allow_query
+    assert redirect_uri_validator.schemes == {s.lower() for s in application.get_allowed_schemes()}
+
+    allowed_origin_validator = application.get_allowed_origin_validator()
+    assert isinstance(allowed_origin_validator, AllowedURIValidator)
+    assert allowed_origin_validator.name == "allowed origin"
+    assert not allowed_origin_validator.allow_path
+    assert allowed_origin_validator.schemes == oauth2_settings.ALLOWED_SCHEMES
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RW,
+        "REDIRECT_URI_VALIDATOR": "tests.test_models.private_use_scheme_factory",
+    }
+)
+def test_redirect_uri_validator_setting_accepts_a_custom_scheme(oauth2_settings, application):
+    """#490: a custom scheme without swapping the Application model."""
+    # The scheme is not in ALLOWED_REDIRECT_URI_SCHEMES, so the default would reject it.
+    assert "com.example.app" not in application.get_allowed_schemes()
+
+    application.redirect_uris = "com.example.app:/oauth2redirect"
+    application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RW,
+        "REDIRECT_URI_VALIDATOR": "tests.test_models.deny_all_redirect_uri_factory",
+    }
+)
+def test_redirect_uri_validator_setting_can_reject(oauth2_settings, application):
+    """A rejection from a custom validator is still keyed to redirect_uris."""
+    application.redirect_uris = "https://example.org/cb"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["redirect_uris"]
+    assert "nope: https://example.org/cb" in exc.value.message_dict["redirect_uris"][0]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RW,
+        "ALLOWED_ORIGIN_VALIDATOR": "tests.test_models.http_origin_factory",
+    }
+)
+def test_allowed_origin_validator_setting_overrides_allowed_schemes(oauth2_settings, application):
+    # http origins are rejected by default; the custom validator permits them.
+    assert "http" not in oauth2_settings.ALLOWED_SCHEMES
+    application.allowed_origins = "http://example.com"
+    application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RW,
+        "REDIRECT_URI_VALIDATOR": "tests.test_models.ApplicationSchemeValidator",
+    }
+)
+def test_redirect_uri_validator_setting_accepts_a_class(oauth2_settings, application):
+    """A class is a callable, so an AllowedURIValidator subclass works as the factory."""
+    application.redirect_uris = "https://example.org/cb com.example.app:/oauth2redirect"
+    application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_model_hook_overrides_the_setting(oauth2_settings, application):
+    """What a swapped model overrides -- the hook wins over the configured default."""
+    application.redirect_uris = "com.example.app:/oauth2redirect"
+    with pytest.raises(ValidationError):
+        application.clean()
+
+    with mock.patch.object(
+        type(application),
+        "get_redirect_uri_validator",
+        lambda self: private_use_scheme_factory(self),
+    ):
+        application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize(
+    "setting,field,value",
+    [
+        ("REDIRECT_URI_VALIDATOR", "redirect_uris", "https://example.org/cb"),
+        ("ALLOWED_ORIGIN_VALIDATOR", "allowed_origins", "https://example.com"),
+    ],
+)
+def test_uri_validator_settings_may_not_be_none(oauth2_settings, application, setting, field, value):
+    """None would silently skip validation, so it is refused rather than tolerated."""
+    oauth2_settings.update({**presets.OIDC_SETTINGS_RW, setting: None})
+    setattr(application, field, value)
+    with pytest.raises(AttributeError, match="is mandatory"):
+        application.clean()
 
 
 def _client_assertion_application(**kwargs):
