@@ -396,6 +396,43 @@ class TestTokenIntrospectionAuth(TestCase):
         )
         self.assertIsNone(token)
 
+    @mock.patch("requests.post", side_effect=requests.exceptions.Timeout("too slow"))
+    def test_get_token_from_authentication_server_timeout_returns_none(self, mock_get):
+        """An introspection endpoint that stalls past the timeout leaves the token invalid."""
+        token = self.validator._get_token_from_authentication_server(
+            "foo",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        self.assertIsNone(token)
+
+    @mock.patch("requests.post", side_effect=mocked_requests_post)
+    def test_get_token_from_authentication_server_uses_default_timeout(self, mock_get):
+        """The POST is time-bounded even when no timeout is configured, so a stalled
+        authorization server cannot hold a worker indefinitely."""
+        self.validator._get_token_from_authentication_server(
+            "foo",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["timeout"], 5)
+
+    @mock.patch("requests.post", side_effect=mocked_requests_post)
+    def test_get_token_from_authentication_server_uses_configured_timeout(self, mock_get):
+        """``RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS`` is passed through to the POST."""
+        self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS = 1.5
+        self.validator._get_token_from_authentication_server(
+            "foo",
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_URL,
+            self.oauth2_settings.RESOURCE_SERVER_AUTH_TOKEN,
+            self.oauth2_settings.RESOURCE_SERVER_INTROSPECTION_CREDENTIALS,
+        )
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["timeout"], 1.5)
+
     @mock.patch("requests.post")
     def test_get_token_from_authentication_server_invalid_json_returns_none(self, mock_post):
         """A 200 response whose body is not valid JSON yields ``None``."""

@@ -111,6 +111,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1827 The remote introspection POST is now time-bounded by a new
+  `RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS` setting (default `5`, matching the other outbound
+  fetch timeouts). `requests` applies no timeout of its own, so an authorization server that accepted
+  the connection and then stalled held one worker per request carrying a bearer token until the pool
+  was exhausted. A timeout is handled like any other failed introspection request: the token is
+  treated as invalid.
 * #1287 RP-Initiated Logout is now idempotent, as the specification requires. Once one RP logged an
   End-User out, `do_logout()` deleted that user's ID Tokens, so every other RP's `id_token_hint`
   referred to an IDToken that no longer existed and their logout requests failed with HTTP 400 and
