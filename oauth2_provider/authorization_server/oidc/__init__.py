@@ -1,7 +1,7 @@
 """OpenID Connect Provider (OP) facet of the Authorization Server.
 
-Re-exports the OP-facing views (discovery, JWKS, userinfo, RP-Initiated Logout)
-by role, e.g.::
+Re-exports the OP-facing views (discovery, JWKS, userinfo, session iframe,
+RP-Initiated Logout) by role, e.g.::
 
     from oauth2_provider.authorization_server.oidc import UserInfoView
 
@@ -17,6 +17,7 @@ _LAZY = {
     "JwksInfoView": "oauth2_provider.authorization_server.oidc.views",
     "UserInfoView": "oauth2_provider.authorization_server.oidc.views",
     "RPInitiatedLogoutView": "oauth2_provider.authorization_server.oidc.views",
+    "SessionIFrameView": "oauth2_provider.authorization_server.oidc.views",
 }
 
 __all__ = sorted(_LAZY)

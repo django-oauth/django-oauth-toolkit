@@ -1,4 +1,4 @@
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlparse
 
 import pytest
 from django.conf import settings
@@ -12,6 +12,7 @@ from pytest_django.asserts import assertRedirects
 
 from oauth2_provider.authorization_server.oidc.views import (
     RPInitiatedLogoutView,
+    SessionIFrameView,
     _load_id_token,
     _validate_claims,
 )
@@ -135,6 +136,13 @@ class TestConnectDiscoveryInfoView(TestCase):
         self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = True
         self.expect_json_response_with_rp_logout(self.oauth2_settings.OIDC_ISS_ENDPOINT)
 
+    def test_get_session_management_iframe_endpoint(self):
+        self.oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED = True
+        response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+        self.assertEqual(response.status_code, 200)
+        response_data = response.json()
+        self.assertIn("check_session_iframe", response_data.keys())
+
     def test_get_connect_discovery_info_without_issuer_url(self):
         self.oauth2_settings.OIDC_ISS_ENDPOINT = None
         self.oauth2_settings.OIDC_USERINFO_ENDPOINT = None
@@ -156,7 +164,10 @@ class TestConnectDiscoveryInfoView(TestCase):
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
-            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "token_endpoint_auth_methods_supported": [
+                "client_secret_post",
+                "client_secret_basic",
+            ],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
             "client_id_metadata_document_supported": False,
@@ -607,6 +618,125 @@ class TestRPInitiatedRegistrationDisabled(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertNotIn("Location", response)
         self.assertEqual(response.json()["error"], "invalid_request")
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_SESSION_MANAGEMENT)
+class TestSessionManagement(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        Application = get_application_model()
+
+        self.user = User.objects.create_user("test_user", "test@example.com", "123456")
+        self.developer = User.objects.create_user("dev_user", "dev@example.com", "123456")
+
+        self.application = Application.objects.create(
+            name="Test Application",
+            redirect_uris=(
+                "http://localhost http://example.com http://example.org custom-scheme://example.com"
+            ),
+            user=self.developer,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            client_secret="1234567890qwertyuiop",
+        )
+
+    def test_session_state_is_present_in_authorization(self):
+        self.client.login(username="test_user", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            {
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "state": "random_state_string",
+                "scope": "openid read write",
+                "redirect_uri": "http://example.org",
+                "allow": True,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("session_state", response["Location"])
+
+    def test_session_state_is_present_in_fragment_for_implicit_flow(self):
+        """
+        For implicit/hybrid OIDC flows (fragment-based responses), session_state
+        should be included in the fragment parameters.
+        """
+        # Modify application for implicit flow
+        Application = get_application_model()
+        self.application.authorization_grant_type = Application.GRANT_IMPLICIT
+        self.application.algorithm = Application.RS256_ALGORITHM
+        self.application.client_type = Application.CLIENT_PUBLIC
+        self.application.save()
+
+        self.client.login(username="test_user", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            {
+                "client_id": self.application.client_id,
+                "response_type": "id_token",
+                "state": "random_state_string",
+                "scope": "openid",
+                "redirect_uri": "http://example.org",
+                "nonce": "random_nonce_string",
+                "allow": True,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        redirect_uri = response["Location"]
+        parsed = urlparse(redirect_uri)
+        fragment_params = dict(parse_qsl(parsed.fragment))
+        self.assertIn("session_state", fragment_params)
+
+    def test_session_state_not_present_for_non_oidc_request(self):
+        """
+        For non-OIDC authorization requests (no openid scope), session_state
+        should not be added to the redirect URL.
+        """
+        self.client.login(username="test_user", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            {
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "state": "random_state_string",
+                "scope": "read write",
+                "redirect_uri": "http://example.org",
+                "allow": True,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        redirect_uri = response["Location"]
+        parsed = urlparse(redirect_uri)
+        query_params = dict(parse_qsl(parsed.query))
+        self.assertNotIn("session_state", query_params)
+
+    def test_cookie_name_is_included_in_iframe_endpoint(self):
+        request = RequestFactory().get(reverse("oauth2_provider:session-iframe"))
+        request.user = self.user
+        view = SessionIFrameView()
+        view.setup(request)
+        context = view.get_context_data()
+        self.assertIn("cookie_name", context)
+        self.assertEqual(context["cookie_name"], "oidc_ua_agent_state")
+
+    def test_allowed_origins_by_client_id_is_included_in_iframe_endpoint(self):
+        import json
+
+        request = RequestFactory().get(reverse("oauth2_provider:session-iframe"))
+        request.user = self.user
+        view = SessionIFrameView()
+        view.setup(request)
+        context = view.get_context_data()
+        self.assertIn("allowed_origins_by_client_id", context)
+        allowed_origins = json.loads(context["allowed_origins_by_client_id"])
+        self.assertIn(self.application.client_id, allowed_origins)
+        origins = allowed_origins[self.application.client_id]
+        # Origins are derived from redirect_uris; scheme+netloc extracted from each URI.
+        self.assertIn("http://example.com", origins)
+        self.assertIn("http://example.org", origins)
+        self.assertIn("http://localhost", origins)
+        self.assertIn("custom-scheme://example.com", origins)
 
 
 def mock_request():

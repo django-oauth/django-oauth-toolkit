@@ -248,6 +248,11 @@ DEFAULTS = {
         "client_secret_post",
         "client_secret_basic",
     ],
+    # Session Management (OP iframe + ``session_state``; see docs/oidc.rst)
+    "OIDC_SESSION_MANAGEMENT_ENABLED": False,
+    "OIDC_SESSION_MANAGEMENT_COOKIE_NAME": "oidc_ua_agent_state",
+    "OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY": None,
+    "OIDC_SESSION_IFRAME_ENDPOINT": "",
     # RP-Initiated Registration (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
     "OIDC_RP_INITIATED_REGISTRATION_URL": None,

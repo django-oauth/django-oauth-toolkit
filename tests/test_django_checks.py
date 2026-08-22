@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import timedelta
 
 import pytest
@@ -14,6 +15,11 @@ from oauth2_provider.core.checks import (
 )
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .presets import OIDC_SETTINGS_SESSION_MANAGEMENT
+
+
+MISSING_DEFAULT_SESSION_KEY = deepcopy(OIDC_SETTINGS_SESSION_MANAGEMENT)
+MISSING_DEFAULT_SESSION_KEY["OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY"] = None
 
 
 class DjangoChecksTestCase(TestCase):
@@ -27,6 +33,14 @@ class DjangoChecksTestCase(TestCase):
     )
     def test_checks_fail_when_router_crosses_databases(self):
         message = "The token models are expected to be stored in the same database."
+        with self.assertRaisesMessage(SystemCheckError, message):
+            call_command("check")
+
+    @override_settings(OAUTH2_PROVIDER=MISSING_DEFAULT_SESSION_KEY)
+    def test_checks_fail_when_default_session_key_is_missing(self):
+        message = (
+            "OIDC Session management is enabled, OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY is required."
+        )
         with self.assertRaisesMessage(SystemCheckError, message):
             call_command("check")
 

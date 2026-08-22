@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from django import http
@@ -20,6 +21,7 @@ from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
 from oauth2_provider.authorization_server import par
 from oauth2_provider.authorization_server.forms import AllowForm
+from oauth2_provider.authorization_server.oidc.session import session_management_state_key
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
@@ -173,6 +175,48 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             )
         except OAuthToolkitError as error:
             return self.error_response(error, application)
+
+        # https://openid.net/specs/openid-connect-session-1_0.html#CreatingUpdatingSessions
+        use_session_state = all(
+            [
+                oauth2_settings.OIDC_SESSION_MANAGEMENT_ENABLED,
+                oauth2_settings.OIDC_ENABLED,
+                "openid" in scopes.split(),
+            ]
+        )
+
+        if use_session_state:
+            # When the OP supports session management, it MUST also
+            # return the Session State as an additional session_state
+            # parameter in the Authentication Response, the value is
+            # based on a salted cryptographic hash of Client ID,
+            # origin URL, and OP User Agent state.
+            parsed = urlparse(uri)
+            client_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+            # Create random salt.
+            salt = secrets.token_urlsafe(16)
+            encoded = " ".join(
+                [
+                    credentials["client_id"],
+                    client_origin,
+                    session_management_state_key(self.request),
+                    salt,
+                ]
+            ).encode("utf-8")
+            hashed = hashlib.sha256(encoded)
+            session_state = f"{hashed.hexdigest()}.{salt}"
+
+            # For implicit/hybrid flows, parameters are in the fragment,
+            # for authorization code flow they're in the query string.
+            if parsed.fragment:
+                fragment_params = dict(parse_qsl(parsed.fragment))
+                fragment_params["session_state"] = session_state
+                uri = parsed._replace(fragment=urlencode(fragment_params)).geturl()
+            else:
+                qs = dict(parse_qsl(parsed.query))
+                qs["session_state"] = session_state
+                uri = parsed._replace(query=urlencode(qs)).geturl()
 
         self.success_url = uri
         log.debug("Success url for the request: {0}".format(self.success_url))

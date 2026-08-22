@@ -427,6 +427,39 @@ missing::
             return new_request
 
 
+Session Management
+==================
+
+The `OpenID Connect Session Management 1.0
+<https://openid.net/specs/openid-connect-session-1_0.html>`_
+specification defines how to monitor the End-User's login status at
+the OpenID Provider on an ongoing basis so that the Relying Party can
+log out an End-User who has logged out of the OpenID Provider.
+
+To enable it, you will need to add
+``oauth2_provider.authorization_server.oidc.middleware.OIDCSessionManagementMiddleware``
+to ``MIDDLEWARE`` and set
+``OIDC_SESSION_MANAGEMENT_ENABLED`` to ``True`` on
+``OAUTH2_PROVIDER``. You will also need to provide a string on
+``OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY``. This setting is
+needed to ensure that the browser state for all unauthenticated users
+is fixed and the same even if you are running multiple server
+processes::
+
+    import os
+
+    MIDDLEWARE = [
+        # Other middleware...
+        "oauth2_provider.authorization_server.oidc.middleware.OIDCSessionManagementMiddleware",
+    ]
+
+    OAUTH2_PROVIDER = {
+        # ... other settings
+        "OIDC_SESSION_MANAGEMENT_ENABLED": True,
+        "OIDC_SESSION_MANAGEMENT_DEFAULT_SESSION_KEY": os.environ.get("OIDC_DEFAULT_SESSION_KEY"),
+    }
+
+
 Customizing the login flow
 ==========================
 
@@ -497,6 +530,17 @@ token, and ``Access-Control-Allow-Credentials`` is never sent. Set
     preflight itself, before any view runs, so the ``OPTIONS`` handler above never sees the
     request. Configure that middleware to allow the userinfo path as well, or the preflight
     will be answered without CORS headers and the browser will block the request.
+
+
+SessionIFrameView
+~~~~~~~~~~~~~~~~~
+
+Available at ``/o/session-iframe/`` when ``OIDC_SESSION_MANAGEMENT_ENABLED`` is
+``True``, this view renders the `OP iframe
+<https://openid.net/specs/openid-connect-session-1_0.html#OPiframe>`_ a
+:term:`Client` (Relying Party) loads to poll whether the End-User's login session
+at the OpenID Provider is still the one that authorized it. Its location is
+advertised as ``check_session_iframe`` in the discovery document.
 
 
 RPInitiatedLogoutView

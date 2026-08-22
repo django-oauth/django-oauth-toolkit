@@ -11,6 +11,7 @@ from ..authorization_server.oidc.views import (
     ConnectDiscoveryInfoView,
     JwksInfoView,
     RPInitiatedLogoutView,
+    SessionIFrameView,
     UserInfoView,
 )
 from ..authorization_server.views.application import (
