@@ -1458,11 +1458,9 @@ def test_application_model_hook_overrides_the_setting(oauth2_settings, applicati
     with pytest.raises(ValidationError):
         application.clean()
 
-    with mock.patch.object(
-        type(application),
-        "get_redirect_uri_validator",
-        lambda self: private_use_scheme_factory(self),
-    ):
+    # The factory's signature already matches an unbound method's, so it can be patched in
+    # directly: as a class attribute it binds and receives the application as ``self``.
+    with mock.patch.object(type(application), "get_redirect_uri_validator", private_use_scheme_factory):
         application.clean()
 
 

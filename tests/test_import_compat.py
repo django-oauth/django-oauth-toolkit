@@ -261,6 +261,19 @@ def test_oauth2_validator_composition_and_reexports():
     assert is_valid_resource_uri is rs_is_valid
 
 
+def test_models_reexports_allowed_uri_validator():
+    """``AllowedURIValidator`` stays importable from ``oauth2_provider.models``.
+
+    ``Application.clean()`` no longer constructs one -- the validator now comes from the
+    REDIRECT_URI_VALIDATOR / ALLOWED_ORIGIN_VALIDATOR factories (see #490) -- but the name
+    has long been importable from ``models``, so it is kept as an explicit re-export.
+    """
+    from oauth2_provider.models import AllowedURIValidator
+    from oauth2_provider.validators import AllowedURIValidator as canonical
+
+    assert AllowedURIValidator is canonical
+
+
 def test_client_package_is_standalone():
     """``oauth2_provider.client`` is the client side and must stay independent.
 

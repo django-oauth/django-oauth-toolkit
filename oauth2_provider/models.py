@@ -27,6 +27,12 @@ from .core.utils import jwk_allows_verification, jwk_from_pem
 from .generators import generate_client_id, generate_client_secret
 from .settings import oauth2_settings
 
+# AllowedURIValidator is re-exported for backwards compatibility. clean() no longer
+# constructs one itself -- the validator is built by the REDIRECT_URI_VALIDATOR /
+# ALLOWED_ORIGIN_VALIDATOR factories -- but the name has long been importable from here.
+# Import it from oauth2_provider.validators in new code.
+from .validators import AllowedURIValidator  # noqa: F401
+
 
 logger = logging.getLogger(__name__)
 
