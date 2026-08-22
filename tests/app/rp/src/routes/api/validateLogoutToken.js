@@ -1,11 +1,14 @@
 // Logout token validation, following OpenID Connect Back-Channel Logout 1.0 section 2.6.
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-// The OP this demo RP is registered with. ISSUER must match the iss claim the IdP mints,
-// which is OIDC_ISS_ENDPOINT in tests/app/idp/idp/settings.py, and AUDIENCE is this RP's
-// client_id from fixtures/seed.json.
-const ISSUER = 'http://localhost:8000/o';
-const AUDIENCE = '2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm';
+import { clientId, issuer } from '$lib/oidc-config';
+
+// The OP this demo RP is registered with, taken from the same runtime configuration the
+// pages use so that overriding the issuer moves logout token validation with it. The
+// issuer must match the iss claim the IdP mints (OIDC_ISS_ENDPOINT in
+// tests/app/idp/idp/settings.py) and the audience is this RP's client_id.
+const ISSUER = issuer;
+const AUDIENCE = clientId;
 const JWKS_URI = `${ISSUER}/.well-known/jwks.json`;
 
 const JWKS = createRemoteJWKSet(new URL(JWKS_URI));

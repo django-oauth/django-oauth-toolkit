@@ -17,9 +17,12 @@ const config = {
 		outDir: process.env.RP_OUT_DIR || '.svelte-kit',
 		// The OP delivers backchannel logout tokens as a cross-origin form POST to
 		// /api/backchannel-logout, which SvelteKit's CSRF protection rejects unless
-		// the IdP's origin is trusted.
+		// the IdP's origin is trusted. Derived from the same issuer $lib/oidc-config
+		// resolves, so moving the OP to another origin moves the exemption with it.
 		csrf: {
-			trustedOrigins: ['http://localhost:8000']
+			trustedOrigins: [
+				new URL(process.env.PUBLIC_RP_ISSUER || 'http://localhost:8000/o').origin
+			]
 		}
 	}
 };
