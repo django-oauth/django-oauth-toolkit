@@ -307,9 +307,20 @@ class OAuthClient:
         return requests.post(self.url("/o/introspect/"), data=data, headers=headers, timeout=DEFAULT_TIMEOUT)
 
     # --- OIDC UserInfo + RP-Initiated Logout ------------------------------
-    def userinfo(self, access_token):
+    def userinfo(self, access_token, *, origin=None):
         headers = {"Authorization": f"Bearer {access_token}"}
+        if origin is not None:
+            headers["Origin"] = origin
         return requests.get(f"{self.issuer}/userinfo/", headers=headers, timeout=DEFAULT_TIMEOUT)
+
+    def userinfo_preflight(self, *, origin, request_method="GET", request_headers="authorization"):
+        """The CORS preflight (``OPTIONS``) a browser sends before a UserInfo request."""
+        headers = {
+            "Origin": origin,
+            "Access-Control-Request-Method": request_method,
+            "Access-Control-Request-Headers": request_headers,
+        }
+        return requests.options(f"{self.issuer}/userinfo/", headers=headers, timeout=DEFAULT_TIMEOUT)
 
     def rp_logout(
         self, session, *, id_token_hint=None, client_id=None, post_logout_redirect_uri=None, state=None

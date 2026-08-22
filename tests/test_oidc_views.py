@@ -1086,6 +1086,75 @@ def test_userinfo_endpoint_bad_token(oidc_tokens, client):
 
 
 @pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_userinfo_endpoint_cors_header(oidc_tokens, client, method):
+    # OIDC Core 1.0 section 5.3: the UserInfo Endpoint SHOULD support CORS.
+    auth_header = "Bearer %s" % oidc_tokens.access_token
+    rsp = getattr(client, method)(
+        reverse("oauth2_provider:user-info"),
+        HTTP_AUTHORIZATION=auth_header,
+        HTTP_ORIGIN="http://example.org",
+    )
+    assert rsp.status_code == 200
+    assert rsp["Access-Control-Allow-Origin"] == "*"
+    # A wildcard origin must never be paired with credentialed requests.
+    assert not rsp.has_header("Access-Control-Allow-Credentials")
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_userinfo_endpoint_cors_header_on_error(oidc_tokens, client):
+    # Without the header a JavaScript client sees an opaque failure rather than the 401.
+    rsp = client.get(
+        reverse("oauth2_provider:user-info"),
+        HTTP_AUTHORIZATION="Bearer not-a-real-token",
+        HTTP_ORIGIN="http://example.org",
+    )
+    assert rsp.status_code == 401
+    assert rsp["Access-Control-Allow-Origin"] == "*"
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_userinfo_endpoint_cors_preflight(oauth2_settings, client):
+    # The Authorization header is not CORS-safelisted, so browsers always preflight.
+    rsp = client.options(
+        reverse("oauth2_provider:user-info"),
+        HTTP_ORIGIN="http://example.org",
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization",
+    )
+    assert rsp.status_code == 200
+    assert rsp["Access-Control-Allow-Origin"] == "*"
+    assert rsp["Access-Control-Allow-Methods"] == "GET, POST"
+    assert rsp["Access-Control-Allow-Headers"] == "Authorization"
+    assert not rsp.has_header("Access-Control-Allow-Credentials")
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_userinfo_endpoint_cors_disabled(oidc_tokens, client, oauth2_settings):
+    oauth2_settings.OIDC_USERINFO_CORS_ENABLED = False
+    auth_header = "Bearer %s" % oidc_tokens.access_token
+    rsp = client.get(
+        reverse("oauth2_provider:user-info"),
+        HTTP_AUTHORIZATION=auth_header,
+        HTTP_ORIGIN="http://example.org",
+    )
+    assert rsp.status_code == 200
+    assert not rsp.has_header("Access-Control-Allow-Origin")
+
+    rsp = client.options(
+        reverse("oauth2_provider:user-info"),
+        HTTP_ORIGIN="http://example.org",
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization",
+    )
+    assert rsp.status_code == 200
+    assert not rsp.has_header("Access-Control-Allow-Origin")
+    assert not rsp.has_header("Access-Control-Allow-Methods")
+    assert not rsp.has_header("Access-Control-Allow-Headers")
+
+
+@pytest.mark.django_db(databases="__all__")
 def test_token_deletion_on_logout(oidc_tokens, logged_in_client, rp_settings):
     AccessToken = get_access_token_model()
     IDToken = get_id_token_model()

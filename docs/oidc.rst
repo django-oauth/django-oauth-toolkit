@@ -483,6 +483,21 @@ UserInfoView
 Available at ``/o/userinfo/``, this view provides extra user details. You can
 customize the details included in the response as described above.
 
+Per `OpenID Connect Core 1.0 section 5.3
+<https://openid.net/specs/openid-connect-core-1_0.html#UserInfo>`_ the view supports CORS out of
+the box, so browser-based (JavaScript) clients can call it cross-origin: it answers the preflight
+``OPTIONS`` request and sends ``Access-Control-Allow-Origin: *`` on its responses, including error
+responses such as ``401``. Claims are still only released to a caller presenting a valid access
+token, and ``Access-Control-Allow-Credentials`` is never sent. Set
+``OIDC_USERINFO_CORS_ENABLED`` to ``False`` to turn this off.
+
+.. note::
+    If your project also installs `django-cors-headers
+    <https://github.com/adamchainz/django-cors-headers>`_, its middleware answers every CORS
+    preflight itself, before any view runs, so the ``OPTIONS`` handler above never sees the
+    request. Configure that middleware to allow the userinfo path as well, or the preflight
+    will be answered without CORS headers and the browser will block the request.
+
 
 RPInitiatedLogoutView
 ~~~~~~~~~~~~~~~~~~~~~

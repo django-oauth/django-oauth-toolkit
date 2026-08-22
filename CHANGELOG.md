@@ -35,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` or per client via the application's
   `require_pushed_authorization_requests` field, and the endpoint is advertised in the RFC 8414
   metadata document. See `docs/pushed_authorization_requests.rst`.
+* #1782 Native CORS support on the OIDC UserInfo endpoint, as OpenID Connect Core 1.0 section 5.3
+  recommends: `/o/userinfo/` now answers the CORS preflight `OPTIONS` request and sends
+  `Access-Control-Allow-Origin: *` on its responses (error responses included), so browser-based
+  clients can call it cross-origin without bolting on CORS middleware. The origin cannot be scoped
+  to the application's `allowed_origins` because a preflight carries no access token; the wildcard is
+  safe because claims are still only released to a caller holding a valid one, and
+  `Access-Control-Allow-Credentials` is never sent. Set the new `OIDC_USERINFO_CORS_ENABLED` setting
+  to `False` to opt out.
 ### Changed
 * #1287 RP-Initiated Logout no longer rejects an `id_token_hint` whose ID Token is no longer stored.
   Such a request previously returned HTTP 400; it now takes the prompt-or-logout path, so deployments

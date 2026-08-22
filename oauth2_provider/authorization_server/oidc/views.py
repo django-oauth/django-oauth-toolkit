@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 
 from django.contrib.auth import logout
 from django.contrib.auth.models import AnonymousUser
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import FormView, View
@@ -151,7 +151,28 @@ class JwksInfoView(OIDCOnlyMixin, View):
 class UserInfoView(OIDCOnlyMixin, AuthorizationServerViewMixin, View):
     """
     View used to show Claims about the authenticated End-User
+
+    `OpenID Connect Core 1.0 §5.3
+    <https://openid.net/specs/openid-connect-core-1_0.html#UserInfo>`_ says the UserInfo
+    Endpoint SHOULD support CORS so JavaScript Clients can reach it, so the endpoint
+    answers the preflight ``OPTIONS`` request and sends
+    ``Access-Control-Allow-Origin: *`` on its responses. The wildcard cannot be narrowed
+    to the requesting application's ``allowed_origins``: a preflight carries no bearer
+    token, so there is no application to resolve at that point. It is safe because the
+    UserInfo response is only released to a caller holding a valid access token, and
+    ``Access-Control-Allow-Credentials`` is never sent, so browsers will not attach
+    ambient cookies. Set ``OIDC_USERINFO_CORS_ENABLED`` to ``False`` to opt out.
     """
+
+    def options(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        response = super().options(request, *args, **kwargs)
+        if oauth2_settings.OIDC_USERINFO_CORS_ENABLED:
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Methods"] = "GET, POST"
+            # A UserInfo request authenticates with a bearer token, which is not a CORS
+            # safelisted request header, hence the preflight this answers.
+            response["Access-Control-Allow-Headers"] = "Authorization"
+        return response
 
     def get(self, request, *args, **kwargs):
         return self._create_userinfo_response(request)
@@ -159,12 +180,17 @@ class UserInfoView(OIDCOnlyMixin, AuthorizationServerViewMixin, View):
     def post(self, request, *args, **kwargs):
         return self._create_userinfo_response(request)
 
-    def _create_userinfo_response(self, request):
+    def _create_userinfo_response(self, request: HttpRequest) -> HttpResponse:
         url, headers, body, status = self.create_userinfo_response(request)
         response = HttpResponse(content=body or "", status=status)
 
         for k, v in headers.items():
             response[k] = v
+        if oauth2_settings.OIDC_USERINFO_CORS_ENABLED:
+            # Set after oauthlib's headers so the endpoint is reachable cross-origin for
+            # error responses (e.g. 401) too, which is what lets a JavaScript client see
+            # that its token was rejected instead of an opaque network failure.
+            response["Access-Control-Allow-Origin"] = "*"
         return response
 
 

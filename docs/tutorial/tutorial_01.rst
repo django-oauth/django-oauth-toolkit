@@ -7,19 +7,13 @@ You want to make your own :term:`Authorization Server` to issue access tokens to
 
 Start Your App
 --------------
-Browser-based clients (such as single-page apps) make cross-origin requests to your
-provider, which browsers restrict unless the server opts in with
-`CORS <http://en.wikipedia.org/wiki/Cross-origin_resource_sharing>`_. Install
-`django-cors-headers <https://github.com/adamchainz/django-cors-headers>`_ alongside
-Django OAuth Toolkit so you can allow the origins you trust.
-
-Create a virtualenv and install `django-oauth-toolkit` and `django-cors-headers`:
+Create a virtualenv and install `django-oauth-toolkit`:
 
 ::
 
-    pip install django-oauth-toolkit django-cors-headers
+    pip install django-oauth-toolkit
 
-Start a Django project, add `oauth2_provider` and `corsheaders` to the installed apps, and enable admin:
+Start a Django project, add `oauth2_provider` to the installed apps, and enable admin:
 
 .. code-block:: python
 
@@ -27,7 +21,6 @@ Start a Django project, add `oauth2_provider` and `corsheaders` to the installed
         'django.contrib.admin',
         # ...
         'oauth2_provider',
-        'corsheaders',
     ]
 
 Include the Django OAuth Toolkit urls in your `urls.py`, choosing the urlspace you prefer. For example:
@@ -43,33 +36,17 @@ Include the Django OAuth Toolkit urls in your `urls.py`, choosing the urlspace y
         # ...
     ]
 
-Include the CORS middleware in your `settings.py`. ``CorsMiddleware`` should be placed as high as
-possible, especially before any middleware that can generate responses such as Django's
-``CommonMiddleware`` or WhiteNoise's ``WhiteNoiseMiddleware``, otherwise it will not be able to add
-the CORS headers to those responses.
+Browser-based clients (such as single-page apps) make cross-origin requests to your provider, which
+browsers restrict unless the server opts in with
+`CORS <http://en.wikipedia.org/wiki/Cross-origin_resource_sharing>`_. Django OAuth Toolkit sends
+those headers for the endpoints it serves, so they work for browser clients with no extra middleware:
+the token endpoint (``/o/token/``) is scoped to each application's `Allowed origins` list, and the
+public OpenID Connect endpoints — discovery, JWKS and UserInfo (``/o/userinfo/``) — send permissive
+headers.
 
-.. code-block:: python
-
-    MIDDLEWARE = (
-        # ...
-        'corsheaders.middleware.CorsMiddleware',
-        # ...
-    )
-
-Then allow the origins your browser-based clients are served from:
-
-.. code-block:: python
-
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:3000",
-    ]
-
-Django OAuth Toolkit sets the ``Access-Control-Allow-Origin`` header on the token endpoint
-(``/o/token/``) itself, based on each application's `Allowed origins` list, so the token endpoint
-works for browser clients without this middleware. (The public OpenID Connect metadata endpoints —
-discovery and JWKS — already send permissive CORS headers too.) django-cors-headers is what enables
-CORS for the OIDC UserInfo endpoint (``/o/userinfo/``), which browser-based clients may call
-cross-origin and which Django OAuth Toolkit does not CORS-enable on its own.
+Your own API resources are not covered by that. If browser-based clients call them cross-origin, add
+`django-cors-headers <https://github.com/adamchainz/django-cors-headers>`_ and configure it for those
+views.
 
 .. _loginTemplate:
 
