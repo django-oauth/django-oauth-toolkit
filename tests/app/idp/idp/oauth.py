@@ -14,7 +14,7 @@ def get_response():
 
 
 class CustomOAuth2Validator(OAuth2Validator):
-    def validate_silent_login(self, request) -> None:
+    def validate_silent_login(self, request) -> bool:
         # request is an OAuthLib.common.Request and doesn't have the session
         # or user of the django request. We will emulate the session and auth
         # middleware here, since that is what the idp is using for auth. You
@@ -22,14 +22,26 @@ class CustomOAuth2Validator(OAuth2Validator):
         # middleware or auth backend.
 
         session_cookie_name = settings.SESSION_COOKIE_NAME
-        HTTP_COOKIE = request.headers.get("HTTP_COOKIE")
-        COOKIES = HTTP_COOKIE.split("; ")
-        for cookie in COOKIES:
-            cookie_name, cookie_value = cookie.split("=")
-            if cookie.startswith(session_cookie_name):
+        # HTTP_COOKIE is missing from request.headers entirely when the user
+        # agent sends no Cookie header at all. That is the normal case for a
+        # prompt=none request in a hidden third-party iframe under a browser
+        # that partitions or blocks third-party cookies (Firefox's Total Cookie
+        # Protection): there is no OP session to authenticate against, so the
+        # request must resolve to login_required rather than raising.
+        cookie_header = request.headers.get("HTTP_COOKIE") or ""
+        session_key = None
+        for cookie in cookie_header.split(";"):
+            # partition() rather than split("="): a cookie value may itself
+            # contain "=" (base64 padding, for one), which unpacking rejects.
+            name, _, value = cookie.strip().partition("=")
+            if name == session_cookie_name:
+                session_key = value
                 break
+        if not session_key:
+            return False
+
         session_middleware = SessionMiddleware(get_response)
-        session = session_middleware.SessionStore(cookie_value)
+        session = session_middleware.SessionStore(session_key)
         # add session to request for compatibility with django.contrib.auth
         request.session = session
 
@@ -38,7 +50,7 @@ class CustomOAuth2Validator(OAuth2Validator):
         auth_middleware.process_request(request)
         return request.user.is_authenticated
 
-    def validate_silent_authorization(self, request) -> None:
+    def validate_silent_authorization(self, request) -> bool:
         return True
 
     def get_additional_claims(self, request):
