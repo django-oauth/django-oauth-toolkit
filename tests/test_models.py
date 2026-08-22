@@ -1321,6 +1321,15 @@ def deny_all_redirect_uri_factory(application):
     return validate
 
 
+def field_keyed_error_factory(application):
+    """Raises a dict-built ValidationError, which has no ``error_list``."""
+
+    def validate(uri):
+        raise ValidationError({"allowed_origins": ["reported on another field"]})
+
+    return validate
+
+
 def http_origin_factory(application):
     """Allows a plain-http origin, which the default ALLOWED_SCHEMES rejects."""
     return AllowedURIValidator(["http", "https"], "allowed origin")
@@ -1471,6 +1480,22 @@ def test_uri_validator_settings_may_not_be_none(oauth2_settings, application, se
     setattr(application, field, value)
     with pytest.raises(AttributeError, match="is mandatory"):
         application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RW,
+        "REDIRECT_URI_VALIDATOR": "tests.test_models.field_keyed_error_factory",
+    }
+)
+def test_custom_validator_may_raise_a_field_keyed_error(oauth2_settings, application):
+    """A dict-built ValidationError is honored rather than crashing on error_list."""
+    application.redirect_uris = "https://example.org/cb"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["allowed_origins"]
+    assert exc.value.message_dict["allowed_origins"] == ["reported on another field"]
 
 
 def _client_assertion_application(**kwargs):

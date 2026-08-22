@@ -385,6 +385,24 @@ class AbstractApplication(models.Model):
         """
         return self.allowed_origins and is_origin_allowed(origin, self.allowed_origins.split())
 
+    @staticmethod
+    def _collect_uri_validation_error(field_errors, field, exc):
+        """Fold a URI validator's ValidationError into the per-field error map.
+
+        The built-in validators always raise a message-and-params error, whose parts are
+        reachable as ``error_list``. A validator supplied through REDIRECT_URI_VALIDATOR /
+        ALLOWED_ORIGIN_VALIDATOR may instead raise one built from a dict, which has no
+        ``error_list`` at all -- reading it would raise ``AttributeError`` out of
+        ``clean()``. Honor the dict form by keying each of its messages to the field the
+        validator named, which also lets a custom validator report on a field of a swapped
+        application model.
+        """
+        if hasattr(exc, "error_dict"):
+            for error_field, messages in exc.error_dict.items():
+                field_errors[error_field].extend(messages)
+        else:
+            field_errors[field].extend(exc.error_list)
+
     def clean(self) -> None:
         """Validate the application, reporting each problem on the field it belongs to.
 
@@ -421,7 +439,7 @@ class AbstractApplication(models.Model):
                 try:
                     redirect_uri_validator(uri)
                 except ValidationError as exc:
-                    field_errors["redirect_uris"].extend(exc.error_list)
+                    self._collect_uri_validation_error(field_errors, "redirect_uris", exc)
 
         elif self.authorization_grant_type in grant_types:
             field_errors["redirect_uris"].append(
@@ -438,7 +456,7 @@ class AbstractApplication(models.Model):
                 try:
                     allowed_origin_validator(uri)
                 except ValidationError as exc:
-                    field_errors["allowed_origins"].extend(exc.error_list)
+                    self._collect_uri_validation_error(field_errors, "allowed_origins", exc)
 
         if self.algorithm == AbstractApplication.RS256_ALGORITHM:
             if not oauth2_settings.OIDC_RSA_PRIVATE_KEY:
