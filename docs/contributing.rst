@@ -121,12 +121,61 @@ by new contributors. You can check if a new migration is needed with::
 
 And, if a new migration is needed, use::
 
-    django-admin makemigrations --settings tests.mig_settings
+    django-admin makemigrations --settings tests.settings
 
 Auto migrations frequently have ugly names like ``0004_auto_20200902_2022``. You can make your migration
 name "better" by adding the ``-n name`` option::
 
-    django-admin makemigrations --settings tests.mig_settings -n widget
+    django-admin makemigrations --settings tests.settings -n widget
+
+The ``tests`` app defines concrete models on top of every abstract model in ``oauth2_provider``
+(``BaseTestApplication``, ``SampleRefreshToken``, the OIDC ``LocalIDToken``, and so on), so altering
+an abstract model produces migrations in **two** places::
+
+    Migrations for 'oauth2_provider':
+      oauth2_provider/migrations/0026_widget.py
+    Migrations for 'tests':
+      tests/migrations/0022_widget.py
+
+Commit both. Running ``makemigrations`` under a settings module that installs ``oauth2_provider``
+alone writes only the first one and leaves ``tests/migrations`` stale, which
+``tox -e scenario-migrate-swapped-dj52-lite3`` then fails on.
+
+
+Swappable models
+----------------
+
+Most of this project's models are swappable (``OAUTH2_PROVIDER_APPLICATION_MODEL``,
+``OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL`` and friends), and ``makemigrations`` does not generate the
+dependency that swapping needs. Add it by hand to any migration that touches a swappable model, so
+the swapped-in model's app is migrated first::
+
+    from oauth2_provider.settings import oauth2_settings
+
+    class Migration(migrations.Migration):
+        dependencies = [
+            ("oauth2_provider", "0021_translatable_field_labels"),
+            migrations.swappable_dependency(oauth2_settings.REFRESH_TOKEN_MODEL),
+        ]
+
+Schema operations need nothing further: Django skips them automatically when the model is swapped
+out, because ``Options.can_migrate()`` is false for a swapped model.
+
+Data migrations do need more. ``swappable_dependency()`` resolves to ``(app_label, "__first__")``, so
+it only orders this migration after the swapped-in model's *initial* migration -- not after whichever
+migration of that app adds the field you are about to write to. A ``RunPython`` that backfills a new
+field therefore has to bail out when the model is swapped out, and the swapping project backfills in
+its own migration instead (note this in ``CHANGELOG.md`` so deployments know to write one)::
+
+    def forwards(apps, schema_editor):
+        RefreshToken = apps.get_model(oauth2_settings.REFRESH_TOKEN_MODEL)
+        if RefreshToken._meta.label_lower != "oauth2_provider.refreshtoken":
+            # Swapped out: this migration's schema operations were skipped, so the
+            # column does not exist here. The swapped app backfills it itself.
+            return
+        ...
+
+``oauth2_provider/migrations/0019_application_registration_source.py`` is the worked example.
 
 
 Testing data migrations
