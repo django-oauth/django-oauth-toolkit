@@ -82,6 +82,11 @@ refresh_token_generator. There's no extra processing so callables (every one
 of those three can be a callable) must be passed here directly and classes
 must be instantiated (callables should accept request as their only argument).
 
+Values given here override the ones django-oauth-toolkit derives from its own
+settings, so ``token_expires_in`` set here takes precedence over
+`ACCESS_TOKEN_EXPIRE_SECONDS`_. Prefer that setting -- it accepts a callable too, is
+validated, and is honored on every code path that computes a token's expiry.
+
 SCOPES_BACKEND_CLASS
 ~~~~~~~~~~~~~~~~~~~~
 **New in 0.12.0**. The import string for the scopes backend class.
@@ -206,13 +211,32 @@ REFRESH_TOKEN_GENERATOR
 See `ACCESS_TOKEN_GENERATOR`_. This is the same but for refresh tokens.
 Defaults to access token generator if not provided.
 
+.. _settings_access_token_expire_seconds:
+
 ACCESS_TOKEN_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``36000``
 
-The number of seconds an access token remains valid. Requesting a protected
-resource after this duration will fail. Keep this value high enough so clients
-can cache the token for a reasonable amount of time.
+How long an access token remains valid. Requesting a protected resource after this
+duration will fail. Keep this value high enough so clients can cache the token for a
+reasonable amount of time.
+
+Accepted values:
+
+* an ``int`` (or ``float``) number of seconds;
+* a ``datetime.timedelta``;
+* a callable taking the current ``oauthlib.common.Request`` and returning either of
+  the above, so the lifetime can vary per client, grant type, scope or session;
+* a dotted import path to such a callable, e.g. ``"myapp.oauth.access_token_expires_in"``
+  -- useful because a Django settings module often cannot import a callable that touches
+  models at settings-load time.
+
+The resolved value drives both the ``expires_in`` member of the token response and the
+stored ``AccessToken.expires``, so the two always agree. A static value must be
+positive; a misconfigured one is reported at startup as ``oauth2_provider.E006``.
+
+See :ref:`dynamic_access_token_lifetime` for worked examples, and note that
+`EXTRA_SERVER_KWARGS`_ ``["token_expires_in"]``, if set, overrides this setting.
 
 AUTHORIZATION_CODE_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

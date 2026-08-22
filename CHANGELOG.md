@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #483 `ACCESS_TOKEN_EXPIRE_SECONDS` now accepts a `datetime.timedelta`, or a callable taking the
+  oauthlib request and returning a number of seconds or a `timedelta`, in addition to a plain number
+  of seconds. This makes the access token lifetime vary per client, grant type, scope or session
+  without subclassing anything -- the callable may also be given as a dotted import path. The
+  resolved value drives both the `expires_in` in the token response and the stored
+  `AccessToken.expires`, and a misconfigured static value is reported at startup as
+  `oauth2_provider.E006`. See "Varying the access token lifetime per request" in the advanced topics
+  documentation.
 * #1762 RFC 7523 JWT client authentication (`private_key_jwt` / `client_secret_jwt`) at the token, introspection and
   revocation endpoints. Applications gain `token_endpoint_auth_method`, `client_jwks` and `client_jwks_uri` fields
   (deployments with a swapped/custom Application model must add an equivalent migration); remote JWK Sets are fetched
@@ -57,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Access-Control-Allow-Credentials` is never sent. Set the new `OIDC_USERINFO_CORS_ENABLED` setting
   to `False` to opt out.
 ### Changed
+* #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
+  `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
+  being applied inconsistently: `0` previously meant "expire immediately" for the stored token while
+  oauthlib reported `3600` to the client, and a negative value issued an already-expired token.
 * #1287 RP-Initiated Logout no longer rejects an `id_token_hint` whose ID Token is no longer stored.
   Such a request previously returned HTTP 400; it now takes the prompt-or-logout path, so deployments
   relying on the 400 will see 200 (prompt) or 302 (redirect) instead. "No longer stored" covers an ID

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.test.utils import override_settings
@@ -246,3 +248,88 @@ class TestRefreshTokenAdminSelectRelated(TestCase):
         # It must be a dict so the JOIN is scoped to only the declared fields.
         self.assertIsInstance(qs.query.select_related, dict)
         self.assertEqual(set(qs.query.select_related.keys()), {"application", "user"})
+
+
+def _expires_in_by_grant_type(request):
+    """Sample dynamic ACCESS_TOKEN_EXPIRE_SECONDS, referenced by dotted path below."""
+    return 60 if request.grant_type == "client_credentials" else 600
+
+
+class TestAccessTokenExpiresIn(TestCase):
+    """``ACCESS_TOKEN_EXPIRE_SECONDS`` accepts seconds, a timedelta, or a callable."""
+
+    def test_int_is_returned_unchanged(self):
+        settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": 120})
+        assert settings.access_token_expires_in() == 120
+
+    def test_timedelta_is_coerced_to_seconds(self):
+        settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": timedelta(minutes=5)})
+        assert settings.access_token_expires_in() == 300
+
+    def test_callable_is_evaluated_with_the_request(self):
+        settings = OAuth2ProviderSettings(
+            {"ACCESS_TOKEN_EXPIRE_SECONDS": lambda request: 42 if request.grant_type == "password" else 7}
+        )
+        request = Request("/o/token/")
+        request.grant_type = "password"
+        assert settings.access_token_expires_in(request) == 42
+
+    def test_callable_may_return_a_timedelta(self):
+        settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": lambda request: timedelta(hours=2)})
+        assert settings.access_token_expires_in(Request("/o/token/")) == 7200
+
+    def test_import_string_resolves_to_the_callable(self):
+        settings = OAuth2ProviderSettings(
+            {"ACCESS_TOKEN_EXPIRE_SECONDS": "tests.test_settings._expires_in_by_grant_type"}
+        )
+        assert settings.ACCESS_TOKEN_EXPIRE_SECONDS is _expires_in_by_grant_type
+        request = Request("/o/token/")
+        request.grant_type = "client_credentials"
+        assert settings.access_token_expires_in(request) == 60
+
+    def test_invalid_static_value_is_rejected(self):
+        # True is an int subclass, so it would otherwise sneak through as "1 second".
+        for value in (0, -1, True, None, object()):
+            with self.subTest(value=value):
+                settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": value})
+                with pytest.raises(ImproperlyConfigured, match="ACCESS_TOKEN_EXPIRE_SECONDS"):
+                    settings.access_token_expires_in()
+
+    def test_unimportable_string_names_the_setting(self):
+        # The setting is import-string aware, so a string is treated as a dotted path to
+        # the callable rather than as a number of seconds.
+        settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": "3600"})
+        with pytest.raises(ImportError, match="ACCESS_TOKEN_EXPIRE_SECONDS"):
+            settings.access_token_expires_in()
+
+    def test_invalid_callable_return_value_is_rejected(self):
+        settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": lambda request: -5})
+        with pytest.raises(ImproperlyConfigured, match="ACCESS_TOKEN_EXPIRE_SECONDS must be positive"):
+            settings.access_token_expires_in(Request("/o/token/"))
+
+
+class TestServerKwargsTokenExpiresIn(TestCase):
+    """``server_kwargs`` hands oauthlib a number for a static setting, a callable for a dynamic one."""
+
+    def test_static_setting_is_resolved_to_an_int(self):
+        settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": timedelta(minutes=1)})
+        assert settings.server_kwargs["token_expires_in"] == 60
+
+    def test_callable_setting_is_passed_through_for_per_request_evaluation(self):
+        settings = OAuth2ProviderSettings(
+            {"ACCESS_TOKEN_EXPIRE_SECONDS": "tests.test_settings._expires_in_by_grant_type"}
+        )
+        token_expires_in = settings.server_kwargs["token_expires_in"]
+        request = Request("/o/token/")
+        request.grant_type = "authorization_code"
+        assert callable(token_expires_in)
+        assert token_expires_in(request) == 600
+
+    def test_extra_server_kwargs_still_wins(self):
+        settings = OAuth2ProviderSettings(
+            {
+                "ACCESS_TOKEN_EXPIRE_SECONDS": 100,
+                "EXTRA_SERVER_KWARGS": {"token_expires_in": 200},
+            }
+        )
+        assert settings.server_kwargs["token_expires_in"] == 200

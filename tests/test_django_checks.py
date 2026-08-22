@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from django.core import checks
 from django.core.management import call_command
@@ -5,6 +7,7 @@ from django.core.management.base import SystemCheckError
 from django.test import override_settings
 
 from oauth2_provider.core.checks import (
+    validate_access_token_expiry_configuration,
     validate_refresh_token_configuration,
     validate_swapped_model_consistency,
     validate_token_configuration,
@@ -109,3 +112,38 @@ class RefreshTokenConfigurationCheckTestCase(TestCase):
         messages = validate_refresh_token_configuration(None)
         self.assertEqual([m.id for m in messages], ["oauth2_provider.W012"])
         self.assertIsInstance(messages[0], checks.Warning)
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class AccessTokenExpiryConfigurationCheckTestCase(TestCase):
+    def _ids(self):
+        return [m.id for m in validate_access_token_expiry_configuration(None)]
+
+    def test_check_is_registered(self):
+        from django.core.checks.registry import registry as checks_registry
+
+        self.assertIn(
+            validate_access_token_expiry_configuration,
+            checks_registry.get_checks(include_deployment_checks=True),
+        )
+
+    @override_settings(OAUTH2_PROVIDER={"ACCESS_TOKEN_EXPIRE_SECONDS": "nope.not_importable"})
+    def test_unimportable_string_is_reported_not_raised(self):
+        messages = validate_access_token_expiry_configuration(None)
+        self.assertEqual([m.id for m in messages], ["oauth2_provider.E006"])
+
+    def test_valid_values_pass(self):
+        for value in (36000, timedelta(minutes=5), lambda request: 60):
+            with self.subTest(value=value):
+                self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = value
+                self.assertEqual(self._ids(), [])
+
+    def test_invalid_static_value_errors(self):
+        # A string is treated as a dotted path to the callable, so an unimportable one is
+        # a misconfiguration too -- and must be reported, not raised out of the check.
+        for value in (0, -1, "not a number"):
+            with self.subTest(value=value):
+                self.oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS = value
+                messages = validate_access_token_expiry_configuration(None)
+                self.assertEqual([m.id for m in messages], ["oauth2_provider.E006"])
+                self.assertIsInstance(messages[0], checks.Error)

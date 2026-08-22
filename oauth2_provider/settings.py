@@ -17,6 +17,7 @@ back to the defaults.
 """
 
 import warnings
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -314,6 +315,7 @@ IMPORT_STRINGS = (
     "CLIENT_SECRET_GENERATOR_CLASS",
     "ACCESS_TOKEN_GENERATOR",
     "REFRESH_TOKEN_GENERATOR",
+    "ACCESS_TOKEN_EXPIRE_SECONDS",
     "OAUTH2_SERVER_CLASS",
     "OAUTH2_VALIDATOR_CLASS",
     "OAUTH2_BACKEND_CLASS",
@@ -365,6 +367,31 @@ def import_from_string(val, setting_name):
     except ImportError as e:
         msg = "Could not import %r for setting %r. %s: %s." % (val, setting_name, e.__class__.__name__, e)
         raise ImportError(msg)
+
+
+def coerce_expires_in(value, setting_name):
+    """Normalize a token-lifetime setting to a positive number of seconds.
+
+    Accepts an ``int``/``float`` number of seconds or a ``timedelta`` and returns an
+    ``int``, which is what oauthlib puts in the ``expires_in`` member of the token
+    response and what :class:`datetime.timedelta` needs to compute the stored expiry.
+
+    Raises ``ImproperlyConfigured`` for a non-numeric, non-positive, or out-of-range
+    value (like ``refresh_token_expire_timedelta``) so a misconfiguration fails with a
+    message naming the setting instead of an opaque ``TypeError``/``OverflowError``.
+    """
+    if isinstance(value, timedelta):
+        value = value.total_seconds()
+    # ``bool`` is an ``int`` subclass; ``True`` as a lifetime is always a mistake.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ImproperlyConfigured("%s must be a number of seconds or a timedelta" % setting_name)
+    try:
+        value = int(value)
+    except (ValueError, OverflowError):
+        raise ImproperlyConfigured("%s is out of range" % setting_name)
+    if value <= 0:
+        raise ImproperlyConfigured("%s must be positive" % setting_name)
+    return value
 
 
 class _PhonyHttpRequest(HttpRequest):
@@ -447,6 +474,24 @@ class OAuth2ProviderSettings:
         if not val and attr in self.mandatory:
             raise AttributeError("OAuth2Provider setting: %s is mandatory" % attr)
 
+    def access_token_expires_in(self, request: Request | None = None) -> int:
+        """Resolve ``ACCESS_TOKEN_EXPIRE_SECONDS`` to a positive number of seconds.
+
+        The setting may be a number of seconds, a ``timedelta``, or a callable taking the
+        current ``oauthlib.common.Request`` and returning either -- which is how a
+        deployment varies the access token lifetime per client, grant type, scope, or
+        session. The signature matches oauthlib's ``token_expires_in`` contract, so this
+        method is handed to the ``Server`` directly when the setting is dynamic.
+
+        :param request: the oauthlib request a dynamic lifetime is computed from. ``None``
+            is only ever passed by callers that have no request in hand, so a callable
+            setting must tolerate it or the deployment must keep a static value.
+        """
+        value = self.ACCESS_TOKEN_EXPIRE_SECONDS
+        if callable(value):
+            value = value(request)
+        return coerce_expires_in(value, "ACCESS_TOKEN_EXPIRE_SECONDS")
+
     @property
     def server_kwargs(self):
         """
@@ -464,7 +509,6 @@ class OAuth2ProviderSettings:
         kwargs = {
             key: getattr(self, value)
             for key, value in [
-                ("token_expires_in", "ACCESS_TOKEN_EXPIRE_SECONDS"),
                 ("refresh_token_expires_in", "REFRESH_TOKEN_EXPIRE_SECONDS"),
                 ("token_generator", "ACCESS_TOKEN_GENERATOR"),
                 ("refresh_token_generator", "REFRESH_TOKEN_GENERATOR"),
@@ -475,6 +519,14 @@ class OAuth2ProviderSettings:
                 ("pre_token", "OAUTH_PRE_TOKEN_VALIDATION"),
             ]
         }
+        # A dynamic lifetime is handed to oauthlib as a callable so it is evaluated per
+        # request (both token handlers call it with the request); a static one is resolved
+        # once, here, so a misconfigured value is reported when the server is built rather
+        # than when the first token is issued.
+        if callable(self.ACCESS_TOKEN_EXPIRE_SECONDS):
+            kwargs["token_expires_in"] = self.access_token_expires_in
+        else:
+            kwargs["token_expires_in"] = self.access_token_expires_in()
         kwargs.update(self.EXTRA_SERVER_KWARGS)
         return kwargs
 
