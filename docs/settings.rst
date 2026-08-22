@@ -1021,9 +1021,6 @@ Whether to delete the access, refresh and ID tokens of the user that is being lo
 The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
 The default is to delete the tokens of all applications if this flag is enabled.
 
-Resource Server settings
-------------------------
-
 An RP-initiated logout revokes the user's access tokens and every refresh token derived
 from them, with no exemption for grants carrying the ``offline_access`` scope.
 `OpenID Connect Back-Channel Logout 1.0
@@ -1034,6 +1031,9 @@ section 4.14 separately permits an :term:`Authorization Server` to "revoke refre
 automatically in case of a security event, such as ... logout at the authorization
 server". Set this to ``False`` if the offline grants your relying parties hold must
 survive an interactive logout.
+
+Resource Server settings
+------------------------
 
 RESOURCE_SERVER_INTROSPECTION_URL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
