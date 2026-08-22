@@ -325,10 +325,15 @@ def validate_refresh_token_configuration(app_configs, **kwargs):
     return []
 
 
-@checks.register()
+@checks.register(checks.Tags.security)
 def validate_access_token_expiry_configuration(app_configs, **kwargs):
     """
     Report a misconfigured ``ACCESS_TOKEN_EXPIRE_SECONDS`` at startup.
+
+    Tagged ``security`` (not ``deploy``-only, unlike ``validate_bcp_configuration``) because
+    the access token lifetime is the RFC 9700 §4 exposure window for a leaked token, and an
+    untagged check is skipped entirely by tag-filtered runs such as ``manage.py check --tag
+    security``.
 
     The setting may be a number of seconds, a ``timedelta``, or a callable taking the
     oauthlib request (see ``OAuth2ProviderSettings.access_token_expires_in``). A static

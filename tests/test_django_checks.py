@@ -132,6 +132,11 @@ class AccessTokenExpiryConfigurationCheckTestCase(TestCase):
         messages = validate_access_token_expiry_configuration(None)
         self.assertEqual([m.id for m in messages], ["oauth2_provider.E006"])
 
+    def test_check_is_tagged(self):
+        # An untagged check is skipped by tag-filtered runs (`manage.py check --tag ...`),
+        # so it must carry a tag like every other check in the module.
+        self.assertIn(checks.Tags.security, validate_access_token_expiry_configuration.tags)
+
     def test_valid_values_pass(self):
         for value in (36000, timedelta(minutes=5), lambda request: 60):
             with self.subTest(value=value):
