@@ -1028,7 +1028,9 @@ class TestOAuth2ValidatorErrorResourceToken(TestCase):
 
     def test_response_when_auth_server_response_not_200(self):
         """
-        Ensure we log the error when the authentication server returns a non-200 response.
+        A non-200 introspection response is an ordinary response, not an exception: it is
+        logged as a warning, without the ``NoneType: None`` tail ``log.exception()`` appends
+        when there is no active exception to attach.
         """
         mock_response = requests.Response()
         mock_response.status_code = 404
@@ -1039,13 +1041,61 @@ class TestOAuth2ValidatorErrorResourceToken(TestCase):
                 self.validator._get_token_from_authentication_server(
                     self.token, self.introspection_url, self.introspection_token, None
                 )
-                self.assertIn(
-                    "ERROR:oauth2_provider:Introspection: Failed to "
-                    "get a valid response from authentication server. "
-                    "Status code: 404, Reason: "
-                    "Not Found.\nNoneType: None",
+                self.assertEqual(
+                    [
+                        "WARNING:oauth2_provider:Introspection: Failed to get a valid response "
+                        "from authentication server. Status code: 404, Reason: Not Found."
+                    ],
                     mock_log.output,
                 )
+
+    def test_response_when_auth_server_response_not_200_inside_except_block(self):
+        """
+        The non-200 branch must not borrow the traceback of an unrelated exception the caller
+        happens to be handling further up the stack.
+        """
+        mock_response = requests.Response()
+        mock_response.status_code = 503
+        mock_response.reason = "Service Unavailable"
+        with mock.patch("requests.post") as mock_post:
+            mock_post.return_value = mock_response
+            try:
+                raise ValueError("unrelated caller failure")
+            except ValueError:
+                with self.assertLogs(logger="oauth2_provider") as mock_log:
+                    self.validator._get_token_from_authentication_server(
+                        self.token, self.introspection_url, self.introspection_token, None
+                    )
+        self.assertNotIn("unrelated caller failure", "\n".join(mock_log.output))
+        self.assertNotIn("Traceback", "\n".join(mock_log.output))
+
+    def test_inactive_token_returns_none(self):
+        """
+        An introspection response reporting an inactive token yields no access token.
+        """
+        mock_response = requests.Response()
+        mock_response.status_code = 200
+        mock_response._content = b'{"active": false}'
+        with mock.patch("requests.post") as mock_post:
+            mock_post.return_value = mock_response
+            access_token = self.validator._get_token_from_authentication_server(
+                self.token, self.introspection_url, self.introspection_token, None
+            )
+        self.assertIsNone(access_token)
+
+    def test_response_without_active_claim_returns_none(self):
+        """
+        An introspection response with no ``active`` member at all yields no access token.
+        """
+        mock_response = requests.Response()
+        mock_response.status_code = 200
+        mock_response._content = b'{"scope": "read write"}'
+        with mock.patch("requests.post") as mock_post:
+            mock_post.return_value = mock_response
+            access_token = self.validator._get_token_from_authentication_server(
+                self.token, self.introspection_url, self.introspection_token, None
+            )
+        self.assertIsNone(access_token)
 
 
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)

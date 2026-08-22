@@ -119,6 +119,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
+  response is an ordinary response, not an exception, so it is logged with `log.warning` instead
+  of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
+  record, and attached an unrelated traceback whenever the call happened to be made from inside
+  some outer `except`. And `OAuth2ExtraTokenMiddleware` logged a full traceback for every request
+  carrying a bearer token that does not resolve, which is the normal outcome for an expired,
+  revoked or bogus token; it is now a single `log.debug` line. Operators filtering these records
+  at `ERROR` level will stop seeing them.
 * #1827 The remote introspection POST is now time-bounded by a new
   `RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS` setting (default `5`, matching the other outbound
   fetch timeouts). `requests` applies no timeout of its own, so an authorization server that accepted

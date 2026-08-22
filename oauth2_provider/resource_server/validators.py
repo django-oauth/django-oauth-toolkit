@@ -215,12 +215,12 @@ class ResourceServerValidatorMixin:
             log.exception("Introspection: Failed POST to %r in token lookup", introspection_url)
             return None
 
-        # Log an exception when response from auth server is not successful
         if response.status_code != http.client.OK:
-            log.exception(
-                "Introspection: Failed to get a valid response "
-                "from authentication server. Status code: {}, "
-                "Reason: {}.".format(response.status_code, response.reason)
+            log.warning(
+                "Introspection: Failed to get a valid response from authentication server. "
+                "Status code: %s, Reason: %s.",
+                response.status_code,
+                response.reason,
             )
             return None
 
@@ -286,6 +286,9 @@ class ResourceServerValidatorMixin:
             )
 
             return access_token
+
+        log.debug("Introspection: token is not active")
+        return None
 
     @staticmethod
     def _build_introspection_client_assertion():
