@@ -176,3 +176,18 @@ class TestNinjaThrottling(TestCase):
 
         response = self._get("/api/open-user-or-client-throttled", remote_addr="198.51.100.6")
         self.assertEqual(response.status_code, 200)
+
+    def test_user_or_client_throttle_falls_back_to_session_user(self):
+        """A session-authenticated request has no token, but still has an identity."""
+        self.client.force_login(self.test_user)
+        for _ in range(2):
+            response = self._get("/api/open-user-or-client-throttled", remote_addr="198.51.100.5")
+            self.assertEqual(response.status_code, 200)
+
+        response = self._get("/api/open-user-or-client-throttled", remote_addr="198.51.100.5")
+        self.assertEqual(response.status_code, 429)
+
+        # Same address, different user: keyed by user rather than by IP.
+        self.client.force_login(self.other_user)
+        response = self._get("/api/open-user-or-client-throttled", remote_addr="198.51.100.5")
+        self.assertEqual(response.status_code, 200)
