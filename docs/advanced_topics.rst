@@ -111,6 +111,23 @@ Only the forms are affected. ``oauth2_provider/templates/oauth2_provider/applica
 lists the built-in fields explicitly, so override that template to show a custom field
 there too.
 
+.. warning:: These views are self-service: whoever is logged in edits their own
+    application. Name the fields you want rather than reaching for
+    ``Meta.fields = "__all__"``, which hands the application owner every editable field on
+    the model, including several that are security boundaries:
+
+    * ``skip_authorization`` -- suppresses the consent screen, letting an application
+      collect authorizations without the end user being asked.
+    * ``registration_source`` -- selects which management code paths accept the
+      application; the RFC 7592 endpoint only operates on DCR-registered clients and the
+      CIMD resolver only refreshes CIMD ones.
+    * ``cimd_expires_at`` -- maintained by the CIMD resolver.
+
+    The Django admin marks the last two read-only for the same reason. ``user`` is safe to
+    list but pointless: ``ApplicationUpdate`` pins the owner to the request user, so an
+    application cannot change hands through these views regardless of the configured form.
+    Reassigning an application stays an admin operation.
+
 Validating a custom Application model
 =====================================
 

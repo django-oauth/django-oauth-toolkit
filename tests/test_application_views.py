@@ -718,3 +718,36 @@ class TestApplicationFormClassSetting(BaseTest):
 
         app.refresh_from_db()
         self.assertEqual(app.custom_field, "after")
+
+    @pytest.mark.oauth2_settings({"APPLICATION_FORM_CLASS": "tests.forms.OwnerEditableApplicationForm"})
+    def test_update_view_does_not_let_a_custom_form_transfer_ownership(self):
+        """A form exposing ``user`` must not turn the update view into a hand-off.
+
+        The view has always owned this: its queryset is filtered to the request user, and
+        the field set it built could not contain ``user``. Now that the field set is
+        configurable, the guarantee has to live in the view instead of in the field list.
+        """
+        app = Application.objects.create(
+            name="app foo_user 4",
+            redirect_uris="http://example.com",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            user=self.foo_user,
+        )
+        self.client.login(username="foo_user", password="123456")
+
+        form_data = {
+            "name": app.name,
+            "client_id": app.client_id,
+            "client_secret": app.client_secret,
+            "client_type": app.client_type,
+            "authorization_grant_type": app.authorization_grant_type,
+            "redirect_uris": app.redirect_uris,
+            "algorithm": "",
+            "user": self.bar_user.pk,
+        }
+        response = self.client.post(reverse("oauth2_provider:update", args=(app.pk,)), form_data)
+        self.assertEqual(response.status_code, 302)
+
+        app.refresh_from_db()
+        self.assertEqual(app.user, self.foo_user)
