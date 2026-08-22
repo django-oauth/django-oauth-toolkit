@@ -130,8 +130,13 @@ def collect_backchannel_logout_targets(user):
 
     ``application`` and ``user`` are selected eagerly for the same reason: the returned
     instances outlive their rows, and nothing in the dispatch path may lazy-load.
+
+    Returns nothing when the feature is off. RPInitiatedLogoutView calls this on every
+    logout, before it can know whether anything will be dispatched, so the guard belongs
+    here rather than at the call site: a deployment that never enabled back-channel logout
+    should not pay for a query per logout.
     """
-    if user is None:
+    if user is None or not oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
         return []
 
     id_tokens = (

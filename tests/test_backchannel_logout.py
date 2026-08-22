@@ -13,6 +13,7 @@ from django.utils import timezone
 from jwcrypto import jwt as jwcrypto_jwt
 
 from oauth2_provider.authorization_server.oidc.handlers import (
+    collect_backchannel_logout_targets,
     on_user_logged_out_maybe_send_backchannel_logout,
     send_backchannel_logout_request,
 )
@@ -313,6 +314,15 @@ class TestBackchannelLogout(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertNotIn("_auth_user_id", self.client.session)
         self.assertEqual(IDToken.objects.count(), 0)
+
+    def test_disabled_backchannel_logout_costs_no_query(self):
+        # RPInitiatedLogoutView collects targets on every logout, before it knows whether
+        # anything will be dispatched. A deployment that never turned back-channel logout
+        # on must not pay for an ID Token query on each RP-initiated logout.
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = False
+
+        with self.assertNumQueries(0):
+            self.assertEqual(collect_backchannel_logout_targets(self.user), [])
 
     def test_logout_tokens_are_dispatched_in_parallel(self):
         # Back-Channel Logout 1.0 section 2.3 encourages contacting RPs in parallel. The
