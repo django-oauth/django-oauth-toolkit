@@ -796,6 +796,16 @@ Default: ``None``
 Optional ``kid`` header for the introspection client assertion; defaults to the signing key's own
 ``kid`` when it has one.
 
+RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``5``
+
+The timeout in seconds for the HTTP request to the remote introspection endpoint. Every request
+carrying a bearer token goes through this call when ``RESOURCE_SERVER_INTROSPECTION_URL`` is set, so
+without a bound an authorization server that accepts the connection and then stalls would hold a
+worker per inbound request. On timeout the token is treated as invalid, as for any other failed
+introspection request.
+
 RESOURCE_SERVER_TOKEN_CACHING_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The number of seconds an authorization token received from the introspection endpoint remains valid.

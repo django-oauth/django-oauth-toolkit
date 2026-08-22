@@ -205,7 +205,12 @@ class ResourceServerValidatorMixin:
             )
 
         try:
-            response = requests.post(introspection_url, data=body, headers=headers)
+            response = requests.post(
+                introspection_url,
+                data=body,
+                headers=headers,
+                timeout=oauth2_settings.RESOURCE_SERVER_INTROSPECTION_TIMEOUT_SECONDS,
+            )
         except requests.exceptions.RequestException:
             log.exception("Introspection: Failed POST to %r in token lookup", introspection_url)
             return None
