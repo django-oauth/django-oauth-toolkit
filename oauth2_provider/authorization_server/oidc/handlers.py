@@ -16,8 +16,6 @@ from oauth2_provider.settings import oauth2_settings
 
 logger = logging.getLogger(__name__)
 
-OFFLINE_ACCESS_SCOPE = "offline_access"
-
 
 def send_backchannel_logout_request(id_token, *args, **kwargs):
     """
@@ -114,11 +112,6 @@ def on_user_logged_out_maybe_send_backchannel_logout(sender, **kwargs):
     # Group by application and send one request per application
     applications_notified = set()
     for id_token in id_tokens:
-        # Sessions holding offline_access persist beyond logout. Checked here rather than
-        # in the query because scope is a space-separated list of case-sensitive values,
-        # which no database lookup matches exactly.
-        if OFFLINE_ACCESS_SCOPE in id_token.scope.split():
-            continue
         if id_token.application in applications_notified:
             continue
         applications_notified.add(id_token.application)

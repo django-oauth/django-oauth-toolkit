@@ -126,34 +126,13 @@ class TestBackchannelLogout(TestCase):
             mock_func.side_effect = BackchannelLogoutRequestError("Bad Gateway")
             on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
 
-    def test_logout_sent_when_scope_merely_contains_offline_access(self):
-        # Scope is a space-separated list of case-sensitive values, so a scope whose *name*
-        # contains the substring is a different scope and must not suppress the logout.
-        self.id_token.scope = "openid profile not_offline_access"
-        self.id_token.save()
-
-        with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request") as backchannel_handler:
-            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
-            backchannel_handler.assert_called_once()
-
-    def test_logout_sent_when_scope_differs_only_in_case(self):
-        self.id_token.scope = "openid profile OFFLINE_ACCESS"
-        self.id_token.save()
-
-        with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request") as backchannel_handler:
-            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
-            backchannel_handler.assert_called_once()
-
-    def test_no_logout_sent_when_id_token_has_offline_access(self):
-        # Add offline_access scope to the ID token
+    def test_logout_sent_when_id_token_has_offline_access(self):
+        # Back-Channel Logout 1.0 section 2.7 addresses offline_access to the RP receiving
+        # the token -- it keeps its refresh token and clears the session -- so the OP must
+        # not withhold the request and decide on the RP's behalf.
         self.id_token.scope = "openid profile offline_access"
         self.id_token.save()
 
-        with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request") as backchannel_handler:
-            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
-            backchannel_handler.assert_not_called()
-
-    def test_logout_sent_when_id_token_without_offline_access(self):
         with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request") as backchannel_handler:
             on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
             backchannel_handler.assert_called_once()

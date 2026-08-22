@@ -213,13 +213,17 @@ carry the ``sub`` claim only, which per `Backchannel Logout`_ section 2.4 is a v
 Logout Token: it asks the RP to end *all* of that user's sessions, not one of them.
 
 Participation is likewise approximated: on logout, DOT notifies every application that
-registered a ``backchannel_logout_uri`` and holds an unexpired ID Token for the user,
-skipping those whose ID Token was issued with the ``offline_access`` scope (those grants
-are defined to outlive the session). ID Token lifetime and RP session lifetime are not
-the same thing, so an RP whose server-side session is still live but whose ID Token row
-has expired will not be notified. Both bounds are lifted by the session entity in the
-`Authorization and Session entities ADR
+registered a ``backchannel_logout_uri`` and holds an unexpired ID Token for the user. ID
+Token lifetime and RP session lifetime are not the same thing, so an RP whose server-side
+session is still live but whose ID Token row has expired will not be notified. Both bounds
+are lifted by the session entity in the `Authorization and Session entities ADR
 <https://github.com/django-oauth/django-oauth-toolkit/issues/1723>`_.
+
+The ``offline_access`` scope does not suppress the notification. `Backchannel Logout`_
+section 2.7 addresses it to the :term:`Client` (Relying Party) receiving the token —
+"Refresh tokens issued with the ``offline_access`` property normally SHOULD NOT be
+revoked" — so the Relying Party clears the session state and decides for itself what to do
+with its refresh token. Withholding the request would deny it that choice.
 
 Delivery
 --------
