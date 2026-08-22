@@ -886,7 +886,8 @@ Default: ``oauth2_provider.authorization_server.oidc.handlers.send_backchannel_l
 Upon logout, the :term:`Authorization Server` (OpenID Provider) looks for the ID Tokens associated with the user on applications that support Backchannel Logout, and calls the function defined here **once per application** — passing the most recently issued of that application's live ID Tokens, since one logout token per relying party is what `Backchannel Logout`__ section 2.5 describes.
 
 __ https://openid.net/specs/openid-connect-backchannel-1_0.html
- The default function can be used as-is, but if you need to override or customize it somehow (e.g, if you do not want to execute these requests on the same HTTP request-response from the user logout view), you can change this setting to any function that takes ``id_token`` as a keyword argument.
+
+The default function can be used as-is, but if you need to override or customize it somehow (e.g., if you do not want to execute these requests on the same HTTP request-response from the user logout view), you can change this setting to any function that takes ``id_token`` as a keyword argument.
 
 Three things a custom handler has to know.
 
