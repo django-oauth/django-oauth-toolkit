@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the client application instead. Buckets are keyed on primary keys rather than on the token, so
   rotating a token does not reset the limit. See "Throttling" in the Django REST Framework and
   Django Ninja documentation.
+* #1384 New `APPLICATION_FORM_CLASS` setting naming the `ModelForm` the built-in application
+  registration and update views use. Pointing it at a subclass of `ApplicationForm` that declares
+  its own `Meta.fields` (or `Meta.exclude`) is how the extra fields of a swapped application model
+  get onto those views, which previously rendered a hard-coded field list only. The form is rebound
+  to the configured application model, and the default field set is unchanged. See "Showing custom
+  Application fields on the registration form" in the advanced topics documentation.
 * #483 `ACCESS_TOKEN_EXPIRE_SECONDS` now accepts a `datetime.timedelta`, or a callable taking the
   oauthlib request and returning a number of seconds or a `timedelta`, in addition to a plain number
   of seconds. This makes the access token lifetime vary per client, grant type, scope or session
