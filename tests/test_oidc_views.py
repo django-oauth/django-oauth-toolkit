@@ -184,6 +184,20 @@ class TestConnectDiscoveryInfoView(TestCase):
         with self.assertRaises(NoReverseMatch):
             self.client.get("/.well-known/openid-configuration")
 
+    def test_get_backchannel_logout_support_info_when_enabled(self):
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = True
+        response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+        response_data = response.json()
+        # Ensure the discovery document explicitly advertises backchannel logout support
+        self.assertIn("backchannel_logout_supported", response_data)
+        self.assertIs(response_data["backchannel_logout_supported"], True)
+
+    def test_no_backchannel_logout_support_when_disabled(self):
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = False
+        response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+        response_data = response.json()
+        self.assertFalse("backchannel_logout_supported" in response_data)
+
 
 @pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
@@ -1551,6 +1565,26 @@ class TestOAuthServerMetadataView(TestCase):
         # Static metadata is still present.
         assert "issuer" in data
         assert data["scopes_supported"] == ["openid", "read", "write"]
+
+    def test_rfc8414_metadata_advertises_backchannel_logout(self):
+        # Section 5.2.1 registers both names in the RFC 8414 registry too, so the two
+        # discovery documents must agree.
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = True
+        data = self.client.get(reverse("oauth2_provider:oauth-server-metadata")).json()
+        self.assertIs(data["backchannel_logout_supported"], True)
+        self.assertIs(data["backchannel_logout_session_supported"], False)
+
+    def test_rfc8414_metadata_omits_backchannel_logout_when_disabled(self):
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = False
+        data = self.client.get(reverse("oauth2_provider:oauth-server-metadata")).json()
+        self.assertNotIn("backchannel_logout_supported", data)
+        self.assertNotIn("backchannel_logout_session_supported", data)
+
+    def test_rfc8414_metadata_omits_backchannel_logout_when_oidc_disabled(self):
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED = True
+        self.oauth2_settings.OIDC_ENABLED = False
+        data = self.client.get(reverse("oauth2_provider:oauth-server-metadata")).json()
+        self.assertNotIn("backchannel_logout_supported", data)
 
 
 @pytest.mark.usefixtures("oauth2_settings")

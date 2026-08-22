@@ -163,6 +163,7 @@ class AbstractApplication(models.Model):
     * :attr:`require_pushed_authorization_requests` Whether this client may only
                               start an authorization request via PAR (:rfc:`9126`).
                               ``None`` defers to the server-wide setting.
+    * :attr:`backchannel_logout_uri` Backchannel Logout URI (OIDC-only)
     """
 
     class RegistrationSource(models.TextChoices):
@@ -340,6 +341,12 @@ class AbstractApplication(models.Model):
         ),
         verbose_name=_("require pushed authorization requests"),
     )
+    backchannel_logout_uri = models.URLField(
+        blank=True,
+        default="",
+        help_text=_("Backchannel Logout URI where logout tokens will be sent"),
+        verbose_name=_("backchannel logout uri"),
+    )
 
     class Meta:
         abstract = True
@@ -471,6 +478,15 @@ class AbstractApplication(models.Model):
                 except ValidationError as exc:
                     self._collect_uri_validation_error(field_errors, "allowed_origins", exc)
 
+        if self.backchannel_logout_uri:
+            # Only touch the key when there is something to report: field_errors is a
+            # defaultdict and an empty list would still make it truthy below.
+            logout_uri_errors = self._clean_logout_uri(
+                self.backchannel_logout_uri, _("backchannel logout uri")
+            )
+            if logout_uri_errors:
+                field_errors["backchannel_logout_uri"].extend(logout_uri_errors)
+
         if self.algorithm == AbstractApplication.RS256_ALGORITHM:
             if not oauth2_settings.OIDC_RSA_PRIVATE_KEY:
                 field_errors["algorithm"].append(
@@ -515,6 +531,63 @@ class AbstractApplication(models.Model):
 
         if field_errors:
             raise ValidationError(field_errors)
+
+    def _clean_logout_uri(self, uri, name):
+        """Validate a logout URI an RP registers for the OP to contact.
+
+        Back-Channel Logout 1.0 section 2.2 and Front-Channel Logout 1.0 section 2 state
+        the same rule for their respective URIs: the URI "SHOULD use the https scheme and
+        MAY contain port, path, and query parameter components; however, it MAY use the
+        http scheme, provided that the Client Type is confidential [...] and provided the
+        OP allows the use of http RP URIs". ``OIDC_LOGOUT_URI_ALLOWED_SCHEMES`` is the OP's
+        half of that permission; the client's half is ``client_type``, checked below.
+
+        Deliberately not validated against the redirect URI schemes. Those govern URIs the
+        user agent is sent to, and may legitimately hold an RFC 8252 private-use scheme,
+        which has no authority for the OP to reach.
+
+        Returns a list of errors, empty when the URI is acceptable, so the caller can key
+        them onto whichever field supplied it.
+        """
+        validator = AllowedURIValidator(
+            oauth2_settings.OIDC_LOGOUT_URI_ALLOWED_SCHEMES,
+            name=name,
+            allow_path=True,
+            allow_query=True,
+        )
+        try:
+            validator(uri)
+        except ValidationError as exc:
+            return list(exc.error_list)
+
+        parsed = urlsplit(uri)
+        if parsed.scheme != "http":
+            return []
+        # A plaintext logout URI is only for a confidential client: a logout token is a
+        # signed assertion that a named subject's session ended, and delivering it in the
+        # clear exposes the subject identifier to anyone on the path.
+        if self.client_type == AbstractApplication.CLIENT_CONFIDENTIAL:
+            return []
+        # The loopback exemption is for local development, where a relying party running
+        # on the developer's own machine has no certificate. It follows the same rule
+        # ``redirect_to_uri_allowed()`` applies to RFC 8252 loopback redirects: the IP
+        # literals always count, while the ``localhost`` hostname -- which resolves
+        # through DNS and can therefore point off-box -- only counts under
+        # ALLOW_LOCALHOST_LOOPBACK.
+        if parsed.hostname in ("127.0.0.1", "::1") or (
+            oauth2_settings.ALLOW_LOCALHOST_LOOPBACK and parsed.hostname == "localhost"
+        ):
+            return []
+        return [
+            ValidationError(
+                _(
+                    "A plaintext http %(name)s is only allowed for a confidential client, or on "
+                    "a loopback address for local development. Use https, or set client_type to "
+                    "confidential."
+                ),
+                params={"name": name},
+            )
+        ]
 
     def _clean_client_assertion_config(self, field_errors):
         """Validate the RFC 7523 client authentication fields (see clean()).

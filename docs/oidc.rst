@@ -179,6 +179,71 @@ verified is still rejected, and a ``client_id`` given alongside it is still requ
 the ID Token was issued for.
 
 
+Backchannel Logout Support
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+`Backchannel Logout`_ is an extension to the core standard which
+allows the OP to send direct requests to terminate sessions at the RP.
+
+.. code-block:: python
+
+   OAUTH2_PROVIDER = {
+       # OIDC has to be enabled to use Backchannel logout
+       "OIDC_ENABLED": True,
+       "OIDC_ISS_ENDPOINT": "https://idp.example.com", # Required for issuing logout tokens
+       # Enable and configure Backchannel Logout Support
+       "OIDC_BACKCHANNEL_LOGOUT_ENABLED": True,
+       # ... any other settings you want
+   }
+
+.. _Backchannel Logout: https://openid.net/specs/openid-connect-backchannel-1_0.html
+
+To make use of this, the application being created needs to provide a
+valid ``backchannel_logout_uri``. It is validated against
+``OIDC_LOGOUT_URI_ALLOWED_SCHEMES`` (``["https"]`` by default) and may carry a port,
+path and query, but not a fragment. Plaintext ``http`` is accepted only for a confidential
+client, or on a loopback address for local development.
+
+Which Relying Parties are notified
+----------------------------------
+
+DOT does not yet model the OP authentication session, so it has no ``sid`` to scope a
+logout to and advertises ``backchannel_logout_session_supported: false``. Logout tokens
+carry the ``sub`` claim only, which per `Backchannel Logout`_ section 2.4 is a valid
+Logout Token: it asks the RP to end *all* of that user's sessions, not one of them.
+
+Participation is likewise approximated: on logout, DOT notifies every application that
+registered a ``backchannel_logout_uri`` and holds an unexpired ID Token for the user. ID
+Token lifetime and RP session lifetime are not the same thing, so an RP whose server-side
+session is still live but whose ID Token row has expired will not be notified. Both bounds
+are lifted by the session entity in the `Authorization and Session entities ADR
+<https://github.com/django-oauth/django-oauth-toolkit/issues/1723>`_.
+
+The ``offline_access`` scope does not suppress the notification. `Backchannel Logout`_
+section 2.7 addresses it to the :term:`Client` (Relying Party) receiving the token —
+"Refresh tokens issued with the ``offline_access`` property normally SHOULD NOT be
+revoked" — so the Relying Party clears the session state and decides for itself what to do
+with its refresh token. Withholding the request would deny it that choice.
+
+Delivery
+--------
+
+Logout tokens are sent from the logout request itself, in parallel across
+``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS`` threads, so a logout waits on the slowest relying
+party rather than on all of them in turn. Each request is bounded by
+``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT``.
+
+Nothing a relying party does can delay or prevent the logout itself. The session is
+flushed and — for an RP-initiated logout — the user's tokens are revoked *before* any
+request goes out; failures are logged and never propagate. The notifications still precede
+the post-logout redirect, as `RP-Initiated Logout 1.0
+<https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ section 2 requires.
+
+One request is sent per relying party, with no retry. Deployments that want retries, or
+that would rather not send at all from the request-response cycle, set
+``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` to a callable that hands the work to a task queue;
+``docs/settings.rst`` documents what such a handler needs to know.
+
 Setting up OIDC enabled clients
 ===============================
 

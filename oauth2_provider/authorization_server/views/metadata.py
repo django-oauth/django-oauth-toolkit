@@ -172,6 +172,15 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             if auth_signing_algs:
                 data["introspection_endpoint_auth_signing_alg_values_supported"] = auth_signing_algs
 
+        # Back-Channel Logout 1.0 section 5.2.1 registers both names in the RFC 8414
+        # registry, not only in the OIDC discovery document, so the two agree. Unlike
+        # ConnectDiscoveryInfoView this view is not behind OIDCOnlyMixin, hence the
+        # OIDC_ENABLED conjunct.
+        if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+            data["backchannel_logout_supported"] = True
+            # No sid claim is issued, so all sessions for the subject are logged out.
+            data["backchannel_logout_session_supported"] = False
+
         if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY:
             jwks_url = self._get_endpoint_url(request, "jwks-info")
             if jwks_url:

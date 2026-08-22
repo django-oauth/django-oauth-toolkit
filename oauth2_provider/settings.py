@@ -258,6 +258,22 @@ DEFAULTS = {
     # RP-Initiated Registration (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
     "OIDC_RP_INITIATED_REGISTRATION_URL": None,
+    # Logout URIs an RP registers for the OP to contact. Shared by the logout
+    # mechanisms: Back-Channel Logout 1.0 section 2.2 and Front-Channel Logout 1.0
+    # section 2 state the same scheme rule for their respective URIs.
+    "OIDC_LOGOUT_URI_ALLOWED_SCHEMES": ["https"],
+    # Back-Channel Logout (OP notifying relying parties out of band)
+    "OIDC_BACKCHANNEL_LOGOUT_ENABLED": False,
+    "OIDC_BACKCHANNEL_LOGOUT_HANDLER": (
+        "oauth2_provider.authorization_server.oidc.handlers.send_backchannel_logout_request"
+    ),
+    "OIDC_BACKCHANNEL_LOGOUT_TIMEOUT": 5,
+    # Back-Channel Logout 1.0 section 4 encourages "at most two minutes in the future",
+    # to limit how long a captured Logout Token stays replayable.
+    "OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS": 120,
+    # Section 2.3 encourages contacting relying parties in parallel. 1 dispatches
+    # sequentially, for a handler that is not safe to call from a worker thread.
+    "OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS": 4,
     # RP-Initiated Logout (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
     "OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT": True,
@@ -343,6 +359,7 @@ IMPORT_STRINGS = (
     "ALLOWED_ORIGIN_VALIDATOR",
     "CIMD_METADATA_FETCHER",
     "CIMD_REGISTRATION_PERMISSION_CLASSES",
+    "OIDC_BACKCHANNEL_LOGOUT_HANDLER",
 )
 
 

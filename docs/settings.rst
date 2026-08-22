@@ -871,6 +871,113 @@ This setting is required when ``OIDC_RP_INITIATED_REGISTRATION_ENABLED`` is
 ``True``: if it is unset or cannot be resolved, ``ImproperlyConfigured`` is
 raised when a ``prompt=create`` request is received.
 
+OIDC_BACKCHANNEL_LOGOUT_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When it is set to ``False`` (default) the `OpenID Connect Backchannel Logout <https://openid.net/specs/openid-connect-backchannel-1_0.html>`_
+extension is not enabled. OpenID Connect Backchannel Logout enables the :term:`Authorization Server` (OpenID Provider) to submit a JWT token to an endpoint controlled by the :term:`Client` (Relying Party)
+indicating that a session from the :term:`Resource Owner` (End User) has ended.
+
+OIDC_BACKCHANNEL_LOGOUT_HANDLER
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``oauth2_provider.authorization_server.oidc.handlers.send_backchannel_logout_request``
+
+Upon logout, the :term:`Authorization Server` (OpenID Provider) looks for the ID Tokens associated with the user on applications that support Backchannel Logout, and calls the function defined here **once per application** — passing the most recently issued of that application's live ID Tokens, since one logout token per relying party is what `Backchannel Logout`__ section 2.5 describes.
+
+__ https://openid.net/specs/openid-connect-backchannel-1_0.html
+
+The default function can be used as-is, but if you need to override or customize it somehow (e.g., if you do not want to execute these requests on the same HTTP request-response from the user logout view), you can change this setting to any function that takes ``id_token`` as a keyword argument.
+
+Three things a custom handler has to know.
+
+It may be called from a worker thread — see ``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS``.
+
+The ``id_token`` it receives may be an instance whose database row is already gone. An
+RP-initiated logout deletes the user's tokens as part of logging them out, and the
+notification is deliberately dispatched afterwards so that no relying party can delay or
+prevent the logout. The instance itself is fully populated, so a handler that hands work
+to a task queue must serialize the claims it needs at dispatch time rather than storing a
+primary key and re-fetching the row later.
+
+DOT sends each request once. Section 2.5 permits retransmission where the OP "suspects
+that previous transmissions may have failed due to potentially recoverable errors", and
+asks that it "SHOULD delay retransmission for an appropriate amount of time" — so a retry
+belongs in a handler that can wait, not in the logout request. The handler signature
+accepts arbitrary keyword arguments, so a wrapper can carry its own attempt counter::
+
+    from oauth2_provider.authorization_server.oidc.handlers import send_backchannel_logout_request
+    from oauth2_provider.core.exceptions import BackchannelLogoutRequestError
+
+    def retrying_handler(id_token, attempt=1, **kwargs):
+        try:
+            send_backchannel_logout_request(id_token=id_token, **kwargs)
+        except BackchannelLogoutRequestError:
+            if attempt < 3:
+                schedule_later(id_token, attempt=attempt + 1)  # your scheduler
+
+OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``120``
+
+Lifetime of a logout token. `OpenID Connect Back-Channel Logout 1.0
+<https://openid.net/specs/openid-connect-backchannel-1_0.html>`__ section 4 encourages
+"at most two minutes in the future, to prevent captured Logout Tokens from being
+replayable" — and because DOT issues no ``sid`` claim, a captured token asks the
+:term:`Client` (Relying Party) to end *every* session for that subject, so the window
+matters. Raise it only if clock skew between you and your relying parties demands it;
+section 2.6 mandates no leeway when they validate ``exp``.
+
+OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``4``
+
+How many relying parties are contacted at once. Section 2.3 encourages an
+:term:`Authorization Server` (OpenID Provider) to "send logout requests to them in
+parallel", so the wall-clock cost of a logout is the slowest relying party rather than
+the sum of all of them.
+
+Dispatch runs on worker threads, which means ``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` is
+called from one. The default handler is safe there — it touches no database, because
+everything it needs is resolved before dispatch begins — but a custom handler that uses
+the ORM must be written accordingly, or this can be set to ``1`` to dispatch
+sequentially on the request's own thread.
+
+OIDC_BACKCHANNEL_LOGOUT_TIMEOUT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``5``
+
+Timeout in seconds applied to each logout token request sent by the default
+``OIDC_BACKCHANNEL_LOGOUT_HANDLER``. Because the default handler runs inline with the user's logout
+request, an unresponsive :term:`Client` (Relying Party) would otherwise hold that request open.
+
+OIDC_LOGOUT_URI_ALLOWED_SCHEMES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["https"]``
+
+A list of schemes that a logout URI registered on an application is validated against —
+today the ``backchannel_logout_uri`` field. Keeping this at ``["https"]`` in production is
+strongly recommended: a logout token is a signed assertion that a named subject's session has
+ended, so delivering it over plaintext exposes the subject identifier to anyone on the path.
+Adding ``"http"`` to the list is considered to be safe only for local development and testing.
+
+Adding ``"http"`` does not make every plaintext URI acceptable. `OpenID Connect Back-Channel
+Logout 1.0 <https://openid.net/specs/openid-connect-backchannel-1_0.html>`_ section 2.2 permits
+``http`` only for a :term:`Client` whose type is confidential, so a public client is still
+restricted to a loopback address (``127.0.0.1`` or ``[::1]``; the ``localhost`` hostname resolves
+through DNS and is only accepted under ``ALLOW_LOCALHOST_LOOPBACK``).
+
+The setting is named for logout URIs in general rather than for back-channel logout alone
+because `OpenID Connect Front-Channel Logout 1.0
+<https://openid.net/specs/openid-connect-frontchannel-1_0.html>`_ section 2 states the identical
+rule for its own ``frontchannel_logout_uri``. Should that mechanism be implemented, it validates
+against this same list.
+
+This is deliberately *not* ``ALLOWED_REDIRECT_URI_SCHEMES``. That list governs URIs the user
+agent is redirected to, and may legitimately contain an RFC 8252 private-use scheme such as
+``com.example.app``; a logout URI is contacted by the :term:`Authorization Server` itself, so
+such a scheme has nothing to send a logout token to.
+
 OIDC_RP_INITIATED_LOGOUT_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``
@@ -914,6 +1021,17 @@ Default: ``True``
 Whether to delete the access, refresh and ID tokens of the user that is being logged out.
 The types of applications for which tokens are deleted can be customized with ``RPInitiatedLogoutView.token_types_to_delete``.
 The default is to delete the tokens of all applications if this flag is enabled.
+
+An RP-initiated logout revokes the user's access tokens and every refresh token derived
+from them, with no exemption for grants carrying the ``offline_access`` scope.
+`OpenID Connect Back-Channel Logout 1.0
+<https://openid.net/specs/openid-connect-backchannel-1_0.html>`__ section 2.7 says those
+"normally SHOULD NOT be revoked", though it says so in a section addressed to the
+:term:`Client` (Relying Party); `RFC 9700 <https://www.rfc-editor.org/rfc/rfc9700>`__
+section 4.14 separately permits an :term:`Authorization Server` to "revoke refresh tokens
+automatically in case of a security event, such as ... logout at the authorization
+server". Set this to ``False`` if the offline grants your relying parties hold must
+survive an interactive logout.
 
 Resource Server settings
 ------------------------

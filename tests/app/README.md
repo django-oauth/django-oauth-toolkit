@@ -172,8 +172,8 @@ This is an example RP. It is a SPA built with Svelte.
   # open http://localhost:5173
   ```
 
-The RP has three tabs: the OIDC Authorization Code flow, the Device Authorization
-flow, and **Pushed Authorization Requests (PAR)**.
+The RP has four tabs: the OIDC Authorization Code flow, the Device Authorization
+flow, **RFC 7523 private_key_jwt**, and **Pushed Authorization Requests (PAR)**.
 
 ### Pushed Authorization Requests (PAR) demo
 
@@ -192,6 +192,29 @@ request**. You'll see the returned `request_uri`; continue to the authorization
 endpoint (log in as `superuser` / `password` and approve), and the RP server
 exchanges the returned code for tokens. This flow is covered end-to-end by
 `tests/e2e/browser_rp/test_browser_par.py`.
+
+### OIDC Back-Channel Logout demo
+
+The IdP has back-channel logout enabled (`OIDC_BACKCHANNEL_LOGOUT_ENABLED`), and the
+"OIDC - Authorization Code" seed application registers the RP's endpoint as its
+`backchannel_logout_uri`. When a session ends at the IdP, DOT signs a logout token and
+POSTs it to that URL — the RP is notified directly, without the browser being involved.
+
+Since the OP talks to the RP's *server* while the session lives in the *browser*, the RP
+demo bridges the two: `src/routes/api/backchannel-logout/+server.js` verifies the logout
+token against the IdP's JWKS, and pushes an event over Server-Sent Events
+(`src/routes/api/logout-events/+server.js`) to the tab holding that session, where
+`src/components/OidcBackchannelLogoutHandler.svelte` clears the user. DOT does not issue a
+`sid` claim yet, so the demo keys sessions on `sub`.
+
+To try it, start the IdP and the RP, open `http://localhost:5173`, and log in. Then end the
+session from the IdP side rather than the RP's Logout button — follow the **IDP Admin** link
+and log out of `http://localhost:8000/admin`. The RP tab logs itself out on its own.
+
+Because the logout token arrives as a cross-origin form POST, `svelte.config.js` adds the
+IdP's origin to SvelteKit's `csrf.trustedOrigins`. The RP's back-channel endpoint and the
+IdP's JWKS URL are hardcoded to the default `http://localhost:5173` / `http://localhost:8000`
+addresses, so the demo assumes both apps are on their default ports.
 
 ## Running with Docker Compose
 

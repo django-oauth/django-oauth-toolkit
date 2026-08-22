@@ -14,7 +14,16 @@ const config = {
 		// otherwise share .svelte-kit/ and invalidate each other's module graph
 		// mid-request. The cross-site end-to-end layer sets RP_OUT_DIR so its
 		// server gets its own; everything else keeps the default.
-		outDir: process.env.RP_OUT_DIR || '.svelte-kit'
+		outDir: process.env.RP_OUT_DIR || '.svelte-kit',
+		// The OP delivers backchannel logout tokens as a cross-origin form POST to
+		// /api/backchannel-logout, which SvelteKit's CSRF protection rejects unless
+		// the IdP's origin is trusted. Derived from the same issuer $lib/oidc-config
+		// resolves, so moving the OP to another origin moves the exemption with it.
+		csrf: {
+			trustedOrigins: [
+				new URL(process.env.PUBLIC_RP_ISSUER || 'http://localhost:8000/o').origin
+			]
+		}
 	}
 };
 

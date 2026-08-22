@@ -15,6 +15,11 @@ from oauthlib.common import add_params_to_uri
 
 from oauth2_provider.authorization_server import client_assertions
 from oauth2_provider.authorization_server.forms import ConfirmLogoutForm
+from oauth2_provider.authorization_server.oidc.handlers import (
+    DISPATCHED_ATTR,
+    collect_backchannel_logout_targets,
+    send_backchannel_logout_requests,
+)
 from oauth2_provider.authorization_server.oidc.mixins import OIDCLogoutOnlyMixin, OIDCOnlyMixin
 from oauth2_provider.authorization_server.views.metadata import (
     ServerMetadataViewMixin,
@@ -108,6 +113,11 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             data["authorization_response_iss_parameter_supported"] = True
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
             data["prompt_values_supported"].append("create")
+
+        if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+            data["backchannel_logout_supported"] = True
+            # We need to issue SID claims on tokens to support this.
+            data["backchannel_logout_session_supported"] = False
 
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
             data["end_session_endpoint"] = self._get_endpoint_url(
@@ -540,6 +550,17 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
 
     def do_logout(self, application=None, post_logout_redirect_uri=None, state=None, token_user=None):
         user = token_user or self.request.user
+        # Work out who to notify before the ID Tokens that identify them are deleted
+        # below, and take ownership of the dispatch so the user_logged_out receiver does
+        # not also fire: it runs before django.contrib.auth.logout() flushes the session,
+        # and no relying party should be able to delay -- or, if the worker dies mid-
+        # request, prevent -- either the flush or the token deletion. RP-Initiated Logout
+        # 1.0 section 2 only requires the notifications to precede the post-logout
+        # redirect, which they still do.
+        logout_targets = collect_backchannel_logout_targets(
+            user if not isinstance(user, AnonymousUser) else None
+        )
+        setattr(self.request, DISPATCHED_ATTR, True)
         # Delete Access Tokens if a user was found
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS and not isinstance(user, AnonymousUser):
             AccessToken = get_access_token_model()
@@ -564,6 +585,9 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
                 refresh_token.revoke()
         # Logout in Django
         logout(self.request)
+        # Best-effort, and only now that everything that must happen has: a logout token
+        # is delivered over the network to an endpoint the relying party controls.
+        send_backchannel_logout_requests(logout_targets)
         # Redirect
         if post_logout_redirect_uri:
             if state:

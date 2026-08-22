@@ -1144,6 +1144,16 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         # _authenticate_client_assertion).
         return self.get_id_token(token, token_handler, request)
 
+    def get_logout_token_sub(self, id_token):
+        """The ``sub`` claim for a Logout Token, defaulting to the user's primary key.
+
+        Override this alongside :meth:`get_additional_claims` when customizing ``sub``:
+        an RP performing Back-Channel Logout 1.0 section 2.6 step 10 rejects a Logout
+        Token whose ``sub`` does not match the ID Token it issued for the session, and an
+        RP that skips that optional check finds no session to clear and reports success.
+        """
+        return str(id_token.user.pk)
+
     def get_claim_dict(self, request):
         if self._get_additional_claims_is_request_agnostic():
             claims = {"sub": lambda r: str(r.user.pk)}

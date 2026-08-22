@@ -67,6 +67,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Replay is detected by recognizing a token a previous rotation superseded, so without
   rotation the protection never fires — a pairing `docs/settings.rst` already documented but
   nothing enforced.
+* #1545 Support for OpenID Connect Back-Channel Logout. When
+  `OIDC_BACKCHANNEL_LOGOUT_ENABLED` is set, logging a user out sends a signed logout token to the
+  `backchannel_logout_uri` of every application that registered one and holds a live ID Token for
+  that user — including applications holding `offline_access` grants, which section 2.7 leaves the
+  relying party to decide about. Applications gain a `backchannel_logout_uri` field (deployments
+  with a swapped/custom Application model must add an equivalent migration), validated against the
+  new `OIDC_LOGOUT_URI_ALLOWED_SCHEMES`. The capability is advertised in both the OIDC discovery
+  document and the RFC 8414 metadata document. Delivery runs in parallel over
+  `OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS` threads, bounded per request by
+  `OIDC_BACKCHANNEL_LOGOUT_TIMEOUT`, with tokens living
+  `OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS`; no relying party can delay or prevent the logout
+  itself. `OIDC_BACKCHANNEL_LOGOUT_HANDLER` swaps the whole delivery step for one that queues the
+  work instead. See `docs/oidc.rst`.
 * Support for OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126). A new `par/` endpoint
   (`PushedAuthorizationRequestView`) lets clients push authorization request parameters over an
   authenticated back channel in exchange for a single-use `request_uri`, stored on the swappable
