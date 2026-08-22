@@ -2,7 +2,13 @@
 node_modules
 /build
 /.svelte-kit
+# Per-server build/cache dirs for the cross-site e2e layer (RP_OUT_DIR/RP_CACHE_DIR).
+/.svelte-kit-*
+/.vite-*
 /package
+# The repo-root .gitignore excludes a bare `lib` (a Python build artifact) at
+# any depth, which silently swallows SvelteKit's src/lib. Re-include it here.
+!src/lib/
 .env
 .env.*
 !.env.example

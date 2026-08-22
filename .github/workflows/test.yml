@@ -554,6 +554,16 @@ jobs:
       - name: Install tox
         run: python -m pip install --upgrade tox
 
+      - name: Map the cross-site e2e hostnames to loopback
+        # The third-party-cookie layer needs the IdP and the RP on two genuinely
+        # distinct registrable domains; .test is absent from the Public Suffix
+        # List, so idp.test and rp.test are different sites. Without this the
+        # layer fails hard (E2E_REQUIRE_BROWSER is set below) rather than
+        # silently skipping.
+        run: |
+          echo "127.0.0.1 idp.test rp.test" | sudo tee -a /etc/hosts
+          getent hosts idp.test rp.test
+
       - name: Run end-to-end compliance suite
         # Require the browser layer on CI: a missing/broken Chromium fails the
         # job rather than silently skipping the browser RP coverage.

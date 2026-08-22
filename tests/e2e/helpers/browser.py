@@ -6,6 +6,26 @@ browser package without breaking protocol-only environments; the Playwright
 error type surfaces as an ordinary exception that ``click_until`` catches.
 """
 
+import os
+from typing import NoReturn
+
+import pytest
+
+
+def skip_or_fail(message: str) -> NoReturn:
+    """Skip the browser layer, or fail it when ``E2E_REQUIRE_BROWSER`` is set.
+
+    CI sets ``E2E_REQUIRE_BROWSER`` so that a missing browser, an unresolvable
+    test hostname, or an IdP/RP that will not start is a hard failure rather
+    than silently dropped coverage; local and protocol-only runs keep skipping.
+    """
+    if os.environ.get("E2E_REQUIRE_BROWSER"):
+        pytest.fail(f"{message}; E2E_REQUIRE_BROWSER is set so the browser layer must run")
+    pytest.skip(f"{message}; skipping browser layer")
+    # Both pytest.fail and pytest.skip raise, so this is unreachable; the
+    # NoReturn annotation is what tells a reader (and a static analyzer) that
+    # callers never fall through to an implicit None.
+
 
 def click_until(locator, check, attempts=20):
     """Click ``locator`` repeatedly until ``check()`` succeeds.

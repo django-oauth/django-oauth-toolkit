@@ -38,6 +38,10 @@ SPEC_BY_PACKAGE = {
     "oidc_discovery": ("OpenID Connect Discovery 1.0", "spec_oidc_discovery"),
     "oidc_rp_initiated_logout": ("OpenID Connect RP-Initiated Logout 1.0", "spec_oidc_rp_logout"),
     "browser_rp": ("Browser RP (SvelteKit)", "spec_browser_rp"),
+    "browser_cross_site": (
+        "Browser RP cross-site (third-party cookies)",
+        "spec_browser_cross_site",
+    ),
 }
 
 # Map a ``compliance()`` spec label (and a few close variants) to a family

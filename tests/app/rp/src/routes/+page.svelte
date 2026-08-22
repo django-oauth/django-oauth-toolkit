@@ -1,5 +1,6 @@
 <script>
 	import { browser } from '$app/environment';
+	import { clientId, issuer, rpOrigin } from '$lib/oidc-config';
 	import {
 		EventLog,
 		LoginButton,
@@ -19,10 +20,10 @@
 
 {#if browser}
 	<OidcContext
-		issuer="http://localhost:8000/o"
-		client_id="2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm"
-		redirect_uri="http://localhost:5173"
-		post_logout_redirect_uri="http://localhost:5173"
+		{issuer}
+		client_id={clientId}
+		redirect_uri={rpOrigin}
+		post_logout_redirect_uri={rpOrigin}
 		{metadata}
 		scope="openid"
 		extraOptions={{
