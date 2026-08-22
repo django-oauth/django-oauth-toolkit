@@ -6,3 +6,4 @@ Django Rest Framework
 
     getting_started
     permissions
+    throttling

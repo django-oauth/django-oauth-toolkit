@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #984 New throttle classes for the Django REST Framework and Django Ninja integrations,
+  `OAuth2ClientRateThrottle` and `OAuth2UserOrClientRateThrottle`, that key rate limits on the
+  OAuth2 credentials a request was made with. A `client_credentials` token has no user, so the
+  per-user throttles those frameworks ship with fall through to keying machine-to-machine clients
+  by IP address, putting every client behind a shared egress address into one bucket; these key on
+  the client application instead. Buckets are keyed on primary keys rather than on the token, so
+  rotating a token does not reset the limit. See "Throttling" in the Django REST Framework and
+  Django Ninja documentation.
 * #483 `ACCESS_TOKEN_EXPIRE_SECONDS` now accepts a `datetime.timedelta`, or a callable taking the
   oauthlib request and returning a number of seconds or a `timedelta`, in addition to a plain number
   of seconds. This makes the access token lifetime vary per client, grant type, scope or session

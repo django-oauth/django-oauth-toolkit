@@ -7,3 +7,4 @@ from .permissions import (
     TokenHasScope,
     TokenMatchesOASRequirements,
 )
+from .throttling import OAuth2ClientRateThrottle, OAuth2UserOrClientRateThrottle
