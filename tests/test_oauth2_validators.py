@@ -1066,6 +1066,13 @@ class TestOAuth2ValidatorErrorResourceToken(TestCase):
                     self.validator._get_token_from_authentication_server(
                         self.token, self.introspection_url, self.introspection_token, None
                     )
+        self.assertEqual(
+            [
+                "WARNING:oauth2_provider:Introspection: Failed to get a valid response from "
+                "authentication server. Status code: 503, Reason: Service Unavailable."
+            ],
+            mock_log.output,
+        )
         self.assertNotIn("unrelated caller failure", "\n".join(mock_log.output))
         self.assertNotIn("Traceback", "\n".join(mock_log.output))
 
