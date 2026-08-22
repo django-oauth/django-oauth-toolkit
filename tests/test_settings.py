@@ -12,6 +12,7 @@ from oauth2_provider.authorization_server.admin import (
     get_id_token_admin_class,
     get_refresh_token_admin_class,
 )
+from oauth2_provider.authorization_server.forms import ApplicationForm
 from oauth2_provider.settings import OAuth2ProviderSettings, oauth2_settings, perform_import
 from tests.admin import (
     CustomAccessTokenAdmin,
@@ -21,6 +22,7 @@ from tests.admin import (
     CustomRefreshTokenAdmin,
 )
 from tests.common_testing import OAuth2ProviderTestCase as TestCase
+from tests.forms import SampleApplicationForm
 
 from . import presets
 
@@ -73,6 +75,19 @@ class TestAdminClass(TestCase):
         refresh_token_admin_class = get_refresh_token_admin_class()
         default_refresh_token_admin_class = oauth2_settings.REFRESH_TOKEN_ADMIN_CLASS
         assert refresh_token_admin_class == default_refresh_token_admin_class
+
+    def test_application_form_class_default(self):
+        """
+        The application form defaults to the shipped ApplicationForm.
+        """
+        assert oauth2_settings.APPLICATION_FORM_CLASS is ApplicationForm
+
+    @override_settings(OAUTH2_PROVIDER={"APPLICATION_FORM_CLASS": "tests.forms.SampleApplicationForm"})
+    def test_application_form_class_is_an_import_string(self):
+        """
+        A custom application form is resolved from its dotted path.
+        """
+        assert oauth2_settings.APPLICATION_FORM_CLASS is SampleApplicationForm
 
     @override_settings(OAUTH2_PROVIDER={"APPLICATION_ADMIN_CLASS": "tests.admin.CustomApplicationAdmin"})
     def test_get_custom_application_admin_class(self):
