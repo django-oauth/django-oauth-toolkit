@@ -105,3 +105,14 @@ class ApplicationUpdate(ApplicationOwnerIsUserMixin, UpdateView):
 
     def get_form_class(self):
         return get_application_form_class()
+
+    def form_valid(self, form):
+        # An application never changes hands here. get_queryset() already limits this
+        # view to the request user's own applications, and while the field set was
+        # hard-coded a form could not carry ``user`` at all. APPLICATION_FORM_CLASS makes
+        # that field set configurable -- a form declaring ``Meta.fields = "__all__"``
+        # includes ``user`` -- so pin the owner in the view, where the guarantee belongs,
+        # rather than leaving it to the configured form. Ownership transfers stay an
+        # admin operation. Mirrors ApplicationRegistration.form_valid().
+        form.instance.user = self.request.user
+        return super().form_valid(form)
