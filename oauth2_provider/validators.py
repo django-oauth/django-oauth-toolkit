@@ -1,9 +1,16 @@
 import re
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.utils.encoding import force_str
+
+
+if TYPE_CHECKING:
+    # Only for annotations: models.py imports this module at runtime, so importing it
+    # back unguarded would be a cycle.
+    from .models import AbstractApplication
 
 
 class URIValidator(URLValidator):
@@ -183,7 +190,7 @@ class AllowedURIValidator(URIValidator):
             )
 
 
-def default_redirect_uri_validator(application):
+def default_redirect_uri_validator(application: "AbstractApplication") -> AllowedURIValidator:
     """Build the validator applied to each entry in ``Application.redirect_uris``.
 
     This is the default for the ``REDIRECT_URI_VALIDATOR`` setting, which names a
@@ -218,7 +225,7 @@ def default_redirect_uri_validator(application):
     )
 
 
-def default_allowed_origin_validator(application):
+def default_allowed_origin_validator(application: "AbstractApplication") -> AllowedURIValidator:
     """Build the validator applied to each entry in ``Application.allowed_origins``.
 
     This is the default for the ``ALLOWED_ORIGIN_VALIDATOR`` setting. It follows the same

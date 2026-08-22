@@ -395,7 +395,11 @@ class AbstractApplication(models.Model):
         return self.allowed_origins and is_origin_allowed(origin, self.allowed_origins.split())
 
     @staticmethod
-    def _collect_uri_validation_error(field_errors, field, exc):
+    def _collect_uri_validation_error(
+        field_errors: defaultdict[str, list[ValidationError]],
+        field: str,
+        exc: ValidationError,
+    ) -> None:
         """Fold a URI validator's ValidationError into the per-field error map.
 
         The built-in validators always raise a message-and-params error, whose parts are
@@ -609,7 +613,7 @@ class AbstractApplication(models.Model):
         """
         return oauth2_settings.ALLOWED_REDIRECT_URI_SCHEMES
 
-    def get_redirect_uri_validator(self):
+    def get_redirect_uri_validator(self) -> Callable[[str], None]:
         """
         Returns the validator ``clean()`` applies to each entry in ``redirect_uris``.
         By default, builds one from the `REDIRECT_URI_VALIDATOR` setting.
@@ -627,7 +631,7 @@ class AbstractApplication(models.Model):
         """
         return oauth2_settings.REDIRECT_URI_VALIDATOR(self)
 
-    def get_allowed_origin_validator(self):
+    def get_allowed_origin_validator(self) -> Callable[[str], None]:
         """
         Returns the validator ``clean()`` applies to each entry in ``allowed_origins``.
         By default, builds one from the `ALLOWED_ORIGIN_VALIDATOR` setting.
