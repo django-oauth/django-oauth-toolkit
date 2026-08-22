@@ -7,13 +7,14 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
 from oauth2_provider.core.compat import login_not_required
+from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.models import get_access_token_model
 from oauth2_provider.resource_server.views.generic import ClientProtectedScopedResourceView
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class IntrospectTokenView(ClientProtectedScopedResourceView):
+class IntrospectTokenView(FormEncodedRequestMixin, ClientProtectedScopedResourceView):
     """
     Implements an endpoint for token introspection based
     on RFC 7662 https://rfc-editor.org/rfc/rfc7662.html
@@ -23,6 +24,7 @@ class IntrospectTokenView(ClientProtectedScopedResourceView):
     """
 
     required_scopes = ["introspection"]
+    form_encoded_endpoint = "The OAuth 2.0 token introspection endpoint (RFC 7662 section 2.1)"
 
     @staticmethod
     def get_token_response(token_value=None):

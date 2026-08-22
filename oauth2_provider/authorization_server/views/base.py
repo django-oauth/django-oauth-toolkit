@@ -26,6 +26,7 @@ from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
 from oauth2_provider.core.http import OAuth2ResponseRedirect
 from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.core.signals import app_authorized
+from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.models import get_access_token_model, get_application_model, get_device_grant_model
 from oauth2_provider.resource_server.validators import is_valid_resource_uri
 from oauth2_provider.settings import oauth2_settings
@@ -536,7 +537,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class TokenView(AuthorizationServerViewMixin, View):
+class TokenView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
     """
     Implements an endpoint to provide access tokens
 
@@ -546,6 +547,8 @@ class TokenView(AuthorizationServerViewMixin, View):
     * Client credentials
     * Device code flow (specifically for the device polling stage)
     """
+
+    form_encoded_endpoint = "The OAuth 2.0 token endpoint (RFC 6749 section 3.2)"
 
     @method_decorator(sensitive_post_parameters("password", "client_secret"))
     def authorization_flow_token_response(
@@ -630,10 +633,12 @@ class TokenView(AuthorizationServerViewMixin, View):
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class RevokeTokenView(AuthorizationServerViewMixin, View):
+class RevokeTokenView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
     """
     Implements an endpoint to revoke access or refresh tokens
     """
+
+    form_encoded_endpoint = "The OAuth 2.0 token revocation endpoint (RFC 7009 section 2.1)"
 
     def post(self, request, *args, **kwargs):
         url, headers, body, status = self.create_revocation_response(request)

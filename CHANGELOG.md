@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`RESOURCE_SERVER_INTROSPECTION_JWT_*` settings), Dynamic Client Registration support for both methods with
   `jwks`/`jwks_uri` metadata, and `*_auth_signing_alg_values_supported` advertisement in the discovery documents.
   Note that `client_secret_jwt` requires the client secret to be stored unhashed (it is the HMAC key), like HS256.
+* #657 `REQUIRE_FORM_ENCODED_REQUEST_BODY`, an opt-in setting that makes the endpoints that take the
+  parameters comprising the request in an `application/x-www-form-urlencoded` body -- token
+  (RFC 6749 §4.1.3, §4.3.2, §4.4.2 and §6), revocation (RFC 7009 §2.1), introspection
+  (RFC 7662 §2.1), device authorization (RFC 8628 §3.1) and PAR (RFC 9126 §2.1) -- answer
+  `415 Unsupported Media Type` to a POST sent with any other media type, instead of reaching the
+  view with no parameters at all and reporting a misleading error about a parameter the client did
+  send (a JSON token request is currently rejected as `unsupported_grant_type`). Defaults to
+  `False`, so nothing changes until you opt in; note that turning it on also rejects
+  `multipart/form-data` bodies, which no specification permits here but Django parses into
+  `request.POST` -- including from Django's own test client, whose `client.post(url, data={...})`
+  sends multipart unless a `content_type` is passed. Combining it with the deprecated
+  `JSONOAuthLibCore` backend rejects every request before the backend can parse it, which a new
+  system check (`oauth2_provider.E006`) reports.
 * #1816 A system check (`oauth2_provider.W012`) that warns when
   `REFRESH_TOKEN_REUSE_PROTECTION` is enabled while `ROTATE_REFRESH_TOKEN` is disabled.
   Replay is detected by recognizing a token a previous rotation superseded, so without

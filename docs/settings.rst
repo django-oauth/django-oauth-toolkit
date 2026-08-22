@@ -71,6 +71,8 @@ deprecated.)
     ``application/x-www-form-urlencoded`` (RFC 6749, RFC 7662, RFC 7009). The JSON mode is
     non-standard and breaks interoperability with spec-compliant clients; every client can
     send a form-encoded body, so it provides no capability that the default backend lacks.
+    Set `REQUIRE_FORM_ENCODED_REQUEST_BODY`_ to reject the non-standard bodies outright
+    rather than misreporting them as a missing parameter.
 
 EXTRA_SERVER_KWARGS
 ~~~~~~~~~~~~~~~~~~~
@@ -428,6 +430,49 @@ According to `OAuth 2.0 Security Best Current Practice <https://oauth.net/2/oaut
 
 - Public clients MUST use PKCE `RFC7636 <https://datatracker.ietf.org/doc/html/rfc7636>`_
 - For confidential clients, the use of PKCE `RFC7636 <https://datatracker.ietf.org/doc/html/rfc7636>`_ is RECOMMENDED.
+
+REQUIRE_FORM_ENCODED_REQUEST_BODY
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When ``True``, a POST to an endpoint that takes the parameters making up the request in an
+``application/x-www-form-urlencoded`` body is answered with ``415 Unsupported Media Type`` and an
+``invalid_request`` error unless it is sent with that media type. It covers the token
+(:rfc:`4.1.3`, :rfc:`4.3.2`, :rfc:`4.4.2` and :rfc:`6`), revocation (`RFC 7009 section 2.1
+<https://datatracker.ietf.org/doc/html/rfc7009#section-2.1>`_), introspection
+(`RFC 7662 section 2.1 <https://datatracker.ietf.org/doc/html/rfc7662#section-2.1>`_), device
+authorization (`RFC 8628 section 3.1
+<https://datatracker.ietf.org/doc/html/rfc8628#section-3.1>`_) and pushed authorization request
+(`RFC 9126 section 2.1 <https://datatracker.ietf.org/doc/html/rfc9126#section-2.1>`_) endpoints.
+
+Media type parameters are ignored, so ``application/x-www-form-urlencoded; charset=UTF-8`` is
+accepted. ``GET`` requests are never affected: the introspection endpoint, the only covered one
+that accepts a ``GET``, takes its parameters from the query string there.
+
+Some endpoints are deliberately *not* covered. Dynamic Client Registration takes
+``application/json`` bodies per `RFC 7591 <https://datatracker.ietf.org/doc/html/rfc7591>`_. The
+OpenID Connect UserInfo endpoint accepts a POST whose only credential is the ``Authorization``
+header (`OpenID Connect Core section 5.3.1
+<https://openid.net/specs/openid-connect-core-1_0.html#UserInfo>`_); the form-encoding
+requirement of `RFC 6750 section 2.2
+<https://datatracker.ietf.org/doc/html/rfc6750#section-2.2>`_ is a condition on a client putting
+the access token *in the body*, not a constraint on the endpoint. Your own protected resources
+are likewise untouched.
+
+The default is ``False`` because turning enforcement on rejects two kinds of request that
+previously worked:
+
+* ``application/json`` bodies, read by the deprecated ``JSONOAuthLibCore`` value of
+  `OAUTH2_BACKEND_CLASS`_. Combining that backend with this setting rejects every request
+  before the backend can parse it, so ``manage.py check`` raises ``oauth2_provider.E006``.
+* ``multipart/form-data`` bodies. No specification permits them here, but Django parses them
+  into ``request.POST`` so they have always worked -- including from Django's own test client,
+  whose ``client.post(url, data={...})`` sends multipart unless a ``content_type`` is passed.
+
+While enforcement is off, a request sent with any other media type reaches the view with no
+parameters at all (Django only populates ``request.POST`` for form-encoded and multipart
+bodies), which surfaces as a misleading error about a parameter the client did send -- a JSON
+token request, for instance, is rejected as ``unsupported_grant_type``.
 
 PAR_ENABLED
 ~~~~~~~~~~~
