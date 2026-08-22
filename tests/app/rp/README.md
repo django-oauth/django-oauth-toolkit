@@ -31,6 +31,8 @@ reproduce the historical hard-coded values.
 | `RP_TLS_CERT` / `RP_TLS_KEY` | unset                     | Serve the dev server over HTTPS with this certificate.                     |
 | `RP_ALLOWED_HOSTS`           | unset                     | Comma-separated hostnames Vite will answer for, beyond localhost.          |
 
+These are read once in `src/lib/oidc-config.js`, which both pages import.
+
 The `/device` and `/par` demos remain pinned to `localhost` / `127.0.0.1`; only
 the pages above honour `PUBLIC_RP_*`.
 

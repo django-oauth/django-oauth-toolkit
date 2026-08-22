@@ -6,6 +6,9 @@ node_modules
 /.svelte-kit-*
 /.vite-*
 /package
+# The repo-root .gitignore excludes a bare `lib` (a Python build artifact) at
+# any depth, which silently swallows SvelteKit's src/lib. Re-include it here.
+!src/lib/
 .env
 .env.*
 !.env.example

@@ -1,11 +1,8 @@
 <script>
 	import { browser } from '$app/environment';
-	import { env } from '$env/dynamic/public';
+	import { clientId, issuer, rpOrigin } from '$lib/oidc-config';
 	import { onMount } from 'svelte';
 
-	const issuer = env.PUBLIC_RP_ISSUER || 'http://localhost:8000/o';
-	const clientId = env.PUBLIC_RP_CLIENT_ID || '2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm';
-	const rpOrigin = env.PUBLIC_RP_ORIGIN || 'http://localhost:5173';
 	const redirectUri = `${rpOrigin}/silent-callback.html`;
 
 	// How long to wait for the iframe to report back before calling it a
