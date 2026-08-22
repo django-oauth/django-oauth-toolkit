@@ -885,6 +885,60 @@ Default: ``oauth2_provider.authorization_server.oidc.handlers.send_backchannel_l
 
 Upon logout, the :term:`Authorization Server` (OpenID Provider)  will look for all ID Tokens associated with the user on applications that support Backchannel Logout. For every id token that is found, the function defined here will be called. The default function can be used as-is, but if you need to override or customize it somehow (e.g, if you do not want to execute these requests on the same HTTP request-response from the user logout view), you can change this setting to any function that takes ``id_token`` as a keyword argument.
 
+Three things a custom handler has to know.
+
+It may be called from a worker thread — see ``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS``.
+
+The ``id_token`` it receives may be an instance whose database row is already gone. An
+RP-initiated logout deletes the user's tokens as part of logging them out, and the
+notification is deliberately dispatched afterwards so that no relying party can delay or
+prevent the logout. The instance itself is fully populated, so a handler that hands work
+to a task queue must serialize the claims it needs at dispatch time rather than storing a
+primary key and re-fetching the row later.
+
+DOT sends each request once. Section 2.5 permits retransmission where the OP "suspects
+that previous transmissions may have failed due to potentially recoverable errors", and
+asks that it "SHOULD delay retransmission for an appropriate amount of time" — so a retry
+belongs in a handler that can wait, not in the logout request. The handler signature
+accepts arbitrary keyword arguments, so a wrapper can carry its own attempt counter::
+
+    from oauth2_provider.authorization_server.oidc.handlers import send_backchannel_logout_request
+    from oauth2_provider.core.exceptions import BackchannelLogoutRequestError
+
+    def retrying_handler(id_token, attempt=1, **kwargs):
+        try:
+            send_backchannel_logout_request(id_token=id_token, **kwargs)
+        except BackchannelLogoutRequestError:
+            if attempt < 3:
+                schedule_later(id_token, attempt=attempt + 1)  # your scheduler
+
+OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``120``
+
+Lifetime of a logout token. `OpenID Connect Back-Channel Logout 1.0
+<https://openid.net/specs/openid-connect-backchannel-1_0.html>`__ section 4 encourages
+"at most two minutes in the future, to prevent captured Logout Tokens from being
+replayable" — and because DOT issues no ``sid`` claim, a captured token asks the
+:term:`Client` (Relying Party) to end *every* session for that subject, so the window
+matters. Raise it only if clock skew between you and your relying parties demands it;
+section 2.6 mandates no leeway when they validate ``exp``.
+
+OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``4``
+
+How many relying parties are contacted at once. Section 2.3 encourages an
+:term:`Authorization Server` (OpenID Provider) to "send logout requests to them in
+parallel", so the wall-clock cost of a logout is the slowest relying party rather than
+the sum of all of them.
+
+Dispatch runs on worker threads, which means ``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` is
+called from one. The default handler is safe there — it touches no database, because
+everything it needs is resolved before dispatch begins — but a custom handler that uses
+the ORM must be written accordingly, or this can be set to ``1`` to dispatch
+sequentially on the request's own thread.
+
 OIDC_BACKCHANNEL_LOGOUT_TIMEOUT
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``5``
@@ -966,6 +1020,17 @@ The default is to delete the tokens of all applications if this flag is enabled.
 
 Resource Server settings
 ------------------------
+
+An RP-initiated logout revokes the user's access tokens and every refresh token derived
+from them, with no exemption for grants carrying the ``offline_access`` scope.
+`OpenID Connect Back-Channel Logout 1.0
+<https://openid.net/specs/openid-connect-backchannel-1_0.html>`__ section 2.7 says those
+"normally SHOULD NOT be revoked", though it says so in a section addressed to the
+:term:`Client` (Relying Party); `RFC 9700 <https://www.rfc-editor.org/rfc/rfc9700>`__
+section 4.14 separately permits an :term:`Authorization Server` to "revoke refresh tokens
+automatically in case of a security event, such as ... logout at the authorization
+server". Set this to ``False`` if the offline grants your relying parties hold must
+survive an interactive logout.
 
 RESOURCE_SERVER_INTROSPECTION_URL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

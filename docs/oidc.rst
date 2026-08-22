@@ -228,15 +228,21 @@ with its refresh token. Withholding the request would deny it that choice.
 Delivery
 --------
 
-The default handler sends each logout token inline, from the logout request itself, one
-application at a time. A user logging out of an OP with several registered Relying
-Parties therefore waits on those requests, bounded by
-``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT`` per application. Failures are logged and never
-propagate -- an unreachable RP cannot prevent a user from logging out -- but they do cost
-that wait. Deployments with more than a couple of applications, or with strict logout
-latency requirements, should set ``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` to a callable that
-hands the work to a task queue instead.
+Logout tokens are sent from the logout request itself, in parallel across
+``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS`` threads, so a logout waits on the slowest relying
+party rather than on all of them in turn. Each request is bounded by
+``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT``.
 
+Nothing a relying party does can delay or prevent the logout itself. The session is
+flushed and — for an RP-initiated logout — the user's tokens are revoked *before* any
+request goes out; failures are logged and never propagate. The notifications still precede
+the post-logout redirect, as `RP-Initiated Logout 1.0
+<https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ section 2 requires.
+
+One request is sent per relying party, with no retry. Deployments that want retries, or
+that would rather not send at all from the request-response cycle, set
+``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` to a callable that hands the work to a task queue;
+``docs/settings.rst`` documents what such a handler needs to know.
 
 Setting up OIDC enabled clients
 ===============================
