@@ -31,7 +31,10 @@ from .settings import oauth2_settings
 # constructs one itself -- the validator is built by the REDIRECT_URI_VALIDATOR /
 # ALLOWED_ORIGIN_VALIDATOR factories -- but the name has long been importable from here.
 # Import it from oauth2_provider.validators in new code.
-from .validators import AllowedURIValidator  # noqa: F401
+#
+# Spelled as a redundant alias: that is the standard marker for a deliberate re-export
+# (PEP 484), so linters read the intent from the code rather than from this comment.
+from .validators import AllowedURIValidator as AllowedURIValidator  # noqa: F401
 
 
 logger = logging.getLogger(__name__)
