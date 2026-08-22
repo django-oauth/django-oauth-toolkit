@@ -1,5 +1,6 @@
 import datetime
 import json
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -18,9 +19,11 @@ from oauth2_provider.authorization_server.oidc.handlers import (
 from oauth2_provider.authorization_server.views.application import ApplicationRegistration
 from oauth2_provider.core.exceptions import BackchannelLogoutRequestError
 from oauth2_provider.models import (
+    get_access_token_model,
     get_application_model,
     get_id_token_model,
 )
+from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -28,6 +31,7 @@ from .common_testing import OAuth2ProviderTestCase as TestCase
 
 HANDLERS_MODULE = "oauth2_provider.authorization_server.oidc.handlers"
 
+AccessToken = get_access_token_model()
 Application = get_application_model()
 IDToken = get_id_token_model()
 User = get_user_model()
@@ -77,6 +81,7 @@ class TestBackchannelLogout(TestCase):
 
     def test_logout_token_is_signed_for_user(self):
         with patch("requests.post") as mocked_post:
+            mocked_post.return_value.is_redirect = False
             self.client.login(username="app_user", password="654321")
             self.client.logout()
             mocked_post.assert_called_once()
@@ -100,6 +105,7 @@ class TestBackchannelLogout(TestCase):
         jtis = []
         for _ in range(2):
             with patch("requests.post") as mocked_post:
+                mocked_post.return_value.is_redirect = False
                 send_backchannel_logout_request(self.id_token)
                 jtis.append(self._posted_logout_token(mocked_post)[1]["jti"])
 
@@ -226,6 +232,139 @@ class TestBackchannelLogout(TestCase):
             with self.assertRaises(BackchannelLogoutRequestError) as context:
                 send_backchannel_logout_request(self.id_token)
             self.assertIn("bad key", str(context.exception))
+
+    def _add_second_relying_party(self):
+        another_app = Application.objects.create(
+            name="rp_two",
+            user=self.developer,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            redirect_uris="https://rp2.example.com/callback",
+            algorithm=Application.RS256_ALGORITHM,
+            client_secret="another_secret_value_for_rp_two_application",
+            backchannel_logout_uri="https://rp2.example.com/logout",
+        )
+        return IDToken.objects.create(
+            application=another_app,
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(minutes=180),
+            scope="openid profile",
+        )
+
+    def _enable_rp_initiated_logout(self):
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = True
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT = False
+        AccessToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="access-token-for-logout",
+            id_token=self.id_token,
+            scope="openid profile",
+            expires=timezone.now() + datetime.timedelta(minutes=180),
+        )
+        self.client.login(username="app_user", password="654321")
+
+    def test_rp_initiated_logout_notifies_relying_parties(self):
+        # Regression: do_logout() deletes the ID Tokens the receiver reads, so the targets
+        # have to be collected before deletion and dispatched after the session is flushed.
+        self._enable_rp_initiated_logout()
+
+        with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request") as handler:
+            response = self.client.post(reverse("oauth2_provider:rp-initiated-logout"), data={"allow": True})
+
+        self.assertEqual(response.status_code, 302)
+        handler.assert_called_once()
+        self.assertEqual(IDToken.objects.count(), 0)
+
+    def test_rp_initiated_logout_notifies_exactly_once_when_tokens_are_kept(self):
+        # With the rows left in place the user_logged_out receiver would fire as well as
+        # the view, sending two logout tokens with different jti values per relying party.
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS = False
+        self._enable_rp_initiated_logout()
+
+        with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request") as handler:
+            response = self.client.post(reverse("oauth2_provider:rp-initiated-logout"), data={"allow": True})
+
+        self.assertEqual(response.status_code, 302)
+        handler.assert_called_once()
+        self.assertEqual(IDToken.objects.count(), 1)
+
+    def test_rp_initiated_logout_completes_when_every_notification_fails(self):
+        # A relying party must never be able to hold up, or prevent, the logout itself.
+        self._enable_rp_initiated_logout()
+
+        with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request") as handler:
+            handler.side_effect = ValueError("the relying party exploded")
+            response = self.client.post(reverse("oauth2_provider:rp-initiated-logout"), data={"allow": True})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertEqual(IDToken.objects.count(), 0)
+
+    def test_logout_tokens_are_dispatched_in_parallel(self):
+        # Back-Channel Logout 1.0 section 2.3 encourages contacting RPs in parallel. The
+        # barrier only clears if both dispatches are in flight at once; sequential
+        # dispatch would block on it until it times out.
+        self._add_second_relying_party()
+        barrier = threading.Barrier(2, timeout=5)
+        cleared = []
+
+        def rendezvous(id_token):
+            barrier.wait()
+            cleared.append(id_token)
+
+        with patch(f"{HANDLERS_MODULE}.send_backchannel_logout_request", side_effect=rendezvous):
+            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
+        self.assertEqual(len(cleared), 2)
+
+    def test_max_workers_of_one_dispatches_sequentially(self):
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS = 1
+        threads = set()
+
+        with patch(
+            f"{HANDLERS_MODULE}.send_backchannel_logout_request",
+            side_effect=lambda id_token: threads.add(threading.current_thread().name),
+        ):
+            on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
+        self.assertEqual(threads, {threading.current_thread().name})
+
+    def test_logout_token_expiry_follows_its_setting(self):
+        with patch("requests.post") as mocked_post:
+            mocked_post.return_value.is_redirect = False
+            send_backchannel_logout_request(self.id_token)
+        claims = self._posted_logout_token(mocked_post)[1]
+        self.assertEqual(claims["exp"] - claims["iat"], 120)
+
+        self.oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS = 30
+        with patch("requests.post") as mocked_post:
+            mocked_post.return_value.is_redirect = False
+            send_backchannel_logout_request(self.id_token)
+        claims = self._posted_logout_token(mocked_post)[1]
+        self.assertEqual(claims["exp"] - claims["iat"], 30)
+
+    def test_redirected_logout_uri_is_a_delivery_failure(self):
+        # requests turns a 301/302/303 POST into a bodyless GET, which most endpoints
+        # answer 200 -- so without this the OP would record a logout that never happened.
+        with patch("requests.post") as mocked_post:
+            mocked_post.return_value.is_redirect = True
+            mocked_post.return_value.headers = {"Location": "https://rp.example.com/logout/"}
+            with self.assertRaises(BackchannelLogoutRequestError) as context:
+                send_backchannel_logout_request(self.id_token)
+        self.assertIn("https://rp.example.com/logout/", str(context.exception))
+        self.assertIs(mocked_post.call_args.kwargs["allow_redirects"], False)
+
+    def test_logout_token_sub_follows_the_validator(self):
+        # A deployment customising sub on ID Tokens must be able to customise it here too,
+        # or a conformant RP rejects the Logout Token (section 2.6 step 10).
+        class CustomValidator(OAuth2Validator):
+            def get_logout_token_sub(self, id_token):
+                return "opaque-subject-identifier"
+
+        self.oauth2_settings.OAUTH2_VALIDATOR_CLASS = CustomValidator
+        with patch("requests.post") as mocked_post:
+            mocked_post.return_value.is_redirect = False
+            send_backchannel_logout_request(self.id_token)
+        self.assertEqual(self._posted_logout_token(mocked_post)[1]["sub"], "opaque-subject-identifier")
 
     def test_no_logout_sent_for_anonymous_logout(self):
         # django.contrib.auth.logout() sends user=None when the request was not
