@@ -1,7 +1,11 @@
 import pytest
 from django.core.validators import ValidationError
 
-from oauth2_provider.validators import AllowedURIValidator
+from oauth2_provider.validators import (
+    AllowedURIValidator,
+    default_allowed_origin_validator,
+    default_redirect_uri_validator,
+)
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 
@@ -307,3 +311,72 @@ class TestPrivateUseURISchemeValidator(TestCase):
         validator = AllowedURIValidator(["com.example.app"], "test")
         with self.assertRaises(ValidationError):
             validator("com.example.app:/oauth2redirect")
+
+
+class _FakeApplication:
+    """Stands in for an Application.
+
+    ``default_redirect_uri_validator`` reads ``get_allowed_schemes()`` off the application;
+    ``default_allowed_origin_validator`` does not consult the application at all and takes
+    its schemes from ``ALLOWED_SCHEMES``. This stub therefore only has to answer the former,
+    and is passed to the latter purely to satisfy the shared factory signature.
+    """
+
+    def __init__(self, allowed_schemes):
+        self._allowed_schemes = allowed_schemes
+
+    def get_allowed_schemes(self):
+        return self._allowed_schemes
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class TestDefaultValidatorFactories(TestCase):
+    """The factories behind REDIRECT_URI_VALIDATOR / ALLOWED_ORIGIN_VALIDATOR."""
+
+    def test_redirect_uri_validator_configuration(self):
+        validator = default_redirect_uri_validator(_FakeApplication(["https", "http"]))
+        self.assertIsInstance(validator, AllowedURIValidator)
+        self.assertEqual(validator.name, "redirect uri")
+        self.assertTrue(validator.allow_path)
+        self.assertTrue(validator.allow_query)
+        self.assertFalse(validator.allow_fragments)
+        self.assertEqual(validator.schemes, {"https", "http"})
+
+    def test_allowed_origin_validator_configuration(self):
+        validator = default_allowed_origin_validator(_FakeApplication(["https"]))
+        self.assertIsInstance(validator, AllowedURIValidator)
+        self.assertEqual(validator.name, "allowed origin")
+        self.assertFalse(validator.allow_path)
+        self.assertFalse(validator.allow_query)
+        self.assertFalse(validator.allow_fragments)
+        # Passed through verbatim, and taken from the setting rather than the application.
+        self.assertEqual(validator.schemes, self.oauth2_settings.ALLOWED_SCHEMES)
+
+    def test_redirect_uri_validator_lowercases_application_schemes(self):
+        # urlsplit() lowercases the scheme, so an application returning "HTTPS" from
+        # get_allowed_schemes() must still accept an https redirect uri.
+        validator = default_redirect_uri_validator(_FakeApplication(["HTTPS", "Com.Example.App"]))
+        self.assertEqual(validator.schemes, {"https", "com.example.app"})
+        validator("https://example.com/cb")
+        validator("com.example.app:/oauth2redirect")
+
+    def test_allowed_origin_validator_does_not_lowercase_schemes(self):
+        # ALLOWED_SCHEMES is compared verbatim at request time by is_origin_allowed(), so
+        # lowercasing it here would let clean() accept an origin that is rejected later.
+        self.oauth2_settings.ALLOWED_SCHEMES = ["HTTPS"]
+        validator = default_allowed_origin_validator(_FakeApplication(["https"]))
+        self.assertEqual(validator.schemes, ["HTTPS"])
+        with self.assertRaises(ValidationError):
+            validator("https://example.com")
+
+    def test_factories_read_wildcard_setting_at_call_time(self):
+        # Settings are imported inside the factory bodies, so a change is picked up
+        # without reimporting the module.
+        application = _FakeApplication(["https"])
+        self.oauth2_settings.ALLOW_URI_WILDCARDS = False
+        self.assertFalse(default_redirect_uri_validator(application).allow_hostname_wildcard)
+        self.assertFalse(default_allowed_origin_validator(application).allow_hostname_wildcard)
+
+        self.oauth2_settings.ALLOW_URI_WILDCARDS = True
+        self.assertTrue(default_redirect_uri_validator(application).allow_hostname_wildcard)
+        self.assertTrue(default_allowed_origin_validator(application).allow_hostname_wildcard)

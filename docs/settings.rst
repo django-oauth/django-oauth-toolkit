@@ -363,7 +363,9 @@ configured without explicit port specification, so that the Application accepts 
 assigned ports.
 
 Note that you may override ``Application.get_allowed_schemes()`` to set this on
-a per-application basis.
+a per-application basis. For policy a static list cannot express -- schemes held in the database,
+a blacklist, or review-gated approval -- replace the validator itself; see
+``REDIRECT_URI_VALIDATOR`` below.
 
 Native apps using an RFC 8252 §7.1 private-use URI scheme should add that scheme here
 (e.g. ``["https", "com.example.app"]``) and register the redirect URI in the single-slash
@@ -382,6 +384,9 @@ Setting this to ``["https"]`` only in production is strongly recommended.
 Adding ``"http"`` to the list is considered to be safe only for local development and testing.
 Note that `OAUTHLIB_INSECURE_TRANSPORT <https://oauthlib.readthedocs.io/en/latest/oauth2/security.html#envvar-OAUTHLIB_INSECURE_TRANSPORT>`_
 environment variable should be also set to allow HTTP origins.
+
+For origin policy a static list cannot express, replace the validator itself; see
+``ALLOWED_ORIGIN_VALIDATOR`` below.
 
 ALLOW_URI_WILDCARDS
 ~~~~~~~~~~~~~~~~~~~
@@ -417,6 +422,82 @@ as ``something-sitename.netlify.app``. Use the double-dash form for Netlify depl
 
 This feature is useful for working with CI service such as cloudflare, netlify, and vercel that offer branch
 deployments for development previews and user acceptance testing.
+
+REDIRECT_URI_VALIDATOR
+~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.validators.default_redirect_uri_validator"``
+
+A callable that builds the validator applied to each entry in an application's ``redirect_uris``
+when the application is validated. Use it for redirect-uri policy that a static scheme list cannot
+express -- schemes stored in the database, a blacklist, or a scheme accepted only once the client
+has been reviewed.
+
+The setting names a *factory*, not the validator itself. It is called with the application and
+returns a callable that takes one URI string and raises
+:class:`~django.core.exceptions.ValidationError` when the URI is unacceptable::
+
+    factory(application) -> callable(uri)
+
+``Application.clean()`` calls the factory **once per validation pass**, so a factory backed by the
+database queries once per save rather than once per URI. The application may be unsaved
+(``pk is None``) when it is registered through Dynamic Client Registration (:rfc:`7591`),
+:doc:`CIMD <cimd>` or the admin add form, so a factory must not assume its reverse relations exist.
+
+A class is a callable too, so a validator can subclass ``oauth2_provider.validators.AllowedURIValidator``
+and take the application in ``__init__``, inheriting all of its :rfc:`3986` / :rfc:`8252` parsing::
+
+    from oauth2_provider.validators import AllowedURIValidator
+
+    class DBSchemeValidator(AllowedURIValidator):
+        def __init__(self, application):
+            schemes = list(application.approved_schemes.values_list("scheme", flat=True))
+            super().__init__(schemes, name="redirect uri", allow_path=True, allow_query=True)
+
+    OAUTH2_PROVIDER = {
+        "REDIRECT_URI_VALIDATOR": "myapp.validators.DBSchemeValidator",
+    }
+
+To set the policy per application instead of server-wide, override
+``Application.get_redirect_uri_validator()`` on a :ref:`swapped application model
+<custom-uri-validators>`.
+
+Unlike ``RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR``, this setting may **not** be ``None``: skipping
+redirect-uri validation entirely is an open-redirect risk, so an empty value raises at first access.
+A deliberate no-op is still available, spelled explicitly as a factory returning ``lambda uri: None``.
+
+.. warning::
+    This gates what may be **stored**, not what is accepted at request time. An incoming
+    ``redirect_uri`` is still matched against the stored values by exact string comparison per
+    :rfc:`9700` section 2.1, which no validator here can relax -- a validator that permits a sloppy
+    URI merely stores a value that never matches.
+
+    Conversely, permitting a new **scheme** here is not enough on its own: the scheme is separately
+    gated at request time by ``Application.get_allowed_schemes()`` (see
+    ``ALLOWED_REDIRECT_URI_SCHEMES`` above), so a URI accepted here can still be refused when the
+    redirect is issued. Widen both, and remember that widening the accepted set widens the
+    open-redirect and phishing surface.
+
+    The :rfc:`9700` deploy checks ``W008`` and ``W009`` read ``ALLOWED_REDIRECT_URI_SCHEMES`` and
+    ``ALLOW_URI_WILDCARDS`` statically, so they cannot see through a custom validator and may both
+    false-positive and false-negative. A custom validator owns its own :rfc:`9700` section 2.1 posture.
+
+    On the Dynamic Client Registration and CIMD paths the validator is the *only* check on redirect
+    uri syntax, and its message is surfaced verbatim to the registering client in
+    ``error_description``. Write client-facing messages there.
+
+ALLOWED_ORIGIN_VALIDATOR
+~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.validators.default_allowed_origin_validator"``
+
+A callable that builds the validator applied to each entry in an application's ``allowed_origins``.
+It follows exactly the same factory contract as ``REDIRECT_URI_VALIDATOR`` above, including the
+prohibition on ``None``, and is overridable per application as
+``Application.get_allowed_origin_validator()``.
+
+.. warning::
+    As above, this gates only what may be stored. An origin whose scheme is outside
+    ``ALLOWED_SCHEMES`` is still rejected at request time by ``is_origin_allowed()``, so a custom
+    validator that permits one must widen ``ALLOWED_SCHEMES`` too.
 
 ALLOW_LOCALHOST_LOOPBACK
 ~~~~~~~~~~~~~~~~~~~~~~~~~

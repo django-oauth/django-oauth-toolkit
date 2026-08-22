@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AccessToken.expires`, and a misconfigured static value is reported at startup as
   `oauth2_provider.E006`. See "Varying the access token lifetime per request" in the advanced topics
   documentation.
+* #490 Pluggable registration-time URI validation. Two new settings, `REDIRECT_URI_VALIDATOR` and
+  `ALLOWED_ORIGIN_VALIDATOR`, name a factory called with the application that returns the validator
+  `Application.clean()` applies to each `redirect_uris` / `allowed_origins` entry, and the matching
+  `Application.get_redirect_uri_validator()` / `get_allowed_origin_validator()` methods can be
+  overridden on a swapped application model for per-application policy. This makes redirect-uri
+  policy that a static scheme list cannot express -- schemes held in the database, a blacklist, or a
+  scheme accepted only after review, as RFC 8252 native apps tend to need -- possible without
+  swapping the application model. Defaults are unchanged, and the hooks gate only what may be
+  stored: request-time matching remains exact per RFC 9700 section 2.1, and `get_allowed_schemes()`
+  still gates the redirect scheme independently. See `docs/advanced_topics.rst`.
 * #1762 RFC 7523 JWT client authentication (`private_key_jwt` / `client_secret_jwt`) at the token, introspection and
   revocation endpoints. Applications gain `token_endpoint_auth_method`, `client_jwks` and `client_jwks_uri` fields
   (deployments with a swapped/custom Application model must add an equivalent migration); remote JWK Sets are fetched

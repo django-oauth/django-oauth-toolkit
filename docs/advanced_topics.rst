@@ -98,6 +98,93 @@ run::
     Subclass :class:`oauth2_provider.forms.ApplicationForm` to get those errors folded into
     non-field errors instead.
 
+.. _custom-uri-validators:
+
+Custom redirect URI and origin validators
+=========================================
+
+The rules ``clean()`` applies to ``redirect_uris`` and ``allowed_origins`` are not hard-coded.
+``ALLOWED_REDIRECT_URI_SCHEMES`` and ``ALLOWED_SCHEMES`` cover the common case -- a fixed list of
+schemes for the whole server -- but some policies cannot be written as a list: allowed schemes held
+in the database and administered per tenant, a blacklist, or a scheme accepted only after the client
+has been reviewed. Native apps are the usual reason, since :rfc:`8252` section 7.1 gives each app its own
+private-use scheme (``com.example.app:/oauth2redirect``).
+
+For those, replace the validator. There are two layers, and they compose exactly the way
+``SCOPES_BACKEND_CLASS`` and ``Application.get_allowed_schemes()`` already do:
+
+* the ``REDIRECT_URI_VALIDATOR`` and ``ALLOWED_ORIGIN_VALIDATOR`` settings set the default for the
+  whole deployment, and need no custom application model;
+* ``Application.get_redirect_uri_validator()`` and ``Application.get_allowed_origin_validator()``
+  can be overridden on a swapped application model to vary the policy per application.
+
+Each setting names a *factory*: a callable that receives the application and returns a callable
+taking one URI string, which raises :class:`~django.core.exceptions.ValidationError` when the URI is
+not acceptable. ``clean()`` calls the factory once per validation pass and then applies the result to
+each URI, so a factory that queries the database does so once per save rather than once per URI.
+
+A class is a callable, so the simplest custom validator is a subclass of
+``oauth2_provider.validators.AllowedURIValidator`` that takes the application in ``__init__``. It
+inherits all of the :rfc:`3986` and :rfc:`8252` parsing -- private-use schemes, authority rules,
+optional wildcards -- and only replaces the scheme policy::
+
+    # myapp/validators.py
+    from oauth2_provider.validators import AllowedURIValidator
+
+    class DBSchemeValidator(AllowedURIValidator):
+        """Allow the schemes an operator approved for this client."""
+
+        def __init__(self, application):
+            schemes = ["https"]
+            if application.pk:
+                schemes += list(application.approved_schemes.values_list("scheme", flat=True))
+            super().__init__(schemes, name="redirect uri", allow_path=True, allow_query=True)
+
+    OAUTH2_PROVIDER = {
+        "REDIRECT_URI_VALIDATOR": "myapp.validators.DBSchemeValidator",
+    }
+
+A factory can equally be a plain function, which suits policy that is a gate rather than a scheme
+list -- for instance holding a client's custom scheme back until it has been reviewed::
+
+    def review_gated_validator(application):
+        approved = bool(application.pk) and application.review_state == "approved"
+        schemes = ["https", application.custom_scheme] if approved else ["https"]
+        return AllowedURIValidator(schemes, name="redirect uri", allow_path=True, allow_query=True)
+
+Errors raised from a custom validator follow the same convention as the rest of ``clean()``: they are
+collected and keyed to ``redirect_uris`` or ``allowed_origins``, so the admin and the built-in
+application views render each message next to the offending input.
+
+Two constraints are worth knowing before you write one.
+
+**The application may be unsaved.** Registration through Dynamic Client Registration (:rfc:`7591`),
+:doc:`CIMD <cimd>`, the ``createapplication`` command and the admin add form all validate before the
+first save, so
+``application.pk`` can be ``None`` and reverse relations may not exist yet. Guard accordingly, as
+both examples above do.
+
+**A factory may not be ``None``.** Both settings are mandatory, so an empty value raises rather than
+silently disabling validation. If you really want no validation, say so explicitly with a factory
+returning ``lambda uri: None``.
+
+.. warning::
+    These validators decide what may be **stored**. They do not affect request-time matching: an
+    incoming ``redirect_uri`` is matched against the stored values by exact string comparison per
+    :rfc:`9700` section 2.1, and nothing here can relax that. A validator that accepts a sloppy URI
+    only stores a value that will never match.
+
+    They are also not the whole story for schemes. ``Application.get_allowed_schemes()`` is consulted
+    *again* when the redirect is issued, so accepting a new scheme here without adding it to
+    ``ALLOWED_REDIRECT_URI_SCHEMES`` (or overriding ``get_allowed_schemes()``) produces an
+    application that saves cleanly and then fails at redirect time. The same applies to origins:
+    ``ALLOWED_SCHEMES`` is re-checked at request time by ``is_origin_allowed()``.
+
+    On the Dynamic Client Registration and CIMD paths, no other check inspects redirect uri syntax,
+    and a validator's message reaches the registering client verbatim in ``error_description``. Write
+    client-facing messages, and remember that a permissive validator widens the open-redirect and
+    phishing surface just as ``ALLOW_URI_WILDCARDS`` does.
+
 .. _extend_token_models:
 
 Extending the token models
