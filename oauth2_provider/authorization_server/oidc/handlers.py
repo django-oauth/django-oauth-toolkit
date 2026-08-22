@@ -37,10 +37,24 @@ def get_logout_token_sub(id_token):
 
 
 def send_backchannel_logout_request(id_token, *args, **kwargs):
-    """
-    Send a logout token to the applications backchannel logout uri
-    """
+    """Send a logout token to the application's backchannel logout uri.
 
+    Raises :class:`BackchannelLogoutRequestError` and nothing else. Notifying a relying
+    party is best-effort, and every caller -- the ``user_logged_out`` receiver among them
+    -- has to be able to recover from a failure with a single except clause, so the whole
+    body is wrapped rather than the delivery alone. That covers reaching the signing key,
+    minting the JWT, the request itself, and dereferencing an ID Token whose nullable
+    ``application`` or ``user`` is unset.
+    """
+    try:
+        return _send_backchannel_logout_request(id_token, *args, **kwargs)
+    except BackchannelLogoutRequestError:
+        raise
+    except Exception as exc:
+        raise BackchannelLogoutRequestError(str(exc)) from exc
+
+
+def _send_backchannel_logout_request(id_token, *args, **kwargs):
     if not oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
         raise BackchannelLogoutRequestError("Backchannel logout not enabled")
 
@@ -55,64 +69,55 @@ def send_backchannel_logout_request(id_token, *args, **kwargs):
 
     ttl = kwargs.get("ttl") or timedelta(seconds=oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS)
 
-    # Everything from here on -- signing key access, JWT minting, delivery -- is wrapped so
-    # this function can only ever raise BackchannelLogoutRequestError. Notifying an RP is
-    # best-effort, and callers (the user_logged_out receiver among them) must be able to
-    # recover from a failure with a single except clause.
-    try:
-        issued_at = timezone.now()
-        expiration_date = issued_at + ttl
+    issued_at = timezone.now()
+    expiration_date = issued_at + ttl
 
-        claims = {
-            "iss": oauth2_settings.OIDC_ISS_ENDPOINT,
-            "sub": get_logout_token_sub(id_token),
-            "aud": str(id_token.application.client_id),
-            "iat": int(issued_at.timestamp()),
-            "exp": int(expiration_date.timestamp()),
-            # OpenID Connect Back-Channel Logout 1.0 section 2.4: the jti identifies this
-            # Logout Token, not the ID Token that prompted it. RPs may reject a jti they
-            # have already seen (section 2.6 step 8), so resending for the same ID Token
-            # must not look like a replay.
-            "jti": str(uuid.uuid4()),
-            "events": {"http://schemas.openid.net/event/backchannel-logout": {}},
-        }
+    claims = {
+        "iss": oauth2_settings.OIDC_ISS_ENDPOINT,
+        "sub": get_logout_token_sub(id_token),
+        "aud": str(id_token.application.client_id),
+        "iat": int(issued_at.timestamp()),
+        "exp": int(expiration_date.timestamp()),
+        # OpenID Connect Back-Channel Logout 1.0 section 2.4: the jti identifies this
+        # Logout Token, not the ID Token that prompted it. RPs may reject a jti they
+        # have already seen (section 2.6 step 8), so resending for the same ID Token
+        # must not look like a replay.
+        "jti": str(uuid.uuid4()),
+        "events": {"http://schemas.openid.net/event/backchannel-logout": {}},
+    }
 
-        # Standard JWT header
-        header = {"typ": "logout+jwt", "alg": id_token.application.algorithm}
+    # Standard JWT header
+    header = {"typ": "logout+jwt", "alg": id_token.application.algorithm}
 
-        # RS256 consumers expect a kid in the header for verifying the token
-        if id_token.application.algorithm == AbstractApplication.RS256_ALGORITHM:
-            header["kid"] = id_token.application.jwk_key.thumbprint()
+    # RS256 consumers expect a kid in the header for verifying the token
+    if id_token.application.algorithm == AbstractApplication.RS256_ALGORITHM:
+        header["kid"] = id_token.application.jwk_key.thumbprint()
 
-        token = jwt.JWT(
-            header=json.dumps(header, default=str),
-            claims=json.dumps(claims, default=str),
+    token = jwt.JWT(
+        header=json.dumps(header, default=str),
+        claims=json.dumps(claims, default=str),
+    )
+
+    token.make_signed_token(id_token.application.jwk_key)
+
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data = {"logout_token": token.serialize()}
+    response = requests.post(
+        id_token.application.backchannel_logout_uri,
+        headers=headers,
+        data=data,
+        timeout=oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_TIMEOUT,
+        # Section 2.5 specifies an HTTP POST carrying the token in the body. Following
+        # a redirect would either drop that body (requests turns 301/302/303 into a
+        # GET, which most RP endpoints answer 200, so the failure is silent) or repost
+        # the signed token to whatever Location names.
+        allow_redirects=False,
+    )
+    if response.is_redirect:
+        raise BackchannelLogoutRequestError(
+            "backchannel logout uri redirected to %r" % response.headers.get("Location")
         )
-
-        token.make_signed_token(id_token.application.jwk_key)
-
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        data = {"logout_token": token.serialize()}
-        response = requests.post(
-            id_token.application.backchannel_logout_uri,
-            headers=headers,
-            data=data,
-            timeout=oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_TIMEOUT,
-            # Section 2.5 specifies an HTTP POST carrying the token in the body. Following
-            # a redirect would either drop that body (requests turns 301/302/303 into a
-            # GET, which most RP endpoints answer 200, so the failure is silent) or repost
-            # the signed token to whatever Location names.
-            allow_redirects=False,
-        )
-        if response.is_redirect:
-            raise BackchannelLogoutRequestError(
-                "backchannel logout uri redirected to %r" % response.headers.get("Location")
-            )
-        response.raise_for_status()
-    except BackchannelLogoutRequestError:
-        raise
-    except Exception as exc:
-        raise BackchannelLogoutRequestError(str(exc)) from exc
+    response.raise_for_status()
 
 
 def collect_backchannel_logout_targets(user):

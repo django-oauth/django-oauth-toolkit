@@ -12,11 +12,14 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URI));
 
 export async function validateLogoutToken(token) {
 	try {
-		// Steps 2-4: signature, alg, and the iss/aud/iat/exp claims.
+		// Steps 2-4: signature, alg, and the iss/aud/iat/exp claims. Section 4.1 recommends
+		// explicit typing and warns that *requiring* it breaks older OPs -- safe to require
+		// here, because the IdP this demo is paired with always types its logout tokens.
 		const { payload } = await jwtVerify(token, JWKS, {
 			algorithms: ['RS256'],
 			issuer: ISSUER,
-			audience: AUDIENCE
+			audience: AUDIENCE,
+			typ: 'logout+jwt'
 		});
 		// Step 6: events must declare this a logout token.
 		if (

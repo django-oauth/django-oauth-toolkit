@@ -226,6 +226,19 @@ class TestBackchannelLogout(TestCase):
             on_user_logged_out_maybe_send_backchannel_logout(sender=User, user=self.user)
             mock_func.assert_called_once()
 
+    def test_application_less_id_token_does_not_escape_as_its_own_exception(self):
+        # IDToken.application is nullable. collect_backchannel_logout_targets() filters
+        # those out, but the function is public and documented as raising exactly one
+        # exception type, so a direct caller must get that type too.
+        orphan = IDToken.objects.create(
+            application=None,
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(minutes=180),
+            scope="openid profile",
+        )
+        with self.assertRaises(BackchannelLogoutRequestError):
+            send_backchannel_logout_request(orphan)
+
     def test_signing_failure_does_not_escape_as_its_own_exception(self):
         with patch(f"{HANDLERS_MODULE}.jwt.JWT") as mocked_jwt:
             mocked_jwt.side_effect = ValueError("bad key")
