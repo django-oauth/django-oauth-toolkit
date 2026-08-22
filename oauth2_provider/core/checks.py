@@ -363,7 +363,7 @@ def validate_access_token_expiry_configuration(app_configs, **kwargs):
     return []
 
 
-@checks.register()
+@checks.register(checks.Tags.security)
 def validate_backchannel_logout(app_configs, **kwargs):
     """Flag settings that would leave OIDC backchannel logout enabled but inoperative."""
     errors = []

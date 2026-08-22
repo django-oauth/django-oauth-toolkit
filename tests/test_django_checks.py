@@ -9,6 +9,7 @@ from django.test import override_settings
 
 from oauth2_provider.core.checks import (
     validate_access_token_expiry_configuration,
+    validate_backchannel_logout,
     validate_refresh_token_configuration,
     validate_swapped_model_consistency,
     validate_token_configuration,
@@ -49,6 +50,12 @@ class DjangoChecksTestCase(TestCase):
         # that tag, or a plain `manage.py check` would silently stop running it.
         self.assertNotIn(checks.Tags.database, validate_token_configuration.tags)
         self.assertIn(checks.Tags.models, validate_token_configuration.tags)
+
+    def test_backchannel_logout_check_is_tagged(self):
+        # An untagged check is skipped by tag-filtered runs (`manage.py check --tag
+        # security`, which deploy pipelines commonly use), so this misconfiguration guard
+        # has to carry the tag its neighbours do.
+        self.assertIn(checks.Tags.security, validate_backchannel_logout.tags)
 
     @override_settings(OAUTH2_PROVIDER=OIDC_DISABLED_SETTINGS)
     def test_checks_fail_when_backchannel_is_enabled_and_oidc_is_disabled(self):
