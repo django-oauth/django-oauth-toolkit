@@ -140,6 +140,7 @@ markers = [
     "spec_oidc_discovery: OpenID Connect Discovery 1.0",
     "spec_oidc_rp_logout: OpenID Connect RP-Initiated Logout 1.0",
     "spec_browser_rp: Browser RP (SvelteKit) end-to-end",
+    "spec_browser_cross_site: Browser RP third-party-cookie behaviour across distinct sites (idp.test/rp.test)",
 ]
 
 [tool.ruff]

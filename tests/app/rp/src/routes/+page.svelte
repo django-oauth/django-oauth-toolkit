@@ -1,5 +1,6 @@
 <script>
 	import { browser } from '$app/environment';
+	import { env } from '$env/dynamic/public';
 	import {
 		EventLog,
 		LoginButton,
@@ -14,15 +15,25 @@
 		userInfo
 	} from '@dopry/svelte-oidc';
 
+	// Runtime configuration. $env/dynamic/public is read from process.env on
+	// every request by the dev server and by adapter-node, so it needs no build
+	// step and no committed .env file. The defaults are the historical
+	// hard-coded values, so `npm run dev` still talks to a local IdP on :8000
+	// with this RP on :5173; the cross-site end-to-end layer overrides them to
+	// put the IdP and the RP on two genuinely different registrable domains.
+	const issuer = env.PUBLIC_RP_ISSUER || 'http://localhost:8000/o';
+	const clientId = env.PUBLIC_RP_CLIENT_ID || '2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm';
+	const rpOrigin = env.PUBLIC_RP_ORIGIN || 'http://localhost:5173';
+
 	const metadata = {};
 </script>
 
 {#if browser}
 	<OidcContext
-		issuer="http://localhost:8000/o"
-		client_id="2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm"
-		redirect_uri="http://localhost:5173"
-		post_logout_redirect_uri="http://localhost:5173"
+		{issuer}
+		client_id={clientId}
+		redirect_uri={rpOrigin}
+		post_logout_redirect_uri={rpOrigin}
 		{metadata}
 		scope="openid"
 		extraOptions={{

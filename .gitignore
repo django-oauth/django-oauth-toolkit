@@ -65,6 +65,7 @@ venv/
 /.e2e-venv/
 /compliance-matrix.md
 /compliance-matrix.json
-/.rp-server.log
+# The e2e RP dev-server log, one per port (see tests/e2e/helpers/rp_process.py).
+/.rp-server-*.log
 /tests/e2e/reports/
 /.venv/

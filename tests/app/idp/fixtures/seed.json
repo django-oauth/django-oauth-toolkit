@@ -21,8 +21,8 @@
   "fields": {
     "client_id": "2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm",
     "user": null,
-    "redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173",
-    "post_logout_redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173",
+    "redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443\r\nhttps://rp.test:5443/silent-callback.html",
+    "post_logout_redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443",
     "client_type": "public",
     "authorization_grant_type": "authorization-code",
     "client_secret": "pbkdf2_sha256$600000$HEYByn6WXiQUI1D6ezTnAf$qPLekt0t3ZssnzEOvQkeOSfxx7tbs/gcC3O0CthtP2A=",
@@ -32,7 +32,7 @@
     "created": "2023-05-01T20:27:46.167Z",
     "updated": "2023-11-11T17:23:44.643Z",
     "algorithm": "RS256",
-    "allowed_origins": "http://localhost:5173\r\nhttp://127.0.0.1:5173"
+    "allowed_origins": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443"
   }
 },
 {

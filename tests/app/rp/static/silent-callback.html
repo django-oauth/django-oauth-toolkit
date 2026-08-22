@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Silent login callback</title>
+	</head>
+	<body>
+		<script>
+			// The OP redirected the hidden iframe here. This document is same-origin
+			// with the page that framed it, so hand the raw query string back and let
+			// the parent decide whether it is an authorization code or an error.
+			// A static file rather than a SvelteKit route: it fires on parse, with no
+			// hydration to wait for and no layout wrapper around it.
+			window.parent.postMessage(
+				{ type: 'silent-login-result', search: window.location.search },
+				window.location.origin
+			);
+		</script>
+	</body>
+</html>

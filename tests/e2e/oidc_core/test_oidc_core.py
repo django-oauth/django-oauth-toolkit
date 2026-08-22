@@ -41,6 +41,33 @@ def test_hybrid_flow_returns_code_and_id_token(oauth, user_session, issuer):
     assert token_resp.status_code == 200
 
 
+@pytest.mark.compliance("OpenID Connect Core 1.0", "3.1.2.1", "prompt=none with an authenticated End-User")
+def test_prompt_none_returns_code_for_an_authenticated_end_user(oauth, user_session):
+    """An authenticated ``prompt=none`` request is answered without any UI.
+
+    The unauthenticated half of this contract (``error=login_required``) is
+    covered by the unit suite; this pins the *successful* half, which is what
+    the browser layer's cross-site probe measures. Keeping it here, over plain
+    HTTP with no browser involved, means a failure there can be attributed to
+    cookie policy rather than to the authorization server.
+    """
+    result = oauth.authorize(
+        user_session,
+        client_id=c.PUBLIC_PKCE_CLIENT_ID,
+        response_type="code",
+        redirect_uri=c.REDIRECT_URI,
+        scope="openid",
+        state="silent-state",
+        code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        code_challenge_method="S256",
+        extra={"prompt": "none"},
+    )
+    assert result.status_code == 302
+    assert result.query_params["code"], "an authenticated prompt=none request MUST return a code"
+    assert result.query_params["state"] == "silent-state"
+    assert "error" not in result.query_params
+
+
 @pytest.mark.compliance("OpenID Connect Core 1.0", "5.3.2", "UserInfo Response")
 def test_userinfo_returns_claims_for_granted_scopes(oauth, user_session):
     result = oauth.authorize(

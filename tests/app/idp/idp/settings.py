@@ -100,6 +100,16 @@ ipUMvb4Se0LDJnmFuv8v6gM6V4vyXkP855mNOiRHUOHOSKdQ3SeKrLlnR6I=
     OAUTH2_PROVIDER_PKCE_REQUIRED=(bool, True),
     OAUTH2_PROVIDER_PKCE_REQUIRED_CLIENT_IDS=(list, []),
     OAUTH2_PROVIDER_ALLOWED_SCHEMES=(list, ["https", "http"]),
+    # Cookie/CSRF posture is env-driven so the cross-site end-to-end layer can
+    # serve this IdP over TLS with SESSION_COOKIE_SAMESITE=None -- required for
+    # the OP session cookie to reach a third-party iframe at all, and only
+    # honoured by browsers alongside Secure. The defaults reproduce Django's own
+    # defaults, so plain-HTTP local runs are unaffected.
+    SESSION_COOKIE_SAMESITE=(str, "Lax"),
+    SESSION_COOKIE_SECURE=(bool, False),
+    CSRF_COOKIE_SAMESITE=(str, "Lax"),
+    CSRF_COOKIE_SECURE=(bool, False),
+    CSRF_TRUSTED_ORIGINS=(list, []),
     # RFC 9700 compliance gates, env-driven so the e2e suite and the Docker
     # image can exercise both the legacy (False, the library default) and the
     # enforced (True) position of every gate without a code change.
@@ -133,6 +143,12 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+
+SESSION_COOKIE_SAMESITE = env("SESSION_COOKIE_SAMESITE")
+SESSION_COOKIE_SECURE = env("SESSION_COOKIE_SECURE")
+CSRF_COOKIE_SAMESITE = env("CSRF_COOKIE_SAMESITE")
+CSRF_COOKIE_SECURE = env("CSRF_COOKIE_SECURE")
+CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 
 
 # Application definition
