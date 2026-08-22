@@ -226,10 +226,13 @@ def default_allowed_origin_validator(application):
     """
     from oauth2_provider.settings import oauth2_settings
 
-    # Unlike the redirect schemes above, ALLOWED_SCHEMES is passed through as configured.
-    # Origins are compared against it verbatim at request time by is_origin_allowed(), so
-    # lowercasing here would let clean() accept an origin the request-time check rejects.
-    # oauthlib allows only https scheme for CORS.
+    # The gate is ALLOWED_SCHEMES, whose default is https-only because oauthlib permits only
+    # https for CORS; adding "http" is supported for local development, and needs
+    # OAUTHLIB_INSECURE_TRANSPORT set as well.
+    #
+    # Unlike the redirect schemes above, it is passed through exactly as configured. Origins
+    # are compared against it verbatim at request time by is_origin_allowed(), so lowercasing
+    # here would let clean() accept an origin the request-time check then rejects.
     return AllowedURIValidator(
         oauth2_settings.ALLOWED_SCHEMES,
         "allowed origin",

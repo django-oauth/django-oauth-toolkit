@@ -314,7 +314,13 @@ class TestPrivateUseURISchemeValidator(TestCase):
 
 
 class _FakeApplication:
-    """Stands in for an Application: the factories only touch get_allowed_schemes()."""
+    """Stands in for an Application.
+
+    ``default_redirect_uri_validator`` reads ``get_allowed_schemes()`` off the application;
+    ``default_allowed_origin_validator`` does not consult the application at all and takes
+    its schemes from ``ALLOWED_SCHEMES``. This stub therefore only has to answer the former,
+    and is passed to the latter purely to satisfy the shared factory signature.
+    """
 
     def __init__(self, allowed_schemes):
         self._allowed_schemes = allowed_schemes
