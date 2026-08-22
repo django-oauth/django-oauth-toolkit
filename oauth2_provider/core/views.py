@@ -13,10 +13,15 @@ gate for the endpoints whose request bodies the specifications define as
 ``application/x-www-form-urlencoded``.
 """
 
+import logging
+import warnings
+
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
 from oauth2_provider.settings import oauth2_settings
 
+
+log = logging.getLogger("oauth2_provider")
 
 FORM_URLENCODED_MEDIA_TYPE = "application/x-www-form-urlencoded"
 
@@ -42,11 +47,16 @@ class FormEncodedRequestMixin:
     client putting the access token *in the body*, not on the endpoint. Nor to Dynamic
     Client Registration, whose bodies :rfc:`7591` defines as ``application/json``.
 
-    Enforcement is opt-in via ``REQUIRE_FORM_ENCODED_REQUEST_BODY`` because rejecting
+    Enforcement is gated on ``REQUIRE_FORM_ENCODED_REQUEST_BODY`` because rejecting
     the bodies previously accepted (JSON via the deprecated ``JSONOAuthLibCore``
     backend, and multipart, which Django parses into ``request.POST`` but no
     specification permits here) is a breaking change for clients that rely on them.
-    While the gate is off the legacy handling is unchanged.
+    The ``False`` default is deprecated and scheduled to become ``True`` in 4.0: while
+    it is off a non-compliant body is still passed through, but each one emits a
+    ``DeprecationWarning`` (and a log line) naming the client-visible change to come.
+    Nothing is emitted for a compliant request, so a deployment whose clients already
+    send form-encoded bodies stays quiet -- and for it the coming default flip is a
+    no-op.
 
     Only requests carrying a body are checked: the endpoints that also answer ``GET``
     (introspection) take their parameters from the query string there, where no media
@@ -67,27 +77,43 @@ class FormEncodedRequestMixin:
 
     def form_encoded_body_error(self, request: HttpRequest) -> JsonResponse | None:
         """
-        Return a ``415 Unsupported Media Type`` response for a request whose body
-        is not form-encoded, or ``None`` when the request may proceed.
+        Return a ``415 Unsupported Media Type`` response for a request whose body is not
+        form-encoded, or ``None`` when the request may proceed.
+
+        While ``REQUIRE_FORM_ENCODED_REQUEST_BODY`` is ``False`` a non-compliant body
+        proceeds, but warns that it will not once the default flips in 4.0.
         """
-        if not oauth2_settings.REQUIRE_FORM_ENCODED_REQUEST_BODY or request.method != "POST":
+        if request.method != "POST":
             return None
         # ``HttpRequest.content_type`` is the media type alone, lower-cased and with
         # any parameters stripped, so "Application/X-WWW-Form-Urlencoded; charset=UTF-8"
         # compares equal here. A request with no Content-Type header gives "".
         if request.content_type == FORM_URLENCODED_MEDIA_TYPE:
             return None
-        return JsonResponse(
-            {
-                "error": "invalid_request",
-                "error_description": (
-                    f"{self.form_encoded_endpoint} takes its parameters in a "
-                    f"{FORM_URLENCODED_MEDIA_TYPE} request body; got "
-                    f"{request.content_type or 'no Content-Type header'}."
-                ),
-            },
-            status=415,
+
+        received = request.content_type or "no Content-Type header"
+        detail = (
+            f"{self.form_encoded_endpoint} takes its parameters in a "
+            f"{FORM_URLENCODED_MEDIA_TYPE} request body; got {received}."
         )
+        if not oauth2_settings.REQUIRE_FORM_ENCODED_REQUEST_BODY:
+            # Warn only on the non-compliant path, so a deployment whose clients already
+            # comply never sees this. Mirrors the RFC 9700 request-time gates in
+            # :mod:`oauth2_provider.core.bcp`, which is RFC 9700-specific and so not
+            # reused here.
+            message = (
+                f"{detail} The request is currently allowed to proceed because "
+                'OAUTH2_PROVIDER["REQUIRE_FORM_ENCODED_REQUEST_BODY"] is False; this '
+                "default is scheduled to change to True in django-oauth-toolkit 4.0, "
+                "after which such a request is rejected with HTTP 415. Set "
+                'OAUTH2_PROVIDER["REQUIRE_FORM_ENCODED_REQUEST_BODY"] to True to adopt '
+                "the compliant behavior now."
+            )
+            warnings.warn(message, DeprecationWarning, stacklevel=2)
+            log.warning(message)
+            return None
+
+        return JsonResponse({"error": "invalid_request", "error_description": detail}, status=415)
 
 
 class OAuthLibCoreMixin:

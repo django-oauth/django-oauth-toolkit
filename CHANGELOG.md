@@ -100,6 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conventions are documented in `docs/package_layout.rst` (and summarized for agents in `AGENTS.md`).
 
 ### Deprecated
+* #657 The `False` default of the new `REQUIRE_FORM_ENCODED_REQUEST_BODY` setting, which is scheduled
+  to become `True` in 4.0. Until then a POST body that is not `application/x-www-form-urlencoded` still
+  reaches the token, revocation, introspection, device-authorization and PAR endpoints, but each one
+  emits a `DeprecationWarning` and an `oauth2_provider` logger warning naming the coming HTTP 415.
+  Compliant requests emit nothing, so a deployment whose clients already send form-encoded bodies stays
+  quiet and the default flip will be a no-op for it. Note that Django's test client sends
+  `multipart/form-data` for `client.post(url, data={...})`, so a test suite that posts to these
+  endpoints that way is a likely source of the warnings and will need a `content_type` before 4.0.
 * Several modules moved into role-based subpackages (see Changed below). The old top-level import paths
   still work but now emit a `DeprecationWarning` and will be removed in 4.0. Update imports as follows:
   `oauth2_provider.{compat,exceptions,http,scopes,signals,utils,checks,bcp}` →

@@ -8,6 +8,7 @@ a POST sent with any other media type is answered with HTTP 415.
 """
 
 import json
+import warnings
 from urllib.parse import urlencode
 
 import pytest
@@ -83,6 +84,37 @@ class TestFormEncodingNotEnforced(BaseTest):
         response = self.token_request(data={"grant_type": "client_credentials"})
 
         self.assertEqual(response.status_code, 200)
+
+    def test_non_compliant_body_warns_about_the_coming_default(self):
+        """The ``False`` default is deprecated, so each non-compliant body nags."""
+        with self.assertWarns(DeprecationWarning) as caught:
+            self.token_request(
+                data=json.dumps({"grant_type": "client_credentials"}),
+                content_type="application/json",
+            )
+
+        message = str(caught.warning)
+        self.assertIn("REQUIRE_FORM_ENCODED_REQUEST_BODY", message)
+        self.assertIn("django-oauth-toolkit 4.0", message)
+        self.assertIn("application/json", message)
+
+    def test_compliant_body_does_not_warn(self):
+        """A deployment whose clients already comply sees nothing."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            response = self.token_request(
+                data=urlencode({"grant_type": "client_credentials"}), content_type=FORM_ENCODED
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([w for w in caught if "REQUIRE_FORM_ENCODED_REQUEST_BODY" in str(w.message)], [])
+
+    def test_get_request_does_not_warn(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.client.get(reverse("oauth2_provider:introspect"), data={"token": "no-such-token"})
+
+        self.assertEqual([w for w in caught if "REQUIRE_FORM_ENCODED_REQUEST_BODY" in str(w.message)], [])
 
     def test_no_endpoint_answers_415(self):
         for url_name, data in FORM_ENCODED_ENDPOINTS:

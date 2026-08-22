@@ -459,6 +459,14 @@ requirement of `RFC 6750 section 2.2
 the access token *in the body*, not a constraint on the endpoint. Your own protected resources
 are likewise untouched.
 
+.. deprecated:: 3.5
+    The ``False`` default is deprecated and is scheduled to become ``True`` in 4.0. Until then
+    a non-compliant body is still passed through, but every one emits a ``DeprecationWarning``
+    and an ``oauth2_provider`` logger warning naming the change to come. Nothing is emitted for
+    a compliant request, so a deployment whose clients already send form-encoded bodies stays
+    quiet -- and for it the coming default flip is a no-op. Set the setting to ``True`` to adopt
+    the behavior now and silence the warnings.
+
 The default is ``False`` because turning enforcement on rejects two kinds of request that
 previously worked:
 
@@ -468,6 +476,8 @@ previously worked:
 * ``multipart/form-data`` bodies. No specification permits them here, but Django parses them
   into ``request.POST`` so they have always worked -- including from Django's own test client,
   whose ``client.post(url, data={...})`` sends multipart unless a ``content_type`` is passed.
+  If your test suite posts to these endpoints that way, it is the source of the warnings, and
+  it will need a ``content_type`` before 4.0.
 
 While enforcement is off, a request sent with any other media type reaches the view with no
 parameters at all (Django only populates ``request.POST`` for form-encoded and multipart

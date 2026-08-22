@@ -133,7 +133,9 @@ DEFAULTS = {
     # device authorization and PAR) reject a POST sent with any other media type, with
     # HTTP 415. Defaults to ``False`` so upgrading does not break clients sending the
     # bodies previously accepted (multipart, or JSON via the deprecated
-    # JSONOAuthLibCore backend). See oauth2_provider.core.views.FormEncodedRequestMixin.
+    # JSONOAuthLibCore backend). That default is deprecated and scheduled to become
+    # ``True`` in 4.0; while it is ``False`` each non-compliant body warns.
+    # See oauth2_provider.core.views.FormEncodedRequestMixin.
     "REQUIRE_FORM_ENCODED_REQUEST_BODY": False,
     # RFC 9700 (OAuth 2.0 Security Best Current Practice) gates.
     #
