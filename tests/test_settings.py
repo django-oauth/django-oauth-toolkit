@@ -295,6 +295,16 @@ class TestAccessTokenExpiresIn(TestCase):
                 with pytest.raises(ImproperlyConfigured, match="ACCESS_TOKEN_EXPIRE_SECONDS"):
                     settings.access_token_expires_in()
 
+    def test_non_finite_value_is_rejected(self):
+        # float("inf") raises OverflowError from int() and float("nan") raises ValueError;
+        # both are reachable from a computed setting and must name the setting, not leak
+        # the raw arithmetic error.
+        for value in (float("inf"), float("-inf"), float("nan")):
+            with self.subTest(value=value):
+                settings = OAuth2ProviderSettings({"ACCESS_TOKEN_EXPIRE_SECONDS": value})
+                with pytest.raises(ImproperlyConfigured, match="ACCESS_TOKEN_EXPIRE_SECONDS"):
+                    settings.access_token_expires_in()
+
     def test_unimportable_string_names_the_setting(self):
         # The setting is import-string aware, so a string is treated as a dotted path to
         # the callable rather than as a number of seconds.
