@@ -71,11 +71,15 @@ Package map
         scopes, exceptions, utils, http, compat, signals, checks,
         bcp (RFC 9700 best-current-practice gates),
         safe_fetch (SSRF-hardened HTTPS fetching),
-        rfc7523 (client-assertion protocol constant, shared by AS/RS/client),
+        rfc7523 (RFC 7523 protocol constants: §2.2 client-assertion type,
+          shared by AS/RS/client, and the §2.1 grant type),
         backends_oauthlib, views.py (OAuthLibCoreMixin — shared view base)
       authorization_server/     provider side
         dcr, cimd, forms, admin,
-        client_assertions (RFC 7523 assertion *verification*),
+        client_assertions (RFC 7523 §2.2 client-assertion *verification*),
+        rfc7523 (RFC 7523 §2.1 grant assertion *verification* + subject resolver),
+        grants (custom oauthlib grant handlers — JWTBearerGrant),
+        servers (oauthlib Server subclasses registering DOT's grants),
         par (RFC 9126 pushed authorization requests),
         urls.py (server-metadata / base / management / DCR patterns)
         views/                  base, introspect, device, par (RFC 9126),
@@ -90,7 +94,8 @@ Package map
         views/                  generic (protected-resource views), metadata (RFC 9728)
       client/                   client side — talking *to* an authorization
                                 server (see Naming above)
-        client_assertions (RFC 7523 assertion *building*)
+        client_assertions (RFC 7523 §2.2 client-assertion *building*),
+        rfc7523 (RFC 7523 §2.1 grant assertion *building*)
       contrib/                  third-party framework integrations (see below)
         rest_framework/         DRF authentication + scope permissions
         ninja/                  Django Ninja bearer-token security

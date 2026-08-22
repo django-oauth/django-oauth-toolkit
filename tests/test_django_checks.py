@@ -152,3 +152,51 @@ class AccessTokenExpiryConfigurationCheckTestCase(TestCase):
                 messages = validate_access_token_expiry_configuration(None)
                 self.assertEqual([m.id for m in messages], ["oauth2_provider.E006"])
                 self.assertIsInstance(messages[0], checks.Error)
+
+
+class JWTBearerGrantChecksTestCase(TestCase):
+    def _ids(self):
+        from oauth2_provider.core.checks import validate_jwt_bearer_grant_configuration
+
+        return [m.id for m in validate_jwt_bearer_grant_configuration(None)]
+
+    def test_no_warning_when_grant_disabled(self):
+        self.assertNotIn("oauth2_provider.W013", self._ids())
+
+    @override_settings(OAUTH2_PROVIDER={"JWT_BEARER_GRANT_ENABLED": True})
+    def test_warns_when_enabled_without_trust(self):
+        self.assertIn("oauth2_provider.W013", self._ids())
+
+    @override_settings(
+        OAUTH2_PROVIDER={
+            "JWT_BEARER_GRANT_ENABLED": True,
+            "JWT_BEARER_TRUSTED_ISSUERS": {"https://sts.example.com": {"jwks_uri": "https://sts/jwks"}},
+        }
+    )
+    def test_no_warning_with_trusted_issuers(self):
+        self.assertNotIn("oauth2_provider.W013", self._ids())
+
+    @override_settings(OAUTH2_PROVIDER={"JWT_BEARER_GRANT_ENABLED": True})
+    def test_no_warning_with_application_keys(self):
+        from oauth2_provider.models import get_application_model
+
+        Application = get_application_model()
+        Application.objects.create(
+            name="jwtb",
+            client_type=Application.CLIENT_PUBLIC,
+            authorization_grant_type=Application.GRANT_JWT_BEARER,
+            client_jwks='{"keys": []}',
+        )
+        self.assertNotIn("oauth2_provider.W013", self._ids())
+
+    @override_settings(OAUTH2_PROVIDER={"JWT_BEARER_GRANT_ENABLED": True})
+    def test_db_unavailable_falls_back_to_settings(self):
+        from unittest import mock
+
+        # If the applications table cannot be queried (e.g. before migrate), the
+        # check must not crash; it falls back to the settings-only signal and,
+        # with no trusted issuers, still warns.
+        fake_model = mock.MagicMock()
+        fake_model._default_manager.using.side_effect = RuntimeError("db down")
+        with mock.patch("oauth2_provider.core.checks.apps.get_model", return_value=fake_model):
+            self.assertIn("oauth2_provider.W013", self._ids())

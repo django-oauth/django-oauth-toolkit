@@ -43,6 +43,24 @@ IMPLICIT_CLIENT_ID = "e2e-implicit"
 HYBRID_CLIENT_ID = "e2e-hybrid"
 HYBRID_SECRET = "hybrid-secret"
 
+# RFC 7523 §2.1 JWT bearer grant. The public half of this key is registered on
+# the "e2e-jwt-bearer" application (fixtures/e2e_seed.json) as client_jwks; the
+# private half signs assertions in the test. Test-only key — never reuse.
+JWT_BEARER_CLIENT_ID = "e2e-jwt-bearer"
+JWT_BEARER_PRIVATE_JWK = {
+    "kty": "RSA",
+    "kid": "e2e-jwt-bearer-1",
+    "e": "AQAB",
+    "n": "1SIdxiZUn78-q-oEOVY3N0gaq0xyRar5ChXyaqSmxTVN9oOdTtAYSCky4EwPhyYB_UE_M2b2degMhQuQhegaezf3iAxOqq6ncxU1zk3-h-rAcjY8Tv70XqvxDGmuwhE9c-i3l8pU0eS5PBee84wNi-Kf8ham2D8EHP16J58QlKkyoLHnO-muqAaD9dUH2I8dmTvfFP2cZgOzkjlFm37xrYnq6-pIDqhxD3-jRz8nnYM405Jdul7ZhAZhKZfr2pc9EZvzSeT6EYQUPl3BAq5zIiGhk9S3sNIN5qCtCoaeDTFrxq_SnNJejW2cLphcWwuPmK4fwlG__yEt8s8U8lXpHQ",  # noqa: E501
+    "d": "IRarVax0vdpEgg8SOc6TQu9cSJTVNtCs2i5_FKRcSciVQny7atVut6FBx0W3sW0qqOU8yR-miraMXwllFgzrM48ETGhQvDniQEEeOdms9u_wkaqu4Tq-uIXsJdewbGudxUVvX07nrTBbu6MVJ81p-vojh8ORgogB_PgzQzx0KAf2AWhKm25QaoiZ9G3xnCjv-c-nwUGuYDTo1A34xcdXMpTKkZfzrYPu72ZRx1BJf6udiOgzNAIQ38BFdo6BEvyBX1TxFrHgAZS5BJ3uCKvpi7T8oDY9gCHMjbJkRDsgXCd4oD2rTsbR71_yPExeRXiBvb-HGiLsy91F8b0giwcR5w",  # noqa: E501
+    "p": "8tSKQcGYlKD8rSEWA3m8CDvBpqnG7-x9iY-oYOUTIyuXdfJ5jegjwLCRBaPP0UwACzKJJLhSTkFhC_lPygnRnv2bpsKOVPpBpCk6vHnCBe-XnZoklklQ44eJUbJF9uIpBpt50wFokyYbkH4YaTJQbGbCJqdslUjub0tG81lkd18",  # noqa: E501
+    "q": "4LFDT3wUfijHYHkjQdxzseXPBg-3qHBvDYqUF9vFCmFJ2YU4r9kOvFbMd8fKcx29rBmWuZzoZzwGXE0HajQrEekeeAqEFJryNazr5hzb0Jr0ykn0bK0uJG7-jI5zsI8DmFDOePjlQQN1rvCoWA77_z8GG0HEpeR0cdzoreQVXQM",  # noqa: E501
+    "dp": "oyREFtV4KzLVT4ORBJi-yVFMUypxKzPZS5gmaaK9br2UrntPSxWRH54AcKeTsWu8A8nZ9b-YHFc0WhUPlA9ws75y2mCPu2u-ugmxGns67T4AwLOUrRtoqtSeXzLEao-bPIMsH6Usmt_ZWQQ-Zj6VZZ7MBagp_UnYVxFeA5QlOUU",  # noqa: E501
+    "dq": "DQ4_uv6asjnsW86uHcWRc2THArMnGMJvsXm74ScD6_Z7NAhpos4Z7ReeCdeyC75OpxFVkLNtTZJPTE2tgJ5HYmMJQjBaPFhEepnxmw1SOGzIjHh_m1D0vWk1oTUlw7yLmO4ZES5lI8HvtJqHLZaxTcN7t1m682iy22ramkAGfcE",  # noqa: E501
+    "qi": "xaedlWOjxfCxF0-yVO1CIqRDkeqsaF6ExUkqDCPzFT5juYpuiw3JFMe-JBCWrtV-2H6MkBZb0V35wznFJzh92A12VRgfXoji6HjczpzCeinQ_AIubbb9XWM_UYe6YFrRt54wslJJT8T2D90EaWPvMXZUk4GO4fVik_E9tIWYzjQ",  # noqa: E501
+}
+JWT_BEARER_SUBJECT = E2E_USERNAME
+
 # Shipped demo clients (seed.json).
 RP_OIDC_CLIENT_ID = "2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm"
 DEVICE_CLIENT_ID = "Qg8AaxKLs1c2W3PR70Sv5QxuSEREicKUlf83iGX3"
