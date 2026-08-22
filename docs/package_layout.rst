@@ -92,8 +92,8 @@ Package map
                                 server (see Naming above)
         client_assertions (RFC 7523 assertion *building*)
       contrib/                  third-party framework integrations (see below)
-        rest_framework/         DRF authentication + scope permissions
-        ninja/                  Django Ninja bearer-token security
+        rest_framework/         DRF authentication + scope permissions + throttling
+        ninja/                  Django Ninja bearer-token security + throttling
       settings.py, models.py, generators.py, validators.py, oauth2_validators.py
                                 stay at the top level (see below)
 
@@ -136,8 +136,9 @@ Framework integrations (``contrib/``)
 
 ``oauth2_provider/contrib/`` holds optional integrations with **third-party web
 frameworks** — Django REST Framework (``contrib/rest_framework``: the
-``OAuth2Authentication`` authenticators and the ``TokenHasScope`` family of
-permissions) and Django Ninja (``contrib/ninja``: bearer-token security). By
+``OAuth2Authentication`` authenticators, the ``TokenHasScope`` family of
+permissions and the OAuth2-aware rate throttles) and Django Ninja
+(``contrib/ninja``: bearer-token security and the same throttles). By
 *role* these are all **Resource Server** functionality — they let a DRF/Ninja app
 act as an OAuth2-protected resource server — and their internal imports use the
 canonical resource-server / core paths.

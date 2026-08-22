@@ -121,3 +121,49 @@ For example:
             return access_token
 
     api = NinjaAPI(auth=StaffOnlyOAuth2())
+
+
+Throttling
+----------
+``OAuth2ClientRateThrottle`` and ``OAuth2UserOrClientRateThrottle`` key `Ninja's rate
+limiting <https://django-ninja.dev/guides/throttling/>`_ on the OAuth2 credentials a
+request was made with.
+
+They exist because a token issued through the ``client_credentials`` grant has no user
+attached to it -- there is no resource owner in that flow, only a client acting on its
+own behalf. Ninja's ``UserRateThrottle`` therefore falls through to keying such requests
+by IP address, which puts every machine-to-machine client behind a shared egress address
+into a single bucket, while its ``AuthRateThrottle`` keys on ``str(request.auth)`` and so
+gives each *token* its own bucket -- a client that can mint a fresh token can mint a
+fresh allowance with it. These classes key on the client application's primary key
+instead, which is stable across token rotation:
+
+.. code-block:: python
+
+    from ninja import NinjaAPI
+    from oauth2_provider.contrib.ninja import HttpOAuth2, OAuth2ClientRateThrottle
+
+    api = NinjaAPI()
+
+    @api.get("/songs", auth=HttpOAuth2(), throttle=[OAuth2ClientRateThrottle("10000/day")])
+    def songs_endpoint(request):
+        ...
+
+``OAuth2UserOrClientRateThrottle`` keys on the user when the token has one, and on the
+client application otherwise, which is what an API serving both interactive and
+machine-to-machine clients usually wants. Requests that were not authenticated with an
+OAuth2 access token are left alone by ``OAuth2ClientRateThrottle``, so it can be
+combined with the throttles covering the rest of an operation's traffic, and are keyed
+by user or IP address by ``OAuth2UserOrClientRateThrottle``.
+
+Ninja has no built-in default rate for either scope, so pass one to the constructor as
+above, or add ``oauth2_client`` / ``oauth2`` keys to the ``NINJA_DEFAULT_THROTTLE_RATES``
+setting. Throttle state lives in Django's cache, so a cache shared by every process
+serving the API is what makes the limit a limit.
+
+.. note:: Both classes read the access token from ``request.auth``. If you subclass
+    ``HttpOAuth2`` and return something else from ``authenticate``, as `Custom
+    Authorization Behavior`_ allows, they can no longer identify the client:
+    ``OAuth2ClientRateThrottle`` stops throttling those requests altogether, and
+    ``OAuth2UserOrClientRateThrottle`` falls back to the IP address. Keep returning the
+    access token itself when you use these throttles.
