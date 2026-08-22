@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`RESOURCE_SERVER_INTROSPECTION_JWT_*` settings), Dynamic Client Registration support for both methods with
   `jwks`/`jwks_uri` metadata, and `*_auth_signing_alg_values_supported` advertisement in the discovery documents.
   Note that `client_secret_jwt` requires the client secret to be stored unhashed (it is the HMAC key), like HS256.
+* #657 `REQUIRE_FORM_ENCODED_REQUEST_BODY`, an opt-in setting that makes the endpoints that take the
+  parameters comprising the request in an `application/x-www-form-urlencoded` body -- token
+  (RFC 6749 §4.1.3, §4.3.2, §4.4.2 and §6), revocation (RFC 7009 §2.1), introspection
+  (RFC 7662 §2.1), device authorization (RFC 8628 §3.1) and PAR (RFC 9126 §2.1) -- answer
+  `415 Unsupported Media Type` to a POST sent with any other media type, instead of reaching the
+  view with no parameters at all and reporting a misleading error about a parameter the client did
+  send (a JSON token request is currently rejected as `unsupported_grant_type`). Defaults to
+  `False`, so nothing changes until you opt in; note that turning it on also rejects
+  `multipart/form-data` bodies, which no specification permits here but Django parses into
+  `request.POST` -- including from Django's own test client, whose `client.post(url, data={...})`
+  sends multipart unless a `content_type` is passed. Combining it with the deprecated
+  `JSONOAuthLibCore` backend rejects every request before the backend can parse it, which a new
+  system check (`oauth2_provider.E006`) reports.
 * #1816 A system check (`oauth2_provider.W012`) that warns when
   `REFRESH_TOKEN_REUSE_PROTECTION` is enabled while `ROTATE_REFRESH_TOKEN` is disabled.
   Replay is detected by recognizing a token a previous rotation superseded, so without
@@ -87,6 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conventions are documented in `docs/package_layout.rst` (and summarized for agents in `AGENTS.md`).
 
 ### Deprecated
+* #657 The `False` default of the new `REQUIRE_FORM_ENCODED_REQUEST_BODY` setting, which is scheduled
+  to become `True` in 4.0. Until then a POST body that is not `application/x-www-form-urlencoded` still
+  reaches the token, revocation, introspection, device-authorization and PAR endpoints, but each one
+  emits a `DeprecationWarning` and an `oauth2_provider` logger warning naming the coming HTTP 415.
+  Compliant requests emit nothing, so a deployment whose clients already send form-encoded bodies stays
+  quiet and the default flip will be a no-op for it. Note that Django's test client sends
+  `multipart/form-data` for `client.post(url, data={...})`, so a test suite that posts to these
+  endpoints that way is a likely source of the warnings and will need a `content_type` before 4.0.
 * Several modules moved into role-based subpackages (see Changed below). The old top-level import paths
   still work but now emit a `DeprecationWarning` and will be removed in 4.0. Update imports as follows:
   `oauth2_provider.{compat,exceptions,http,scopes,signals,utils,checks,bcp}` →

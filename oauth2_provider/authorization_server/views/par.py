@@ -8,12 +8,13 @@ from oauth2_provider.authorization_server import par
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.exceptions import OAuthToolkitError
+from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.settings import oauth2_settings
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class PushedAuthorizationRequestView(AuthorizationServerViewMixin, View):
+class PushedAuthorizationRequestView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
     """
     Implements the Pushed Authorization Request (PAR) endpoint as defined in
     :rfc:`9126`.
@@ -29,6 +30,7 @@ class PushedAuthorizationRequestView(AuthorizationServerViewMixin, View):
 
     # POST-only: the base View returns 405 for any other method (RFC 9126 §2.3).
     http_method_names = ["post"]
+    form_encoded_endpoint = "The OAuth 2.0 pushed authorization request endpoint (RFC 9126 section 2.1)"
 
     def dispatch(self, request, *args, **kwargs):
         if not oauth2_settings.PAR_ENABLED:

@@ -15,6 +15,7 @@ from oauthlib.oauth2 import DeviceApplicationServer
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.scopes import get_scopes_backend
+from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.models import (
     AbstractDeviceGrant,
     DeviceCodeResponse,
@@ -27,8 +28,9 @@ from oauth2_provider.models import (
 
 @method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
-class DeviceAuthorizationView(AuthorizationServerViewMixin, View):
+class DeviceAuthorizationView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
     server_class = DeviceApplicationServer
+    form_encoded_endpoint = "The OAuth 2.0 device authorization endpoint (RFC 8628 section 3.1)"
 
     def post(self, request, *args, **kwargs):
         headers, response, status = self.create_device_authorization_response(request)

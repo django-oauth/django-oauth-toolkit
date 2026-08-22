@@ -2,6 +2,7 @@ from django.apps import apps
 from django.core import checks
 from django.db import router
 
+from oauth2_provider.core.backends_oauthlib import JSONOAuthLibCore
 from oauth2_provider.settings import oauth2_settings
 
 
@@ -176,6 +177,44 @@ def validate_bcp_configuration(app_configs, **kwargs):
         )
 
     return messages
+
+
+@checks.register(checks.Tags.security)
+def validate_request_body_configuration(app_configs, **kwargs):
+    """
+    Flag a request-body configuration that rejects every request it is set up to parse.
+
+    ``REQUIRE_FORM_ENCODED_REQUEST_BODY`` makes the token, revocation, introspection,
+    device-authorization and PAR endpoints answer 415 to any POST that is not
+    ``application/x-www-form-urlencoded``, while the deprecated ``JSONOAuthLibCore``
+    backend exists solely to read ``application/json`` bodies on those same endpoints.
+    Combined, the gate rejects the request before the backend ever sees it, so *every*
+    JSON request fails and the backend parses nothing -- always a misconfiguration
+    rather than a deliberate posture.
+
+    Unlike the RFC 9700 gates this is an internal-consistency check, so it is always on
+    rather than ``--deploy``-only.
+    """
+    if not oauth2_settings.REQUIRE_FORM_ENCODED_REQUEST_BODY:
+        return []
+    # OAUTH2_BACKEND_CLASS is an import-string setting, so this is the resolved class.
+    if not issubclass(oauth2_settings.OAUTH2_BACKEND_CLASS, JSONOAuthLibCore):
+        return []
+    return [
+        checks.Error(
+            "OAUTH2_PROVIDER['REQUIRE_FORM_ENCODED_REQUEST_BODY'] is True while "
+            "OAUTH2_PROVIDER['OAUTH2_BACKEND_CLASS'] reads application/json request "
+            "bodies, so every request the backend is configured to parse is rejected "
+            "with HTTP 415 before it reaches the backend.",
+            hint=(
+                "Remove the OAUTH2_BACKEND_CLASS override (the default "
+                "'oauth2_provider.core.backends_oauthlib.OAuthLibCore' reads form-encoded "
+                "bodies) and have clients send application/x-www-form-urlencoded request "
+                "bodies, or set REQUIRE_FORM_ENCODED_REQUEST_BODY = False."
+            ),
+            id="oauth2_provider.E006",
+        )
+    ]
 
 
 # Registered under the ``models`` tag rather than ``database``: this check only asks the
