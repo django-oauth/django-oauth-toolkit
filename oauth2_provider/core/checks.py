@@ -1,5 +1,6 @@
 from django.apps import apps
 from django.core import checks
+from django.core.exceptions import ImproperlyConfigured
 from django.db import router
 
 from oauth2_provider.core.backends_oauthlib import JSONOAuthLibCore
@@ -318,6 +319,44 @@ def validate_refresh_token_configuration(app_configs, **kwargs):
                     "4.14.2."
                 ),
                 id="oauth2_provider.W012",
+            )
+        ]
+
+    return []
+
+
+@checks.register(checks.Tags.security)
+def validate_access_token_expiry_configuration(app_configs, **kwargs):
+    """
+    Report a misconfigured ``ACCESS_TOKEN_EXPIRE_SECONDS`` at startup.
+
+    Tagged ``security`` (not ``deploy``-only, unlike ``validate_bcp_configuration``) because
+    the access token lifetime is the RFC 9700 §4 exposure window for a leaked token, and an
+    untagged check is skipped entirely by tag-filtered runs such as ``manage.py check --tag
+    security``.
+
+    The setting may be a number of seconds, a ``timedelta``, or a callable taking the
+    oauthlib request (see ``OAuth2ProviderSettings.access_token_expires_in``). A static
+    value is resolved here so a bad one is reported by ``check`` rather than raising on
+    the first token issued. A callable can only be type-checked -- its return value is
+    validated per call, when there is a request to evaluate it against.
+    """
+    try:
+        if callable(oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS):
+            return []
+        oauth2_settings.access_token_expires_in()
+    # The setting is import-string aware, so a string that is not a dotted path to a
+    # callable raises ImportError; report it here rather than crashing ``manage.py check``.
+    except (ImproperlyConfigured, ImportError) as exc:
+        return [
+            checks.Error(
+                str(exc),
+                hint=(
+                    "Set OAUTH2_PROVIDER['ACCESS_TOKEN_EXPIRE_SECONDS'] to a positive number "
+                    "of seconds, a datetime.timedelta, or a callable taking the oauthlib "
+                    "request and returning either."
+                ),
+                id="oauth2_provider.E006",
             )
         ]
 

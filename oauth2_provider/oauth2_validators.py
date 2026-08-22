@@ -737,14 +737,15 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
         self._check_and_set_request_resource(request)
 
-        # expires_in is passed to Server on initialization
-        # custom server class can have logic to override this
-        expires = timezone.now() + timedelta(
-            seconds=token.get(
-                "expires_in",
-                oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS,
-            )
-        )
+        # The token handler normally puts the lifetime it used in the token dict, so the
+        # stored expiry and the ``expires_in`` the client is told agree. Fall back to
+        # resolving ACCESS_TOKEN_EXPIRE_SECONDS ourselves for token dicts that omit it
+        # (a custom server or token class); resolving it through the settings helper is
+        # what makes a callable setting work on this path too.
+        expires_in = token.get("expires_in")
+        if expires_in is None:
+            expires_in = oauth2_settings.access_token_expires_in(request)
+        expires = timezone.now() + timedelta(seconds=expires_in)
 
         if request.grant_type == "client_credentials":
             request.user = None

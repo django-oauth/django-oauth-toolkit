@@ -258,6 +258,9 @@ OAUTH2_PROVIDER = {
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": env("OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED"),
     # this key is just for out test app, you should never store a key like this in a production environment.
     "OIDC_RSA_PRIVATE_KEY": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY"),
+    # A callable (given here as an import string) lets the access token lifetime vary
+    # per request -- see "Varying the access token lifetime per request" in the docs.
+    "ACCESS_TOKEN_EXPIRE_SECONDS": "idp.oauth.access_token_expires_in",
     "SCOPES": env("OAUTH2_PROVIDER_SCOPES"),
     "DEFAULT_SCOPES": env("OAUTH2_PROVIDER_DEFAULT_SCOPES"),
     "PKCE_REQUIRED": pkce_required,

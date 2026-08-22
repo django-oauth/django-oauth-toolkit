@@ -334,6 +334,78 @@ keep them if you use those helpers.
 Register the ``Scope`` and ``ApplicationScope`` models with the admin as usual to manage scopes
 through the admin site.
 
+.. _dynamic_access_token_lifetime:
+
+Varying the access token lifetime per request
+=============================================
+
+``ACCESS_TOKEN_EXPIRE_SECONDS`` (see :ref:`settings_access_token_expire_seconds`) may be a
+callable instead of a fixed number of seconds. It is called once per issued token with the
+current ``oauthlib.common.Request`` and must return a number of seconds or a
+``datetime.timedelta``. The value it returns is reported to the client as ``expires_in``
+*and* stored as the token's ``expires``, so the two never drift apart.
+
+The callable can be given directly, or as a dotted import path -- which is usually what you
+want, since a Django settings module often cannot import a callable that touches models::
+
+    OAUTH2_PROVIDER = {
+        "ACCESS_TOKEN_EXPIRE_SECONDS": "myapp.oauth.access_token_expires_in",
+    }
+
+The request carries everything needed to make the decision:
+
+``request.client``
+    The ``Application`` instance the token is being issued to. This is how you give
+    different clients different lifetimes -- add a field to a
+    :ref:`custom Application model <extend_app_model>` and read it here::
+
+        def access_token_expires_in(request):
+            return request.client.access_token_lifetime or 36000
+
+``request.grant_type``
+    The grant being used, e.g. to keep tokens issued to a machine client short because no
+    human is present to notice a leak::
+
+        from datetime import timedelta
+
+        def access_token_expires_in(request):
+            if request.grant_type == "client_credentials":
+                return timedelta(minutes=15)
+            return timedelta(hours=10)
+
+``request.scopes``
+    The granted scopes, so a token that can move money expires sooner than one that can
+    only read::
+
+        def access_token_expires_in(request):
+            if "transfer" in (request.scopes or []):
+                return timedelta(minutes=5)
+            return timedelta(hours=10)
+
+``request.user``
+    The resource owner, where one is involved. It is ``None`` for ``client_credentials``,
+    so guard for that.
+
+``request.headers``
+    A copy of the Django request's ``META``, so an upstream session cookie is reachable and
+    a token can be made not to outlive the session that authorized it.
+
+Notes:
+
+* The callable runs while the token is being issued, inside the token endpoint's
+  transaction. Keep it cheap and side-effect free -- an extra query per token issued is a
+  cost paid on the hot path.
+* Raise nothing: an exception propagates out of the token endpoint. Fall back to a default
+  rather than assuming a field is populated.
+* Return a positive value. A non-positive or non-numeric return raises
+  ``ImproperlyConfigured``.
+* A refresh exchange is a fresh issuance, so the callable is consulted again with
+  ``request.grant_type == "refresh_token"``; the new access token gets the lifetime that
+  applies *then*, not the one the original token got.
+
+``tests/app/idp/idp/oauth.py`` in this repository has a working example wired into the demo
+IdP.
+
 .. _skip-auth-form:
 
 Skip authorization form

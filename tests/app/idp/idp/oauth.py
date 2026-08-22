@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.contrib.auth.middleware import AuthenticationMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
@@ -56,3 +58,17 @@ class CustomOAuth2Validator(OAuth2Validator):
             "preferred_username": request.user.get_username(),
             "email": request.user.email,
         }
+
+
+def access_token_expires_in(request):
+    """Demo of a per-request access token lifetime (``ACCESS_TOKEN_EXPIRE_SECONDS``).
+
+    ``request`` is an ``oauthlib.common.Request``, so the lifetime can be keyed on the
+    grant type, the client (``request.client`` is the Application instance), the granted
+    scopes, or the user. Here a client acting on its own behalf gets a short-lived token
+    because no human is present to notice a leak, while an end-user token keeps the
+    default lifetime. Return either a number of seconds or a ``timedelta``.
+    """
+    if request.grant_type == "client_credentials":
+        return timedelta(minutes=15)
+    return 36000
