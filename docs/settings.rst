@@ -602,6 +602,28 @@ this you must also provide the service at that endpoint.
 If unset, the default location is used, eg if ``django-oauth-toolkit`` is
 mounted at ``/o/``, it will be ``<server-address>/o/userinfo/``.
 
+OIDC_USERINFO_CORS_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
+
+Whether the userinfo endpoint answers CORS preflight (``OPTIONS``) requests and sends
+``Access-Control-Allow-Origin: *`` on its responses, so browser-based (JavaScript) clients can
+call it cross-origin without extra middleware. `OpenID Connect Core 1.0 section 5.3
+<https://openid.net/specs/openid-connect-core-1_0.html#UserInfo>`_ says the endpoint SHOULD
+support CORS.
+
+The origin cannot be narrowed to the calling application's ``Allowed origins``: the preflight
+request carries no access token, so there is no application to resolve at that point. The
+wildcard is safe because claims are still only released to a caller holding a valid access
+token, and ``Access-Control-Allow-Credentials`` is never sent, so browsers will not attach
+ambient cookies to the request.
+
+Set this to ``False`` to send no CORS headers from the userinfo endpoint at all, for instance if
+you prefer to control them with CORS middleware such as `django-cors-headers
+<https://github.com/adamchainz/django-cors-headers>`_. Note that when that middleware is
+installed it answers every CORS preflight before any view runs, so the userinfo path has to be
+allowed there too even when this setting is left on.
+
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~
 Default: ``""``

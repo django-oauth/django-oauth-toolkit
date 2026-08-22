@@ -69,6 +69,46 @@ def test_userinfo_returns_claims_for_granted_scopes(oauth, user_session):
     assert body["given_name"] == c.E2E_GIVEN_NAME
 
 
+@pytest.mark.compliance("OpenID Connect Core 1.0", "5.3", "UserInfo CORS support")
+def test_userinfo_supports_cors_for_javascript_clients(oauth, user_session):
+    origin = "http://localhost:5173"
+
+    # A UserInfo request carries an Authorization header, which is not CORS-safelisted,
+    # so the browser preflights it before sending the real request. The demo IdP also
+    # installs django-cors-headers (for the device flow), whose middleware answers every
+    # preflight before any view runs, so all this can assert end-to-end is that the
+    # preflight is allowed; the toolkit's own OPTIONS handler is covered by the unit
+    # tests in tests/test_oidc_views.py.
+    preflight = oauth.userinfo_preflight(origin=origin)
+    assert preflight.status_code == 200
+    assert preflight.headers["Access-Control-Allow-Origin"] in ("*", origin)
+
+    result = oauth.authorize(
+        user_session,
+        client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+        response_type="code",
+        redirect_uri=c.REDIRECT_URI,
+        scope="openid",
+        state="s",
+    )
+    access_token = token_data(
+        oauth.exchange_code(
+            client_id=c.CONFIDENTIAL_CODE_CLIENT_ID,
+            code=result.query_params["code"],
+            redirect_uri=c.REDIRECT_URI,
+            client_secret=c.CONFIDENTIAL_CODE_SECRET,
+        )
+    )["access_token"]
+
+    # The wildcard on the actual response comes from the toolkit, not the middleware:
+    # nothing enables django-cors-headers for a UserInfo GET in the demo IdP.
+    resp = oauth.userinfo(access_token, origin=origin)
+    assert resp.status_code == 200
+    assert resp.headers["Access-Control-Allow-Origin"] == "*"
+    # A wildcard origin must never be paired with credentialed requests.
+    assert "Access-Control-Allow-Credentials" not in resp.headers
+
+
 @pytest.mark.compliance("OpenID Connect Core 1.0", "5.4", "Requesting Claims using Scope Values")
 def test_userinfo_omits_email_when_scope_not_granted(oauth, user_session):
     result = oauth.authorize(
