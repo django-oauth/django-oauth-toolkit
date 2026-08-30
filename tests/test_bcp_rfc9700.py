@@ -182,6 +182,42 @@ class TestPkcePlainGate(TestCase):
         # RFC 9207: the issuer (matching the metadata issuer) is echoed on the redirect.
         self.assertIn("iss=http%3A%2F%2Ftestserver%2Fo", response["Location"])
 
+    def test_iss_added_to_authorization_error_redirect(self):
+        # RFC 9207 §2 requires `iss` on error responses too, not just successful ones.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        self.client.login(username="co", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://example.org/cb",
+                "scope": "read",
+                "state": "abc",
+                "allow": False,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=access_denied", response["Location"])
+        self.assertIn("iss=http%3A%2F%2Ftestserver%2Fo", response["Location"])
+
+    def test_iss_omitted_from_authorization_error_redirect_by_default(self):
+        self.client.login(username="co", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://example.org/cb",
+                "scope": "read",
+                "state": "abc",
+                "allow": False,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=access_denied", response["Location"])
+        self.assertNotIn("iss=", response["Location"])
+
     def test_iss_omitted_by_default(self):
         self.client.login(username="co", password="123456")
         response = self.client.post(

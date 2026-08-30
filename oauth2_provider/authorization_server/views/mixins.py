@@ -8,8 +8,10 @@ endpoints. It builds on the shared
 
 from django.http import HttpRequest
 
+from oauth2_provider.core.backends_oauthlib import _add_iss_to_redirect
 from oauth2_provider.core.exceptions import FatalClientError
 from oauth2_provider.core.views import OAuthLibCoreMixin
+from oauth2_provider.settings import oauth2_settings
 
 
 class AuthorizationServerViewMixin(OAuthLibCoreMixin):
@@ -95,9 +97,21 @@ class AuthorizationServerViewMixin(OAuthLibCoreMixin):
         redirect_uri = oauthlib_error.redirect_uri or ""
         separator = "&" if "?" in redirect_uri else "?"
 
+        url = redirect_uri + separator + oauthlib_error.urlencoded
+
+        # RFC 9207 §2 requires `iss` on *every* authorization response, including error
+        # responses -- not just successful ones (see _add_iss_to_redirect's other call
+        # site in backends_oauthlib.create_authorization_response). Only add it when
+        # there's an actual redirect_uri to redirect to: a FatalClientError has none (it
+        # renders an error page instead of redirecting, since the redirect_uri itself
+        # couldn't be trusted), and there's nothing to add `iss` to in that case.
+        if redirect_uri and oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
+            issuer = oauth2_settings.oauth2_authorization_server_issuer(self.request)
+            url = _add_iss_to_redirect(url, issuer)
+
         error_response = {
             "error": oauthlib_error,
-            "url": redirect_uri + separator + oauthlib_error.urlencoded,
+            "url": url,
         }
         error_response.update(kwargs)
 

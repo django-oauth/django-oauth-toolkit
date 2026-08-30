@@ -197,6 +197,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1846 The `iss` authorization-response parameter (RFC 9207, gated by
+  `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`) is now added to error redirects as well as
+  successful ones. RFC 9207 §2 requires it on every authorization response, but it was only
+  ever added on the success path in `create_authorization_response`; an error redirect (e.g.
+  the resource owner denying access) built its `Location` header directly in
+  `AuthorizationServerViewMixin.error_response` with no `iss` injection at all.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
