@@ -4,12 +4,8 @@ from django.contrib.auth.hashers import make_password
 from django.forms.models import modelform_factory
 from django.urls import reverse
 
-from oauth2_provider.authorization_server.forms import ApplicationForm, _is_hashed
-from oauth2_provider.authorization_server.views.application import (
-    APPLICATION_FIELDS,
-    ApplicationRegistration,
-    get_application_form_class,
-)
+from oauth2_provider.authorization_server.forms import APPLICATION_FIELDS, ApplicationForm, _is_hashed
+from oauth2_provider.authorization_server.views.application import ApplicationRegistration, ApplicationUpdate
 from oauth2_provider.models import get_application_model
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -616,13 +612,24 @@ class TestApplicationFormClassSetting(BaseTest):
     """
 
     def test_default_form_class_uses_application_fields(self):
-        form_class = get_application_form_class()
+        form_class = ApplicationRegistration().get_form_class()
         self.assertEqual(Application, form_class._meta.model)
         self.assertEqual(list(APPLICATION_FIELDS), list(form_class.base_fields))
 
+    def test_view_form_class_attribute_is_used_verbatim(self):
+        # A subclass setting ``form_class`` gets it back untouched, as Django's own
+        # CreateView / UpdateView do -- the setting and the rebinding are bypassed.
+        view_class = type("V", (ApplicationRegistration,), {"form_class": SampleApplicationForm})
+        self.assertIs(SampleApplicationForm, view_class().get_form_class())
+
+    def test_update_view_default_fields_come_from_the_mixin(self):
+        # ApplicationOwnerIsUserMixin precedes ApplicationFormMixin in the MRO; it must
+        # not shadow the default field set.
+        self.assertEqual(APPLICATION_FIELDS, ApplicationUpdate.fields)
+
     @pytest.mark.oauth2_settings({"APPLICATION_MODEL": "tests.SampleApplication"})
     def test_custom_model_field_absent_without_custom_form(self):
-        form_class = get_application_form_class()
+        form_class = ApplicationRegistration().get_form_class()
         self.assertEqual(SampleApplication, form_class._meta.model)
         self.assertNotIn("custom_field", form_class.base_fields)
 
@@ -633,7 +640,7 @@ class TestApplicationFormClassSetting(BaseTest):
         }
     )
     def test_custom_form_class_adds_custom_model_field(self):
-        form_class = get_application_form_class()
+        form_class = ApplicationRegistration().get_form_class()
         # Rebound to the swapped model, keeping the form's own field set.
         self.assertEqual(SampleApplication, form_class._meta.model)
         self.assertIn("custom_field", form_class.base_fields)
@@ -646,7 +653,7 @@ class TestApplicationFormClassSetting(BaseTest):
         }
     )
     def test_custom_form_class_may_use_meta_exclude(self):
-        form_class = get_application_form_class()
+        form_class = ApplicationRegistration().get_form_class()
         self.assertEqual(SampleApplication, form_class._meta.model)
         self.assertNotIn("custom_field", form_class.base_fields)
         self.assertIn("name", form_class.base_fields)

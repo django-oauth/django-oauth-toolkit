@@ -45,6 +45,21 @@ class ConfirmLogoutForm(forms.Form):
         super(ConfirmLogoutForm, self).__init__(*args, **kwargs)
 
 
+# Default field set of the built-in application registration / update views.
+APPLICATION_FIELDS = (
+    "name",
+    "client_id",
+    "client_secret",
+    "hash_client_secret",
+    "client_type",
+    "authorization_grant_type",
+    "redirect_uris",
+    "post_logout_redirect_uris",
+    "allowed_origins",
+    "algorithm",
+)
+
+
 class ApplicationForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

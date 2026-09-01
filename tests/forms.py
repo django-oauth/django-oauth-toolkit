@@ -1,5 +1,4 @@
-from oauth2_provider.authorization_server.forms import ApplicationForm
-from oauth2_provider.authorization_server.views.application import APPLICATION_FIELDS
+from oauth2_provider.authorization_server.forms import APPLICATION_FIELDS, ApplicationForm
 
 
 class SampleApplicationForm(ApplicationForm):

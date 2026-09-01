@@ -80,8 +80,7 @@ To expose them, write a ``ModelForm`` naming the fields you want and point the
 ``APPLICATION_FORM_CLASS`` setting at it::
 
     # your_app_name/forms.py
-    from oauth2_provider.authorization_server.forms import ApplicationForm
-    from oauth2_provider.authorization_server.views.application import APPLICATION_FIELDS
+    from oauth2_provider.authorization_server.forms import APPLICATION_FIELDS, ApplicationForm
 
     class MyApplicationForm(ApplicationForm):
         class Meta:
@@ -105,7 +104,9 @@ secret help text and the HS256 warnings the shipped templates and the admin rend
 form is always rebound to the model named by ``OAUTH2_PROVIDER_APPLICATION_MODEL``, so
 ``Meta.model`` is not needed (and is ignored if given). Both the registration and the
 update view use it; validation stays with the model, so anything
-``AbstractApplication.clean()`` enforces still applies (see below).
+``AbstractApplication.clean()`` enforces still applies (see below). A project that subclasses
+the views can set ``form_class`` on the view instead, which is used verbatim (not rebound) as
+in Django's own generic views.
 
 Only the forms are affected. ``oauth2_provider/templates/oauth2_provider/application_detail.html``
 lists the built-in fields explicitly, so override that template to show a custom field

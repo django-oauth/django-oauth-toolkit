@@ -150,7 +150,9 @@ when ``OAUTH2_PROVIDER_APPLICATION_MODEL`` is swapped.
 
 Point this at a subclass declaring its own ``Meta.fields`` (or ``Meta.exclude``) to put the
 extra fields of a swapped application model on those views; without ``Meta``, the default
-field set applies. See :ref:`custom-application-form`.
+field set applies. A project subclassing the views can set ``form_class`` on the view instead,
+which is used verbatim (not rebound), as in Django's own generic views.
+See :ref:`custom-application-form`.
 
 APPLICATION_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~

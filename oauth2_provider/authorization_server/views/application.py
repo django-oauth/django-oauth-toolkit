@@ -1,44 +1,43 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.forms.models import modelform_factory
+from django.forms.models import modelform_defines_fields, modelform_factory
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
+from oauth2_provider.authorization_server.forms import APPLICATION_FIELDS
 from oauth2_provider.models import get_application_model
 from oauth2_provider.settings import oauth2_settings
 
 
-APPLICATION_FIELDS = (
-    "name",
-    "client_id",
-    "client_secret",
-    "hash_client_secret",
-    "client_type",
-    "authorization_grant_type",
-    "redirect_uris",
-    "post_logout_redirect_uris",
-    "allowed_origins",
-    "algorithm",
-)
+class ApplicationFormMixin:
+    """Form handling shared by the application create and update views."""
 
+    # Default field set, used when the configured form declares no Meta.fields / Meta.exclude.
+    fields = APPLICATION_FIELDS
 
-def get_application_form_class():
-    """Build the ModelForm used by the application registration and update views.
+    def get_form_class(self):
+        """Build the ModelForm used by the registration and update views.
 
-    The base form comes from the ``APPLICATION_FORM_CLASS`` setting and is rebound to
-    the configured (swappable) application model, so a form written against
-    ``oauth2_provider.Application`` keeps working after the model is swapped.
+        The form named by ``APPLICATION_FORM_CLASS`` is rebound to the configured
+        (swappable) application model. A form declaring its own ``Meta.fields`` /
+        ``Meta.exclude`` keeps that field set -- how extra fields on a swapped model
+        reach these views; otherwise ``fields`` (``APPLICATION_FIELDS``) applies, which
+        is why simply adding a field to a swapped model does not put it on the form.
+        """
+        # Honour the standard CreateView/UpdateView hook for subclassers; used verbatim,
+        # as upstream does.
+        if self.form_class:
+            return self.form_class
+        form_class = oauth2_settings.APPLICATION_FORM_CLASS
+        model = get_application_model()
+        if modelform_defines_fields(form_class):
+            return modelform_factory(model, form=form_class)
+        return modelform_factory(model, form=form_class, fields=self.fields)
 
-    A custom form that declares its own ``Meta.fields`` / ``Meta.exclude`` keeps that
-    field set: that is how extra fields on a swapped application model reach the
-    built-in views. Without one, the fields default to ``APPLICATION_FIELDS`` -- the
-    OAuth fields the shipped views have always rendered -- which is why simply adding
-    a field to a swapped model does not put it on the form.
-    """
-    form_class = oauth2_settings.APPLICATION_FORM_CLASS
-    opts = getattr(form_class, "_meta", None)
-    if opts is not None and (opts.fields is not None or opts.exclude is not None):
-        return modelform_factory(get_application_model(), form=form_class)
-    return modelform_factory(get_application_model(), form=form_class, fields=APPLICATION_FIELDS)
+    def form_valid(self, form):
+        # The application is always owned by the request user; a configured form exposing
+        # "user" must not turn either view into an ownership transfer.
+        form.instance.user = self.request.user
+        return super().form_valid(form)
 
 
 class ApplicationOwnerIsUserMixin(LoginRequiredMixin):
@@ -46,25 +45,16 @@ class ApplicationOwnerIsUserMixin(LoginRequiredMixin):
     This mixin is used to provide an Application queryset filtered by the current request.user.
     """
 
-    fields = "__all__"
-
     def get_queryset(self):
         return get_application_model().objects.filter(user=self.request.user)
 
 
-class ApplicationRegistration(LoginRequiredMixin, CreateView):
+class ApplicationRegistration(LoginRequiredMixin, ApplicationFormMixin, CreateView):
     """
     View used to register a new Application for the request.user
     """
 
     template_name = "oauth2_provider/application_registration_form.html"
-
-    def get_form_class(self):
-        return get_application_form_class()
-
-    def form_valid(self, form):
-        form.instance.user = self.request.user
-        return super().form_valid(form)
 
 
 class ApplicationDetail(ApplicationOwnerIsUserMixin, DetailView):
@@ -95,24 +85,10 @@ class ApplicationDelete(ApplicationOwnerIsUserMixin, DeleteView):
     template_name = "oauth2_provider/application_confirm_delete.html"
 
 
-class ApplicationUpdate(ApplicationOwnerIsUserMixin, UpdateView):
+class ApplicationUpdate(ApplicationOwnerIsUserMixin, ApplicationFormMixin, UpdateView):
     """
     View used to update an application owned by the request.user
     """
 
     context_object_name = "application"
     template_name = "oauth2_provider/application_form.html"
-
-    def get_form_class(self):
-        return get_application_form_class()
-
-    def form_valid(self, form):
-        # An application never changes hands here. get_queryset() already limits this
-        # view to the request user's own applications, and while the field set was
-        # hard-coded a form could not carry ``user`` at all. APPLICATION_FORM_CLASS makes
-        # that field set configurable -- a form declaring ``Meta.fields = "__all__"``
-        # includes ``user`` -- so pin the owner in the view, where the guarantee belongs,
-        # rather than leaving it to the configured form. Ownership transfers stay an
-        # admin operation. Mirrors ApplicationRegistration.form_valid().
-        form.instance.user = self.request.user
-        return super().form_valid(form)

@@ -29,8 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   get onto those views, which previously rendered a hard-coded field list only. The form is rebound
   to the configured application model, and the default field set is unchanged. `ApplicationUpdate`
   now pins the application owner to the request user, so a configured form that exposes `user`
-  cannot turn the update view into an ownership transfer. See "Showing custom Application fields on
-  the registration form" in the advanced topics documentation.
+  cannot turn the update view into an ownership transfer. The views now honour `form_class` set on a
+  subclass, used verbatim as in Django's generic views. `ApplicationOwnerIsUserMixin` no longer
+  sets `fields = "__all__"`; a custom form view built on it should compose `ApplicationFormMixin`
+  or set `fields` / `form_class` itself. See "Showing custom Application fields on the
+  registration form" in the advanced topics documentation.
 * #483 `ACCESS_TOKEN_EXPIRE_SECONDS` now accepts a `datetime.timedelta`, or a callable taking the
   oauthlib request and returning a number of seconds or a `timedelta`, in addition to a plain number
   of seconds. This makes the access token lifetime vary per client, grant type, scope or session
