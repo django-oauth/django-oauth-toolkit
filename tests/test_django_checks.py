@@ -1,3 +1,4 @@
+import warnings
 from datetime import timedelta
 
 import pytest
@@ -189,6 +190,26 @@ class ResponseTypesSupportedCheckTestCase(TestCase):
         self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["id_token token", "token id_token"]
         self.assertEqual(self._messages(), [])
 
+    def test_a_non_string_entry_is_reported_rather_than_raised(self):
+        # `manage.py check` does not catch exceptions raised by a check, so a malformed
+        # entry must not be allowed to abort the whole command.
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", 123]
+        (message,) = self._messages()
+        self.assertIsInstance(message, checks.Warning)
+        self.assertIn("123", message.msg)
+        self.assertIn("The configured server accepts:", message.hint)
+
+    def test_the_check_survives_a_deprecated_backend_under_warnings_as_errors(self):
+        # The check must not depend on OAUTH2_BACKEND_CLASS being constructible: the
+        # deprecated JSONOAuthLibCore raises its DeprecationWarning as an exception under
+        # warnings-as-errors, which would otherwise silently return no messages.
+        self.oauth2_settings.OAUTH2_BACKEND_CLASS = "oauth2_provider.core.backends_oauthlib.JSONOAuthLibCore"
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", "code assertion"]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            (message,) = self._messages()
+        self.assertIn("code assertion", message.msg)
+
 
 @pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
@@ -209,3 +230,20 @@ class OIDCResponseTypesSupportedCheckTestCase(TestCase):
         self.assertIn("token id_token", message.msg)
         self.assertIn("OIDC_RESPONSE_TYPES_SUPPORTED", message.msg)
         self.assertIn("'id_token token'", message.hint)
+
+    def test_implicit_entries_dropped_by_the_bcp_gate_are_not_reported(self):
+        # With COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT enabled, bcp_filter_response_types()
+        # removes implicit entries from both discovery documents, so a permuted implicit
+        # entry is never advertised and warning about it would be wrong.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "token id_token"]
+        self.assertEqual(self._messages(), [])
+
+    def test_hybrid_entries_are_still_reported_under_the_bcp_gate(self):
+        # A response type containing `code` is not implicit, so the gate does not drop it
+        # and the permutation is still advertised and still unreachable.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "token code"]
+        (message,) = self._messages()
+        self.assertIn("token code", message.msg)
+        self.assertIn("'code token'", message.hint)

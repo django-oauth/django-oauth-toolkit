@@ -686,8 +686,10 @@ Type Encoding Practices
 <https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#terminology>`_ §4,
 but oauthlib dispatches an authorization request on the exact ``response_type`` string,
 so only the canonical orderings are accepted: an entry such as ``"token id_token"`` is
-always rejected with ``unsupported_response_type``. ``manage.py check --deploy`` reports
-any advertised entry the configured server cannot accept as ``oauth2_provider.W013``.
+never served as advertised -- it is rejected with ``unsupported_response_type``, or with
+``unauthorized_client`` when the entry contains ``code``. ``manage.py check --deploy``
+reports any advertised entry the configured server cannot serve as
+``oauth2_provider.W013``.
 
 OAUTH2_GRANT_TYPES_SUPPORTED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -822,7 +824,7 @@ Default::
 The response types that are advertised to be supported by this server. Only consulted
 when ``OIDC_ENABLED`` is ``True``. As with ``OAUTH2_RESPONSE_TYPES_SUPPORTED``, the
 ordering of a multi-valued entry must match the canonical one oauthlib registers;
-``manage.py check --deploy`` reports entries that cannot be accepted as
+``manage.py check --deploy`` reports entries that cannot be served as
 ``oauth2_provider.W013``.
 
 OIDC_SUBJECT_TYPES_SUPPORTED
