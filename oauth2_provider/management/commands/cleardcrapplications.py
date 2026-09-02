@@ -16,22 +16,23 @@ from ...settings import oauth2_settings
 
 class Command(BaseCommand):
     help = (
-        "Delete DCR-registered applications (RFC 7591) that hold no live tokens or grants and are "
-        "older than --min-age-days. DCR clients that re-register without deregistering leave behind "
-        "'ghost' applications; because a client simply re-registers on its next request, deleting a "
+        "Delete DCR-registered applications (RFC 7591) that hold no live tokens or grants and have "
+        "not been registered or modified within --min-unmodified-days. DCR clients that re-register "
+        "without deregistering leave behind 'ghost' applications; because a client simply "
+        "re-registers on its next request, deleting a "
         "tokenless ghost only reclaims storage. Run it as a cronjob alongside cleartokens."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--min-age-days",
+            "--min-unmodified-days",
             type=int,
             default=7,
             help=(
-                "Only delete applications registered at least this many days ago (default: 7). "
-                "The grace period avoids racing a client that has just registered but has not yet "
-                "completed its first authorization, and so does not hold a token yet. Use 0 to "
-                "delete every tokenless DCR application regardless of age."
+                "Only delete applications last registered or modified at least this many days ago "
+                "(default: 7). The grace period avoids racing a client that has just registered but "
+                "has not yet completed its first authorization, and so does not hold a token yet. "
+                "Use 0 to delete every tokenless DCR application regardless of age."
             ),
         )
         parser.add_argument(
@@ -42,18 +43,22 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        min_age_days = options["min_age_days"]
-        if min_age_days < 0:
-            raise CommandError("--min-age-days must be zero or a positive integer.")
+        min_unmodified_days = options["min_unmodified_days"]
+        if min_unmodified_days < 0:
+            raise CommandError("--min-unmodified-days must be zero or a positive integer.")
         batch_size = options["batch_size"]
         if batch_size < 1:
             raise CommandError("--batch-size must be a positive integer.")
         Application = get_application_model()
         now = timezone.now()
-        cutoff = now - timedelta(days=min_age_days)
+        cutoff = now - timedelta(days=min_unmodified_days)
+        # Anchored on ``updated`` (auto_now) rather than ``created``: for a real
+        # ghost the two are equal, so the default behaviour is the same, but an
+        # application someone is still re-configuring through the RFC 7592
+        # management endpoint keeps renewing its grace period.
         candidates = Application.objects.filter(
             registration_source=Application.RegistrationSource.DCR,
-            created__lte=cutoff,
+            updated__lte=cutoff,
         ).order_by("pk")
         deleted = 0
         last_pk = None
@@ -83,7 +88,7 @@ class Command(BaseCommand):
                     .filter(
                         pk__in=batch,
                         registration_source=Application.RegistrationSource.DCR,
-                        created__lte=cutoff,
+                        updated__lte=cutoff,
                     )
                     .values_list("pk", flat=True)
                 )

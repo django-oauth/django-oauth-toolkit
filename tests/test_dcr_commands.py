@@ -29,7 +29,7 @@ UserModel = get_user_model()
 Application = get_application_model()
 
 
-def _dcr_app(name, *, source=None, created_delta=timedelta(days=-30)):
+def _dcr_app(name, *, source=None, age_delta=timedelta(days=-30)):
     app = Application.objects.create(
         name=name,
         client_type=Application.CLIENT_PUBLIC,
@@ -37,9 +37,11 @@ def _dcr_app(name, *, source=None, created_delta=timedelta(days=-30)):
         redirect_uris="https://client.example.com/callback",
         registration_source=source or Application.RegistrationSource.DCR,
     )
-    # ``created`` is auto_now_add, so age it explicitly with an update that
-    # bypasses the auto field.
-    Application.objects.filter(pk=app.pk).update(created=timezone.now() + created_delta)
+    # ``created`` is auto_now_add and ``updated`` is auto_now, so age them
+    # explicitly with an update that bypasses the auto fields. A ghost is never
+    # touched after registration, so both move together.
+    aged = timezone.now() + age_delta
+    Application.objects.filter(pk=app.pk).update(created=aged, updated=aged)
     app.refresh_from_db()
     return app
 
@@ -62,7 +64,7 @@ def test_cleardcrapplications_prunes_only_dead_aged_dcr_rows(django_user_model, 
     )
 
     # Survivors: too young, not DCR, or holding a live token/grant.
-    young = _dcr_app("young.example.com", created_delta=timedelta(days=-1))
+    young = _dcr_app("young.example.com", age_delta=timedelta(days=-1))
     manual = _dcr_app("manual.example.com", source=Application.RegistrationSource.MANUAL)
     cimd = _dcr_app("cimd.example.com", source=Application.RegistrationSource.CIMD)
     live_access = _dcr_app("live-access.example.com")
@@ -99,26 +101,41 @@ def test_cleardcrapplications_prunes_only_dead_aged_dcr_rows(django_user_model, 
 
 
 @pytest.mark.django_db(databases="__all__")
-def test_cleardcrapplications_min_age_days_zero_prunes_fresh_rows(capsys):
-    # With --min-age-days=0 the age grace period is disabled, so even a
+def test_cleardcrapplications_min_unmodified_days_zero_prunes_fresh_rows(capsys):
+    # With --min-unmodified-days=0 the grace period is disabled, so even a
     # just-registered tokenless DCR app is pruned.
-    fresh = _dcr_app("fresh.example.com", created_delta=timedelta(seconds=-1))
+    fresh = _dcr_app("fresh.example.com", age_delta=timedelta(seconds=-1))
 
-    call_command("cleardcrapplications", min_age_days=0)
+    call_command("cleardcrapplications", min_unmodified_days=0)
 
     assert not Application.objects.filter(pk=fresh.pk).exists()
     assert "Deleted 1 orphaned DCR application(s)" in capsys.readouterr().out
 
 
 @pytest.mark.django_db(databases="__all__")
-def test_cleardcrapplications_default_min_age_spares_recent_rows(capsys):
+def test_cleardcrapplications_default_grace_period_spares_recent_rows(capsys):
     # A tokenless DCR app registered inside the default 7-day grace window is
     # spared, guarding a client that registered but has not yet authorized.
-    recent = _dcr_app("recent.example.com", created_delta=timedelta(days=-3))
+    recent = _dcr_app("recent.example.com", age_delta=timedelta(days=-3))
 
     call_command("cleardcrapplications")
 
     assert Application.objects.filter(pk=recent.pk).exists()
+    assert "Deleted 0 orphaned DCR application(s)" in capsys.readouterr().out
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_cleardcrapplications_spares_a_recently_modified_old_registration(capsys):
+    # The grace period is anchored on ``updated``, not ``created``: an
+    # application registered long ago but re-configured through the RFC 7592
+    # management endpoint yesterday is still being administered, so it keeps
+    # its grace period.
+    touched = _dcr_app("touched.example.com")
+    Application.objects.filter(pk=touched.pk).update(updated=timezone.now() - timedelta(days=1))
+
+    call_command("cleardcrapplications")
+
+    assert Application.objects.filter(pk=touched.pk).exists()
     assert "Deleted 0 orphaned DCR application(s)" in capsys.readouterr().out
 
 
@@ -128,9 +145,9 @@ def test_cleardcrapplications_rejects_non_positive_batch_size(batch_size):
         call_command("cleardcrapplications", batch_size=batch_size)
 
 
-def test_cleardcrapplications_rejects_negative_min_age_days():
-    with pytest.raises(CommandError, match="--min-age-days"):
-        call_command("cleardcrapplications", min_age_days=-1)
+def test_cleardcrapplications_rejects_negative_min_unmodified_days():
+    with pytest.raises(CommandError, match="--min-unmodified-days"):
+        call_command("cleardcrapplications", min_unmodified_days=-1)
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -219,7 +236,8 @@ class TestClearDCRApplicationsAgainstTheRegistrationEndpoint(TestCase):
         assert response.status_code == 201
         app = Application.objects.get(client_id=response.json()["client_id"])
         assert get_access_token_model().objects.filter(application=app).exists()
-        Application.objects.filter(pk=app.pk).update(created=timezone.now() - timedelta(days=30))
+        aged = timezone.now() - timedelta(days=30)
+        Application.objects.filter(pk=app.pk).update(created=aged, updated=aged)
 
         out = StringIO()
         call_command("cleardcrapplications", stdout=out)
