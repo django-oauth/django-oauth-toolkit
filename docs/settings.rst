@@ -614,6 +614,79 @@ endpoint (i.e. that carry a ``request_uri``), and the metadata document advertis
 application's ``require_pushed_authorization_requests`` field; the server-wide setting is a floor
 that a per-client value never relaxes.
 
+JWT_BEARER_GRANT_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Enable the RFC 7523 §2.1 JWT bearer authorization grant
+(``urn:ietf:params:oauth:grant-type:jwt-bearer``) at the token endpoint. When
+enabled, the grant identifier is added to ``grant_types_supported`` in the RFC
+8414 metadata. See :doc:`jwt_bearer_grant`.
+
+JWT_BEARER_SUBJECT_RESOLVER
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.authorization_server.rfc7523.resolve_subject_by_username"``
+
+Import string for the callable ``resolver(claims, application, request) -> User
+| None`` that maps a validated assertion's ``sub`` claim to a Django user. The
+default matches ``sub`` against the user model's ``USERNAME_FIELD`` (active,
+non-privileged users only). Returning ``None`` rejects the request.
+
+JWT_BEARER_ALLOW_PRIVILEGED_SUBJECTS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When ``False`` (the default), the built-in subject resolver refuses ``sub``
+claims that map to a privileged account (``is_staff`` or ``is_superuser``): an
+assertion mints a token for its subject without that user's interactive consent,
+so an admin must not be impersonable by default. Set to ``True`` to allow
+privileged subjects — only with another authorization control in place (e.g. a
+custom resolver enforcing a per-client actor→subject allow-list). Has no effect
+when a custom ``JWT_BEARER_SUBJECT_RESOLVER`` is configured.
+
+JWT_BEARER_TRUSTED_ISSUERS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``{}``
+
+Mapping of trusted third-party issuer (``iss``) to its key configuration, e.g.
+``{"https://sts.example.com": {"jwks_uri": "https://sts.example.com/jwks.json"}}``
+or ``{"https://sts.example.com": {"jwks": {"keys": [...]}}}``. Used for assertions
+not issued by the client itself.
+
+JWT_BEARER_AUDIENCES
+~~~~~~~~~~~~~~~~~~~~~
+Default: ``[]``
+
+Extra ``aud`` values accepted in an assertion, in addition to the OIDC issuer and
+the derived token endpoint URL. Set this explicitly behind a TLS-terminating
+proxy.
+
+JWT_BEARER_ISSUE_REFRESH_TOKENS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Whether the jwt-bearer grant issues a refresh token. Off by default; clients are
+expected to present a fresh assertion instead.
+
+JWT_BEARER_MAX_ASSERTION_LIFETIME_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``3600``
+
+Reject an assertion whose ``exp`` is further than this many seconds in the
+future, bounding the replay window.
+
+JWT_BEARER_REQUIRE_JTI
+~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``True``
+
+Require the assertion to carry a ``jti`` claim (needed for replay protection).
+
+.. note::
+   The jwt-bearer grant reuses the shared ``CLIENT_ASSERTION_LEEWAY`` and
+   ``CLIENT_ASSERTION_JWKS_*`` settings (documented above) for clock-skew leeway
+   and JWK Set fetching, and the default Django cache for ``jti`` replay
+   detection.
+
 RFC 9700 gates (``COMPLIANT_BCP_RFC9700_*``)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

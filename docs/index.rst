@@ -76,6 +76,7 @@ Index
    oauth2_server_metadata
    rfc7523
    pushed_authorization_requests
+   jwt_bearer_grant
    cimd
    oidc
 

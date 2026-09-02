@@ -13,10 +13,13 @@ remote authorization server's introspection endpoint — in that exchange the
 resource server *is* an OAuth client.
 
 Currently: RFC 7523 client authentication assertions
-(:func:`oauth2_provider.client.client_assertions.make_client_assertion`).
+(:func:`oauth2_provider.client.client_assertions.make_client_assertion`) and
+RFC 7523 §2.1 JWT bearer grant assertions
+(:func:`oauth2_provider.client.rfc7523.build_jwt_bearer_assertion`).
 """
 
 from oauth2_provider.client.client_assertions import make_client_assertion
+from oauth2_provider.client.rfc7523 import build_jwt_bearer_assertion
 
 
-__all__ = ["make_client_assertion"]
+__all__ = ["make_client_assertion", "build_jwt_bearer_assertion"]

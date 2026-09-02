@@ -70,6 +70,11 @@
 					>Pushed Authorization Requests (PAR)</a
 				>
 			</li>
+			<li class="tab">
+				<a href="/jwt-bearer" class:active={$page.url.pathname === '/jwt-bearer'}
+					>RFC 7523 jwt-bearer</a
+				>
+			</li>
 		</ul>
 	</div>
 </nav>

@@ -157,6 +157,48 @@ Then open the authorization endpoint in a browser with only the `client_id` and 
 http://127.0.0.1:8000/o/authorize/?client_id=2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm&request_uri=urn:ietf:params:oauth:request_uri:...
 ```
 
+### RFC 7523 jwt-bearer example
+
+The seed data also includes a "Demo JWT Bearer" application
+(`client_id=demo-jwt-bearer`, `jwt-bearer` grant) whose registered `client_jwks` holds the
+public half of the demo keypair below. This grant differs from `private_key_jwt` above: the
+assertion is exchanged for an access token *on behalf of a resource owner* (`sub`), not to
+authenticate the client. `JWT_BEARER_GRANT_ENABLED` is on in the demo IDP.
+
+The RP has a ready-made "RFC 7523 jwt-bearer" tab that runs this exchange for you; the
+equivalent by hand (asserting for the seeded non-privileged `demo-user` — the default
+resolver refuses staff/superuser subjects, so `superuser` would be rejected unless
+`JWT_BEARER_ALLOW_PRIVILEGED_SUBJECTS` is enabled) is:
+
+```sh
+cd tests/app/idp
+
+# 1. Sign a grant assertion with the demo key (iss = client, sub = the user).
+ASSERTION=$(DJANGO_SETTINGS_MODULE=idp.settings python -c "
+import django; django.setup()
+from oauth2_provider.client import build_jwt_bearer_assertion
+from jwcrypto import jwk
+key = jwk.JWK(**{
+    'kty': 'EC', 'crv': 'P-256', 'kid': 'demo-jwt-bearer-key',
+    'x': 'HAkJw3a3LJaPb3Gtb-ovfY2_uGuXbeadWUTB1F4OGXk',
+    'y': 'cX5_RlhBx4gtpRKFmTC7esWdTZmxuOapL37OdKLD6hM',
+    'd': 'ftlyffRfHo8Jqqb0tkETd_GJo2hb2d9_4Vnq0o9MYow',
+})
+print(build_jwt_bearer_assertion(
+    key=key, issuer='demo-jwt-bearer', subject='demo-user',
+    audience='http://127.0.0.1:8000/o/token/', algorithm='ES256',
+))")
+
+# 2. Exchange it for an access token bound to `demo-user` — no user login.
+curl --location 'http://127.0.0.1:8000/o/token/' \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+    --data-urlencode 'client_id=demo-jwt-bearer' \
+    --data-urlencode "assertion=$ASSERTION"
+```
+
+Replaying the same assertion is rejected (`invalid_grant`): the `jti` is single-use.
+
 ## /test/app/rp
 
 This is an example RP. It is a SPA built with Svelte.
