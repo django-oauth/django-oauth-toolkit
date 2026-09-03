@@ -80,7 +80,7 @@ class Command(BaseCommand):
                 # either already visible to the check below or its insert
                 # waits until this transaction ends — it can never be silently
                 # cascade-deleted in between. Re-checking registration_source
-                # and created under the lock drops candidates whose provenance
+                # and updated under the lock drops candidates whose provenance
                 # changed since the collection query above, so only rows that
                 # are still DCR and still past the age cutoff are ever deleted.
                 locked = set(
