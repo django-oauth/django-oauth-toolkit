@@ -791,29 +791,21 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
                     )
                     request.refresh_token_instance = refresh_token_instance
 
-<<<<<<< HEAD
                     # Lock the previously issued access token too: a concurrent rotation
                     # may otherwise delete it (via ``AccessToken.revoke()``) between this
                     # lookup and re-issuing its refresh token below, which would turn the FK
                     # insert into an IntegrityError. Locking it holds it for this
-                    # transaction; if it was already deleted, ``first()`` returns ``None`` and
+                    # transaction; if it was already deleted, ``DoesNotExist`` is raised and
                     # we fall through to minting a fresh pair (its OneToOne
                     # ``source_refresh_token`` slot is then free). This only ever waits on the
                     # access token, never on the other request's refresh token, so it cannot
                     # deadlock with the concurrent rotation (#1687).
-                    previous_access_token = (
-                        AccessToken.objects.select_for_update()
-                        .filter(source_refresh_token=refresh_token_instance)
-                        .first()
-                    )
-=======
                     try:
                         previous_access_token = AccessToken.objects.select_for_update().get(
                             source_refresh_token=refresh_token_instance
                         )
                     except AccessToken.DoesNotExist:
                         previous_access_token = None
->>>>>>> 53e159e (previous_access_token use get rather than first)
                     try:
                         refresh_token_instance.revoke()
                     except (AccessToken.DoesNotExist, RefreshToken.DoesNotExist):

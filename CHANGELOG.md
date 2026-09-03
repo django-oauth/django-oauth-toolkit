@@ -170,6 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1850 Fix for `select_for_update().first()` syntax that is not compatible with Oracle DB in Django
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
