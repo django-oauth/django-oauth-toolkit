@@ -791,6 +791,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
                     )
                     request.refresh_token_instance = refresh_token_instance
 
+<<<<<<< HEAD
                     # Lock the previously issued access token too: a concurrent rotation
                     # may otherwise delete it (via ``AccessToken.revoke()``) between this
                     # lookup and re-issuing its refresh token below, which would turn the FK
@@ -805,6 +806,14 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
                         .filter(source_refresh_token=refresh_token_instance)
                         .first()
                     )
+=======
+                    try:
+                        previous_access_token = AccessToken.objects.select_for_update().get(
+                            source_refresh_token=refresh_token_instance
+                        )
+                    except AccessToken.DoesNotExist:
+                        previous_access_token = None
+>>>>>>> 53e159e (previous_access_token use get rather than first)
                     try:
                         refresh_token_instance.revoke()
                     except (AccessToken.DoesNotExist, RefreshToken.DoesNotExist):
