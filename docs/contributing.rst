@@ -404,9 +404,9 @@ The first thing the core committers will do is run this command. Any pull reques
 Standalone backend DB checks
 ----------------------------
 
-In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL and MySQL.
-To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release in each supported
-major line: 4.2, 5.2, and 6.0.
+In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL,
+MySQL and Oracle. To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release
+in each supported major line: 4.2, 5.2, and 6.0.
 
 Backend env names follow ``py{python}-dj{django}-{db}``, and migration env names mirror that
 with ``migrations-dj{django}-{db}``. For example, ``py312-dj52-pg16`` and
@@ -459,6 +459,52 @@ Run MySQL primary/replica topology checks locally::
   tox -e py314-dj60-my84-pr
   tox -e migrations-dj60-my84-pr
   docker compose -f docker-compose.mysql-pr.yml down -v
+
+Run Oracle standalone checks locally::
+
+  export ORACLE_DSN=localhost:1521/FREEPDB1
+  export ORACLE_USER=dot_ci_dj52
+  export ORACLE_PASSWORD=<the schema password>
+  tox -e py310-dj42-ora21
+  tox -e migrations-dj42-ora21
+  tox -e py312-dj52-ora21
+  tox -e migrations-dj52-ora21
+  tox -e py314-dj60-ora21
+  tox -e migrations-dj60-ora21
+  tox -e oracle-reset
+
+Oracle differs from the other backends in a few ways worth knowing before you touch
+:file:`tests/oracle_settings.py`.
+
+There is no ``docker compose`` file for it. CI runs against a long-lived Oracle instance rather than a throwaway
+container, and the schemas it uses are created ahead of time with the smallest privilege set a test run needs --
+notably without ``CREATE USER``, ``DROP USER`` or ``CREATE TABLESPACE``. Django's Oracle test runner normally
+isolates a run by building a throwaway user and tablespace, so ``TEST['CREATE_USER']`` and ``TEST['CREATE_DB']``
+are switched off and the suite runs directly in the schema it connects as. For a local run, any Oracle you can
+reach works; the ``gvenzl/oracle-free`` image is the least effort, and its default service name ``FREEPDB1`` is
+what :file:`tests/oracle_settings.py` assumes.
+
+Because Django then also tears nothing down at the end of a run, the ``*-ora21`` environments empty the schema
+before they start (:file:`tests/oracle_reset_schema.py`). ``tox -e oracle-reset`` does the same thing on its own,
+which is how you recover a schema left half-migrated by an interrupted run.
+
+The suite runs single-process there (``-n0``). pytest-xdist gives each worker its own ``TEST['NAME']``, but Oracle
+takes the schema from ``TEST['USER']``, which is not per-worker -- every worker would migrate and truncate the same
+tables. Expect an Oracle run to take considerably longer than the containerised backends for that reason.
+
+Connections use an Easy Connect descriptor (``host:port/service_name``) in ``NAME``, with ``HOST`` and ``PORT``
+left unset. Django passes ``NAME`` to ``makedsn()`` as a *SID* whenever ``PORT`` is set, and a multitenant
+instance is only reachable by its pluggable database's service name.
+
+CI runs these environments on a self-hosted runner, because Oracle is not available as a service container and
+the database it tests against is not reachable from a hosted runner. The job is skipped entirely unless the
+repository sets the ``ORACLE_CI_ENABLED`` variable to ``true``, so a fork without a runner is unaffected by it.
+Where it is enabled, the job needs a runner labelled ``dot-oracle-rds``, an ``oracle-ci`` environment holding
+``ORACLE_DSN`` and ``ORACLE_PASSWORD``, and one schema per Django row named as in the matrix above.
+
+A self-hosted runner executes whatever is in the branch it builds, so that job is deliberately not triggered by
+pull requests on their own: a maintainer adds the ``oracle-ci`` label and approves the ``oracle-ci`` environment.
+Pushes to ``master`` and manual workflow runs trigger it directly.
 
 Add the tests!
 --------------

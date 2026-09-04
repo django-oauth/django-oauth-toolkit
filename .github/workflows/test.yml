@@ -8,6 +8,9 @@ on:
     branches:
       - master
   pull_request:
+  # The Oracle job does not run automatically on pull requests (see oracle-standalone);
+  # this lets a maintainer run the whole workflow, Oracle included, against a branch.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,6 +28,8 @@ jobs:
       mysql-matrix: ${{ steps.discover.outputs.mysql-matrix }}
       mysql-standalone-matrix: ${{ steps.discover.outputs.mysql-standalone-matrix }}
       mysql-pr-matrix: ${{ steps.discover.outputs.mysql-pr-matrix }}
+      oracle-matrix: ${{ steps.discover.outputs.oracle-matrix }}
+      oracle-standalone-matrix: ${{ steps.discover.outputs.oracle-standalone-matrix }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,18 +73,23 @@ jobs:
           core_envs = list_envs("-f", "lite3")
           postgres_envs = list_envs("-f", "pg16")
           mysql_envs = list_envs("-f", "my84")
+          oracle_envs = list_envs("-f", "ora21")
 
           core = []
           postgres_tests = {}
           mysql_tests = {}
+          oracle_tests = {}
           postgres_migrations = {}
           mysql_migrations = {}
+          oracle_migrations = {}
 
           core_pat = re.compile(r"^py(\d+)-dj(\d+|main)-lite\d+(?:-[a-z0-9]+)?$")
           pg_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
           my_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-my(\d+)(?:-([a-z0-9]+))?$")
           pg_mig_pat = re.compile(r"^migrations-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
           my_mig_pat = re.compile(r"^migrations-dj(\d+|main)-my(\d+)(?:-([a-z0-9]+))?$")
+          ora_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-ora(\d+)(?:-([a-z0-9]+))?$")
+          ora_mig_pat = re.compile(r"^migrations-dj(\d+|main)-ora(\d+)(?:-([a-z0-9]+))?$")
 
           for env in core_envs:
             m = core_pat.match(env)
@@ -127,6 +137,29 @@ jobs:
               dj_factor, db_version, topology = m.groups()
               mysql_migrations[(dj_factor, db_version, topology or "standalone")] = env
 
+          for env in oracle_envs:
+            m = ora_test_pat.match(env)
+            if m:
+              py_factor, dj_factor, db_version, topology = m.groups()
+              oracle_tests[(dj_factor, db_version, topology or "standalone")] = {
+                "toxenv": env,
+                "python-version": py_factor_to_version(py_factor),
+                "django-version": dj_factor_to_version(dj_factor),
+                "db-topology": topology or "standalone",
+                # Every Django row gets its own pre-created schema so the matrix can
+                # still run in parallel against one shared instance; the workflow
+                # also serializes runs per schema. These names have to exist on the
+                # instance before the job can run -- see "Standalone backend DB
+                # checks" in the contributing documentation.
+                "oracle-schema": f"DOT_CI_DJ{dj_factor.upper()}",
+              }
+              continue
+
+            m = ora_mig_pat.match(env)
+            if m:
+              dj_factor, db_version, topology = m.groups()
+              oracle_migrations[(dj_factor, db_version, topology or "standalone")] = env
+
           def build_backend_matrix(tests: dict[tuple[str, str, str], dict[str, str]], migrations: dict[tuple[str, str, str], str], engine: str) -> list[dict[str, str]]:
             rows = []
             for key, test_entry in tests.items():
@@ -143,10 +176,12 @@ jobs:
           core.sort(key=lambda x: x["toxenv"])
           postgres = build_backend_matrix(postgres_tests, postgres_migrations, "pg")
           mysql = build_backend_matrix(mysql_tests, mysql_migrations, "my")
+          oracle = build_backend_matrix(oracle_tests, oracle_migrations, "ora")
           postgres_standalone = [row for row in postgres if row["db-topology"] == "standalone"]
           postgres_pr = [row for row in postgres if row["db-topology"] == "pr"]
           mysql_standalone = [row for row in mysql if row["db-topology"] == "standalone"]
           mysql_pr = [row for row in mysql if row["db-topology"] == "pr"]
+          oracle_standalone = [row for row in oracle if row["db-topology"] == "standalone"]
 
           outputs = {
             "core-matrix": {"include": core},
@@ -156,6 +191,8 @@ jobs:
             "mysql-matrix": {"include": mysql},
             "mysql-standalone-matrix": {"include": mysql_standalone},
             "mysql-pr-matrix": {"include": mysql_pr},
+            "oracle-matrix": {"include": oracle},
+            "oracle-standalone-matrix": {"include": oracle_standalone},
           }
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
@@ -505,6 +542,80 @@ jobs:
           MYSQL_PRIMARY_BIND_PORT: '3306'
           MYSQL_REPLICA_BIND_PORT: '3307'
 
+  oracle-standalone:
+    needs: discover-matrices
+    name: DOT Oracle Standalone (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    # Oracle is not available as a service container, so this job needs a
+    # self-hosted runner carrying the `dot-oracle-rds` label that can reach an
+    # Oracle instance, plus an `oracle-ci` environment holding ORACLE_DSN and
+    # ORACLE_PASSWORD.
+    runs-on: [self-hosted, linux, x64, dot-oracle-rds]
+    # Two gates, and neither is optional:
+    #
+    # ORACLE_CI_ENABLED keeps the job inert wherever that runner is not registered.
+    # Without it a fork -- or upstream -- would queue a job that no runner can ever
+    # pick up, and GitHub leaves such a job waiting for hours before failing it.
+    # Set the repository variable to 'true' once the runner is in place.
+    #
+    # The label and the environment are the fork gate. A self-hosted runner
+    # executes whatever is in the branch it builds, and this one holds credentials
+    # for a real database, so a pull request reaches it only after a maintainer has
+    # read the diff and applied the `oracle-ci` label; the environment's required
+    # reviewers are the second half of that.
+    if: >-
+      vars.ORACLE_CI_ENABLED == 'true'
+      && (github.event_name == 'push'
+          || github.event_name == 'workflow_dispatch'
+          || contains(github.event.pull_request.labels.*.name, 'oracle-ci'))
+    environment: oracle-ci
+    # The schemas are pre-created and long-lived, so two runs of the same cell would
+    # migrate and truncate each other's tables. Queue them instead of cancelling:
+    # a cancelled run would leave its schema half-migrated for the next one.
+    concurrency:
+      group: oracle-schema-${{ matrix.oracle-schema }}
+      cancel-in-progress: false
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.oracle-standalone-matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      # No service to start: the schema already exists and the tox env empties it
+      # before the run (see tests/oracle_reset_schema.py).
+      - name: Run oracle standalone tests
+        run: tox -e ${{ matrix.toxenv }}
+        env:
+          ORACLE_DSN: ${{ secrets.ORACLE_DSN }}
+          ORACLE_USER: ${{ matrix.oracle-schema }}
+          ORACLE_PASSWORD: ${{ secrets.ORACLE_PASSWORD }}
+
+      - name: Run oracle standalone migration checks
+        run: tox -e ${{ matrix.migration_toxenv }}
+        env:
+          ORACLE_DSN: ${{ secrets.ORACLE_DSN }}
+          ORACLE_USER: ${{ matrix.oracle-schema }}
+          ORACLE_PASSWORD: ${{ secrets.ORACLE_PASSWORD }}
+
+      - name: Empty the oracle schema
+        # Leave no tables behind on the shared instance once the job is done, whether
+        # it passed, failed or was cancelled mid-migration. The run itself does not
+        # depend on this -- the tox env resets the schema before it starts too.
+        if: always()
+        run: tox -e oracle-reset
+        env:
+          ORACLE_DSN: ${{ secrets.ORACLE_DSN }}
+          ORACLE_USER: ${{ matrix.oracle-schema }}
+          ORACLE_PASSWORD: ${{ secrets.ORACLE_PASSWORD }}
+
   test-demo-rp:
     name: Demo Relying Party
     runs-on: ubuntu-latest
@@ -617,9 +728,29 @@ jobs:
       - postgres-pr
       - mysql-standalone
       - mysql-pr
+      - oracle-standalone
       - e2e-compliance
     runs-on: ubuntu-latest
     name: Test successful
+    # oracle-standalone is skipped on pull requests that a maintainer has not
+    # labelled, and a skipped dependency would otherwise skip this job too -- which
+    # leaves the required status check pending forever instead of passing. Run
+    # unconditionally and decide from the results instead, so a skipped job is fine
+    # but a failed or cancelled one still fails the gate.
+    if: always()
     steps:
-      - name: Success
-        run: echo Test successful
+      - name: Check the results of every required job
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          unsuccessful=$(
+            jq -r 'to_entries[]
+                   | select(.value.result != "success" and .value.result != "skipped")
+                   | "  \(.key): \(.value.result)"' <<<"$NEEDS"
+          )
+          if [ -n "$unsuccessful" ]; then
+            echo "Required jobs did not succeed:"
+            echo "$unsuccessful"
+            exit 1
+          fi
+          echo Test successful

@@ -82,6 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   safe because claims are still only released to a caller holding a valid one, and
   `Access-Control-Allow-Credentials` is never sent. Set the new `OIDC_USERINFO_CORS_ENABLED` setting
   to `False` to opt out.
+* Oracle Database 21c is now covered by CI. The suite runs against a real Oracle instance on
+  Django 4.2, 5.2 and 6.0 via the new `py{310,312,314}-dj{42,52,60}-ora21` and
+  `migrations-dj{42,52,60}-ora21` tox environments, backed by `tests/oracle_settings.py`. The
+  environments connect with python-oracledb in thin mode and expect a pre-created schema, so they
+  need no Oracle Instant Client and no `CREATE USER` privilege; see "Standalone backend DB checks"
+  in the contributing documentation to run them locally.
 ### Changed
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
