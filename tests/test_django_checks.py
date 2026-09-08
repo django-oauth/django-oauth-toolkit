@@ -157,6 +157,20 @@ class AccessTokenExpiryConfigurationCheckTestCase(TestCase):
                 self.assertIsInstance(messages[0], checks.Error)
 
 
+class UnconstructibleServer:
+    """An OAUTH2_SERVER_CLASS that cannot be built at check time."""
+
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("not constructible at check time")
+
+
+class RegistrylessServer:
+    """An OAUTH2_SERVER_CLASS that builds but exposes no response type registry."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+
 @pytest.mark.usefixtures("oauth2_settings")
 class ResponseTypesSupportedCheckTestCase(TestCase):
     def _messages(self):
@@ -198,6 +212,19 @@ class ResponseTypesSupportedCheckTestCase(TestCase):
         self.assertIsInstance(message, checks.Warning)
         self.assertIn("123", message.msg)
         self.assertIn("The configured server accepts:", message.hint)
+
+    def test_an_unusable_server_class_disables_the_check_rather_than_failing_it(self):
+        # A custom OAUTH2_SERVER_CLASS is not guaranteed to be constructible at check
+        # time, nor to expose a registry. There is then nothing to compare the advertised
+        # values against, and `manage.py check` must still complete.
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", "code assertion"]
+        for server_class in (
+            "tests.test_django_checks.UnconstructibleServer",
+            "tests.test_django_checks.RegistrylessServer",
+        ):
+            with self.subTest(server_class=server_class):
+                self.oauth2_settings.OAUTH2_SERVER_CLASS = server_class
+                self.assertEqual(self._messages(), [])
 
     def test_the_check_survives_a_deprecated_backend_under_warnings_as_errors(self):
         # The check must not depend on OAUTH2_BACKEND_CLASS being constructible: the
