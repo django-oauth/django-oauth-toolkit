@@ -43,6 +43,17 @@ from .utils import post_form
 Application = get_application_model()
 
 CLIENT_URL = "https://client.example.com/oauth/metadata.json"
+PUBLIC_JWKS = {
+    "keys": [
+        {
+            "crv": "P-256",
+            "kid": "cimd-ec-1",
+            "kty": "EC",
+            "x": "tS3tFvO_rzqp4FW4XU0M8agahChhDCxvfwkAOUf0r1w",
+            "y": "RXB1hhJu-vYd1Go5VyQ5gcQcxnNmCaCmE05mBrJ1qM4",
+        }
+    ]
+}
 
 
 def _oauthlib_request():
@@ -79,6 +90,14 @@ class _MismatchFetcher:
 class _ConfidentialFetcher:
     def fetch(self, client_id):
         return _document(token_endpoint_auth_method="client_secret_basic"), 3600
+
+
+class _PrivateKeyJWTFetcher:
+    def fetch(self, client_id):
+        return _document(
+            token_endpoint_auth_method="private_key_jwt",
+            jwks_uri="https://client.example.com/oauth/jwks.json",
+        ), 3600
 
 
 class _FailingFetcher:
@@ -119,6 +138,16 @@ def _clear_cimd_cache():
 def cimd_enabled(oauth2_settings):
     oauth2_settings.CIMD_ENABLED = True
     oauth2_settings.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
+    return oauth2_settings
+
+
+@pytest.fixture
+def private_key_jwt_advertised(oauth2_settings):
+    """A server that advertises private_key_jwt, so CIMD registers it (see _supported_auth_methods)."""
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
+        *oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
+        "private_key_jwt",
+    ]
     return oauth2_settings
 
 
@@ -267,13 +296,36 @@ def test_build_application_kwargs_public():
         "redirect_uris": "https://client.example.com/callback",
         "authorization_grant_type": "authorization-code",
         "algorithm": Application.NO_ALGORITHM,
+        "token_endpoint_auth_method": "none",
     }
+
+
+@pytest.mark.parametrize(
+    "key_metadata, expected_key_field",
+    [
+        ({"jwks": PUBLIC_JWKS}, "client_jwks"),
+        ({"jwks_uri": "https://client.example.com/jwks.json"}, "client_jwks_uri"),
+    ],
+)
+def test_build_application_kwargs_private_key_jwt(
+    private_key_jwt_advertised, key_metadata, expected_key_field
+):
+    kwargs = _build_application_kwargs(
+        _document(token_endpoint_auth_method="private_key_jwt", **key_metadata)
+    )
+
+    assert kwargs["client_type"] == Application.CLIENT_CONFIDENTIAL
+    assert kwargs["token_endpoint_auth_method"] == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+    assert kwargs[expected_key_field]
 
 
 @pytest.mark.parametrize(
     "document",
     [
         _document(token_endpoint_auth_method="client_secret_basic"),
+        # Not advertised by this server (see _supported_auth_methods), so refused.
+        _document(token_endpoint_auth_method="private_key_jwt"),
+        _document(token_endpoint_auth_method=["none"]),  # not a string
         _document(client_secret="shhh"),
         _document(client_secret=None),  # forbidden by presence, not value
         _document(client_secret_expires_at=0),  # spec: MUST NOT be present
@@ -289,6 +341,62 @@ def test_build_application_kwargs_public():
     ],
 )
 def test_build_application_kwargs_rejects(document):
+    with pytest.raises(CIMDError):
+        _build_application_kwargs(document)
+
+
+@pytest.mark.parametrize(
+    "oauth2_advertises, oidc_enabled, oidc_advertises, registered",
+    [
+        # Without OpenID Connect only the RFC 8414 document is served, so its list decides.
+        (True, False, True, True),
+        (True, False, False, True),
+        # With OpenID Connect both documents are served, and a client may read either.
+        (True, True, True, True),
+        (True, True, False, False),
+        # MCP clients read the RFC 8414 document first: advertising only in the OIDC
+        # one would store a confidential client that authenticates as public.
+        (False, True, True, False),
+    ],
+)
+def test_build_application_kwargs_requires_private_key_jwt_in_every_served_discovery_document(
+    oauth2_settings, oauth2_advertises, oidc_enabled, oidc_advertises, registered
+):
+    secret_methods = ["client_secret_basic", "client_secret_post"]
+    pkj = ["private_key_jwt"]
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = secret_methods + (
+        pkj if oauth2_advertises else []
+    )
+    oauth2_settings.OIDC_ENABLED = oidc_enabled
+    oauth2_settings.OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = secret_methods + (
+        pkj if oidc_advertises else []
+    )
+    document = _document(
+        token_endpoint_auth_method="private_key_jwt",
+        jwks_uri="https://client.example.com/jwks.json",
+    )
+
+    if registered:
+        assert _build_application_kwargs(document)["client_type"] == Application.CLIENT_CONFIDENTIAL
+    else:
+        with pytest.raises(CIMDError, match="private_key_jwt"):
+            _build_application_kwargs(document)
+
+
+@pytest.mark.parametrize(
+    "key_metadata",
+    [
+        {},
+        {"jwks": PUBLIC_JWKS, "jwks_uri": "https://client.example.com/jwks.json"},
+        {"jwks_uri": "http://client.example.com/jwks.json"},
+        {"jwks": {"keys": []}},
+        {"jwks": {"keys": [{**PUBLIC_JWKS["keys"][0], "d": "private"}]}},
+        {"jwks": {"keys": [{**PUBLIC_JWKS["keys"][0], "use": "enc"}]}},
+    ],
+)
+def test_build_application_kwargs_rejects_invalid_private_key_jwt(private_key_jwt_advertised, key_metadata):
+    document = _document(token_endpoint_auth_method="private_key_jwt", **key_metadata)
+
     with pytest.raises(CIMDError):
         _build_application_kwargs(document)
 
@@ -405,6 +513,34 @@ def test_resolve_creates_public_application(cimd_enabled):
     # #1451: a CIMD client keeps the can_introspect default (an opt-out capability).
     app.refresh_from_db()
     assert app.can_introspect is True
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_creates_private_key_jwt_application(cimd_enabled, private_key_jwt_advertised):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_PrivateKeyJWTFetcher)
+
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    assert app is not None
+    assert app.registration_source == Application.RegistrationSource.CIMD
+    assert app.client_type == Application.CLIENT_CONFIDENTIAL
+    assert app.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+    assert app.client_jwks_uri == "https://client.example.com/oauth/jwks.json"
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_refresh_can_change_private_key_jwt_to_public(cimd_enabled, private_key_jwt_advertised):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_PrivateKeyJWTFetcher)
+    first = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
+    second = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    assert second.pk == first.pk
+    assert second.client_type == Application.CLIENT_PUBLIC
+    assert second.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_NONE
+    assert second.client_jwks == ""
+    assert second.client_jwks_uri == ""
 
 
 @pytest.mark.django_db(databases="__all__")

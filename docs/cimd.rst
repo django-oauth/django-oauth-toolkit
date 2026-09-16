@@ -31,23 +31,41 @@ How it works
 
 When an authorization or token request arrives with a ``client_id`` that is an ``https`` URL and no
 application is stored for it, the server fetches and validates the document, then persists a single
-public :class:`~oauth2_provider.models.Application` keyed on the URL, with ``registration_source``
-set to ``"cimd"``. ``can_introspect`` is not client metadata: the row gets the default ``True``, and
-a later re-fetch leaves it as it is, so a value an administrator set in the admin survives refreshes
-(see :ref:`introspection-authorization`; being a public client, a CIMD client can introspect only
-with an access token carrying the ``introspection`` scope, never by authenticating as itself). To
-turn the flag off as CIMD clients are first seen, see :ref:`introspection-open-registration`.
+:class:`~oauth2_provider.models.Application` keyed on the URL, with ``registration_source`` set to
+``"cimd"``. ``can_introspect`` is not client metadata: the row gets the default ``True``, and a
+later re-fetch leaves it as it is, so a value an administrator set in the admin survives refreshes
+(see :ref:`introspection-authorization`). A CIMD client using ``none`` is public, so it can
+introspect only with an access token carrying the ``introspection`` scope; one using
+``private_key_jwt`` is confidential and can also introspect by authenticating with a client
+assertion. To turn the flag off as CIMD clients are first seen, see
+:ref:`introspection-open-registration`.
 Subsequent requests (and refresh-token exchanges) load that stored application without re-fetching,
 until its cached metadata expires (``cimd_expires_at``), at which point the next use re-fetches.
 
 Because the application is keyed on the URL, distinct clients map to distinct rows and the store is
 bounded by the number of distinct client URLs rather than growing per registration.
 
-Validation follows the spec: the document's ``client_id`` must equal the URL it was fetched from, the
-client must be public — ``token_endpoint_auth_method`` must be ``none`` (the spec forbids shared-secret
-methods, and asymmetric methods such as ``private_key_jwt`` are not implemented) and the document must
-not contain a ``client_secret`` — and the document must register at least one redirect URI (only
-redirect-based grants are supported), matched exactly as for any other application.
+Validation follows the spec: the document's ``client_id`` must equal the URL it was fetched from, and
+the document must register at least one redirect URI (only redirect-based grants are supported),
+matched exactly as for any other application. The document carries no ``client_secret``. A client is
+either public, with ``token_endpoint_auth_method`` ``none`` (the default when the document omits it),
+or confidential with ``private_key_jwt``: it then publishes exactly one of an inline ``jwks`` or an
+HTTPS ``jwks_uri``, is stored as a confidential application with that key source, and authenticates
+at the token endpoint with an RFC 7523 client assertion verified by the same machinery as a manually
+registered client, including the hardened fetch and caching of a ``jwks_uri`` (see :doc:`rfc7523`).
+The method is recorded in the application's ``token_endpoint_auth_method`` field.
+
+``private_key_jwt`` is registered only on a server that advertises it in every discovery document it
+serves: ``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` and, with OpenID Connect enabled,
+``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` as well (see :doc:`settings`). A client that can use
+several methods picks one from the intersection of its own list with whichever advertised list it
+read (MCP clients read the RFC 8414 document first), so registering a method that either document
+omits would store the client as confidential while it authenticates as public. The lists are read by
+whichever process performs the fetch and the result is persisted for every node sharing the
+database, so all nodes must agree on them: a node that omits ``private_key_jwt`` refuses a document
+that chooses it, whichever node registered the client before. Any other method is refused, including
+every shared-secret one, which the draft forbids (section 4.1) because CIMD provides no way to
+establish a shared secret.
 
 The stored application is provisioned to sign ID Tokens with ``RS256`` whenever OpenID Connect is
 enabled and the server has an ``OIDC_RSA_PRIVATE_KEY``, so a CIMD client can use OpenID Connect

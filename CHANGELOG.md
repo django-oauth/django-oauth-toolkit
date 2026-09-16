@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in per-plan expected-failures files. Each plan's known gaps are recorded as a baseline
   (`tests/openid-conformance-suite/baseline.py` regenerates it), so any conformance regression
   fails CI.
+* #1845 CIMD clients can use `private_key_jwt` client authentication (RFC 7523) by publishing an
+  inline `jwks` or an HTTPS `jwks_uri` in their Client ID Metadata Document; they are stored as
+  confidential applications with that key source. The method is registered only on a server that
+  advertises `private_key_jwt` in `OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED` and, with OpenID
+  Connect enabled, in `OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED` too, because clients pick their
+  method from the intersection with whichever advertised list they read; any other server refuses
+  such a document, as it did before. The method is recorded in the application's
+  `token_endpoint_auth_method` field. A refetched document replaces the stored method and key
+  source, so keys rotate and a client can move between `none` and `private_key_jwt` without leaving
+  stale key material behind. See `docs/cimd.rst`.
 * #1730 A `cleardcrapplications` management command that deletes DCR-registered applications
   (`registration_source="dcr"`) which hold no live tokens or grants and were last registered or
   modified at least `--min-unmodified-days` days ago (default 7). DCR clients that re-register

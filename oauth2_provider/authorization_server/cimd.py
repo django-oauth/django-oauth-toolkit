@@ -41,6 +41,7 @@ from oauth2_provider.core import safe_fetch
 # of oauth2_provider.cimd through 3.4.1. The NAT64 check moved into the shared
 # SSRF-hardened fetcher, so keep the old name importable from this module.
 from oauth2_provider.core.safe_fetch import NAT64_PREFIX  # noqa: F401
+from oauth2_provider.core.utils import jwk_allows_verification
 from oauth2_provider.models import AbstractApplication, get_application_model
 from oauth2_provider.settings import oauth2_settings
 
@@ -58,6 +59,13 @@ GRANT_TYPE_MAP = {
 }
 # Handled automatically by DOT alongside authorization_code, so not a standalone choice.
 IGNORED_GRANT_TYPES = {"refresh_token"}
+_PRIVATE_JWK_MEMBERS = frozenset({"d", "k", "p", "q", "dp", "dq", "qi", "oth"})
+
+# Every method a CIMD registration can be stored with. Shared-secret methods
+# are forbidden by the spec (section 4.1); ``private_key_jwt`` is the one
+# asymmetric method RFC 7523 client authentication implements. Which of these a
+# given server registers is decided by :func:`_supported_auth_methods`.
+REGISTRABLE_AUTH_METHODS = ("none", "private_key_jwt")
 
 # Cache-freshness lives on the model (cimd_expires_at, durable and authoritative
 # per row); the failure backoff is ephemeral/best-effort, so it lives in the
@@ -252,21 +260,49 @@ def _resolve_grant_type(grant_types):
     return grant
 
 
-def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Convert a CIMD metadata document to public-Application field kwargs.
+def _supported_auth_methods() -> tuple[str, ...]:
+    """Return the methods this server registers CIMD clients with.
 
-    Requires ``token_endpoint_auth_method`` ``"none"`` — the spec forbids
-    shared-secret methods, and asymmetric ones such as ``private_key_jwt``
-    (implemented in :mod:`oauth2_provider.authorization_server.client_assertions`) are not yet
-    wired to CIMD — rejects any ``client_secret`` property, and requires
-    at least one redirect URI. The ID Token signing algorithm follows
+    ``none`` is always registrable. ``private_key_jwt`` is registrable only when
+    the server advertises it in every discovery document it serves: the RFC 8414
+    document (``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED``) and, with OpenID
+    Connect enabled, the OpenID Connect Discovery document
+    (``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED``) as well. A client that can
+    use several methods picks one from the intersection of its own list with
+    whichever advertised list it read, so registering a method that either
+    document omits would store a client as confidential while it authenticates
+    as public.
+    """
+    advertised = set(oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED)
+    if oauth2_settings.OIDC_ENABLED:
+        advertised.intersection_update(oauth2_settings.OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED)
+    return tuple(m for m in REGISTRABLE_AUTH_METHODS if m == "none" or m in advertised)
+
+
+def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Convert a CIMD metadata document to Application field kwargs.
+
+    Requires a ``token_endpoint_auth_method`` this server registers (see
+    :func:`_supported_auth_methods`): ``"none"``, or ``"private_key_jwt"`` when
+    advertised. The spec forbids shared-secret methods, so they are never
+    registered. A ``private_key_jwt`` client must publish exactly one of
+    ``jwks`` or an HTTPS ``jwks_uri`` so its assertion can be verified at the
+    token endpoint, and is stored as a confidential client with that key
+    source. Rejects any ``client_secret`` property, and requires at least one
+    redirect URI. The ID Token signing algorithm follows
     ``id_token_signed_response_alg`` (OpenID Connect Dynamic Client
     Registration 1.0 section 2). Returns kwargs; raises :class:`CIMDError` on
     invalid metadata.
     """
     auth_method = metadata.get("token_endpoint_auth_method", "none")
-    if auth_method != "none":
-        raise CIMDError(f"CIMD clients must be public; got token_endpoint_auth_method {auth_method!r}")
+    if not isinstance(auth_method, str):
+        raise CIMDError("token_endpoint_auth_method must be a string")
+    supported = _supported_auth_methods()
+    if auth_method not in supported:
+        raise CIMDError(
+            f"client metadata declares token_endpoint_auth_method {auth_method!r}; "
+            f"this server registers CIMD clients with {list(supported)}"
+        )
     # Spec: neither property may appear in a CIMD document (presence, not value).
     if "client_secret" in metadata or "client_secret_expires_at" in metadata:
         raise CIMDError("CIMD client metadata must not include client_secret or client_secret_expires_at")
@@ -301,12 +337,37 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     except UnsupportedClientMetadataError as exc:
         raise CIMDError(str(exc)) from exc
 
-    return {
+    kwargs = {
         "name": client_name,
         "redirect_uris": " ".join(redirect_uris),
         "authorization_grant_type": _resolve_grant_type(grant_types),
         "algorithm": algorithm,
+        "token_endpoint_auth_method": auth_method,
     }
+    if auth_method == "private_key_jwt":
+        jwks = metadata.get("jwks")
+        jwks_uri = metadata.get("jwks_uri")
+        if (jwks is None) == (jwks_uri is None):
+            raise CIMDError("private_key_jwt requires exactly one of jwks or jwks_uri")
+        if jwks_uri is not None:
+            if not isinstance(jwks_uri, str) or not jwks_uri.lower().startswith("https://"):
+                raise CIMDError("jwks_uri must use the https scheme")
+            kwargs["client_jwks_uri"] = jwks_uri
+            kwargs["client_jwks"] = ""
+        else:
+            if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
+                raise CIMDError('jwks must be a JWK Set object with a "keys" array')
+            keys = jwks["keys"]
+            if not keys or not all(isinstance(key, dict) for key in keys):
+                raise CIMDError("jwks must contain at least one JSON object")
+            if any(_PRIVATE_JWK_MEMBERS.intersection(key) for key in keys):
+                raise CIMDError("jwks must contain public keys only")
+            if not any(jwk_allows_verification(key) for key in keys):
+                raise CIMDError("jwks must contain a key usable for signature verification")
+            kwargs["client_jwks"] = json.dumps(jwks)
+            kwargs["client_jwks_uri"] = ""
+        kwargs["client_type"] = "confidential"
+    return kwargs
 
 
 def _get_fetch_semaphore():
@@ -372,7 +433,12 @@ def _fetch_validate_upsert(client_id: str) -> AbstractApplication:
     previous_algorithm = None if created else application.algorithm
 
     application.user = None
-    application.client_type = Application.CLIENT_PUBLIC
+    application.client_type = kwargs.pop("client_type", Application.CLIENT_PUBLIC)
+    application.token_endpoint_auth_method = kwargs.pop(
+        "token_endpoint_auth_method", Application.TOKEN_AUTH_METHOD_NONE
+    )
+    application.client_jwks = kwargs.pop("client_jwks", "")
+    application.client_jwks_uri = kwargs.pop("client_jwks_uri", "")
     application.registration_source = Application.RegistrationSource.CIMD
     application.cimd_expires_at = timezone.now() + timedelta(seconds=max_age)
     for field, value in kwargs.items():

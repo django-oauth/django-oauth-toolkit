@@ -135,8 +135,10 @@ def id_token_signing_algorithm(
     The client keyword arguments describe the client being provisioned, as the
     registration path has already derived them; *client_secret* is the secret
     it holds. They only matter for an echoed administrator-set value and
-    default to a public client without a secret, the most restrictive case and
-    what every CIMD client is.
+    default to a public client without a secret, the most restrictive case.
+    The CIMD path relies on those defaults: it passes neither *current* nor
+    the client keyword arguments, since a fetched document never has a
+    current value to echo.
 
     With no ``id_token_signed_response_alg`` (absent or JSON ``null``) the
     OpenID Connect Dynamic Client Registration 1.0 default of RS256 applies, so
