@@ -39,6 +39,8 @@ def scoped_impossible_endpoint(request):
 def request_attributes_endpoint(request):
     return {
         "request_user_username": request.user.username,
+        "request_user_is_authenticated": request.user.is_authenticated,
+        "request_user_is_anonymous": request.user.is_anonymous,
         "request_auth_token": request.auth.token,
     }
 
@@ -71,6 +73,15 @@ class TestNinja(TestCase):
             scope="read write",
             expires=timezone.now() + timedelta(seconds=300),
             token="secret-access-token-key",
+            application=cls.application,
+        )
+
+        # `client_credentials` tokens have no user
+        cls.userless_access_token = AccessToken.objects.create(
+            user=None,
+            scope="read write",
+            expires=timezone.now() + timedelta(seconds=300),
+            token="secret-userless-access-token-key",
             application=cls.application,
         )
 
@@ -114,4 +125,27 @@ class TestNinja(TestCase):
         self.assertEqual(response.status_code, 200)
         response_data = response.json()
         self.assertEqual(response_data["request_user_username"], self.test_user.username)
+        self.assertIs(response_data["request_user_is_authenticated"], True)
+        self.assertIs(response_data["request_user_is_anonymous"], False)
         self.assertEqual(response_data["request_auth_token"], self.access_token.token)
+
+    def test_request_attributes_userless_token(self):
+        auth = self._create_authorization_header(self.userless_access_token.token)
+        response = self.client.get("/api/request-attributes", HTTP_AUTHORIZATION=auth)
+
+        self.assertEqual(response.status_code, 200)
+        response_data = response.json()
+        # `request.user` should be an `AnonymousUser`, not `None`
+        self.assertEqual(response_data["request_user_username"], "")
+        self.assertIs(response_data["request_user_is_authenticated"], False)
+        self.assertIs(response_data["request_user_is_anonymous"], True)
+        # The request is still authenticated by Ninja, with the token as `request.auth`
+        self.assertEqual(response_data["request_auth_token"], self.userless_access_token.token)
+
+    def test_userless_token_overrides_session_user(self):
+        self.client.force_login(self.test_user)
+        auth = self._create_authorization_header(self.userless_access_token.token)
+        response = self.client.get("/api/request-attributes", HTTP_AUTHORIZATION=auth)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(response.json()["request_user_is_authenticated"], False)

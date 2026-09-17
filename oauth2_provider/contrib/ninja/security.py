@@ -1,5 +1,6 @@
 from typing import Any
 
+from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import SuspiciousOperation
 from django.http import HttpRequest
 from ninja.security.http import HttpAuthBase
@@ -34,11 +35,15 @@ class HttpOAuth2(HttpAuthBase):
         if not valid:
             return None
 
-        # Ninja doesn't automatically set `request.user`: https://github.com/vitalik/django-ninja/issues/76
-        # However, Django's AuthenticationMiddleware (which does set this from a session cookie) is
-        # ubiquitous, and even Ninja's own tutorials assume that `request.user` will somehow be set,
-        # so ensure that authentication via OAuth2 doesn't violate expectations.
-        request.user = r.user
+        # Ninja only sets `request.auth`, not `request.user`: https://github.com/vitalik/django-ninja/issues/76
+        # However, Django's AuthenticationMiddleware (which sets `request.user` from a session cookie)
+        # is ubiquitous, so most code (including Ninja's own tutorials) assumes that `request.user` is
+        # set to a User-like object.
+        #
+        # A token may have no user (e.g. with the `client_credentials` grant). In this case,
+        # `request.user` will be an `AnonymousUser`, but the request will still be authenticated
+        # by Ninja, with the token as `request.auth`.
+        request.user = r.user if r.user is not None else AnonymousUser()
 
         return self.authenticate(request, r.access_token)
 

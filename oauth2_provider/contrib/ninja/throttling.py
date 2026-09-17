@@ -50,9 +50,8 @@ class OAuth2UserOrClientRateThrottle(SimpleRateThrottle):
     def get_cache_key(self, request: HttpRequest) -> str:
         ident = get_user_or_client_ident(getattr(request, "auth", None))
         if ident is None:
-            user = getattr(request, "user", None)
-            if user is not None and user.is_authenticated:
-                ident = "{prefix}-{pk}".format(prefix=USER_IDENT_PREFIX, pk=user.pk)
+            if request.user.is_authenticated:
+                ident = "{prefix}-{pk}".format(prefix=USER_IDENT_PREFIX, pk=request.user.pk)
             else:
                 ident = self.get_ident(request)
         return self.cache_format % {"scope": self.scope, "ident": ident}

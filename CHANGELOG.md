@@ -214,6 +214,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `state`; RFC 9207's later, specific MUST — advertised through
   `authorization_response_iss_parameter_supported` and opted into via this setting — is why
   `iss` is added regardless.
+* The Django Ninja `HttpOAuth2` authenticator no longer sets `request.user` to `None` for an
+  access token with no user (such as one issued through the `client_credentials` grant), which
+  made any endpoint reading `request.user.is_authenticated` fail with a 500. `request.user` is now
+  an `AnonymousUser` for such tokens; the client remains identifiable through `request.auth`.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
