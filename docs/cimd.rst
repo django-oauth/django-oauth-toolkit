@@ -82,6 +82,18 @@ of a refused document are bounded, but the refusal neither blocks nodes with a d
 outlives a policy change. Any other method is refused, including every shared-secret one, which the
 draft forbids (section 4.1) because CIMD provides no way to establish a shared secret.
 
+A document may also publish ``token_endpoint_auth_methods_supported``, listing every method the client
+can use. When the method it chose in ``token_endpoint_auth_method`` is not one this server registers,
+the first offered method this server does register is used instead; when the chosen method is
+registrable here, it is honoured as chosen and never downgraded, because the spec (section 6.2) has the
+authorization server require client authentication of the registered type. Shared-secret methods are
+never registered, whatever a document offers. ChatGPT's published document has this shape: it chooses
+``private_key_jwt`` and offers ``["none", "private_key_jwt"]``, so a server that advertises
+``private_key_jwt`` registers it as a confidential client authenticating with a client assertion, while
+one that does not registers it as the public client it can also be. A document refused because the
+methods it names are registrable but not advertised here is a policy refusal, with the backoff described
+above.
+
 The same policy applies when the document of a client stored with ``none`` switches to
 ``private_key_jwt``. A node that does not advertise the method refuses the re-fetched document, and
 a refused re-fetch keeps the last good registration, so that node goes on serving the client as
