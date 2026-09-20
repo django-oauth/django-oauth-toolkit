@@ -149,6 +149,37 @@ def test_private_key_jwt_document_authorization_code_flow(cimd_oauth, cimd_user_
     assert token["access_token"]
 
 
+@pytest.mark.compliance(SPEC, "6.2", "An unsupported auth method is negotiated from the plural field")
+def test_plural_auth_method_document_authorization_code_flow(cimd_oauth, cimd_user_session, doc_server):
+    """A document choosing a method this server does not register (#1857).
+
+    The IdP advertises ``private_key_jwt``, so a document choosing it is honoured
+    rather than negotiated; ``tls_client_auth`` is one no server built on this
+    library registers for CIMD. The document also offers ``none``, so it is stored
+    as the public client it can be and the code exchange needs no client
+    authentication.
+    """
+    client_id = doc_server.add_client(
+        "/clients/plural-auth-method.json",
+        token_endpoint_auth_method="tls_client_auth",
+        token_endpoint_auth_methods_supported=["tls_client_auth", "none"],
+    )
+
+    result = cimd_oauth.authorize(
+        cimd_user_session,
+        client_id=client_id,
+        response_type="code",
+        redirect_uri=c.REDIRECT_URI,
+        scope="read",
+    )
+    token = token_data(
+        cimd_oauth.exchange_code(
+            client_id=client_id, code=result.query_params["code"], redirect_uri=c.REDIRECT_URI
+        )
+    )
+    assert token["access_token"]
+
+
 @pytest.mark.compliance(SPEC, "4.4", "The stored registration serves subsequent requests until it expires")
 def test_stored_application_serves_refresh_without_refetch(cimd_oauth, cimd_user_session, doc_server):
     path = "/clients/caching.json"
