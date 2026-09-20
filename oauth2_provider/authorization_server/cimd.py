@@ -30,6 +30,10 @@ from django.db import IntegrityError
 from django.http.request import validate_host
 from django.utils import timezone
 
+from oauth2_provider.authorization_server.oidc.registration import (
+    UnsupportedClientMetadata,
+    resolve_id_token_signing_algorithm,
+)
 from oauth2_provider.core import safe_fetch
 
 # Re-exported for backward compatibility: NAT64_PREFIX was a public module constant
@@ -283,10 +287,19 @@ def _build_application_kwargs(metadata):
     if not isinstance(client_name, str):
         raise CIMDError("client_name must be a string")
 
+    # Always set, so a re-fetch tracks the server's current signing capability
+    # (a row provisioned with RS256 must drop it once the key is removed, or it
+    # would fail model validation on every refresh and never update again).
+    try:
+        algorithm = resolve_id_token_signing_algorithm(metadata)
+    except UnsupportedClientMetadata as exc:
+        raise CIMDError(str(exc)) from exc
+
     return {
         "name": client_name,
         "redirect_uris": " ".join(redirect_uris),
         "authorization_grant_type": _resolve_grant_type(grant_types),
+        "algorithm": algorithm,
     }
 
 

@@ -23,6 +23,11 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from oauth2_provider.authorization_server.oidc.registration import (
+    UnsupportedClientMetadata,
+    id_token_signed_response_alg,
+    resolve_id_token_signing_algorithm,
+)
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.utils import jwk_allows_verification, parse_bearer_token
 from oauth2_provider.models import (
@@ -268,6 +273,13 @@ def _build_application_kwargs(data):
     # way); every other method keeps the hashed-at-rest default.
     kwargs["hash_client_secret"] = auth_method != "client_secret_jwt"
 
+    # id_token_signed_response_alg → algorithm (OIDC Dynamic Client Registration
+    # 1.0 section 2). Always set, so a PUT without it resets to the default.
+    try:
+        kwargs["algorithm"] = resolve_id_token_signing_algorithm(data)
+    except UnsupportedClientMetadata as exc:
+        return None, _error_response("invalid_client_metadata", str(exc))
+
     return kwargs, None
 
 
@@ -339,6 +351,9 @@ def _application_to_response(
             data["jwks"] = jwks
     if application.client_jwks_uri:
         data["jwks_uri"] = application.client_jwks_uri
+    signing_alg = id_token_signed_response_alg(application)
+    if signing_alg is not None:
+        data["id_token_signed_response_alg"] = signing_alg
     return data
 
 

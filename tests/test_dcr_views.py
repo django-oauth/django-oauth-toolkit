@@ -147,6 +147,67 @@ class TestDynamicClientRegistration(TestCase):
         app = Application.objects.get(client_id=body["client_id"])
         assert app.client_type == Application.CLIENT_CONFIDENTIAL
 
+    def test_register_provisions_rs256_when_server_can_sign(self):
+        """Default id_token_signed_response_alg is RS256 (OIDC Registration 1.0 §2).
+
+        Regression for #1853: a dynamically registered client must be able to
+        receive an id_token, so once the server has an RSA key the application
+        is provisioned to sign with it, and the response reports the algorithm.
+        """
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.algorithm == Application.RS256_ALGORITHM
+
+    def test_register_without_server_key_leaves_algorithm_unset(self):
+        """No OIDC_RSA_PRIVATE_KEY → no signing algorithm, and none reported."""
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "id_token_signed_response_alg" not in body
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.algorithm == Application.NO_ALGORITHM
+
+    def test_register_explicit_rs256_without_server_key_is_400(self):
+        """An explicit algorithm the server cannot honour is rejected, not substituted."""
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg" in body["error_description"]
+
+    def test_register_unsupported_id_token_alg_is_400(self):
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        self.client.force_login(self.user)
+        for requested in ("ES256", "HS256", "none"):
+            data = {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "id_token_signed_response_alg": requested,
+            }
+            response = _post_register(self.client, data)
+            assert response.status_code == 400, requested
+            body = response.json()
+            assert body["error"] == "invalid_client_metadata"
+            assert "id_token_signed_response_alg" in body["error_description"]
+
     def test_register_authorization_code_with_refresh_token(self):
         """[authorization_code, refresh_token] → maps cleanly, refresh_token ignored."""
         self.client.force_login(self.user)
@@ -652,6 +713,39 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert "https://updated.example.com/cb" in body["redirect_uris"]
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == "Updated App"
+
+    def test_put_tracks_server_signing_capability(self):
+        """PUT re-derives the signing algorithm from the server's current key.
+
+        A client registered before the server could sign gains RS256 on its
+        next update, and loses it again once the key is removed, so the row
+        never fails validation over a stale algorithm.
+        """
+        update_data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
+
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.RS256_ALGORITHM
+
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = ""
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),  # rotated by the first PUT
+        )
+        assert response.status_code == 200
+        assert "id_token_signed_response_alg" not in response.json()
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
 
     def test_put_is_full_replacement_and_resets_omitted_fields(self):
         """PUT is a full replacement (RFC 7592 §2.2): omitted metadata resets.

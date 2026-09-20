@@ -45,6 +45,17 @@ methods, and asymmetric methods such as ``private_key_jwt`` are not implemented)
 not contain a ``client_secret`` — and the document must register at least one redirect URI (only
 redirect-based grants are supported), matched exactly as for any other application.
 
+The stored application is provisioned to sign ID Tokens with ``RS256`` whenever the server has an
+``OIDC_RSA_PRIVATE_KEY`` configured, so CIMD clients can use OpenID Connect without any manual step
+(``RS256`` is the default ``id_token_signed_response_alg`` of OpenID Connect Dynamic Client
+Registration 1.0, and the only algorithm a public client can use: ``HS256`` signs with the client
+secret). A document that names an ``id_token_signed_response_alg`` the server cannot honour, which
+today means anything other than ``RS256``, is rejected rather than silently overridden, since there
+is no registration response in which to tell the client which value was substituted. Without a
+server key the application is stored with no signing algorithm and cannot receive ID Tokens. The
+algorithm is re-derived on every re-fetch, so configuring or removing the key later takes effect once
+the cached metadata expires.
+
 Settings
 --------
 
