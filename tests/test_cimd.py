@@ -363,7 +363,8 @@ def test_build_application_kwargs_private_key_jwt(
         _document(grant_types="authorization_code"),  # not a list
         _document(grant_types=[123]),
         _document(grant_types=["client_credentials"]),  # not a public/known grant
-        _document(grant_types=["authorization_code", "implicit"]),  # more than one
+        _document(grant_types=[]),  # nothing left to register
+        _document(grant_types=["refresh_token"]),  # refresh alone registers no flow
         _document(client_name=123),
         # A method this server cannot register, with no usable alternative offered.
         _document(
@@ -688,6 +689,33 @@ def test_build_application_kwargs_registers_the_chatgpt_transition_document():
 
 def test_resolve_grant_type_ignores_refresh_token():
     assert _resolve_grant_type(["authorization_code", "refresh_token"]) == "authorization-code"
+
+
+def test_resolve_grant_type_ignores_an_unsupported_grant():
+    """RFC 7591 section 2.1: drop what this server does not support, keep what it does.
+
+    The list is the one Claude publishes at
+    https://claude.ai/oauth/mcp-oauth-client-metadata.
+    """
+    grant_types = ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+
+    assert _resolve_grant_type(grant_types) == "authorization-code"
+
+
+def test_resolve_grant_type_prefers_authorization_code():
+    assert _resolve_grant_type(["implicit", "authorization_code"]) == "authorization-code"
+
+
+def test_resolve_grant_type_keeps_a_lone_supported_grant():
+    assert _resolve_grant_type(["implicit", "client_credentials"]) == "implicit"
+
+
+def test_build_application_kwargs_registers_a_document_with_an_extra_grant():
+    document = _document(
+        grant_types=["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+    )
+
+    assert _build_application_kwargs(document)["authorization_grant_type"] == "authorization-code"
 
 
 # ---------------------------------------------------------------------------

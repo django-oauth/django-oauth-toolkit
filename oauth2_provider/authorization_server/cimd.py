@@ -58,7 +58,8 @@ GRANT_TYPE_MAP = {
     "authorization_code": "authorization-code",
     "implicit": "implicit",
 }
-# Handled automatically by DOT alongside authorization_code, so not a standalone choice.
+# Handled automatically by DOT alongside authorization_code, so it is absent from
+# GRANT_TYPE_MAP above and dropped like any other grant this server does not register.
 IGNORED_GRANT_TYPES = {"refresh_token"}
 
 # Every method a CIMD registration can be stored with. Shared-secret methods
@@ -270,14 +271,22 @@ class SafeMetadataFetcher:
 
 
 def _resolve_grant_type(grant_types):
-    """Resolve an RFC 7591 grant_types list to a single DOT grant constant."""
-    meaningful = [g for g in grant_types if g not in IGNORED_GRANT_TYPES]
-    if len(meaningful) != 1:
-        raise CIMDError("client metadata must declare exactly one non-refresh grant type")
-    grant = GRANT_TYPE_MAP.get(meaningful[0])
-    if grant is None:
-        raise CIMDError(f"unsupported grant_type: {meaningful[0]!r}")
-    return grant
+    """Resolve an RFC 7591 grant_types list to a single DOT grant constant.
+
+    RFC 7591 section 2.1 has the authorization server ignore the grant types it does not
+    support, so an unsupported entry alongside a supported one is dropped instead of
+    failing the whole document. Published clients rely on this: Claude's client metadata
+    declares ``jwt-bearer`` next to the ``authorization_code`` its connector actually uses.
+
+    ``Application`` stores a single grant, so one of the supported entries has to win.
+    ``authorization_code`` does, because it is the grant a CIMD client is registered to
+    run and the only one whose flow this resolver's redirect handling covers.
+    """
+    supported = [g for g in grant_types if g in GRANT_TYPE_MAP]
+    if not supported:
+        raise CIMDError("client metadata declares no grant_type this server supports")
+    preferred = "authorization_code" if "authorization_code" in supported else supported[0]
+    return GRANT_TYPE_MAP[preferred]
 
 
 def _supported_auth_methods() -> tuple[str, ...]:
