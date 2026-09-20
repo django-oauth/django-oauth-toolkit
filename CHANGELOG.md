@@ -202,6 +202,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1853 Clients registered from a metadata document -- through Dynamic Client Registration or a
+  Client ID Metadata Document -- are now provisioned to sign ID Tokens with `RS256` whenever
+  `OIDC_ENABLED` is on and the server has an `OIDC_RSA_PRIVATE_KEY`, the OpenID Connect Dynamic
+  Client Registration 1.0 default for `id_token_signed_response_alg`. Neither path set
+  `Application.algorithm`, so any `openid` request from such a client failed with "This application
+  does not support signed tokens". An explicit `id_token_signed_response_alg` is honoured when it is
+  `RS256` and rejected otherwise (`HS256` signs with the plaintext client secret, which registration
+  stores hashed for every auth method but `client_secret_jwt`, so it is not offered to registered
+  clients), the DCR responses now report the registered algorithm, and both paths re-derive it on
+  update or re-fetch (an explicit `RS256` included, which a server that cannot sign stores as no
+  algorithm rather than refusing), so a row provisioned with `RS256` keeps passing model validation
+  after the key is removed. The OpenID Connect Dynamic Client Registration 1.0 specification is
+  vendored in `rfcs/`.
 * #1846 The `iss` authorization-response parameter (RFC 9207, gated by
   `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`) is now added to error redirects as well as
   successful ones. RFC 9207 §2 requires it on every authorization response, but it was only

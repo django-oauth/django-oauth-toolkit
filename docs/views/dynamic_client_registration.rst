@@ -90,6 +90,29 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``token_endpoint_auth_method: ...`` | ``client_type = "confidential"``  | Default                          |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``id_token_signed_response_alg``    | ``algorithm``                     | Defaults to ``RS256`` when the   |
+|                                     |                                   | server can sign ID Tokens; see   |
+|                                     |                                   | the note below                   |
++-------------------------------------+-----------------------------------+----------------------------------+
+
+.. note::
+    ``id_token_signed_response_alg`` (OpenID Connect Dynamic Client Registration 1.0, section 2)
+    selects the algorithm the application signs ID Tokens with. When omitted, the OIDC default of
+    ``RS256`` applies whenever ``OIDC_ENABLED`` is on and the server has an ``OIDC_RSA_PRIVATE_KEY``,
+    so a dynamically registered client can use OpenID Connect without any manual step; otherwise the
+    application is stored with no signing algorithm and cannot receive ID Tokens. An explicit value
+    the server never offers to registered clients is rejected with ``invalid_client_metadata``
+    rather than substituted. Today that is anything other than ``RS256``: although discovery
+    advertises ``HS256``, it signs with the plaintext client secret, which registration stores
+    hashed for every method except ``client_secret_jwt``, so it is not offered to registered
+    clients, and a server that signs with ``HS256`` only must provision its registered clients'
+    algorithm by hand. An explicit ``RS256`` on a server that cannot currently sign is stored as no
+    algorithm, the value the server would have provisioned anyway. The registered algorithm is
+    reported in the registration and management responses and omitted when there is none. ``PUT``
+    re-derives it like every other field, so a client registered before the server could sign gains
+    ``RS256`` on its next update, and echoing a ``GET`` response back as the ``PUT`` body round-trips.
+    (An ``HS256`` an operator set on the application by hand is reported too, but registration never
+    provisions it, so such an application is managed by hand from then on.)
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since

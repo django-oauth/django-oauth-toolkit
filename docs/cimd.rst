@@ -45,6 +45,21 @@ methods, and asymmetric methods such as ``private_key_jwt`` are not implemented)
 not contain a ``client_secret`` — and the document must register at least one redirect URI (only
 redirect-based grants are supported), matched exactly as for any other application.
 
+The stored application is provisioned to sign ID Tokens with ``RS256`` whenever ``OIDC_ENABLED`` is
+on and the server has an ``OIDC_RSA_PRIVATE_KEY``, so CIMD clients can use OpenID Connect without any
+manual step (``RS256`` is the default ``id_token_signed_response_alg`` of OpenID Connect Dynamic
+Client Registration 1.0, and the only algorithm a public client can use: ``HS256`` signs with the
+client secret). A document that names an ``id_token_signed_response_alg`` this server never offers
+to registered clients, which today means anything other than ``RS256``, is rejected rather than
+silently overridden, since there is no registration response in which to tell the client which value
+was substituted. Because a metadata document is one document served to every authorization server,
+such a client is refused for plain OAuth flows too, and the failure is subject to the usual backoff.
+Without OIDC the application is stored with no signing algorithm and cannot receive ID Tokens; an
+explicit ``RS256`` is then stored the same way rather than refused, since that is what the server
+would have provisioned anyway. The algorithm is re-derived on every re-fetch, so enabling OIDC or
+configuring or removing the key later takes effect once the cached metadata expires. A server that
+signs with ``HS256`` only cannot serve ID Tokens to CIMD clients, which have no secret.
+
 Settings
 --------
 
