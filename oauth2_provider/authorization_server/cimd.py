@@ -315,12 +315,15 @@ def _resolve_auth_method(metadata: dict[str, Any]) -> str:
     asked for an asymmetric method is never downgraded to a public one.
 
     A document may also list every method it can use in
-    ``token_endpoint_auth_methods_supported``, an extra property section 4.1 permits.
-    When the chosen method is not one this server registers, the first offered method
-    it does register is used instead. Published clients rely on it: ChatGPT's document
-    chooses ``private_key_jwt`` and offers ``["none", "private_key_jwt"]``, so a server
-    that does not advertise ``private_key_jwt`` registers it as the public client it
-    can also be, while one that does advertise it honours the choice.
+    ``token_endpoint_auth_methods_supported``. Section 4.1 takes client metadata from
+    the IANA OAuth client metadata registry, where OpenID Connect RP Metadata Choices
+    1.0 registers it; its section 4 has the server use one of the listed values it
+    supports rather than fail on an unsupported single value. When the chosen method
+    is not one this server registers, the first offered method it does register is
+    used instead. Published clients rely on it: ChatGPT's document chooses
+    ``private_key_jwt`` and offers ``["none", "private_key_jwt"]``, so a server that
+    does not advertise ``private_key_jwt`` registers it as the public client it can
+    also be, while one that does advertise it honours the choice.
 
     A document refused because the methods it names are registrable but not
     advertised here raises :class:`CIMDPolicyError`, as the single-valued check does,

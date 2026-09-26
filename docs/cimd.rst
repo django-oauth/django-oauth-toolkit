@@ -83,7 +83,10 @@ outlives a policy change. Any other method is refused, including every shared-se
 draft forbids (section 4.1) because CIMD provides no way to establish a shared secret.
 
 A document may also publish ``token_endpoint_auth_methods_supported``, listing every method the client
-can use. When the method it chose in ``token_endpoint_auth_method`` is not one this server registers,
+can use. The parameter is defined by `OpenID Connect RP Metadata Choices 1.0
+<https://openid.net/specs/openid-connect-rp-metadata-choices-1_0.html>`_ and registered in the IANA
+OAuth client metadata registry, which the draft uses for client metadata. When the method it chose in
+``token_endpoint_auth_method`` is not one this server registers,
 the first offered method this server does register is used instead; when the chosen method is
 registrable here, it is honoured as chosen and never downgraded, because the spec (section 6.2) has the
 authorization server require client authentication of the registered type. Shared-secret methods are
