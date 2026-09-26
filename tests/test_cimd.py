@@ -692,7 +692,7 @@ def test_resolve_grant_type_ignores_refresh_token():
 
 
 def test_resolve_grant_type_ignores_an_unsupported_grant():
-    """RFC 7591 section 2.1: drop what this server does not support, keep what it does.
+    """RFC 7591 sections 2 and 3.2.1: replace what this server does not support, keep what it does.
 
     The list is the one Claude publishes at
     https://claude.ai/oauth/mcp-oauth-client-metadata.

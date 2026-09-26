@@ -143,10 +143,11 @@ was accepted before this behaviour existed, with the parameter ignored, and is n
 re-fetch, so such a client keeps its last good registration but no longer picks up document changes
 until the parameter is removed or set to ``RS256``.
 
-Grant types the server does not support are ignored rather than fatal, as RFC 7591 section 2.1
-requires: a document is rejected only when none of its ``grant_types`` is one this library
-registers. Because an application stores a single grant, ``authorization_code`` is chosen when the
-document declares more than one supported grant.
+Grant types the server does not support are dropped rather than fatal, which RFC 7591 section 2
+permits by replacing requested metadata values with suitable defaults (section 3.2.1): a document
+is rejected only when none of its ``grant_types`` is one this library registers. Because an
+application stores a single grant, ``authorization_code`` is chosen when the document declares
+more than one supported grant.
 
 Settings
 --------

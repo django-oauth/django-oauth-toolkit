@@ -273,10 +273,11 @@ class SafeMetadataFetcher:
 def _resolve_grant_type(grant_types):
     """Resolve an RFC 7591 grant_types list to a single DOT grant constant.
 
-    RFC 7591 section 2.1 has the authorization server ignore the grant types it does not
-    support, so an unsupported entry alongside a supported one is dropped instead of
-    failing the whole document. Published clients rely on this: Claude's client metadata
-    declares ``jwt-bearer`` next to the ``authorization_code`` its connector actually uses.
+    RFC 7591 section 2 lets the authorization server reject a requested metadata value "by
+    replacing requested values with suitable defaults as described in Section 3.2.1", so an
+    unsupported entry alongside a supported one is dropped instead of failing the whole
+    document. Published clients rely on this: Claude's client metadata declares
+    ``jwt-bearer`` next to the ``authorization_code`` its connector actually uses.
 
     ``Application`` stores a single grant, so one of the supported entries has to win.
     ``authorization_code`` does, because it is the grant a CIMD client is registered to
