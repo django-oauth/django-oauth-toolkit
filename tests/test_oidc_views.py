@@ -1099,6 +1099,32 @@ def test_userinfo_endpoint_bad_token(oidc_tokens, client):
 
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.parametrize("method", ["get", "post"])
+def test_userinfo_endpoint_resource_bound_token(oidc_tokens, client, method):
+    # RFC 8707: a token bound to this server is audience-checked against the
+    # absolute UserInfo URI, not the relative request path.
+    AccessToken = get_access_token_model()
+    AccessToken.objects.filter(token=oidc_tokens.access_token).update(resource=["http://testserver/o/"])
+    rsp = getattr(client, method)(
+        reverse("oauth2_provider:user-info"),
+        HTTP_AUTHORIZATION="Bearer %s" % oidc_tokens.access_token,
+    )
+    assert rsp.status_code == 200
+    assert rsp.json()["sub"] == str(oidc_tokens.user.pk)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_userinfo_endpoint_rejects_token_bound_to_other_resource(oidc_tokens, client):
+    AccessToken = get_access_token_model()
+    AccessToken.objects.filter(token=oidc_tokens.access_token).update(resource=["https://api.example.com/"])
+    rsp = client.get(
+        reverse("oauth2_provider:user-info"),
+        HTTP_AUTHORIZATION="Bearer %s" % oidc_tokens.access_token,
+    )
+    assert rsp.status_code == 401
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("method", ["get", "post"])
 def test_userinfo_endpoint_cors_header(oidc_tokens, client, method):
     # OIDC Core 1.0 section 5.3: the UserInfo Endpoint SHOULD support CORS.
     auth_header = "Bearer %s" % oidc_tokens.access_token
