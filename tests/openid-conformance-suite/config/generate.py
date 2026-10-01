@@ -171,6 +171,22 @@ def overrides():
             )
         ]
     }
+    # These modules redirect to the authorization endpoint only to look at the
+    # login page (it should show the registered logo / policy / terms link) and
+    # end once the screenshot placeholder is filled; without it they sit WAITING.
+    for module, expectation in (
+        ("oidcc-registration-logo-uri", "logo"),
+        ("oidcc-registration-policy-uri", "policy document link"),
+        ("oidcc-registration-tos-uri", "terms of service link"),
+    ):
+        result[module] = {
+            "browser": [
+                authorize_block(
+                    screenshot="update-image-placeholder",
+                    comment=f"screenshots the login page, which should show the client's {expectation}",
+                )
+            ]
+        }
     for module in (
         "oidcc-ensure-registered-redirect-uri",
         "oidcc-ensure-redirect-uri-in-authorization-request",

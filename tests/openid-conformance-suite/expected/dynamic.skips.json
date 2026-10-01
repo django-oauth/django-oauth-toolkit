@@ -1,0 +1,20 @@
+[
+    {
+        "test-name": "oidcc-idtoken-unsigned",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "comment": "The suite skips this module because id_token_signing_alg_values_supported does not include 'none'; OPs are not required to support unsigned ID Tokens, and the toolkit deliberately does not."
+    },
+    {
+        "test-name": "oidcc-registration-sector-uri",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "comment": "The suite skips this module because subject_types_supported does not include 'pairwise'; OpenID Connect Core 8 makes the pairwise subject type optional, and the toolkit only issues public subject identifiers."
+    },
+    {
+        "test-name": "oidcc-registration-sector-bad",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "comment": "Same as oidcc-registration-sector-uri: no pairwise subject type, so there is no sector_identifier_uri to validate."
+    }
+]

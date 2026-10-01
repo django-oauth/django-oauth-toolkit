@@ -1,0 +1,11 @@
+[
+    {
+        "test-name": "oidcc-server-rotate-keys",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "VerifyNewJwksHasNewSigningKey",
+        "expected-result": "failure",
+        "comment": "The module asks the tester to rotate the OP's signing key by hand between two JWKS fetches; nothing in CI does that, so the suite's own CI waives this condition the same way. The demo IdP's key is fixed for the run."
+    }
+]

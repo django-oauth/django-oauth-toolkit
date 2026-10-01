@@ -225,6 +225,207 @@
                 }
             ]
         },
+        "oidcc-registration-logo-uri": {
+            "browser": [
+                {
+                    "comment": "screenshots the login page, which should show the client's logo",
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Log In",
+                                    "update-image-placeholder"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Consent",
+                            "optional": true,
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/*/callback*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "id",
+                                    "submission_complete",
+                                    10
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-registration-policy-uri": {
+            "browser": [
+                {
+                    "comment": "screenshots the login page, which should show the client's policy document link",
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Log In",
+                                    "update-image-placeholder"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Consent",
+                            "optional": true,
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/*/callback*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "id",
+                                    "submission_complete",
+                                    10
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-registration-tos-uri": {
+            "browser": [
+                {
+                    "comment": "screenshots the login page, which should show the client's terms of service link",
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Log In",
+                                    "update-image-placeholder"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Consent",
+                            "optional": true,
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/*/callback*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "id",
+                                    "submission_complete",
+                                    10
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
         "oidcc-ensure-registered-redirect-uri": {
             "browser": [
                 {
