@@ -66,6 +66,8 @@ This directory contains plain-text standards documents used by this repository.
   - Source: https://openid.net/specs/openid-connect-core-1_0.txt
 - `openid-connect-discovery-1_0.txt` - OpenID Connect Discovery 1.0 (errata set 2)
   - Source: https://openid.net/specs/openid-connect-discovery-1_0.txt
+- `openid-connect-registration-1_0.txt` - OpenID Connect Dynamic Client Registration 1.0 (errata set 2)
+  - Source: https://openid.net/specs/openid-connect-registration-1_0.txt
 - `openid-connect-rpinitiated-1_0.txt` - OpenID Connect RP-Initiated Logout 1.0
   - Source: https://openid.net/specs/openid-connect-rpinitiated-1_0.txt
 - `openid-connect-session-1_0.txt` - OpenID Connect Session Management 1.0
