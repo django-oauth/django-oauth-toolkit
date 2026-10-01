@@ -158,25 +158,25 @@ APPLICATION_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your application admin class.
 Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.ApplicationAdmin``).
+``oauth2_provider.authorization_server.admin.ApplicationAdmin``).
 
 ACCESS_TOKEN_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your access token admin class.
 Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.AccessTokenAdmin``).
+``oauth2_provider.authorization_server.admin.AccessTokenAdmin``).
 
 GRANT_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your grant admin class.
 Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.GrantAdmin``).
+``oauth2_provider.authorization_server.admin.GrantAdmin``).
 
 REFRESH_TOKEN_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your refresh token admin class.
 Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.admin.RefreshTokenAdmin``).
+``oauth2_provider.authorization_server.admin.RefreshTokenAdmin``).
 
 CLEAR_EXPIRED_TOKENS_BATCH_SIZE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

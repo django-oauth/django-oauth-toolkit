@@ -18,8 +18,8 @@ import pytest
 
 
 @contextlib.contextmanager
-def _reimport_without_leaking(modname):
-    """Re-trigger a shim's import-time warning without leaking a reloaded module.
+def _reimport_without_leaking(*modnames):
+    """Re-trigger a shim's import-time behavior without leaking a reloaded module.
 
     Several tests below pop a shim from ``sys.modules`` and import it again so its
     import-time ``DeprecationWarning`` fires a second time. For a *re-export* shim
@@ -30,18 +30,36 @@ def _reimport_without_leaking(modname):
     targets -- would then diverge from the freshly imported module, so patching
     ``<shim>.OAuthLibMixin.<attr>`` no longer affects those subclasses. Under
     ``pytest -n auto --dist loadfile`` that surfaces as a flaky failure in whatever
-    file happens to share the worker. Restore the original module object afterwards
-    so its identity is preserved for the rest of the session.
+    file happens to share the worker. Restore the original module objects afterwards
+    so their identity is preserved for the rest of the session.
+
+    A loaded submodule is also bound as an attribute on its parent package, and
+    ``from parent import child`` is satisfied by that attribute without consulting
+    ``sys.modules``. Detach it too, so a shim's ``from ... import <moved>`` really
+    re-executes the moved module, and re-bind the original afterwards.
     """
-    saved = sys.modules.get(modname)
-    sys.modules.pop(modname, None)
+    saved = {}
+    for modname in modnames:
+        module = sys.modules.pop(modname, None)
+        parent_name, _, child = modname.rpartition(".")
+        parent = sys.modules.get(parent_name) if parent_name else None
+        detached = parent is not None and getattr(parent, child, None) is module and module is not None
+        if detached:
+            delattr(parent, child)
+        saved[modname] = (module, parent, child, detached)
     try:
         yield
     finally:
-        if saved is not None:
-            sys.modules[modname] = saved
-        else:
-            sys.modules.pop(modname, None)
+        for modname, (module, parent, child, detached) in reversed(saved.items()):
+            if module is not None:
+                sys.modules[modname] = module
+            else:
+                sys.modules.pop(modname, None)
+            if detached:
+                setattr(parent, child, module)
+            elif parent is not None and module is None:
+                # A module first loaded inside the block leaves a binding behind.
+                parent.__dict__.pop(child, None)
 
 
 # old dotted path -> new canonical dotted path
@@ -162,6 +180,44 @@ def test_admin_shim_is_silent():
     with _reimport_without_leaking("oauth2_provider.admin"), warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         importlib.import_module("oauth2_provider.admin")  # must not raise
+
+
+def test_admin_shim_survives_reentrant_import():
+    """Regression for #1860: a project admin module named in ``*_ADMIN_CLASS`` may import
+    from the deprecated ``oauth2_provider.admin`` path.
+
+    ``oauth2_provider.authorization_server.admin`` resolves the ``*_ADMIN_CLASS`` settings at
+    import time, which imports the project's admin module. If that module imports back from
+    ``oauth2_provider.admin``, it hits the shim while the shim is still initializing (the
+    ``sys.modules`` alias swap has not happened yet), so the shim must forward the lookup to
+    the canonical module instead of failing with "partially initialized module".
+    """
+    from unittest import mock
+
+    from django.contrib import admin as django_admin
+    from django.test import override_settings
+
+    from oauth2_provider.models import get_application_model
+
+    canonical = "oauth2_provider.authorization_server.admin"
+    fixture = "tests.admin_via_shim"
+    with (
+        _reimport_without_leaking("oauth2_provider.admin", canonical, fixture),
+        override_settings(OAUTH2_PROVIDER={"APPLICATION_ADMIN_CLASS": f"{fixture}.ShimApplicationAdmin"}),
+        # Re-executing the canonical module registers models that the session already
+        # registered; stub the registry call to avoid AlreadyRegistered.
+        mock.patch.object(django_admin.site, "register") as register,
+        warnings.catch_warnings(),
+    ):
+        warnings.simplefilter("error", DeprecationWarning)  # the admin shim must stay silent
+        shim = importlib.import_module("oauth2_provider.admin")
+
+        fresh = sys.modules[canonical]
+        custom = sys.modules[fixture].ShimApplicationAdmin
+        assert shim is fresh
+        assert fresh.application_admin_class is custom
+        assert issubclass(custom, fresh.ApplicationAdmin)
+        register.assert_any_call(get_application_model(), custom)
 
 
 @pytest.mark.parametrize("old, symbol, new", sorted(SPLIT_SHIM_SYMBOLS))

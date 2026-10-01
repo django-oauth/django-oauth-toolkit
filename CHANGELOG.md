@@ -227,6 +227,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   select_for_update on this database backend`. The previous access token is now looked up with
   `.get()` instead of `.filter(...).first()`; `source_refresh_token` is a `OneToOneField`, so the
   lookup matches at most one row either way.
+* #1860 Importing from the deprecated `oauth2_provider.admin` path inside a project admin module
+  that is itself named in `APPLICATION_ADMIN_CLASS` (or another `*_ADMIN_CLASS` setting) no longer
+  fails at startup with `ImportError: cannot import name ... from partially initialized module
+  'oauth2_provider.admin'`. The canonical admin module resolves those settings while it is being
+  imported, and the shim was not yet aliased to it at that point; it now forwards attribute
+  lookups to the canonical module during initialization. The old path keeps working as the
+  deprecation policy promises, still without a warning.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
