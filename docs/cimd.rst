@@ -95,7 +95,18 @@ never registered, whatever a document offers. ChatGPT's published document has t
 ``private_key_jwt`` registers it as a confidential client authenticating with a client assertion, while
 one that does not registers it as the public client it can also be. A document refused because the
 methods it names are registrable but not advertised here is a policy refusal, with the backoff described
-above.
+above. Both fields are validated like the rest of the document: the single value must be a string and
+the plural one an array of strings, a document that declares a shared-secret method is rejected whatever
+the plural field offers (the draft forbids the declaration itself), and a declared method must appear in
+the plural list when both are present, as RP Metadata Choices requires. A document that omits the single
+value is read as choosing ``none`` unless it carries a plural list, in which case the list alone decides.
+
+A client negotiated to ``none`` is a public client in every respect: it must call the token endpoint
+with no client authentication, and any ``jwks`` or ``jwks_uri`` in its document is not stored. A client
+that picks its method from the server's advertised ``token_endpoint_auth_methods_supported`` will only
+find ``none`` if the server advertises it, so add ``"none"`` to
+``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` (and ``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` when
+OpenID Connect is enabled; see :doc:`settings`) on a server that expects such clients.
 
 The same policy applies when the document of a client stored with ``none`` switches to
 ``private_key_jwt``. A node that does not advertise the method refuses the re-fetched document, and

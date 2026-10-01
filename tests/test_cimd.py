@@ -107,6 +107,16 @@ class _PrivateKeyJWTFetcher:
         ), 3600
 
 
+class _SharedSecretWithPluralFetcher:
+    def fetch(self, client_id):
+        # The declared method is in the list, so only the shared-secret rule rejects this.
+        document = _document(
+            token_endpoint_auth_method="client_secret_basic",
+            token_endpoint_auth_methods_supported=["client_secret_basic", "none"],
+        )
+        return document, 3600
+
+
 class _FailingFetcher:
     def fetch(self, client_id):
         raise CIMDError("could not fetch")
@@ -360,7 +370,8 @@ def test_build_application_kwargs_private_key_jwt(
             token_endpoint_auth_method="private_key_jwt",
             token_endpoint_auth_methods_supported=["private_key_jwt"],
         ),
-        # A shared-secret method is never negotiable, however the document offers it.
+        # The declared method is absent from the plural list, and the list offers
+        # nothing this server registers either.
         _document(
             token_endpoint_auth_method="private_key_jwt",
             token_endpoint_auth_methods_supported=["client_secret_basic"],
@@ -370,6 +381,39 @@ def test_build_application_kwargs_private_key_jwt(
             token_endpoint_auth_method="private_key_jwt",
             token_endpoint_auth_methods_supported="none",
         ),
+        _document(  # plural field entries must be strings
+            token_endpoint_auth_method="private_key_jwt",
+            token_endpoint_auth_methods_supported=[123, "none"],
+        ),
+        _document(token_endpoint_auth_methods_supported=None),  # plural field present but null
+        _document(token_endpoint_auth_methods_supported=[]),  # plural field offers nothing
+        # Section 4.1: a declared shared-secret method is forbidden outright; offering
+        # "none" alongside it does not rescue the document.
+        _document(
+            token_endpoint_auth_method="client_secret_basic",
+            token_endpoint_auth_methods_supported=["client_secret_basic", "none"],
+        ),
+        _document(token_endpoint_auth_method="client_secret_post"),
+        _document(token_endpoint_auth_method="client_secret_jwt"),
+        # The declared method must be a string, whatever the plural field offers.
+        _document(token_endpoint_auth_method=None, token_endpoint_auth_methods_supported=["none"]),
+        _document(token_endpoint_auth_method=True, token_endpoint_auth_methods_supported=["none"]),
+        _document(token_endpoint_auth_method=["none"], token_endpoint_auth_methods_supported=["none"]),
+        _document(token_endpoint_auth_method={"a": 1}, token_endpoint_auth_methods_supported=["none"]),
+        # RP Metadata Choices section 2: a declared method MUST be in the plural list.
+        _document(
+            token_endpoint_auth_method="private_key_jwt",
+            token_endpoint_auth_methods_supported=["none"],
+        ),
+        _document(
+            token_endpoint_auth_method="none",
+            token_endpoint_auth_methods_supported=["private_key_jwt"],
+        ),
+        # No declared method, and the plural field offers nothing this server registers.
+        {
+            **{k: v for k, v in _document().items() if k != "token_endpoint_auth_method"},
+            "token_endpoint_auth_methods_supported": ["private_key_jwt"],
+        },
     ],
 )
 def test_build_application_kwargs_rejects(document):
@@ -536,23 +580,74 @@ def test_resolve_auth_method_keeps_a_supported_declared_method():
     assert _resolve_auth_method(document) == "none"
 
 
-def test_resolve_auth_method_negotiates_from_the_plural_field():
+def test_resolve_auth_method_negotiates_from_the_plural_field(caplog):
     """The shape is the one ChatGPT publishes at https://chatgpt.com/oauth/client.json."""
     document = _document(
         token_endpoint_auth_method="private_key_jwt",
         token_endpoint_auth_methods_supported=["none", "private_key_jwt"],
     )
 
-    assert _resolve_auth_method(document) == "none"
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert _build_application_kwargs(document)["token_endpoint_auth_method"] == "none"
+    assert "chose token_endpoint_auth_method 'private_key_jwt'" in caplog.text
 
 
-def test_resolve_auth_method_ignores_non_string_entries():
+def test_build_application_kwargs_does_not_log_negotiation_for_a_refused_document(caplog):
+    """A document refused on a later field never leaves a notice saying it was registered."""
+    document = _document(
+        token_endpoint_auth_method="private_key_jwt",
+        token_endpoint_auth_methods_supported=["none", "private_key_jwt"],
+        redirect_uris=[],
+    )
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        with pytest.raises(CIMDError, match="redirect_uris"):
+            _build_application_kwargs(document)
+    assert "does not register" not in caplog.text
+
+
+def test_resolve_auth_method_rejects_non_string_entries():
     document = _document(
         token_endpoint_auth_method="private_key_jwt",
         token_endpoint_auth_methods_supported=[123, None, "none"],
     )
 
-    assert _resolve_auth_method(document) == "none"
+    with pytest.raises(CIMDError, match="array of strings"):
+        _resolve_auth_method(document)
+
+
+def test_resolve_auth_method_negotiates_from_a_plural_field_alone(caplog):
+    """With no declared method the plural list is the client's whole statement.
+
+    Nothing was overridden, so the negotiation notice stays silent.
+    """
+    document = {k: v for k, v in _document().items() if k != "token_endpoint_auth_method"}
+    document["token_endpoint_auth_methods_supported"] = ["private_key_jwt", "none"]
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert _build_application_kwargs(document)["token_endpoint_auth_method"] == "none"
+    assert "does not register" not in caplog.text
+
+
+def test_resolve_auth_method_rejects_declared_shared_secret_method():
+    """Section 4.1 forbids the declaration itself; the plural field cannot rescue it."""
+    document = _document(
+        token_endpoint_auth_method="client_secret_basic",
+        token_endpoint_auth_methods_supported=["client_secret_basic", "none"],
+    )
+
+    with pytest.raises(CIMDError, match="shared-secret"):
+        _resolve_auth_method(document)
+
+
+def test_resolve_auth_method_rejects_a_declared_method_missing_from_the_plural_field():
+    document = _document(
+        token_endpoint_auth_method="private_key_jwt",
+        token_endpoint_auth_methods_supported=["none"],
+    )
+
+    with pytest.raises(CIMDError, match="is not in token_endpoint_auth_methods_supported"):
+        _resolve_auth_method(document)
 
 
 def test_resolve_auth_method_error_names_the_declared_method():
@@ -695,6 +790,7 @@ def test_resolve_creates_public_application(cimd_enabled):
     assert app.client_id == CLIENT_URL
     assert app.registration_source == Application.RegistrationSource.CIMD
     assert app.client_type == Application.CLIENT_PUBLIC
+    assert app.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_NONE
     assert app.authorization_grant_type == Application.GRANT_AUTHORIZATION_CODE
     assert app.redirect_uris == "https://client.example.com/callback"
     assert app.user is None
@@ -847,6 +943,13 @@ def test_resolve_shared_secret_method_backs_off(cimd_enabled):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ConfidentialFetcher)
     assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert cache.get(cimd._backoff_cache_key(CLIENT_URL))
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_shared_secret_document_rejected_despite_plural_field(cimd_enabled):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_SharedSecretWithPluralFetcher)
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert not Application.objects.filter(client_id=CLIENT_URL).exists()
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -1132,6 +1235,7 @@ def test_private_key_jwt_first_sight_is_detected_when_the_pk_has_a_default(
 @pytest.mark.django_db(databases="__all__")
 def test_refresh_if_stale_logs_no_method_change_for_a_legacy_public_row(cimd_enabled, caplog):
     """Every legacy row was public, so its blank method reads as ``none``, not as a change."""
+
     app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
     Application.objects.filter(pk=app.pk).update(
         token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_DEFAULT,

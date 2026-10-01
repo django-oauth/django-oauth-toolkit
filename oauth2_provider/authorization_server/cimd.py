@@ -66,6 +66,10 @@ IGNORED_GRANT_TYPES = {"refresh_token"}
 # asymmetric method RFC 7523 client authentication implements. Which of these a
 # given server registers is decided by :func:`_supported_auth_methods`.
 REGISTRABLE_AUTH_METHODS = ("none", "private_key_jwt")
+# Section 4.1: a document MUST NOT declare any method built on a shared symmetric
+# secret, because there is no way to establish one. Rejected on sight, before any
+# negotiation, so a forbidden declaration cannot be rescued by the plural field.
+SHARED_SECRET_AUTH_METHODS = frozenset({"client_secret_basic", "client_secret_post", "client_secret_jwt"})
 
 # Cache-freshness lives on the model (cimd_expires_at, durable and authoritative
 # per row); the failure backoff is ephemeral/best-effort, so it lives in the
@@ -325,37 +329,53 @@ def _resolve_auth_method(metadata: dict[str, Any]) -> str:
     does not advertise ``private_key_jwt`` registers it as the public client it can
     also be, while one that does advertise it honours the choice.
 
+    Both fields are validated as the rest of the document is: the single value must
+    be a string and the plural one an array of strings, a declared shared-secret
+    method is rejected outright (section 4.1) before any negotiation, and a declared
+    method must appear in the plural list when both are present (RP Metadata Choices
+    section 2). A document that omits the single value is read as choosing ``none``
+    unless it carries a plural list, in which case the list alone decides.
+
     A document refused because the methods it names are registrable but not
     advertised here raises :class:`CIMDPolicyError`, as the single-valued check does,
     so the refusal arms the policy backoff rather than the shared failure backoff.
     """
     supported = _supported_auth_methods()
-    declared = metadata.get("token_endpoint_auth_method", "none")
+    declared_present = "token_endpoint_auth_method" in metadata
+    declared = metadata["token_endpoint_auth_method"] if declared_present else "none"
     if not isinstance(declared, str):
         raise CIMDError("token_endpoint_auth_method must be a string")
-    if declared in supported:
+    if declared in SHARED_SECRET_AUTH_METHODS:
+        raise CIMDError(f"CIMD clients must not use shared-secret token_endpoint_auth_method {declared!r}")
+
+    if "token_endpoint_auth_methods_supported" not in metadata:
+        if declared in supported:
+            return declared
+        error_class = CIMDPolicyError if declared in REGISTRABLE_AUTH_METHODS else CIMDError
+        raise error_class(
+            f"client metadata declares token_endpoint_auth_method {declared!r}; "
+            f"this server registers CIMD clients with {list(supported)}"
+        )
+
+    offered = metadata["token_endpoint_auth_methods_supported"]
+    if not isinstance(offered, list) or not all(isinstance(m, str) for m in offered):
+        raise CIMDError("token_endpoint_auth_methods_supported must be an array of strings")
+    if declared_present and declared not in offered:
+        raise CIMDError(
+            f"token_endpoint_auth_method {declared!r} is not in token_endpoint_auth_methods_supported"
+        )
+    if declared_present and declared in supported:
         return declared
 
-    offered = metadata.get("token_endpoint_auth_methods_supported")
-    if isinstance(offered, list):
-        for method in offered:
-            if method in supported:
-                log.info(
-                    "CIMD client %r chose token_endpoint_auth_method %r, which this server "
-                    "does not register; using the offered %r instead",
-                    metadata.get("client_id"),
-                    declared,
-                    method,
-                )
-                return method
+    for method in offered:
+        if method in supported:
+            return method
 
-    registrable = declared in REGISTRABLE_AUTH_METHODS or (
-        isinstance(offered, list) and any(m in REGISTRABLE_AUTH_METHODS for m in offered)
-    )
+    registrable = declared in REGISTRABLE_AUTH_METHODS or any(m in REGISTRABLE_AUTH_METHODS for m in offered)
     error_class = CIMDPolicyError if registrable else CIMDError
     raise error_class(
-        f"client metadata declares token_endpoint_auth_method {declared!r} and offers "
-        f"{offered!r}; this server registers CIMD clients with {list(supported)}"
+        f"client metadata offers token_endpoint_auth_methods_supported {offered!r}; "
+        f"this server registers CIMD clients with {list(supported)}"
     )
 
 
@@ -461,6 +481,17 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
             keys = sorted(jwks["keys"], key=lambda key: json.dumps(key, sort_keys=True))
             kwargs["client_jwks"] = json.dumps({**jwks, "keys": keys}, sort_keys=True)
         kwargs["client_type"] = AbstractApplication.CLIENT_CONFIDENTIAL
+    # Logged only once the whole document has passed, so a document refused on a
+    # later field never leaves a notice saying it was registered.
+    declared = metadata.get("token_endpoint_auth_method")
+    if declared is not None and declared != auth_method:
+        log.info(
+            "CIMD client %r chose token_endpoint_auth_method %r, which this server "
+            "does not register; using the offered %r instead",
+            metadata.get("client_id"),
+            declared,
+            auth_method,
+        )
     return kwargs
 
 
