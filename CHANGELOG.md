@@ -217,7 +217,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HS256` for `client_secret_jwt` clients is #1871).
   DCR responses report the registered `id_token_signed_response_alg`, and both a CIMD re-fetch and
   a DCR `PUT` re-derive it, so a client registered before the key existed gains `RS256` on its next
-  refresh or update.
+  refresh or update (a `PUT` echoing the reported value keeps it). Note that a CIMD document naming
+  any other algorithm was previously accepted with the parameter ignored and is now refused: an
+  existing client keeps its last good registration but no longer picks up document changes until
+  the parameter is removed.
 * #1846 The `iss` authorization-response parameter (RFC 9207, gated by
   `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`) is now added to error redirects as well as
   successful ones. RFC 9207 §2 requires it on every authorization response, but it was only

@@ -57,8 +57,12 @@ stored with no signing algorithm and cannot be issued ID Tokens; plain OAuth 2.0
 The algorithm is re-derived on every re-fetch, so configuring the key later takes effect once the
 cached metadata expires, and a row provisioned with the default drops ``RS256`` again once the key
 is removed. A document that asks for ``RS256`` explicitly is instead refused on re-fetch in that
-state, like any other document the server cannot honour, so its last good registration stays in
-service, still marked ``RS256``, until the key returns or the document changes.
+state, like any other document the server cannot honour, so its last good registration is kept,
+still marked ``RS256``: plain OAuth 2.0 flows keep working, ``openid`` requests fail until the key
+returns or the document changes. The same applies to a document that names any other algorithm: it
+was accepted before this behaviour existed, with the parameter ignored, and is now refused on every
+re-fetch, so such a client keeps its last good registration but no longer picks up document changes
+until the parameter is removed or set to ``RS256``.
 
 Settings
 --------

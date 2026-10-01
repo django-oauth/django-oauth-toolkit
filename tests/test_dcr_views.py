@@ -795,6 +795,89 @@ class TestDynamicClientRegistrationManagement(TestCase):
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == ""
 
+    def test_put_keeps_algorithm_echoed_from_get(self):
+        """A PUT sending back what GET reported is not refused (RFC 7592 §2.2).
+
+        The management response reports an algorithm set outside registration
+        too, so a client echoing it must not be locked out of updates, and the
+        value must survive the round trip rather than be reset to the default.
+        """
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_jwt",  # plaintext secret: HS256-eligible
+            },
+        )
+        assert response.status_code == 201, response.content
+        registered = response.json()
+        self.client.logout()
+        url = _management_url(registered["client_id"])
+        token = registered["registration_access_token"]
+        Application.objects.filter(client_id=registered["client_id"]).update(
+            algorithm=Application.HS256_ALGORITHM
+        )
+
+        reported = self.client.get(url, **_bearer(token)).json()
+        assert reported["id_token_signed_response_alg"] == "HS256"
+        echo = {
+            key: reported[key]
+            for key in (
+                "redirect_uris",
+                "grant_types",
+                "token_endpoint_auth_method",
+                "id_token_signed_response_alg",
+            )
+        }
+        response = self.client.put(
+            url, data=json.dumps(echo), content_type="application/json", **_bearer(token)
+        )
+        assert response.status_code == 200, response.content
+        assert response.json()["id_token_signed_response_alg"] == "HS256"
+        assert (
+            Application.objects.get(client_id=registered["client_id"]).algorithm
+            == Application.HS256_ALGORITHM
+        )
+
+        # Omitting the parameter is a full replacement: back to the default.
+        echo.pop("id_token_signed_response_alg")
+        token = response.json()["registration_access_token"]
+        response = self.client.put(
+            url, data=json.dumps(echo), content_type="application/json", **_bearer(token)
+        )
+        assert response.status_code == 200, response.content
+        assert "id_token_signed_response_alg" not in response.json()
+        assert (
+            Application.objects.get(client_id=registered["client_id"]).algorithm == Application.NO_ALGORITHM
+        )
+
+    def test_put_echoing_rs256_after_key_removal_is_400(self):
+        """Echoing RS256 once the server can no longer sign with it is refused, by name."""
+        _enable_rs256(self.oauth2_settings)
+        update_data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = ""
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps({**update_data, "id_token_signed_response_alg": "RS256"}),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg" in response.json()["error_description"]
+
     def test_put_and_get_track_server_signing_capability(self):
         """PUT re-derives the signing algorithm like every other field (RFC 7592 §2.2).
 

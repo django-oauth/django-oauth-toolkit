@@ -156,11 +156,15 @@ def _resolve_grant_type(grant_types):
     return dot_grant, None
 
 
-def _build_application_kwargs(data: dict[str, Any]) -> tuple[dict[str, Any] | None, JsonResponse | None]:
+def _build_application_kwargs(
+    data: dict[str, Any], *, current_algorithm: str = ""
+) -> tuple[dict[str, Any] | None, JsonResponse | None]:
     """
     Convert RFC 7591 metadata dict to Application field kwargs.
 
-    Returns (kwargs_dict, error_response).
+    *current_algorithm* is the stored ``algorithm`` on an update (RFC 7592
+    PUT), so a client echoing the value a previous response reported is not
+    refused. Returns (kwargs_dict, error_response).
     """
     kwargs = {}
 
@@ -277,7 +281,7 @@ def _build_application_kwargs(data: dict[str, Any]) -> tuple[dict[str, Any] | No
     # Registration 1.0 section 2). Always set, so a PUT without it resets to
     # the default like the fields above (RFC 7592 section 2.2).
     try:
-        kwargs["algorithm"] = id_token_signing_algorithm(data)
+        kwargs["algorithm"] = id_token_signing_algorithm(data, current=current_algorithm)
     except UnsupportedClientMetadataError as exc:
         return None, _error_response("invalid_client_metadata", str(exc))
 
@@ -592,7 +596,7 @@ class DynamicClientRegistrationManagementView(View):
         if err:
             return err
 
-        app_kwargs, err = _build_application_kwargs(data)
+        app_kwargs, err = _build_application_kwargs(data, current_algorithm=application.algorithm)
         if err:
             return err
 

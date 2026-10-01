@@ -45,7 +45,7 @@ def _server_can_sign_rs256() -> bool:
     return bool(oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY)
 
 
-def id_token_signing_algorithm(metadata: Mapping[str, Any]) -> str:
+def id_token_signing_algorithm(metadata: Mapping[str, Any], *, current: str = "") -> str:
     """Return the ``AbstractApplication.algorithm`` to provision for *metadata*.
 
     With no ``id_token_signed_response_alg`` (absent or JSON ``null``) the
@@ -63,6 +63,14 @@ def id_token_signing_algorithm(metadata: Mapping[str, Any]) -> str:
     signed with an algorithm the client did not ask for only fails its
     validation later.
 
+    On an update, *current* is the algorithm the application already has. A
+    request that merely echoes a value registration would not grant (an
+    administrator's HS256) keeps it and leaves it to model validation: RFC
+    7592 section 2.2 has the client send back every field it was given, and a
+    management response reports such a value too, so the client could
+    otherwise never update without a refusal. An echoed RS256 still needs the
+    server to be able to sign with it.
+
     Raises :class:`UnsupportedClientMetadataError` for a value the server
     cannot honour.
     """
@@ -71,6 +79,8 @@ def id_token_signing_algorithm(metadata: Mapping[str, Any]) -> str:
         if _server_can_sign_rs256():
             return AbstractApplication.RS256_ALGORITHM
         return AbstractApplication.NO_ALGORITHM
+    if current and requested == current and requested not in SUPPORTED_ID_TOKEN_ALGS:
+        return current
     if not isinstance(requested, str) or requested not in SUPPORTED_ID_TOKEN_ALGS:
         raise UnsupportedClientMetadataError(
             f"Unsupported {ID_TOKEN_SIGNED_RESPONSE_ALG}: {requested!r}. "

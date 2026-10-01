@@ -90,8 +90,8 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``token_endpoint_auth_method: ...`` | ``client_type = "confidential"``  | Default                          |
 +-------------------------------------+-----------------------------------+----------------------------------+
-| ``id_token_signed_response_alg``    | ``algorithm``                     | ``RS256`` by default when the    |
-|                                     |                                   | server has an                    |
+| ``id_token_signed_response_alg``    | ``algorithm``                     | ``RS256`` by default when OIDC   |
+|                                     |                                   | is enabled and the server has an |
 |                                     |                                   | ``OIDC_RSA_PRIVATE_KEY``; see    |
 |                                     |                                   | the note below                   |
 +-------------------------------------+-----------------------------------+----------------------------------+
@@ -110,7 +110,9 @@ Field Mapping
     `#1871 <https://github.com/django-oauth/django-oauth-toolkit/issues/1871>`_). The registered
     value is reported in registration and management responses, and ``PUT`` re-derives it like every
     other field, so a client registered before the server could sign gains ``RS256`` on its next
-    update.
+    update. A ``PUT`` that sends back the value a previous response reported keeps it, even one set
+    outside registration (an administrator choosing ``HS256``), since RFC 7592 has the client echo
+    every field it was given; omitting the parameter on ``PUT`` resets it to the default.
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since
