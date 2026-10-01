@@ -373,11 +373,14 @@ def validate_response_types_supported(app_configs, **kwargs):
     ``"id_token token"``, ...). OIDC Multiple Response Type Encoding Practices §4 defines
     a multi-valued ``response_type`` as an order-independent set, so an operator may
     reasonably write ``"token id_token"`` into a discovery list. That exact string is not
-    registered, so the request falls through to the default (authorization code) handler
-    and is refused -- with ``unsupported_response_type`` when the entry does not contain
-    ``code``, and with ``unauthorized_client`` when it does, since the code grant gates on
-    ``code`` being *present* but the validator then matches the whole string. Either way
-    the advertised response type is never served as advertised.
+    registered, so the request falls through to the default (authorization code) handler.
+    With the stock validator it is refused -- with ``unsupported_response_type`` when the
+    entry does not contain ``code``, and with ``unauthorized_client`` when it does, since
+    the code grant gates on ``code`` being *present* but the validator then matches the
+    whole string. A custom validator whose ``validate_response_type`` treats the value as
+    a set is not refused at all: the request is served as a plain authorization-code flow,
+    without the advertised token. Either way the advertised response type is never served
+    as advertised.
 
     This reports the discrepancy at configuration time; it does not change what the
     authorization endpoint accepts. Only values that are actually advertised are
@@ -449,8 +452,7 @@ def validate_response_types_supported(app_configs, **kwargs):
                 checks.Warning(
                     f"OAUTH2_PROVIDER['{setting_name}'] advertises the response type "
                     f"{response_type!r}, which the authorization endpoint never serves as "
-                    "advertised: it is rejected with unsupported_response_type or "
-                    "unauthorized_client, depending on the entry.",
+                    "advertised.",
                     hint=hint,
                     id="oauth2_provider.W013",
                 )

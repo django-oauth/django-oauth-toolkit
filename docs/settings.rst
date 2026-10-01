@@ -686,8 +686,10 @@ Type Encoding Practices
 <https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#terminology>`_ §4,
 but oauthlib dispatches an authorization request on the exact ``response_type`` string,
 so only the canonical orderings are accepted: an entry such as ``"token id_token"`` is
-never served as advertised -- it is rejected with ``unsupported_response_type``, or with
-``unauthorized_client`` when the entry contains ``code``. ``manage.py check --deploy``
+never served as advertised -- with the stock validator it is rejected with
+``unsupported_response_type``, or with ``unauthorized_client`` when the entry contains
+``code``; a custom validator with set semantics may instead serve it as a plain
+authorization-code flow, without the advertised token. ``manage.py check --deploy``
 reports any advertised entry the configured server cannot serve as
 ``oauth2_provider.W013``.
 
