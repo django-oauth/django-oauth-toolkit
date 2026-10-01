@@ -140,6 +140,20 @@ The import string of the class (model) representing your grants. Overwrite
 this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.Grant``).
 
+APPLICATION_FORM_CLASS
+~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.authorization_server.forms.ApplicationForm"``
+
+The import string of the ``ModelForm`` used by the built-in application registration and
+update views. The form is rebound to the configured application model, so it keeps working
+when ``OAUTH2_PROVIDER_APPLICATION_MODEL`` is swapped.
+
+Point this at a subclass declaring its own ``Meta.fields`` (or ``Meta.exclude``) to put the
+extra fields of a swapped application model on those views; without ``Meta``, the default
+field set applies. A project subclassing the views can set ``form_class`` on the view instead,
+which is used verbatim (not rebound), as in Django's own generic views.
+See :ref:`custom-application-form`.
+
 APPLICATION_ADMIN_CLASS
 ~~~~~~~~~~~~~~~~~~~~~~~
 The import string of the class (model) representing your application admin class.

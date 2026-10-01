@@ -88,6 +88,8 @@ DEFAULTS = {
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
     "PAR_REQUEST_MODEL": PAR_REQUEST_MODEL,
+    # Forms
+    "APPLICATION_FORM_CLASS": "oauth2_provider.authorization_server.forms.ApplicationForm",
     # Admin classes
     "APPLICATION_ADMIN_CLASS": "oauth2_provider.authorization_server.admin.ApplicationAdmin",
     "ACCESS_TOKEN_ADMIN_CLASS": "oauth2_provider.authorization_server.admin.AccessTokenAdmin",
@@ -332,6 +334,7 @@ IMPORT_STRINGS = (
     "OAUTH2_VALIDATOR_CLASS",
     "OAUTH2_BACKEND_CLASS",
     "SCOPES_BACKEND_CLASS",
+    "APPLICATION_FORM_CLASS",
     "APPLICATION_ADMIN_CLASS",
     "ACCESS_TOKEN_ADMIN_CLASS",
     "GRANT_ADMIN_CLASS",
