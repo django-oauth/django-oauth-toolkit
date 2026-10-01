@@ -82,7 +82,8 @@ Package map
                                 dynamic_client_registration, application, token,
                                 metadata (RFC 8414), mixins (AuthorizationServerViewMixin)
         oidc/                   OpenID Connect Provider facet
-          views.py, mixins.py (OIDC gating), urls.py
+          views.py, mixins.py (OIDC gating), urls.py,
+          client_metadata.py (OIDC client metadata shared by the dcr/cimd registration paths)
       resource_server/          resource server side
         www_authenticate, backends, decorators, middleware,
         validators.py (ResourceServerValidatorMixin + RFC 8707 helpers),
