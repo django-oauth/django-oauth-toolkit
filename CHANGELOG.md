@@ -210,10 +210,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Registration (RFC 7591) now get an ID Token signing algorithm. Neither path set
   `Application.algorithm`, so an `openid` request from such a client failed at the token endpoint
   with "This application does not support signed tokens". Both now apply the OpenID Connect Dynamic
-  Client Registration 1.0 default for `id_token_signed_response_alg`: `RS256` whenever
-  `OIDC_RSA_PRIVATE_KEY` is configured (the only algorithm a public or hashed-secret client can
+  Client Registration 1.0 default for `id_token_signed_response_alg`: `RS256` whenever `OIDC_ENABLED`
+  and `OIDC_RSA_PRIVATE_KEY` are configured (the only algorithm a public or hashed-secret client can
   use), and no algorithm otherwise. An explicit `id_token_signed_response_alg` is honoured when it is
-  `RS256` and refused otherwise (`invalid_client_metadata` for DCR, an invalid document for CIMD).
+  `RS256` and refused otherwise (`invalid_client_metadata` for DCR, an invalid document for CIMD;
+  `HS256` for `client_secret_jwt` clients is #1871).
   DCR responses report the registered `id_token_signed_response_alg`, and both a CIMD re-fetch and
   a DCR `PUT` re-derive it, so a client registered before the key existed gains `RS256` on its next
   refresh or update.

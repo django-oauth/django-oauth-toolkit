@@ -291,8 +291,11 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
         raise CIMDError("client_name must be a string")
 
     # Derived on every fetch, so a re-fetch tracks the server's current signing
-    # key instead of failing model validation over a stale RS256 once the key
-    # is gone (which would freeze the row on its old document for good).
+    # capability: a row provisioned with the RS256 default drops it once the
+    # key is gone instead of failing model validation on every refresh (which
+    # would freeze the row on its old document for good). A document that asks
+    # for RS256 explicitly is refused in that state like any other document the
+    # server cannot honour, and the last good row stays in service.
     try:
         algorithm = id_token_signing_algorithm(metadata)
     except UnsupportedClientMetadataError as exc:

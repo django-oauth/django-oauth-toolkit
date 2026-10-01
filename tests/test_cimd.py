@@ -311,11 +311,30 @@ def test_build_application_kwargs_defaults_to_rs256_when_server_can_sign(oauth2_
     assert _build_application_kwargs(explicit)["algorithm"] == Application.RS256_ALGORITHM
 
 
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_build_application_kwargs_null_id_token_alg_means_default(oauth2_settings):
+    # JSON null is not a value the spec defines; treat it like an absent parameter.
+    assert _build_application_kwargs(_document(id_token_signed_response_alg=None))["algorithm"] == (
+        Application.RS256_ALGORITHM
+    )
+
+
 def test_build_application_kwargs_no_algorithm_without_server_key(oauth2_settings):
     # No key, nothing requested: register the client anyway, it simply cannot
     # be issued ID Tokens until the server is configured to sign them.
     assert not oauth2_settings.OIDC_RSA_PRIVATE_KEY
     assert _build_application_kwargs(_document())["algorithm"] == Application.NO_ALGORITHM
+
+
+@pytest.mark.oauth2_settings({**presets.OIDC_SETTINGS_RW, "OIDC_ENABLED": False})
+def test_build_application_kwargs_no_algorithm_when_oidc_disabled(oauth2_settings):
+    # A key alone does not make the server an OpenID Provider (the RFC 8414
+    # metadata view gates its jwks_uri on both settings too): with OIDC off no
+    # ID Token is ever issued, so provisioning RS256 would only mislead.
+    assert oauth2_settings.OIDC_RSA_PRIVATE_KEY
+    assert _build_application_kwargs(_document())["algorithm"] == Application.NO_ALGORITHM
+    with pytest.raises(CIMDError, match="id_token_signed_response_alg"):
+        _build_application_kwargs(_document(id_token_signed_response_alg="RS256"))
 
 
 def test_build_application_kwargs_rejects_rs256_without_server_key(oauth2_settings):
@@ -660,6 +679,7 @@ def test_refresh_gains_rs256_once_server_key_is_configured(cimd_enabled):
     assert app.algorithm == Application.NO_ALGORITHM
     _expire(app)
 
+    cimd_enabled.OIDC_ENABLED = True
     cimd_enabled.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
     refreshed = refresh_if_stale(app, _oauthlib_request())
     assert refreshed.algorithm == Application.RS256_ALGORITHM

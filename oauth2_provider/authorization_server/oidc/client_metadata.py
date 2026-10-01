@@ -13,7 +13,7 @@ registration path provisions it the same way. See
 from collections.abc import Mapping
 from typing import Any
 
-from oauth2_provider.models import AbstractApplication, get_application_model
+from oauth2_provider.models import AbstractApplication
 from oauth2_provider.settings import oauth2_settings
 
 
@@ -21,17 +21,13 @@ from oauth2_provider.settings import oauth2_settings
 #: the client wants its ID Tokens signed with. OPTIONAL; the default is RS256.
 ID_TOKEN_SIGNED_RESPONSE_ALG = "id_token_signed_response_alg"
 
-# Requested ``alg`` values the provider can sign with for a registered client,
-# mapped to ``AbstractApplication.algorithm``. HS256 is deliberately absent: its
-# HMAC key is the plaintext client secret, which a registered client either does
-# not have (public, every CIMD client) or has stored hashed.
-_SUPPORTED_ID_TOKEN_ALGS = {"RS256": AbstractApplication.RS256_ALGORITHM}
-
-# The reverse mapping, for registration responses.
-_ID_TOKEN_ALG_BY_ALGORITHM = {
-    AbstractApplication.RS256_ALGORITHM: "RS256",
-    AbstractApplication.HS256_ALGORITHM: "HS256",
-}
+# ``AbstractApplication.algorithm`` stores the JWS ``alg`` name itself, so the
+# wire value and the model value are one and the same; this is the subset a
+# registered client may ask for. HS256 is deliberately absent: its HMAC key is
+# the plaintext client secret, which a registered client either does not have
+# (public, every CIMD client) or has stored hashed. Honouring it for the one
+# eligible case (confidential ``client_secret_jwt`` clients) is #1871.
+SUPPORTED_ID_TOKEN_ALGS = frozenset({AbstractApplication.RS256_ALGORITHM})
 
 
 class UnsupportedClientMetadataError(ValueError):
@@ -44,18 +40,21 @@ class UnsupportedClientMetadataError(ValueError):
 
 
 def _server_can_sign_rs256() -> bool:
-    return bool(oauth2_settings.OIDC_RSA_PRIVATE_KEY)
+    # The same gate the RFC 8414 metadata view applies before advertising a
+    # jwks_uri: a key alone does not make the server an OpenID Provider.
+    return bool(oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY)
 
 
 def id_token_signing_algorithm(metadata: Mapping[str, Any]) -> str:
     """Return the ``AbstractApplication.algorithm`` to provision for *metadata*.
 
-    With no ``id_token_signed_response_alg`` the OpenID Connect Dynamic Client
-    Registration 1.0 default of RS256 applies, so the client is provisioned to
-    receive RS256-signed ID Tokens whenever the server holds an
-    ``OIDC_RSA_PRIVATE_KEY``. Without one the client is stored with no signing
-    algorithm: registration still succeeds and plain OAuth 2.0 flows work, it
-    just cannot be issued ID Tokens until the server can sign them.
+    With no ``id_token_signed_response_alg`` (absent or JSON ``null``) the
+    OpenID Connect Dynamic Client Registration 1.0 default of RS256 applies, so
+    the client is provisioned to receive RS256-signed ID Tokens whenever
+    OpenID Connect is enabled and the server holds an ``OIDC_RSA_PRIVATE_KEY``.
+    Otherwise the client is stored with no signing algorithm: registration
+    still succeeds and plain OAuth 2.0 flows work, it just cannot be issued ID
+    Tokens until the server can sign them.
 
     An explicit value is honoured when the server can sign with it and refused
     otherwise (section 3.1 lets the provider reject requested metadata).
@@ -67,21 +66,22 @@ def id_token_signing_algorithm(metadata: Mapping[str, Any]) -> str:
     Raises :class:`UnsupportedClientMetadataError` for a value the server
     cannot honour.
     """
-    Application = get_application_model()
     requested = metadata.get(ID_TOKEN_SIGNED_RESPONSE_ALG)
     if requested is None:
-        return Application.RS256_ALGORITHM if _server_can_sign_rs256() else Application.NO_ALGORITHM
-    if not isinstance(requested, str) or requested not in _SUPPORTED_ID_TOKEN_ALGS:
+        if _server_can_sign_rs256():
+            return AbstractApplication.RS256_ALGORITHM
+        return AbstractApplication.NO_ALGORITHM
+    if not isinstance(requested, str) or requested not in SUPPORTED_ID_TOKEN_ALGS:
         raise UnsupportedClientMetadataError(
             f"Unsupported {ID_TOKEN_SIGNED_RESPONSE_ALG}: {requested!r}. "
-            f"Supported values: {', '.join(_SUPPORTED_ID_TOKEN_ALGS)}"
+            f"Supported values: {', '.join(sorted(SUPPORTED_ID_TOKEN_ALGS))}"
         )
     if not _server_can_sign_rs256():
         raise UnsupportedClientMetadataError(
             f"{ID_TOKEN_SIGNED_RESPONSE_ALG} {requested!r} is not available: "
-            "this server has no RSA signing key configured"
+            "this server does not issue RSA-signed ID Tokens"
         )
-    return _SUPPORTED_ID_TOKEN_ALGS[requested]
+    return requested
 
 
 def id_token_signed_response_alg(application: AbstractApplication) -> str | None:
@@ -92,6 +92,7 @@ def id_token_signed_response_alg(application: AbstractApplication) -> str | None
     response carries every registered value, including those the provider
     chose itself). None when the application has no signing algorithm, so the
     parameter is omitted rather than reported with a value the spec does not
-    define.
+    define. An algorithm set outside registration (an administrator choosing
+    HS256 for a confidential client) is reported as well.
     """
-    return _ID_TOKEN_ALG_BY_ALGORITHM.get(application.algorithm)
+    return application.algorithm or None

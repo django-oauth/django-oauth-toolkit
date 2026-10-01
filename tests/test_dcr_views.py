@@ -48,6 +48,12 @@ def _bearer(token):
     return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
 
 
+def _enable_rs256(oauth2_settings):
+    """Make the server an OpenID Provider able to sign RS256 ID Tokens."""
+    oauth2_settings.OIDC_ENABLED = True
+    oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+
+
 # ---------------------------------------------------------------------------
 # RFC 7591 — Registration endpoint tests
 # ---------------------------------------------------------------------------
@@ -158,7 +164,7 @@ class TestDynamicClientRegistration(TestCase):
         Tokens without any manual step, and the response reports the value the
         server provisioned (OIDC Registration 1.0 §3.2).
         """
-        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        _enable_rs256(self.oauth2_settings)
         self.client.force_login(self.user)
         data = {
             "redirect_uris": ["https://example.com/cb"],
@@ -173,7 +179,7 @@ class TestDynamicClientRegistration(TestCase):
         assert app.algorithm == Application.RS256_ALGORITHM
 
     def test_register_explicit_rs256_is_honoured(self):
-        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        _enable_rs256(self.oauth2_settings)
         self.client.force_login(self.user)
         data = {
             "redirect_uris": ["https://example.com/cb"],
@@ -183,6 +189,31 @@ class TestDynamicClientRegistration(TestCase):
         response = _post_register(self.client, data)
         assert response.status_code == 201
         assert response.json()["id_token_signed_response_alg"] == "RS256"
+
+    def test_register_null_id_token_alg_means_default(self):
+        """JSON null is not a value the spec defines; it counts as omitted."""
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": None,
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["id_token_signed_response_alg"] == "RS256"
+
+    def test_register_with_oidc_disabled_leaves_algorithm_unset(self):
+        """A key alone is not enough: with OIDC off no ID Token is ever issued."""
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        assert not self.oauth2_settings.OIDC_ENABLED
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "id_token_signed_response_alg" not in body
+        assert Application.objects.get(client_id=body["client_id"]).algorithm == Application.NO_ALGORITHM
 
     def test_register_without_server_key_leaves_algorithm_unset(self):
         """No RSA key → registration succeeds with no signing algorithm, none reported."""
@@ -213,7 +244,7 @@ class TestDynamicClientRegistration(TestCase):
 
     def test_register_unsupported_id_token_alg_is_400(self):
         """Only RS256 is implemented: HS256 would sign with the hashed-at-rest secret."""
-        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        _enable_rs256(self.oauth2_settings)
         self.client.force_login(self.user)
         for requested in ("HS256", "ES256", "none", "", 256):
             with self.subTest(requested=requested):
@@ -564,6 +595,13 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert body["client_name"] == "Managed App"
         assert "https://example.com/cb" in body["redirect_uris"]
 
+    def test_get_reports_algorithm_set_outside_registration(self):
+        """An administrator-chosen HS256 is reported too (OIDC Registration 1.0 §3.2)."""
+        Application.objects.filter(client_id=self.client_id).update(algorithm=Application.HS256_ALGORITHM)
+        response = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert response.status_code == 200
+        assert response.json()["id_token_signed_response_alg"] == "HS256"
+
     def test_get_missing_token_is_401(self):
         """GET without token → 401 with a WWW-Authenticate Bearer challenge (RFC 6750 §3)."""
         response = self.client.get(self.management_url)
@@ -767,7 +805,7 @@ class TestDynamicClientRegistrationManagement(TestCase):
         update_data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
         assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
 
-        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        _enable_rs256(self.oauth2_settings)
         response = self.client.put(
             self.management_url,
             data=json.dumps(update_data),
