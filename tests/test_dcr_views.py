@@ -853,6 +853,48 @@ class TestDynamicClientRegistrationManagement(TestCase):
             Application.objects.get(client_id=registered["client_id"]).algorithm == Application.NO_ALGORITHM
         )
 
+    def test_put_echoing_hs256_while_dropping_its_preconditions_is_400(self):
+        """An echoed HS256 is refused, by its RFC name, once the same PUT invalidates it."""
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_jwt",
+            },
+        )
+        assert response.status_code == 201, response.content
+        registered = response.json()
+        self.client.logout()
+        url = _management_url(registered["client_id"])
+        Application.objects.filter(client_id=registered["client_id"]).update(
+            algorithm=Application.HS256_ALGORITHM
+        )
+
+        response = self.client.put(
+            url,
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "token_endpoint_auth_method": "client_secret_basic",  # secret would be hashed
+                    "id_token_signed_response_alg": "HS256",
+                }
+            ),
+            content_type="application/json",
+            **_bearer(registered["registration_access_token"]),
+        )
+        assert response.status_code == 400, response.content
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg" in body["error_description"]
+        assert "hash_client_secret" not in body["error_description"]
+        app = Application.objects.get(client_id=registered["client_id"])
+        assert app.algorithm == Application.HS256_ALGORITHM
+        assert app.token_endpoint_auth_method == "client_secret_jwt"
+        assert app.client_secret == registered["client_secret"]  # still plaintext, untouched
+
     def test_put_echoing_rs256_after_key_removal_is_400(self):
         """Echoing RS256 once the server can no longer sign with it is refused, by name."""
         _enable_rs256(self.oauth2_settings)

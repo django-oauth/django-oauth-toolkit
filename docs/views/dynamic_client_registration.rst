@@ -112,7 +112,9 @@ Field Mapping
     other field, so a client registered before the server could sign gains ``RS256`` on its next
     update. A ``PUT`` that sends back the value a previous response reported keeps it, even one set
     outside registration (an administrator choosing ``HS256``), since RFC 7592 has the client echo
-    every field it was given; omitting the parameter on ``PUT`` resets it to the default.
+    every field it was given, provided the server can still sign with it and the rest of the update
+    leaves the application valid for it (``HS256`` needs ``client_secret_jwt`` and a non-implicit
+    grant); omitting the parameter on ``PUT`` resets it to the default.
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since

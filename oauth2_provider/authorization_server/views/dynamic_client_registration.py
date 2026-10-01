@@ -24,6 +24,8 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from oauth2_provider.authorization_server.oidc.client_metadata import (
+    ID_TOKEN_SIGNED_RESPONSE_ALG,
+    SUPPORTED_ID_TOKEN_ALGS,
     UnsupportedClientMetadataError,
     id_token_signed_response_alg,
     id_token_signing_algorithm,
@@ -284,6 +286,23 @@ def _build_application_kwargs(
         kwargs["algorithm"] = id_token_signing_algorithm(data, current=current_algorithm)
     except UnsupportedClientMetadataError as exc:
         return None, _error_response("invalid_client_metadata", str(exc))
+    # An echoed value registration would not itself grant (an administrator's
+    # HS256) is kept only while the rest of this request still allows it:
+    # HS256 signs with the plaintext secret, so the client must stay on
+    # client_secret_jwt and off the implicit/hybrid grants. Application.clean()
+    # enforces the same rule, but in terms of hash_client_secret and
+    # algorithm, fields a registering client cannot set; fail here with the
+    # RFC names instead.
+    if kwargs["algorithm"] and kwargs["algorithm"] not in SUPPORTED_ID_TOKEN_ALGS:
+        if auth_method != "client_secret_jwt" or dot_grant in (
+            AbstractApplication.GRANT_IMPLICIT,
+            AbstractApplication.GRANT_OPENID_HYBRID,
+        ):
+            return None, _error_response(
+                "invalid_client_metadata",
+                f"{ID_TOKEN_SIGNED_RESPONSE_ALG} {kwargs['algorithm']!r} requires "
+                "token_endpoint_auth_method client_secret_jwt and a grant type other than implicit",
+            )
 
     return kwargs, None
 
