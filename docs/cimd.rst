@@ -56,7 +56,12 @@ a substituted value could be reported. Without OpenID Connect and a server key t
 stored with no signing algorithm and cannot be issued ID Tokens; plain OAuth 2.0 flows still work.
 The algorithm is re-derived on every re-fetch, so configuring the key later takes effect once the
 cached metadata expires, and a row provisioned with the default drops ``RS256`` again once the key
-is removed. A document that asks for ``RS256`` explicitly is instead refused on re-fetch in that
+is removed. The derivation uses the settings of whichever process performs the re-fetch and is
+persisted for every node sharing the database, so all nodes must agree on ``OIDC_ENABLED`` and
+``OIDC_RSA_PRIVATE_KEY``: one node without them would strip ``RS256`` from the row for all of them
+until the next expiry. A re-fetch that changes the algorithm is logged at ``INFO`` by the
+``oauth2_provider.authorization_server.cimd`` logger. A document that asks for ``RS256`` explicitly
+is instead refused on re-fetch in that
 state, like any other document the server cannot honour, so its last good registration is kept,
 still marked ``RS256``: plain OAuth 2.0 flows keep working, ``openid`` requests fail until the key
 returns or the document changes. The same applies to a document that names any other algorithm: it

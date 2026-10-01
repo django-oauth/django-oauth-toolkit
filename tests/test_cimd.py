@@ -5,6 +5,7 @@ draft-ietf-oauth-client-id-metadata-document
 """
 
 import json
+import logging
 import socket
 from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
@@ -684,6 +685,19 @@ def test_refresh_gains_rs256_once_server_key_is_configured(cimd_enabled):
     refreshed = refresh_if_stale(app, _oauthlib_request())
     assert refreshed.algorithm == Application.RS256_ALGORITHM
     assert Application.objects.get(pk=app.pk).algorithm == Application.RS256_ALGORITHM
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_logs_signing_algorithm_change(cimd_enabled, caplog):
+    # The value is derived from this process's settings and written to the
+    # shared row, so an operator can see a node changing it.
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    _expire(app)
+    cimd_enabled.OIDC_ENABLED = True
+    cimd_enabled.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        refresh_if_stale(app, _oauthlib_request())
+    assert "signing algorithm changed from '' to 'RS256'" in caplog.text
 
 
 @pytest.mark.django_db(databases="__all__")

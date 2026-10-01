@@ -362,6 +362,10 @@ def _fetch_validate_upsert(client_id):
             raise CIMDError("client_id URL collides with a non-CIMD application")
     except Application.DoesNotExist:
         application = Application(client_id=client_id)
+    # None for a first sight; otherwise the algorithm the row had before this
+    # fetch, so a change is logged (it is derived from this process's settings
+    # and persisted for every node sharing the database).
+    previous_algorithm = application.algorithm if application.pk else None
 
     application.user = None
     application.client_type = Application.CLIENT_PUBLIC
@@ -392,6 +396,14 @@ def _fetch_validate_upsert(client_id):
             raise CIMDError("client_id row vanished during a concurrent upsert") from exc
         if application.registration_source != Application.RegistrationSource.CIMD:
             raise CIMDError("client_id URL collides with a non-CIMD application")
+    else:
+        if previous_algorithm is not None and application.algorithm != previous_algorithm:
+            log.info(
+                "CIMD application %r ID Token signing algorithm changed from %r to %r on re-fetch",
+                client_id,
+                previous_algorithm,
+                application.algorithm,
+            )
     return application
 
 
