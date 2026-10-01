@@ -124,6 +124,35 @@ app.save()
 "
 ```
 
+#### With a Client ID Metadata Document (CIMD)
+
+CIMD is off in the IDP unless `OAUTH2_PROVIDER_CIMD_ENABLED=true`. With it on, a client can also
+choose `private_key_jwt` in its metadata document, because the IDP advertises the method in both
+`OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED` and `OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`
+(see `docs/cimd.rst`). The document publishes the public key inline (or as an `https` `jwks_uri`)
+and must use the authorization code grant, for example:
+
+```json
+{
+  "client_id": "https://client.example.com/oauth/metadata.json",
+  "client_name": "CIMD private_key_jwt demo",
+  "redirect_uris": ["https://client.example.com/callback"],
+  "grant_types": ["authorization_code"],
+  "token_endpoint_auth_method": "private_key_jwt",
+  "jwks": {"keys": [{
+    "kty": "EC", "crv": "P-256", "kid": "demo-rp-key",
+    "x": "tS3tFvO_rzqp4FW4XU0M8agahChhDCxvfwkAOUf0r1w",
+    "y": "RXB1hhJu-vYd1Go5VyQ5gcQcxnNmCaCmE05mBrJ1qM4"
+  }]}
+}
+```
+
+The code exchange then carries a client assertion built as above, with the document URL as the
+client id, instead of a secret. The stock fetcher only reads documents from public `https` hosts,
+so the CIMD end-to-end suite (`tests/e2e/cimd_client_id_metadata_document`) runs this flow against
+the IDP with `OAUTH2_PROVIDER_CIMD_METADATA_FETCHER=idp.cimd.LoopbackMetadataFetcher`, which reads
+them from a local test server.
+
 ### Pushed Authorization Request (PAR) example
 
 The IDP serves the RFC 9126 PAR endpoint at `/o/par/` out of the box (it is advertised as

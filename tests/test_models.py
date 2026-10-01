@@ -1561,6 +1561,16 @@ def test_application_clean_rejects_private_key_material_in_client_jwks():
     assert "public keys only" in str(exc.value)
 
 
+def test_application_clean_rejects_symmetric_key_in_client_jwks():
+    app = _client_assertion_application(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks='{"keys": [{"kty": "oct", "k": "c2VjcmV0", "kid": "shared"}]}',
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert "asymmetric public keys only" in str(exc.value)
+
+
 def test_application_clean_rejects_non_https_client_jwks_uri():
     app = _client_assertion_application(
         token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,

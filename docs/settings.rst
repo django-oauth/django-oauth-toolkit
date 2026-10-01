@@ -730,7 +730,9 @@ Default: ``["client_secret_post", "client_secret_basic"]``
 The token endpoint authentication methods advertised by the :doc:`oauth2_server_metadata` endpoint.
 Add ``"private_key_jwt"`` and/or ``"client_secret_jwt"`` to advertise :doc:`RFC 7523 JWT client
 authentication <rfc7523>`; the metadata document then also emits the matching
-``*_auth_signing_alg_values_supported`` fields.
+``*_auth_signing_alg_values_supported`` fields. Advertising ``"private_key_jwt"`` here (and, with
+OpenID Connect enabled, in ``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` as well) is also what lets
+:doc:`CIMD <cimd>` register a client whose metadata document chooses that method.
 
 OpenID Connect Provider settings
 --------------------------------
@@ -857,7 +859,9 @@ Default: ``["client_secret_post", "client_secret_basic"]``
 The authentication methods that are advertised to be supported by this server. Add
 ``"private_key_jwt"`` and/or ``"client_secret_jwt"`` to advertise :doc:`RFC 7523 JWT client
 authentication <rfc7523>`; the discovery document then also emits
-``token_endpoint_auth_signing_alg_values_supported``.
+``token_endpoint_auth_signing_alg_values_supported``. With OpenID Connect enabled, :doc:`CIMD <cimd>`
+registers a client whose metadata document chooses ``"private_key_jwt"`` only when it is advertised
+both here and in ``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED``.
 
 OIDC_RP_INITIATED_REGISTRATION_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

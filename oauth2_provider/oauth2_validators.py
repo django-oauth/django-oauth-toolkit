@@ -262,7 +262,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         else:
             return True
 
-    def _load_application(self, client_id, request):
+    def _load_application(self, client_id: str, request: OauthlibRequest) -> AbstractApplication | None:
         """
         If request.client was not set, load application instance for given
         client_id and store it in request.client
@@ -270,7 +270,8 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         When CIMD is enabled and client_id is a metadata-document URL, this may
         additionally fetch that URL and persist an Application on first sight (or
         re-fetch a stale one), so a lookup here can perform network I/O and a
-        write to the default database.
+        write to the default database. A stored CIMD application registered with
+        an authentication method this server no longer registers is not loaded.
         """
         if request.client:
             # check for cached client, to save the db hit if this has already been loaded
@@ -297,7 +298,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             # URL we can fetch and persist on first sight. Returns None when CIMD
             # is disabled or the id is not a resolvable CIMD URL.
             client = cimd.resolve_cimd_application(client_id, request=request)
-            if client is not None and client.is_usable(request):
+            if client is not None and client.is_usable(request) and cimd.is_usable_registration(client):
                 request.client = client
                 return request.client
             return None
@@ -312,7 +313,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             # See GH #1006.
             return None
         client = cimd.refresh_if_stale(client, request=request)
-        if not client.is_usable(request):
+        if not client.is_usable(request) or not cimd.is_usable_registration(client):
             # Failed to load application: Application %r is not usable
             return None
         request.client = client

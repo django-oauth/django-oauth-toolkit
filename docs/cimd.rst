@@ -50,28 +50,52 @@ the document must register at least one redirect URI (only redirect-based grants
 matched exactly as for any other application. The document carries no ``client_secret``. A client is
 either public, with ``token_endpoint_auth_method`` ``none`` (the default when the document omits it),
 or confidential with ``private_key_jwt``: it then publishes exactly one of an inline ``jwks`` or an
-HTTPS ``jwks_uri``, is stored as a confidential application with that key source, and authenticates
-at the token endpoint with an RFC 7523 client assertion verified by the same machinery as a manually
-registered client, including the hardened fetch and caching of a ``jwks_uri`` (see :doc:`rfc7523`).
+HTTPS ``jwks_uri`` (an empty ``jwks_uri`` counts as absent), is stored as a confidential application
+with that key source, and authenticates at the token endpoint with an RFC 7523 client assertion
+verified by the same machinery as a manually registered client, including the hardened fetch and
+caching of a ``jwks_uri`` (see :doc:`rfc7523`).
+A ``private_key_jwt`` client must use the authorization code grant: the implicit grant issues tokens
+at the authorization endpoint without any client authentication, which the draft (section 6.2) does
+not allow for a client that registered keys.
+Whatever the method, a document carrying both ``jwks`` and a non-empty ``jwks_uri`` is refused, as
+RFC 7591 section 2 requires and as Dynamic Client Registration does. Earlier releases accepted such a
+document when it chose ``none``, ignoring both fields; a client stored from one keeps its last good
+registration but no longer picks up document changes until one of the two fields is removed.
 The method is recorded in the application's ``token_endpoint_auth_method`` field.
 
-``private_key_jwt`` is registered only on a server that advertises it in every discovery document it
-serves: ``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` and, with OpenID Connect enabled,
-``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` as well (see :doc:`settings`). A client that can use
-several methods picks one from the intersection of its own list with whichever advertised list it
-read (MCP clients read the RFC 8414 document first), so registering a method that either document
-omits would store the client as confidential while it authenticates as public. The lists are read by
+A document choosing ``none`` is always accepted, although the default advertised lists do not name
+that method. One choosing ``private_key_jwt`` is accepted only when the server advertises the method
+in ``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` and, with OpenID Connect enabled, in
+``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` as well (see :doc:`settings`), since its client may
+have picked it from either discovery document. The lists are read by
 whichever process performs the fetch and the result is persisted for every node sharing the
 database, so all nodes must agree on them: a node that omits ``private_key_jwt`` refuses a document
-that chooses it, whichever node registered the client before. Any other method is refused, including
+that chooses it, and will not load a client already stored with it, whichever node registered the
+client before. Such a client can then neither start an authorization request at that node nor
+authenticate to it as a client, so it obtains no new tokens there, not even by refreshing; access
+tokens already issued to it stay valid until they expire or are revoked. The stored application is
+left as it is, so advertising the method again restores the
+client without a re-fetch, and the refusal is a policy decision rather than a failed fetch, so it does
+not arm the failure backoff that the nodes share. Any other method is refused, including
 every shared-secret one, which the draft forbids (section 4.1) because CIMD provides no way to
 establish a shared secret.
+
+The same policy applies when the document of a client stored with ``none`` switches to
+``private_key_jwt``. A node that does not advertise the method refuses the re-fetched document, and
+a refused re-fetch keeps the last good registration, so that node goes on serving the client as
+public, with its stored metadata, and picks up none of the document's changes until the document
+stops choosing ``private_key_jwt`` or the node advertises it. A node that does advertise the method
+applies the switch for every node sharing the database, after which the nodes that do not advertise
+it refuse the client as described above, so in a fleet whose nodes disagree, what such a client gets
+depends on which node re-fetches first. Operators should advertise ``private_key_jwt`` consistently
+across nodes. Bounding how long a stale registration is served is tracked in #1873.
 
 The stored application is provisioned to sign ID Tokens with ``RS256`` whenever OpenID Connect is
 enabled and the server has an ``OIDC_RSA_PRIVATE_KEY``, so a CIMD client can use OpenID Connect
 without any manual step. This is the OpenID Connect Dynamic Client Registration 1.0 default for
-``id_token_signed_response_alg``, and the only algorithm a public client can use (``HS256`` signs with
-the client secret). A document may name ``id_token_signed_response_alg`` explicitly; a value the
+``id_token_signed_response_alg``, and the only algorithm a CIMD client can use: ``HS256`` signs with
+the client secret, which no CIMD client, public or confidential, can use (it is generated and
+hashed, never disclosed). A document may name ``id_token_signed_response_alg`` explicitly; a value the
 server cannot honour, which today means anything other than ``RS256``, makes the document invalid
 rather than being silently replaced, since a CIMD client receives no registration response in which
 a substituted value could be reported. Without OpenID Connect and a server key the application is
@@ -168,6 +192,30 @@ Server-Side Request Forgery (SSRF)
       resolves to many IPs can hold a worker past ``CIMD_FETCH_TIMEOUT_SECONDS``), caps the response
       size, and requires a JSON content type.
 
+Client key retrieval
+    A ``private_key_jwt`` document that publishes a ``jwks_uri`` adds a second client-controlled
+    outbound fetch, made when the client's assertion is verified at the token, introspection or
+    revocation endpoint. It uses the same SSRF-hardened transport as the metadata fetch, with its own
+    size cap, timeout, cache and failure backoff (the ``CLIENT_ASSERTION_JWKS_*`` settings; see
+    :doc:`rfc7523`), but it is **not** covered by the CIMD controls: ``CIMD_ALLOWED_HOSTS`` bounds
+    which hosts may register, not where a registered document may point its ``jwks_uri``, and the
+    CIMD in-flight cap and backoff do not apply to it. A deployment that relies on the host allowlist
+    to bound outbound traffic should account for the key fetch; a document that publishes its keys
+    inline causes none.
+
+    The fetched set is cached for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT``. An assertion whose ``kid``
+    the cached set does not hold can force a cache-bypassing refetch before its signature is
+    verified, but at most one per ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` for each
+    ``jwks_uri``, and none while the failure backoff for that URL is armed; other such assertions
+    are checked against the cached set. A client must therefore publish a new key at its
+    ``jwks_uri`` at least one interval before it signs with it. :doc:`rfc7523` describes the limit
+    and what it does not bound. It is kept per exact ``jwks_uri`` string, so it bounds the fetches
+    for each URL but not the number of URLs: with open registration, anyone can host documents whose
+    ``jwks_uri`` values differ only trivially, each with its own cached set and its own refetch
+    allowance. ``HostAllowlistCIMDPermission`` limits who can publish such documents, and
+    per-source rate limiting on the endpoints that accept client assertions limits how fast a caller
+    can use them.
+
 Denial of service
     Because a fetch happens on first sight of a URL, a flood of distinct bad URLs could otherwise tie
     up workers. This is bounded by the tight ``CIMD_FETCH_TIMEOUT_SECONDS`` (connect, read, and total),
@@ -198,6 +246,33 @@ Consent phishing
     are never same-origin with their ``https`` ``client_id``. Deployments enabling CIMD should surface
     the ``client_id`` **host** on the consent screen (draft §6.4) so users can see who they are
     authorizing.
+
+Confidential clients by registration
+    A CIMD client registered with ``private_key_jwt`` is a confidential client wherever the server
+    authenticates clients, including token introspection (it keeps the default ``can_introspect``)
+    and any view built on ``ClientProtectedResourceView``. With open registration (the default
+    ``AllowAllCIMDPermission``) anyone able to host a document can mint one, so a server that
+    advertises ``private_key_jwt`` with CIMD enabled should bound registration with
+    ``HostAllowlistCIMDPermission`` and ``CIMD_ALLOWED_HOSTS``, and turn ``can_introspect`` off as
+    such clients are first seen unless they should introspect (see
+    :ref:`introspection-open-registration`).
+
+Credential changes on refresh
+    A re-fetch replaces the stored authentication method and key source with whatever the document
+    now publishes: a rotated inline key set takes effect at the next re-fetch, and a client may move
+    between ``none`` and ``private_key_jwt``. The set behind a ``jwks_uri`` is re-read when its
+    cached copy expires, or earlier for an assertion with an unknown ``kid``, but at most once per
+    ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS``, so a key published there at least one
+    interval before the client signs with it is normally accepted on first use (see :doc:`rfc7523`).
+    The draft (§6.3.1) leaves it to the server whether a change of method or keys should revoke
+    tokens or consent. This implementation keeps existing tokens and grants, treating rotation as
+    routine hygiene, and logs every method change and every change to the stored key source at
+    ``INFO`` on the ``oauth2_provider.authorization_server.cimd`` logger; a deployment that wants a
+    stricter policy can act on those messages. Only the stored key source is compared: an inline
+    ``jwks``, or the ``jwks_uri`` value itself. The key set behind a ``jwks_uri`` is fetched when an
+    assertion is verified and is never compared, so a rotation published there is not logged,
+    although §6.3.1 lists a change in "the contents at the jwks_uri" among those a server may act
+    on.
 
 Metadata binding
     The document's ``client_id`` must equal the URL it was fetched from, so a document cannot claim to
