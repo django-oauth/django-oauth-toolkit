@@ -4,8 +4,11 @@ Tests for OAuth Client ID Metadata Document (CIMD) support.
 draft-ietf-oauth-client-id-metadata-document
 """
 
+import json
+import logging
 import socket
 from datetime import timedelta
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 import urllib3
@@ -13,6 +16,7 @@ from django.core.cache import cache
 from django.db import IntegrityError
 from django.urls import reverse
 from django.utils import timezone
+from jwcrypto import jwt
 from oauthlib.common import Request as OAuthlibRequest
 
 from oauth2_provider.authorization_server import cimd
@@ -31,6 +35,8 @@ from oauth2_provider.authorization_server.cimd import (
     resolve_cimd_application,
 )
 from oauth2_provider.models import get_application_model
+
+from . import presets
 
 
 Application = get_application_model()
@@ -259,6 +265,7 @@ def test_build_application_kwargs_public():
         "name": "Example CIMD Client",
         "redirect_uris": "https://client.example.com/callback",
         "authorization_grant_type": "authorization-code",
+        "algorithm": Application.NO_ALGORITHM,
     }
 
 
@@ -287,6 +294,65 @@ def test_build_application_kwargs_rejects(document):
 
 def test_resolve_grant_type_ignores_refresh_token():
     assert _resolve_grant_type(["authorization_code", "refresh_token"]) == "authorization-code"
+
+
+# ---------------------------------------------------------------------------
+# ID Token signing algorithm
+# (OpenID Connect Dynamic Client Registration 1.0 section 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_build_application_kwargs_defaults_to_rs256_when_server_can_sign(oauth2_settings):
+    # id_token_signed_response_alg is OPTIONAL and defaults to RS256, so a
+    # document that says nothing is provisioned to receive RS256 ID Tokens as
+    # soon as the server holds an RSA signing key.
+    assert _build_application_kwargs(_document())["algorithm"] == Application.RS256_ALGORITHM
+    explicit = _document(id_token_signed_response_alg="RS256")
+    assert _build_application_kwargs(explicit)["algorithm"] == Application.RS256_ALGORITHM
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_build_application_kwargs_null_id_token_alg_means_default(oauth2_settings):
+    # JSON null is not a value the spec defines; treat it like an absent parameter.
+    assert _build_application_kwargs(_document(id_token_signed_response_alg=None))["algorithm"] == (
+        Application.RS256_ALGORITHM
+    )
+
+
+def test_build_application_kwargs_no_algorithm_without_server_key(oauth2_settings):
+    # No key, nothing requested: register the client anyway, it simply cannot
+    # be issued ID Tokens until the server is configured to sign them.
+    assert not oauth2_settings.OIDC_RSA_PRIVATE_KEY
+    assert _build_application_kwargs(_document())["algorithm"] == Application.NO_ALGORITHM
+
+
+@pytest.mark.oauth2_settings({**presets.OIDC_SETTINGS_RW, "OIDC_ENABLED": False})
+def test_build_application_kwargs_no_algorithm_when_oidc_disabled(oauth2_settings):
+    # A key alone does not make the server an OpenID Provider (the RFC 8414
+    # metadata view gates its jwks_uri on both settings too): with OIDC off no
+    # ID Token is ever issued, so provisioning RS256 would only mislead.
+    assert oauth2_settings.OIDC_RSA_PRIVATE_KEY
+    assert _build_application_kwargs(_document())["algorithm"] == Application.NO_ALGORITHM
+    with pytest.raises(CIMDError, match="id_token_signed_response_alg"):
+        _build_application_kwargs(_document(id_token_signed_response_alg="RS256"))
+
+
+def test_build_application_kwargs_rejects_rs256_without_server_key(oauth2_settings):
+    assert not oauth2_settings.OIDC_RSA_PRIVATE_KEY
+    with pytest.raises(CIMDError, match="id_token_signed_response_alg"):
+        _build_application_kwargs(_document(id_token_signed_response_alg="RS256"))
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+@pytest.mark.parametrize("alg", ["HS256", "ES256", "none", "", 256])
+def test_build_application_kwargs_rejects_unsupported_id_token_alg(oauth2_settings, alg):
+    # HS256 would sign with the client secret, which a CIMD client must not
+    # have; nothing else is implemented. A CIMD client gets no registration
+    # response, so an unsupported request is refused rather than silently
+    # replaced with an algorithm the client did not ask for.
+    with pytest.raises(CIMDError, match="id_token_signed_response_alg"):
+        _build_application_kwargs(_document(id_token_signed_response_alg=alg))
 
 
 # ---------------------------------------------------------------------------
@@ -577,6 +643,131 @@ def test_refresh_if_stale_keeps_last_good_on_failure(cimd_enabled):
 @pytest.mark.django_db(databases="__all__")
 def test_refresh_if_stale_ignores_non_cimd(application):
     assert refresh_if_stale(application, _oauthlib_request()) is application
+
+
+# ---------------------------------------------------------------------------
+# ID Token signing algorithm provisioning (#1853)
+# ---------------------------------------------------------------------------
+
+
+def _expire(app):
+    Application.objects.filter(pk=app.pk).update(cimd_expires_at=timezone.now() - timedelta(seconds=1))
+    app.refresh_from_db()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_resolve_provisions_rs256_when_server_can_sign(cimd_enabled):
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    assert app is not None
+    assert app.algorithm == Application.RS256_ALGORITHM
+    assert Application.objects.get(pk=app.pk).algorithm == Application.RS256_ALGORITHM
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_leaves_algorithm_unset_without_server_key(cimd_enabled):
+    assert not cimd_enabled.OIDC_RSA_PRIVATE_KEY
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    assert app is not None
+    assert app.algorithm == Application.NO_ALGORITHM
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_gains_rs256_once_server_key_is_configured(cimd_enabled):
+    # A client first seen before the server could sign picks RS256 up on its
+    # next re-fetch: configuring the key later heals existing rows.
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    assert app.algorithm == Application.NO_ALGORITHM
+    _expire(app)
+
+    cimd_enabled.OIDC_ENABLED = True
+    cimd_enabled.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+    refreshed = refresh_if_stale(app, _oauthlib_request())
+    assert refreshed.algorithm == Application.RS256_ALGORITHM
+    assert Application.objects.get(pk=app.pk).algorithm == Application.RS256_ALGORITHM
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_logs_signing_algorithm_change(cimd_enabled, caplog):
+    # The value is derived from this process's settings and written to the
+    # shared row, so an operator can see a node changing it.
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    _expire(app)
+    cimd_enabled.OIDC_ENABLED = True
+    cimd_enabled.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        refresh_if_stale(app, _oauthlib_request())
+    assert "signing algorithm changed from '' to 'RS256'" in caplog.text
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_refresh_drops_rs256_once_server_key_is_removed(cimd_enabled):
+    # The algorithm is re-derived on every fetch. Were the stale RS256 kept,
+    # full_clean() would reject the row on every refresh ("You must set
+    # OIDC_RSA_PRIVATE_KEY ...") and the new redirect URI would never land.
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    assert app.algorithm == Application.RS256_ALGORITHM
+    _expire(app)
+
+    cimd_enabled.OIDC_RSA_PRIVATE_KEY = ""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_UpdatedFetcher)
+    refreshed = refresh_if_stale(app, _oauthlib_request())
+    assert refreshed.algorithm == Application.NO_ALGORITHM
+    assert refreshed.redirect_uris == "https://client.example.com/new-callback"
+    assert refreshed.cimd_expires_at > timezone.now()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_openid_code_flow_issues_id_token_to_cimd_client(cimd_enabled, client, django_user_model, oidc_key):
+    """Regression test for #1853.
+
+    A client the server has only ever seen as a CIMD URL completes an
+    ``openid`` authorization-code flow and receives an ID Token signed with the
+    server's RSA key. Before the fix the stored application had no signing
+    algorithm and the token endpoint raised ``ImproperlyConfigured`` ("This
+    application does not support signed tokens").
+    """
+    user = django_user_model.objects.create_user("cimd_oidc_user", password="123456")
+    client.force_login(user)
+    redirect_uri = "https://client.example.com/callback"
+    authorize_data = {
+        "client_id": CLIENT_URL,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": "openid",
+        "state": "random_state_string",
+        "nonce": "random_nonce",
+    }
+
+    # The browser's GET of the consent page is where an unseen CIMD URL is
+    # resolved and persisted; the consent POST then loads the stored row.
+    response = client.get(reverse("oauth2_provider:authorize"), data=authorize_data)
+    assert response.status_code == 200, response.content
+    response = client.post(reverse("oauth2_provider:authorize"), data={**authorize_data, "allow": True})
+    assert response.status_code == 302, response.content
+    code = parse_qs(urlparse(response["Location"]).query)["code"][0]
+
+    response = client.post(
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": CLIENT_URL,
+        },
+    )
+    assert response.status_code == 200, response.content
+    content = response.json()
+    assert "id_token" in content
+
+    # Verifying with the server's RSA key proves the token was signed with it.
+    verified = jwt.JWT(key=oidc_key, jwt=content["id_token"])
+    assert verified.token.jose_header["alg"] == "RS256"
+    claims = json.loads(verified.claims)
+    assert claims["aud"] == CLIENT_URL
+    assert claims["nonce"] == "random_nonce"
 
 
 # ---------------------------------------------------------------------------

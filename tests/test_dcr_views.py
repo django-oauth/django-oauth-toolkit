@@ -4,10 +4,12 @@ Tests for Dynamic Client Registration views (RFC 7591 / RFC 7592).
 
 import hashlib
 import json
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from jwcrypto import jwk, jwt
 
 from oauth2_provider.models import get_access_token_model, get_application_model
 
@@ -44,6 +46,12 @@ def _management_url(client_id):
 
 def _bearer(token):
     return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+
+def _enable_rs256(oauth2_settings):
+    """Make the server an OpenID Provider able to sign RS256 ID Tokens."""
+    oauth2_settings.OIDC_ENABLED = True
+    oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +154,110 @@ class TestDynamicClientRegistration(TestCase):
         assert "client_secret" in body
         app = Application.objects.get(client_id=body["client_id"])
         assert app.client_type == Application.CLIENT_CONFIDENTIAL
+
+    # -- id_token_signed_response_alg (OIDC Dynamic Client Registration 1.0 §2)
+
+    def test_register_defaults_to_rs256_when_server_can_sign(self):
+        """Omitted id_token_signed_response_alg → RS256 once the server has an RSA key.
+
+        Regression for #1853: a registered client is provisioned to receive ID
+        Tokens without any manual step, and the response reports the value the
+        server provisioned (OIDC Registration 1.0 §3.2).
+        """
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.algorithm == Application.RS256_ALGORITHM
+
+    def test_register_explicit_rs256_is_honoured(self):
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["id_token_signed_response_alg"] == "RS256"
+
+    def test_register_null_id_token_alg_means_default(self):
+        """JSON null is not a value the spec defines; it counts as omitted."""
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": None,
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["id_token_signed_response_alg"] == "RS256"
+
+    def test_register_with_oidc_disabled_leaves_algorithm_unset(self):
+        """A key alone is not enough: with OIDC off no ID Token is ever issued."""
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        assert not self.oauth2_settings.OIDC_ENABLED
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "id_token_signed_response_alg" not in body
+        assert Application.objects.get(client_id=body["client_id"]).algorithm == Application.NO_ALGORITHM
+
+    def test_register_without_server_key_leaves_algorithm_unset(self):
+        """No RSA key → registration succeeds with no signing algorithm, none reported."""
+        assert not self.oauth2_settings.OIDC_RSA_PRIVATE_KEY
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "id_token_signed_response_alg" not in body
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.algorithm == Application.NO_ALGORITHM
+
+    def test_register_explicit_rs256_without_server_key_is_400(self):
+        """A requested algorithm the server cannot sign with is refused, not substituted."""
+        assert not self.oauth2_settings.OIDC_RSA_PRIVATE_KEY
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg" in body["error_description"]
+
+    def test_register_unsupported_id_token_alg_is_400(self):
+        """Only RS256 is implemented: HS256 would sign with the hashed-at-rest secret."""
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        for requested in ("HS256", "ES256", "none", "", 256):
+            with self.subTest(requested=requested):
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "id_token_signed_response_alg": requested,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 400
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert "id_token_signed_response_alg" in body["error_description"]
 
     def test_register_authorization_code_with_refresh_token(self):
         """[authorization_code, refresh_token] → maps cleanly, refresh_token ignored."""
@@ -483,6 +595,13 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert body["client_name"] == "Managed App"
         assert "https://example.com/cb" in body["redirect_uris"]
 
+    def test_get_reports_algorithm_set_outside_registration(self):
+        """An administrator-chosen HS256 is reported too (OIDC Registration 1.0 §3.2)."""
+        Application.objects.filter(client_id=self.client_id).update(algorithm=Application.HS256_ALGORITHM)
+        response = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert response.status_code == 200
+        assert response.json()["id_token_signed_response_alg"] == "HS256"
+
     def test_get_missing_token_is_401(self):
         """GET without token → 401 with a WWW-Authenticate Bearer challenge (RFC 6750 §3)."""
         response = self.client.get(self.management_url)
@@ -676,6 +795,169 @@ class TestDynamicClientRegistrationManagement(TestCase):
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == ""
 
+    def test_put_keeps_algorithm_echoed_from_get(self):
+        """A PUT sending back what GET reported is not refused (RFC 7592 §2.2).
+
+        The management response reports an algorithm set outside registration
+        too, so a client echoing it must not be locked out of updates, and the
+        value must survive the round trip rather than be reset to the default.
+        """
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_jwt",  # plaintext secret: HS256-eligible
+            },
+        )
+        assert response.status_code == 201, response.content
+        registered = response.json()
+        self.client.logout()
+        url = _management_url(registered["client_id"])
+        token = registered["registration_access_token"]
+        Application.objects.filter(client_id=registered["client_id"]).update(
+            algorithm=Application.HS256_ALGORITHM
+        )
+
+        reported = self.client.get(url, **_bearer(token)).json()
+        assert reported["id_token_signed_response_alg"] == "HS256"
+        echo = {
+            key: reported[key]
+            for key in (
+                "redirect_uris",
+                "grant_types",
+                "token_endpoint_auth_method",
+                "id_token_signed_response_alg",
+            )
+        }
+        response = self.client.put(
+            url, data=json.dumps(echo), content_type="application/json", **_bearer(token)
+        )
+        assert response.status_code == 200, response.content
+        assert response.json()["id_token_signed_response_alg"] == "HS256"
+        assert (
+            Application.objects.get(client_id=registered["client_id"]).algorithm
+            == Application.HS256_ALGORITHM
+        )
+
+        # Omitting the parameter is a full replacement: back to the default.
+        echo.pop("id_token_signed_response_alg")
+        token = response.json()["registration_access_token"]
+        response = self.client.put(
+            url, data=json.dumps(echo), content_type="application/json", **_bearer(token)
+        )
+        assert response.status_code == 200, response.content
+        assert "id_token_signed_response_alg" not in response.json()
+        assert (
+            Application.objects.get(client_id=registered["client_id"]).algorithm == Application.NO_ALGORITHM
+        )
+
+    def test_put_echoing_hs256_while_dropping_its_preconditions_is_400(self):
+        """An echoed HS256 is refused, by its RFC name, once the same PUT invalidates it."""
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_jwt",
+            },
+        )
+        assert response.status_code == 201, response.content
+        registered = response.json()
+        self.client.logout()
+        url = _management_url(registered["client_id"])
+        Application.objects.filter(client_id=registered["client_id"]).update(
+            algorithm=Application.HS256_ALGORITHM
+        )
+
+        response = self.client.put(
+            url,
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "token_endpoint_auth_method": "client_secret_basic",  # secret would be hashed
+                    "id_token_signed_response_alg": "HS256",
+                }
+            ),
+            content_type="application/json",
+            **_bearer(registered["registration_access_token"]),
+        )
+        assert response.status_code == 400, response.content
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg" in body["error_description"]
+        assert "hash_client_secret" not in body["error_description"]
+        app = Application.objects.get(client_id=registered["client_id"])
+        assert app.algorithm == Application.HS256_ALGORITHM
+        assert app.token_endpoint_auth_method == "client_secret_jwt"
+        assert app.client_secret == registered["client_secret"]  # still plaintext, untouched
+
+    def test_put_echoing_rs256_after_key_removal_is_400(self):
+        """Echoing RS256 once the server can no longer sign with it is refused, by name."""
+        _enable_rs256(self.oauth2_settings)
+        update_data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = ""
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps({**update_data, "id_token_signed_response_alg": "RS256"}),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg" in response.json()["error_description"]
+
+    def test_put_and_get_track_server_signing_capability(self):
+        """PUT re-derives the signing algorithm like every other field (RFC 7592 §2.2).
+
+        A client registered before the server could sign gains RS256 on its
+        next update and GET reports it; once the key is gone the next PUT drops
+        it again instead of failing validation over a stale RS256.
+        """
+        update_data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
+
+        _enable_rs256(self.oauth2_settings)
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.RS256_ALGORITHM
+        token = body["registration_access_token"]  # rotated by the PUT
+
+        response = self.client.get(self.management_url, **_bearer(token))
+        assert response.status_code == 200
+        assert response.json()["id_token_signed_response_alg"] == "RS256"
+
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = ""
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(token),
+        )
+        assert response.status_code == 200
+        assert "id_token_signed_response_alg" not in response.json()
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
+
     def test_put_rotates_token_by_default(self):
         """PUT with DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE=True → new token issued."""
         update_data = {
@@ -779,6 +1061,75 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert not Application.objects.filter(client_id=self.client_id).exists()
         # Registration token should also be gone (cascade)
         assert not AccessToken.objects.filter(token=self.registration_token).exists()
+
+
+# ---------------------------------------------------------------------------
+# OpenID Connect for dynamically registered clients (#1853)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings({**presets.DCR_SETTINGS, **presets.OIDC_SETTINGS_RW})
+class TestDynamicClientRegistrationOpenID(TestCase):
+    def setUp(self):
+        self.user = UserModel.objects.create_user("dcr_oidc_user", "dcr_oidc@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def test_registered_public_client_receives_id_token(self):
+        """Regression for #1853: an openid code flow mints an RS256 ID Token.
+
+        Before the fix the registered application had no signing algorithm and
+        the token endpoint raised ``ImproperlyConfigured`` ("This application
+        does not support signed tokens").
+        """
+        redirect_uri = "https://example.com/cb"
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        assert response.status_code == 201
+        registered = response.json()
+        assert registered["id_token_signed_response_alg"] == "RS256"
+        client_id = registered["client_id"]
+
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": client_id,
+                "response_type": "code",
+                "redirect_uri": redirect_uri,
+                "scope": "openid",
+                "state": "random_state_string",
+                "nonce": "random_nonce",
+                "allow": True,
+            },
+        )
+        assert response.status_code == 302, response.content
+        code = parse_qs(urlparse(response["Location"]).query)["code"][0]
+
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+            },
+        )
+        assert response.status_code == 200, response.content
+        content = response.json()
+        assert "id_token" in content
+
+        key = jwk.JWK.from_pem(presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"].encode("utf8"))
+        verified = jwt.JWT(key=key, jwt=content["id_token"])
+        assert verified.token.jose_header["alg"] == "RS256"
+        claims = json.loads(verified.claims)
+        assert claims["aud"] == client_id
+        assert claims["nonce"] == "random_nonce"
 
 
 # ---------------------------------------------------------------------------

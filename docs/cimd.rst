@@ -45,6 +45,30 @@ methods, and asymmetric methods such as ``private_key_jwt`` are not implemented)
 not contain a ``client_secret`` — and the document must register at least one redirect URI (only
 redirect-based grants are supported), matched exactly as for any other application.
 
+The stored application is provisioned to sign ID Tokens with ``RS256`` whenever OpenID Connect is
+enabled and the server has an ``OIDC_RSA_PRIVATE_KEY``, so a CIMD client can use OpenID Connect
+without any manual step. This is the OpenID Connect Dynamic Client Registration 1.0 default for
+``id_token_signed_response_alg``, and the only algorithm a public client can use (``HS256`` signs with
+the client secret). A document may name ``id_token_signed_response_alg`` explicitly; a value the
+server cannot honour, which today means anything other than ``RS256``, makes the document invalid
+rather than being silently replaced, since a CIMD client receives no registration response in which
+a substituted value could be reported. Without OpenID Connect and a server key the application is
+stored with no signing algorithm and cannot be issued ID Tokens; plain OAuth 2.0 flows still work.
+The algorithm is re-derived on every re-fetch, so configuring the key later takes effect once the
+cached metadata expires, and a row provisioned with the default drops ``RS256`` again once the key
+is removed. The derivation uses the settings of whichever process performs the re-fetch and is
+persisted for every node sharing the database, so all nodes must agree on ``OIDC_ENABLED`` and
+``OIDC_RSA_PRIVATE_KEY``: one node without them would strip ``RS256`` from the row for all of them
+until the next expiry. A re-fetch that changes the algorithm is logged at ``INFO`` by the
+``oauth2_provider.authorization_server.cimd`` logger. A document that asks for ``RS256`` explicitly
+is instead refused on re-fetch in that
+state, like any other document the server cannot honour, so its last good registration is kept,
+still marked ``RS256``: plain OAuth 2.0 flows keep working, ``openid`` requests fail until the key
+returns or the document changes. The same applies to a document that names any other algorithm: it
+was accepted before this behaviour existed, with the parameter ignored, and is now refused on every
+re-fetch, so such a client keeps its last good registration but no longer picks up document changes
+until the parameter is removed or set to ``RS256``.
+
 Settings
 --------
 

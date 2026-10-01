@@ -22,6 +22,7 @@ import logging
 import re
 import threading
 from datetime import timedelta
+from typing import Any
 from urllib.parse import urlparse
 
 from django.core.cache import cache
@@ -30,6 +31,10 @@ from django.db import IntegrityError
 from django.http.request import validate_host
 from django.utils import timezone
 
+from oauth2_provider.authorization_server.oidc.client_metadata import (
+    UnsupportedClientMetadataError,
+    id_token_signing_algorithm,
+)
 from oauth2_provider.core import safe_fetch
 
 # Re-exported for backward compatibility: NAT64_PREFIX was a public module constant
@@ -247,14 +252,16 @@ def _resolve_grant_type(grant_types):
     return grant
 
 
-def _build_application_kwargs(metadata):
+def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     """Convert a CIMD metadata document to public-Application field kwargs.
 
     Requires ``token_endpoint_auth_method`` ``"none"`` — the spec forbids
     shared-secret methods, and asymmetric ones such as ``private_key_jwt``
     (implemented in :mod:`oauth2_provider.authorization_server.client_assertions`) are not yet
     wired to CIMD — rejects any ``client_secret`` property, and requires
-    at least one redirect URI. Returns kwargs; raises :class:`CIMDError` on
+    at least one redirect URI. The ID Token signing algorithm follows
+    ``id_token_signed_response_alg`` (OpenID Connect Dynamic Client
+    Registration 1.0 section 2). Returns kwargs; raises :class:`CIMDError` on
     invalid metadata.
     """
     auth_method = metadata.get("token_endpoint_auth_method", "none")
@@ -283,10 +290,22 @@ def _build_application_kwargs(metadata):
     if not isinstance(client_name, str):
         raise CIMDError("client_name must be a string")
 
+    # Derived on every fetch, so a re-fetch tracks the server's current signing
+    # capability: a row provisioned with the RS256 default drops it once the
+    # key is gone instead of failing model validation on every refresh (which
+    # would freeze the row on its old document for good). A document that asks
+    # for RS256 explicitly is refused in that state like any other document the
+    # server cannot honour, and the last good row stays in service.
+    try:
+        algorithm = id_token_signing_algorithm(metadata)
+    except UnsupportedClientMetadataError as exc:
+        raise CIMDError(str(exc)) from exc
+
     return {
         "name": client_name,
         "redirect_uris": " ".join(redirect_uris),
         "authorization_grant_type": _resolve_grant_type(grant_types),
+        "algorithm": algorithm,
     }
 
 
@@ -343,6 +362,10 @@ def _fetch_validate_upsert(client_id):
             raise CIMDError("client_id URL collides with a non-CIMD application")
     except Application.DoesNotExist:
         application = Application(client_id=client_id)
+    # None for a first sight; otherwise the algorithm the row had before this
+    # fetch, so a change is logged (it is derived from this process's settings
+    # and persisted for every node sharing the database).
+    previous_algorithm = application.algorithm if application.pk else None
 
     application.user = None
     application.client_type = Application.CLIENT_PUBLIC
@@ -373,6 +396,14 @@ def _fetch_validate_upsert(client_id):
             raise CIMDError("client_id row vanished during a concurrent upsert") from exc
         if application.registration_source != Application.RegistrationSource.CIMD:
             raise CIMDError("client_id URL collides with a non-CIMD application")
+    else:
+        if previous_algorithm is not None and application.algorithm != previous_algorithm:
+            log.info(
+                "CIMD application %r ID Token signing algorithm changed from %r to %r on re-fetch",
+                client_id,
+                previous_algorithm,
+                application.algorithm,
+            )
     return application
 
 

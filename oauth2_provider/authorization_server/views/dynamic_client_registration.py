@@ -23,6 +23,13 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from oauth2_provider.authorization_server.oidc.client_metadata import (
+    ID_TOKEN_SIGNED_RESPONSE_ALG,
+    SUPPORTED_ID_TOKEN_ALGS,
+    UnsupportedClientMetadataError,
+    id_token_signed_response_alg,
+    id_token_signing_algorithm,
+)
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.utils import jwk_allows_verification, parse_bearer_token
 from oauth2_provider.models import (
@@ -151,11 +158,15 @@ def _resolve_grant_type(grant_types):
     return dot_grant, None
 
 
-def _build_application_kwargs(data):
+def _build_application_kwargs(
+    data: dict[str, Any], *, current_algorithm: str = ""
+) -> tuple[dict[str, Any] | None, JsonResponse | None]:
     """
     Convert RFC 7591 metadata dict to Application field kwargs.
 
-    Returns (kwargs_dict, error_response).
+    *current_algorithm* is the stored ``algorithm`` on an update (RFC 7592
+    PUT), so a client echoing the value a previous response reported is not
+    refused. Returns (kwargs_dict, error_response).
     """
     kwargs = {}
 
@@ -268,6 +279,31 @@ def _build_application_kwargs(data):
     # way); every other method keeps the hashed-at-rest default.
     kwargs["hash_client_secret"] = auth_method != "client_secret_jwt"
 
+    # id_token_signed_response_alg → algorithm (OpenID Connect Dynamic Client
+    # Registration 1.0 section 2). Always set, so a PUT without it resets to
+    # the default like the fields above (RFC 7592 section 2.2).
+    try:
+        kwargs["algorithm"] = id_token_signing_algorithm(data, current=current_algorithm)
+    except UnsupportedClientMetadataError as exc:
+        return None, _error_response("invalid_client_metadata", str(exc))
+    # An echoed value registration would not itself grant (an administrator's
+    # HS256) is kept only while the rest of this request still allows it:
+    # HS256 signs with the plaintext secret, so the client must stay on
+    # client_secret_jwt and off the implicit/hybrid grants. Application.clean()
+    # enforces the same rule, but in terms of hash_client_secret and
+    # algorithm, fields a registering client cannot set; fail here with the
+    # RFC names instead.
+    if kwargs["algorithm"] and kwargs["algorithm"] not in SUPPORTED_ID_TOKEN_ALGS:
+        if auth_method != "client_secret_jwt" or dot_grant in (
+            AbstractApplication.GRANT_IMPLICIT,
+            AbstractApplication.GRANT_OPENID_HYBRID,
+        ):
+            return None, _error_response(
+                "invalid_client_metadata",
+                f"{ID_TOKEN_SIGNED_RESPONSE_ALG} {kwargs['algorithm']!r} requires "
+                "token_endpoint_auth_method client_secret_jwt and a grant type other than implicit",
+            )
+
     return kwargs, None
 
 
@@ -339,6 +375,12 @@ def _application_to_response(
             data["jwks"] = jwks
     if application.client_jwks_uri:
         data["jwks_uri"] = application.client_jwks_uri
+    # Reported even when the server chose it (OpenID Connect Dynamic Client
+    # Registration 1.0 section 3.2: the response includes every registered
+    # value, including those the provider provisioned itself).
+    signing_alg = id_token_signed_response_alg(application)
+    if signing_alg is not None:
+        data["id_token_signed_response_alg"] = signing_alg
     return data
 
 
@@ -573,7 +615,7 @@ class DynamicClientRegistrationManagementView(View):
         if err:
             return err
 
-        app_kwargs, err = _build_application_kwargs(data)
+        app_kwargs, err = _build_application_kwargs(data, current_algorithm=application.algorithm)
         if err:
             return err
 

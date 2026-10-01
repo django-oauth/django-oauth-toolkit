@@ -10,6 +10,7 @@ import pytest
 import requests
 
 from tests.e2e import constants as c
+from tests.e2e.helpers.jwt_tools import decode_header, validate_id_token
 
 
 def _register(oauth, metadata):
@@ -90,8 +91,7 @@ def test_registered_client_can_complete_authorization_code_flow(oauth, user_sess
         },
     )
 
-    # Use a non-OIDC scope: a dynamically registered client has no configured
-    # signing algorithm, so it cannot mint ID Tokens (openid scope).
+    # A plain OAuth 2.0 scope; the OpenID Connect path is covered below.
     result = oauth.authorize(
         user_session,
         client_id=created["client_id"],
@@ -109,3 +109,41 @@ def test_registered_client_can_complete_authorization_code_flow(oauth, user_sess
     )
     assert token_resp.status_code == 200
     assert token_resp.json()["access_token"]
+
+
+@pytest.mark.compliance("RFC 7591", "3.1", "Registered client is provisioned to receive ID Tokens")
+def test_registered_public_client_receives_id_token(oauth, user_session, issuer):
+    """OpenID Connect for a dynamically registered client (#1853).
+
+    Nothing is said about ``id_token_signed_response_alg``, so the OpenID
+    Connect Dynamic Client Registration 1.0 default of RS256 applies: the
+    response reports it and an ``openid`` code flow mints an ID Token
+    verifiable against the IdP's JWKS.
+    """
+    created = _register_ok(
+        oauth,
+        {
+            "client_name": "OpenID Client",
+            "redirect_uris": [c.REDIRECT_URI],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+        },
+    )
+    assert created["id_token_signed_response_alg"] == "RS256"
+
+    result = oauth.authorize(
+        user_session,
+        client_id=created["client_id"],
+        response_type="code",
+        redirect_uri=c.REDIRECT_URI,
+        scope="openid",
+        nonce="n-dcr",
+    )
+    token_resp = oauth.exchange_code(
+        client_id=created["client_id"], code=result.query_params["code"], redirect_uri=c.REDIRECT_URI
+    )
+    assert token_resp.status_code == 200, token_resp.text
+    id_token = token_resp.json()["id_token"]
+    assert decode_header(id_token)["alg"] == "RS256"
+    claims = validate_id_token(id_token, issuer=issuer, audience=created["client_id"])
+    assert claims["nonce"] == "n-dcr"

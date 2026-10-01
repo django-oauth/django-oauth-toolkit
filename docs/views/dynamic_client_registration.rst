@@ -90,6 +90,31 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``token_endpoint_auth_method: ...`` | ``client_type = "confidential"``  | Default                          |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``id_token_signed_response_alg``    | ``algorithm``                     | ``RS256`` by default when OIDC   |
+|                                     |                                   | is enabled and the server has an |
+|                                     |                                   | ``OIDC_RSA_PRIVATE_KEY``; see    |
+|                                     |                                   | the note below                   |
++-------------------------------------+-----------------------------------+----------------------------------+
+
+.. note::
+    ``id_token_signed_response_alg`` (`OpenID Connect Dynamic Client Registration 1.0 section 2
+    <https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata>`_) selects the
+    algorithm the application signs ID Tokens with. When omitted, the OpenID Connect default of
+    ``RS256`` applies whenever OpenID Connect is enabled and the server has an
+    ``OIDC_RSA_PRIVATE_KEY``, so a dynamically registered client can use OpenID Connect without any
+    manual step; otherwise the application is stored with no signing algorithm and cannot be issued
+    ID Tokens. An explicit value the server cannot honour is rejected with ``invalid_client_metadata``
+    rather than substituted; today that is anything other than ``RS256``, since ``HS256`` signs with
+    the plaintext client secret, which registration stores hashed (honouring it for
+    ``client_secret_jwt`` clients, whose secret is kept in plaintext, is tracked in
+    `#1871 <https://github.com/django-oauth/django-oauth-toolkit/issues/1871>`_). The registered
+    value is reported in registration and management responses, and ``PUT`` re-derives it like every
+    other field, so a client registered before the server could sign gains ``RS256`` on its next
+    update. A ``PUT`` that sends back the value a previous response reported keeps it, even one set
+    outside registration (an administrator choosing ``HS256``), since RFC 7592 has the client echo
+    every field it was given, provided the server can still sign with it and the rest of the update
+    leaves the application valid for it (``HS256`` needs ``client_secret_jwt`` and a non-implicit
+    grant); omitting the parameter on ``PUT`` resets it to the default.
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since
