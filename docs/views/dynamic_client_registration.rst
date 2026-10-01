@@ -90,23 +90,24 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``token_endpoint_auth_method: ...`` | ``client_type = "confidential"``  | Default                          |
 +-------------------------------------+-----------------------------------+----------------------------------+
-| ``id_token_signed_response_alg``    | ``algorithm``                     | Defaults to ``RS256`` when the   |
+| ``id_token_signed_response_alg``    | ``algorithm``                     | ``RS256`` by default when the    |
 |                                     |                                   | server has an                    |
 |                                     |                                   | ``OIDC_RSA_PRIVATE_KEY``; see    |
 |                                     |                                   | the note below                   |
 +-------------------------------------+-----------------------------------+----------------------------------+
 
 .. note::
-    ``id_token_signed_response_alg`` (OpenID Connect Dynamic Client Registration 1.0, section 2)
-    selects the algorithm the application signs ID Tokens with. When omitted, the OIDC default of
-    ``RS256`` applies whenever the server has an ``OIDC_RSA_PRIVATE_KEY`` configured, so a
-    dynamically registered client can use OpenID Connect without any manual step; without a server
-    key the application is stored with no signing algorithm and cannot receive ID Tokens. An explicit
-    value the server cannot honour -- today anything other than ``RS256``, since ``HS256`` signs with
-    the plaintext client secret, which registration stores hashed -- is rejected with
-    ``invalid_client_metadata`` rather than substituted. The registered algorithm is reported in the
-    registration and management responses. ``PUT`` re-derives it like every other field, so a client
-    registered before the server could sign gains ``RS256`` on its next update.
+    ``id_token_signed_response_alg`` (`OpenID Connect Dynamic Client Registration 1.0 section 2
+    <https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata>`_) selects the
+    algorithm the application signs ID Tokens with. When omitted, the OpenID Connect default of
+    ``RS256`` applies whenever the server has an ``OIDC_RSA_PRIVATE_KEY``, so a dynamically registered
+    client can use OpenID Connect without any manual step; without a server key the application is
+    stored with no signing algorithm and cannot be issued ID Tokens. An explicit value the server
+    cannot honour is rejected with ``invalid_client_metadata`` rather than substituted; today that is
+    anything other than ``RS256``, since ``HS256`` signs with the plaintext client secret, which
+    registration stores hashed. The registered value is reported in registration and management
+    responses, and ``PUT`` re-derives it like every other field, so a client registered before the
+    server could sign gains ``RS256`` on its next update.
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since

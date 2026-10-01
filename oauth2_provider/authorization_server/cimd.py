@@ -31,9 +31,9 @@ from django.db import IntegrityError
 from django.http.request import validate_host
 from django.utils import timezone
 
-from oauth2_provider.authorization_server.oidc.registration import (
-    UnsupportedClientMetadata,
-    resolve_id_token_signing_algorithm,
+from oauth2_provider.authorization_server.oidc.client_metadata import (
+    UnsupportedClientMetadataError,
+    id_token_signing_algorithm,
 )
 from oauth2_provider.core import safe_fetch
 
@@ -259,7 +259,9 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     shared-secret methods, and asymmetric ones such as ``private_key_jwt``
     (implemented in :mod:`oauth2_provider.authorization_server.client_assertions`) are not yet
     wired to CIMD — rejects any ``client_secret`` property, and requires
-    at least one redirect URI. Returns kwargs; raises :class:`CIMDError` on
+    at least one redirect URI. The ID Token signing algorithm follows
+    ``id_token_signed_response_alg`` (OpenID Connect Dynamic Client
+    Registration 1.0 section 2). Returns kwargs; raises :class:`CIMDError` on
     invalid metadata.
     """
     auth_method = metadata.get("token_endpoint_auth_method", "none")
@@ -288,12 +290,12 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(client_name, str):
         raise CIMDError("client_name must be a string")
 
-    # Always set, so a re-fetch tracks the server's current signing capability
-    # (a row provisioned with RS256 must drop it once the key is removed, or it
-    # would fail model validation on every refresh and never update again).
+    # Derived on every fetch, so a re-fetch tracks the server's current signing
+    # key instead of failing model validation over a stale RS256 once the key
+    # is gone (which would freeze the row on its old document for good).
     try:
-        algorithm = resolve_id_token_signing_algorithm(metadata)
-    except UnsupportedClientMetadata as exc:
+        algorithm = id_token_signing_algorithm(metadata)
+    except UnsupportedClientMetadataError as exc:
         raise CIMDError(str(exc)) from exc
 
     return {
