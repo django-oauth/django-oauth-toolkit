@@ -157,6 +157,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conventions are documented in `docs/package_layout.rst` (and summarized for agents in `AGENTS.md`).
 
 ### Deprecated
+* `oauth2_provider.core.backends_oauthlib._add_iss_to_redirect` was promoted to the public
+  `oauth2_provider.core.utils.add_iss_to_redirect`, so the view layer and external code can
+  build RFC 9207-compliant redirects without importing a private name. The old private name
+  (and its `oauth2_provider.oauth2_backends` shim re-export) still resolves to the same
+  function but emits a `DeprecationWarning` and will be removed in django-oauth-toolkit 4.0.
 * #657 The `False` default of the new `REQUIRE_FORM_ENCODED_REQUEST_BODY` setting, which is scheduled
   to become `True` in 4.0. Until then a POST body that is not `application/x-www-form-urlencoded` still
   reaches the token, revocation, introspection, device-authorization and PAR endpoints, but each one
@@ -197,6 +202,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1846 The `iss` authorization-response parameter (RFC 9207, gated by
+  `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`) is now added to error redirects as well as
+  successful ones. RFC 9207 §2 requires it on every authorization response, but it was only
+  ever added on the success path in `create_authorization_response`; an error redirect (e.g.
+  the resource owner denying access) built its `Location` header directly in
+  `AuthorizationServerViewMixin.error_response` with no `iss` injection at all. The
+  `prompt=none` `login_required` error redirect (OIDC Core §3.1.2.6), built separately in
+  `AuthorizationView.handle_no_permission`, now carries `iss` as well (#1863). Note that
+  OIDC Core §3.1.2.6 says error responses "SHOULD NOT" carry parameters beyond `error` and
+  `state`; RFC 9207's later, specific MUST — advertised through
+  `authorization_response_iss_parameter_supported` and opted into via this setting — is why
+  `iss` is added regardless.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such

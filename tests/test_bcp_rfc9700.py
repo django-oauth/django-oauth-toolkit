@@ -17,7 +17,7 @@ from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
-from oauth2_provider.core.backends_oauthlib import _add_iss_to_redirect
+from oauth2_provider.core.utils import add_iss_to_redirect
 from oauth2_provider.models import get_access_token_model, get_application_model, set_token_value
 from oauth2_provider.views import ProtectedResourceView
 
@@ -182,6 +182,100 @@ class TestPkcePlainGate(TestCase):
         # RFC 9207: the issuer (matching the metadata issuer) is echoed on the redirect.
         self.assertIn("iss=http%3A%2F%2Ftestserver%2Fo", response["Location"])
 
+    def test_iss_added_to_authorization_error_redirect(self):
+        # RFC 9207 §2 requires `iss` on error responses too, not just successful ones.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        self.client.login(username="co", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://example.org/cb",
+                "scope": "read",
+                "state": "abc",
+                "allow": False,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=access_denied", response["Location"])
+        self.assertIn("iss=http%3A%2F%2Ftestserver%2Fo", response["Location"])
+        # Adding `iss` re-encodes the query; the RFC 6749-required `state` echo and
+        # the error code must survive untouched alongside it.
+        self.assertIn("state=abc", response["Location"])
+
+    def test_iss_not_added_to_fatal_error_page(self):
+        # RFC 6749 §4.1.2.1: a mismatching redirect_uri is never redirected to; the
+        # error is rendered to the resource owner instead. RFC 9207 §2 covers only
+        # responses returned to the client, so the rejected URI gets no `iss` even
+        # with the gate enabled.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        self.client.login(username="co", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://attacker.example/cb",
+                "scope": "read",
+                "state": "abc",
+                "allow": True,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertNotIn("iss=", response.context["url"])
+
+    def _prompt_none_unauthenticated(self):
+        # No login: handle_no_permission() builds the OIDC Core 3.1.2.6
+        # login_required error redirect for prompt=none.
+        return self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://example.org/cb",
+                "scope": "read",
+                "state": "abc",
+                "prompt": "none",
+                "code_challenge": "a" * 43,
+                "code_challenge_method": "plain",
+            },
+        )
+
+    def test_iss_added_to_prompt_none_login_required_redirect(self):
+        # The login_required redirect is an authorization error response too, so
+        # RFC 9207 §2 applies to it just like the error_response-built redirects.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        response = self._prompt_none_unauthenticated()
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=login_required", response["Location"])
+        self.assertIn("state=abc", response["Location"])
+        self.assertIn("iss=http%3A%2F%2Ftestserver%2Fo", response["Location"])
+
+    def test_iss_omitted_from_prompt_none_login_required_redirect_by_default(self):
+        response = self._prompt_none_unauthenticated()
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=login_required", response["Location"])
+        self.assertNotIn("iss=", response["Location"])
+
+    def test_iss_omitted_from_authorization_error_redirect_by_default(self):
+        self.client.login(username="co", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://example.org/cb",
+                "scope": "read",
+                "state": "abc",
+                "allow": False,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=access_denied", response["Location"])
+        self.assertNotIn("iss=", response["Location"])
+
     def test_iss_omitted_by_default(self):
         self.client.login(username="co", password="123456")
         response = self.client.post(
@@ -337,13 +431,13 @@ def test_bcp_filter_response_types_is_token_order_independent(oauth2_settings):
 
 
 def test_add_iss_to_redirect_query():
-    result = _add_iss_to_redirect("https://c.example/cb?code=abc&state=x", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb?code=abc&state=x", "https://as.example")
     assert result == "https://c.example/cb?code=abc&state=x&iss=https%3A%2F%2Fas.example"
 
 
 def test_add_iss_to_redirect_replaces_existing_iss():
     # RFC 9207 requires a single issuer: a pre-existing iss must be dropped.
-    result = _add_iss_to_redirect("https://c.example/cb?code=abc&iss=evil", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb?code=abc&iss=evil", "https://as.example")
     assert result.count("iss=") == 1
     assert "iss=https%3A%2F%2Fas.example" in result
     assert "evil" not in result
@@ -351,14 +445,14 @@ def test_add_iss_to_redirect_replaces_existing_iss():
 
 def test_add_iss_to_redirect_single_iss_across_query_and_fragment():
     # A query iss on a fragment (implicit/hybrid) response must not leave two iss values.
-    result = _add_iss_to_redirect("https://c.example/cb?iss=evil#access_token=abc", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb?iss=evil#access_token=abc", "https://as.example")
     assert result.count("iss=") == 1
     assert "evil" not in result
     assert "iss=https%3A%2F%2Fas.example" in result
 
 
 def test_add_iss_to_redirect_fragment():
-    result = _add_iss_to_redirect("https://c.example/cb#access_token=abc", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb#access_token=abc", "https://as.example")
     assert result.startswith("https://c.example/cb#")
     assert "iss=https%3A%2F%2Fas.example" in result
     assert "?" not in result  # added to the fragment, not the query

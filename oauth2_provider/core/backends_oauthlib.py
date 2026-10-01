@@ -1,7 +1,6 @@
 import json
 import warnings
-from urllib.parse import parse_qsl, urlparse, urlunparse
-from urllib.parse import urlencode as stdlib_urlencode
+from urllib.parse import urlparse, urlunparse
 
 from django.http import HttpRequest
 from oauthlib import oauth2
@@ -11,29 +10,8 @@ from oauthlib.oauth2 import OAuth2Error
 
 from oauth2_provider.core.bcp import bcp_compliant
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
+from oauth2_provider.core.utils import add_iss_to_redirect
 from oauth2_provider.settings import oauth2_settings
-
-
-def _add_iss_to_redirect(uri, issuer):
-    """
-    Append the RFC 9207 ``iss`` parameter to an authorization-response redirect URI.
-
-    The parameter is added to the fragment for implicit responses (which carry their
-    parameters in the fragment) and to the query component otherwise.
-    """
-    parts = list(urlparse(uri))
-    # RFC 9207 requires a single, unambiguous issuer, so drop any pre-existing `iss`
-    # from BOTH the query and the fragment (e.g. one carried in the registered redirect
-    # URI) before adding the server's value to whichever component carries the response.
-    query = [(k, v) for k, v in parse_qsl(parts[4], keep_blank_values=True) if k != "iss"]
-    fragment = [(k, v) for k, v in parse_qsl(parts[5], keep_blank_values=True) if k != "iss"]
-    if parts[5]:  # fragment present -> implicit/hybrid front-channel response
-        fragment.append(("iss", issuer))
-    else:
-        query.append(("iss", issuer))
-    parts[4] = stdlib_urlencode(query)
-    parts[5] = stdlib_urlencode(fragment)
-    return urlunparse(parts)
 
 
 class OAuthLibCore:
@@ -185,7 +163,7 @@ class OAuthLibCore:
             # by the `--deploy` system check W005 rather than a per-response warning.
             if uri is not None and oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
                 issuer = oauth2_settings.oauth2_authorization_server_issuer(request)
-                uri = _add_iss_to_redirect(uri, issuer)
+                uri = add_iss_to_redirect(uri, issuer)
                 headers["Location"] = uri
 
             return uri, headers, body, status
@@ -344,3 +322,19 @@ def get_oauthlib_core():
     server_kwargs = oauth2_settings.server_kwargs
     server = oauth2_settings.OAUTH2_SERVER_CLASS(validator, **server_kwargs)
     return oauth2_settings.OAUTH2_BACKEND_CLASS(server)
+
+
+def __getattr__(name):
+    # `_add_iss_to_redirect` moved to `oauth2_provider.core.utils.add_iss_to_redirect`
+    # (public). Serve the old private name dynamically so existing imports keep
+    # working while warning, without shadowing the canonical helper.
+    if name == "_add_iss_to_redirect":
+        warnings.warn(
+            "oauth2_provider.core.backends_oauthlib._add_iss_to_redirect has moved to "
+            "oauth2_provider.core.utils.add_iss_to_redirect. The old private name is "
+            "deprecated and will be removed in django-oauth-toolkit 4.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return add_iss_to_redirect
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
