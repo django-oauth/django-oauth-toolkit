@@ -15,37 +15,54 @@ import os
 import django
 
 
-# The suite's test endpoints live under /test/a/<alias>/ on its public base URL.
-SUITE_ALIAS_BASE = "https://localhost.emobix.co.uk:8443/test/a/dot"
-# The second URI, with a query component, is what the suite's redirect-URI
-# matching modules use.
-REDIRECT_URIS = [
-    f"{SUITE_ALIAS_BASE}/callback",
-    f"{SUITE_ALIAS_BASE}/callback?dummy1=lorem&dummy2=ipsum",
-]
-POST_LOGOUT_REDIRECT_URIS = [f"{SUITE_ALIAS_BASE}/post_logout_redirect"]
+# The suite's test endpoints live under /test/a/<alias>/ on its public base URL,
+# and each static configuration file has its own alias.
+SUITE_BASE = "https://localhost.emobix.co.uk:8443/test/a"
 
 USERNAME = "conformance"
 PASSWORD = "conformance-password"
 
 # One pair of clients per authorization grant type: an Application serves exactly
 # one grant type, and the Basic, Implicit and Hybrid plans each need the matching
-# one. (client_id, client_secret) per pair; the ids are what config/generate.py
-# puts in the "client" / "client2" blocks of the static-client configurations.
+# one. Keyed by grant type, each entry is the configuration's alias (config/
+# generate.py) and the (client_id, client_secret) pairs it puts in the "client" /
+# "client2" blocks.
 CLIENTS_BY_GRANT = {
-    "authorization-code": [
-        ("openid-conformance-suite-client-1", "openid-conformance-suite-secret-1"),
-        ("openid-conformance-suite-client-2", "openid-conformance-suite-secret-2"),
-    ],
-    "implicit": [
-        ("openid-conformance-suite-implicit-1", "openid-conformance-suite-implicit-secret-1"),
-        ("openid-conformance-suite-implicit-2", "openid-conformance-suite-implicit-secret-2"),
-    ],
-    "openid-hybrid": [
-        ("openid-conformance-suite-hybrid-1", "openid-conformance-suite-hybrid-secret-1"),
-        ("openid-conformance-suite-hybrid-2", "openid-conformance-suite-hybrid-secret-2"),
-    ],
+    "authorization-code": (
+        "dot",
+        [
+            ("openid-conformance-suite-client-1", "openid-conformance-suite-secret-1"),
+            ("openid-conformance-suite-client-2", "openid-conformance-suite-secret-2"),
+        ],
+    ),
+    "implicit": (
+        "dot-implicit",
+        [
+            ("openid-conformance-suite-implicit-1", "openid-conformance-suite-implicit-secret-1"),
+            ("openid-conformance-suite-implicit-2", "openid-conformance-suite-implicit-secret-2"),
+        ],
+    ),
+    "openid-hybrid": (
+        "dot-hybrid",
+        [
+            ("openid-conformance-suite-hybrid-1", "openid-conformance-suite-hybrid-secret-1"),
+            ("openid-conformance-suite-hybrid-2", "openid-conformance-suite-hybrid-secret-2"),
+        ],
+    ),
 }
+
+
+def redirect_uris(alias: str) -> list[str]:
+    # The second URI, with a query component, is what the suite's redirect-URI
+    # matching modules use.
+    return [
+        f"{SUITE_BASE}/{alias}/callback",
+        f"{SUITE_BASE}/{alias}/callback?dummy1=lorem&dummy2=ipsum",
+    ]
+
+
+def post_logout_redirect_uris(alias: str) -> list[str]:
+    return [f"{SUITE_BASE}/{alias}/post_logout_redirect"]
 
 
 def main() -> None:
@@ -67,7 +84,7 @@ def main() -> None:
 
     application_model = get_application_model()
     count = 0
-    for grant_type, clients in CLIENTS_BY_GRANT.items():
+    for grant_type, (alias, clients) in CLIENTS_BY_GRANT.items():
         for index, (client_id, client_secret) in enumerate(clients, start=1):
             application_model.objects.update_or_create(
                 client_id=client_id,
@@ -78,8 +95,8 @@ def main() -> None:
                     "authorization_grant_type": grant_type,
                     "client_secret": client_secret,
                     "algorithm": application_model.RS256_ALGORITHM,
-                    "redirect_uris": " ".join(REDIRECT_URIS),
-                    "post_logout_redirect_uris": " ".join(POST_LOGOUT_REDIRECT_URIS),
+                    "redirect_uris": " ".join(redirect_uris(alias)),
+                    "post_logout_redirect_uris": " ".join(post_logout_redirect_uris(alias)),
                 },
             )
             count += 1
