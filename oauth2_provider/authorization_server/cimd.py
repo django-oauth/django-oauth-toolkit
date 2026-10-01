@@ -93,11 +93,15 @@ class CIMDPolicyError(CIMDError):
     """This server's policy refuses a document that is otherwise acceptable.
 
     Raised when a document chooses an authentication method this server could
-    register but does not (see :func:`_supported_auth_methods`). Like a denial
-    by the permission classes, it is not a fetch or validation failure, so the
-    resolver does not arm the failure backoff for it: the backoff is shared by
-    every node using the cache, and a refusal by one node must not block the
-    nodes whose policy accepts the document.
+    register but does not (see :func:`_supported_auth_methods`). It is not a
+    fetch or validation failure, so the resolver does not arm the shared failure
+    backoff for it: that backoff is shared by every node using the cache, and a
+    refusal by one node must not block the nodes whose policy accepts the
+    document. It arms a policy backoff instead (see
+    :func:`_policy_backoff_cache_key`), whose key includes a digest of this
+    node's policy: refetches are bounded, nodes with the same policy share the
+    backoff, nodes with a different policy never see it, and a policy change
+    takes effect at once.
     """
 
 
@@ -551,15 +555,30 @@ def _backoff_cache_key(client_id):
     return BACKOFF_CACHE_PREFIX + digest
 
 
+def _policy_backoff_cache_key(client_id: str) -> str:
+    """Return the policy-refusal backoff cache key for *client_id*.
+
+    Distinct from :func:`_backoff_cache_key`: the key also carries a digest of
+    this node's authentication-method policy (:func:`_supported_auth_methods`),
+    so only nodes with the same policy share it, and a policy change yields a
+    new key and takes effect on the next request. Both parts are hashed so the
+    key stays within a cache backend's key-length limit.
+    """
+    client_digest = hashlib.sha256(client_id.encode("utf-8")).hexdigest()
+    policy = ",".join(sorted(_supported_auth_methods()))
+    policy_digest = hashlib.sha256(policy.encode("utf-8")).hexdigest()
+    return f"{BACKOFF_CACHE_PREFIX}policy:{client_digest}:{policy_digest}"
+
+
 def resolve_cimd_application(client_id: str, request: Request) -> AbstractApplication | None:
     """Resolve a CIMD *client_id* URL to a persisted Application, or None.
 
     Returns None (the caller then treats the client as unknown) when CIMD is
     disabled, the id is not a CIMD URL, registration is refused by the
     permission classes or by this server's authentication-method policy, the
-    URL is in failure backoff, the in-flight cap is reached, or the document is
-    missing or invalid. *request* is the oauthlib request the client_id arrived
-    on; it is forwarded to the permission classes.
+    URL is in failure or policy-refusal backoff, the in-flight cap is reached,
+    or the document is missing or invalid. *request* is the oauthlib request
+    the client_id arrived on; it is forwarded to the permission classes.
     """
     if not oauth2_settings.CIMD_ENABLED or not is_cimd_client_id(client_id):
         return None
@@ -574,6 +593,9 @@ def resolve_cimd_application(client_id: str, request: Request) -> AbstractApplic
     backoff_key = _backoff_cache_key(client_id)
     if cache.get(backoff_key):
         return None
+    policy_backoff_key = _policy_backoff_cache_key(client_id)
+    if cache.get(policy_backoff_key):
+        return None
 
     with _fetch_slot() as acquired:
         if not acquired:
@@ -583,10 +605,12 @@ def resolve_cimd_application(client_id: str, request: Request) -> AbstractApplic
         try:
             return _fetch_validate_upsert(client_id)
         except CIMDPolicyError as exc:
-            # A policy refusal, like the permission-class denial above: not
-            # backed off, so it neither blocks nodes whose policy accepts the
-            # document nor outlives a change to this node's policy.
+            # A policy refusal arms only the policy-scoped backoff, never the
+            # shared one: refetches are bounded, yet it neither blocks nodes
+            # whose policy accepts the document nor outlives a change to this
+            # node's policy (which yields a different key).
             log.info("CIMD registration refused by server policy for %r: %r", client_id, exc)
+            cache.set(policy_backoff_key, True, oauth2_settings.CIMD_FAILURE_BACKOFF_SECONDS)
             return None
         except CIMDError as exc:
             log.info("CIMD resolution failed for %r: %r", client_id, exc)

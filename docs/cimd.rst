@@ -75,10 +75,12 @@ client before. Such a client can then neither start an authorization request at 
 authenticate to it as a client, so it obtains no new tokens there, not even by refreshing; access
 tokens already issued to it stay valid until they expire or are revoked. The stored application is
 left as it is, so advertising the method again restores the
-client without a re-fetch, and the refusal is a policy decision rather than a failed fetch, so it does
-not arm the failure backoff that the nodes share. Any other method is refused, including
-every shared-secret one, which the draft forbids (section 4.1) because CIMD provides no way to
-establish a shared secret.
+client without a re-fetch. The refusal is a policy decision rather than a failed fetch, so it does
+not arm the failure backoff that the nodes share; it arms a backoff of its own, also lasting
+``CIMD_FAILURE_BACKOFF_SECONDS``, whose cache key includes a digest of the node's policy. Refetches
+of a refused document are bounded, but the refusal neither blocks nodes with a different policy nor
+outlives a policy change. Any other method is refused, including every shared-secret one, which the
+draft forbids (section 4.1) because CIMD provides no way to establish a shared secret.
 
 The same policy applies when the document of a client stored with ``none`` switches to
 ``private_key_jwt``. A node that does not advertise the method refuses the re-fetched document, and
@@ -157,7 +159,9 @@ Settings
     within these bounds; ``no-store`` / ``no-cache`` use the lower bound; absence uses the upper bound.
 
 ``CIMD_FAILURE_BACKOFF_SECONDS`` (default ``60``)
-    After a failed fetch, the same URL is not fetched again for this long.
+    After a failed fetch, the same URL is not fetched again for this long. A document refused by the
+    server's authentication-method policy is not fetched again for this long by nodes with the same
+    policy.
 
 ``CIMD_MAX_CONCURRENT_FETCHES`` (default ``10``)
     Maximum number of in-flight fetches. Requests over the cap fail fast rather than queue. Set to
@@ -221,8 +225,13 @@ Denial of service
     up workers. This is bounded by the tight ``CIMD_FETCH_TIMEOUT_SECONDS`` (connect, read, and total),
     the ``CIMD_MAX_CONCURRENT_FETCHES`` in-flight cap (excess requests fail fast), and the
     ``CIMD_FAILURE_BACKOFF_SECONDS`` per-URL backoff that suppresses repeated fetches of a failing URL.
-    Both the cap and the backoff are **per process** (the backoff lives in Django's cache; under the
-    default local-memory backend it is per process), so across *N* server processes the real ceilings
+    A document refused by the server's authentication-method policy (described above) is fetched
+    successfully, so it does not arm that shared backoff, but it arms a backoff of the same length
+    scoped to the node's policy, so neither first sight of such a document nor a stored client whose
+    method was de-advertised can make the server refetch it on every request, while a node with a
+    different policy is never blocked and a policy change takes effect at once. Both the cap and the
+    backoffs are **per process** (the backoffs live in Django's cache; under the default local-memory
+    backend they are per process), so across *N* server processes the real ceilings
     are ``× N``. Using a shared cache backend and adding per-source-IP rate limiting on the
     authorization endpoint (a reverse proxy or middleware) is **highly recommended** to make these
     bounds effective.

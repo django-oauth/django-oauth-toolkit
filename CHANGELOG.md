@@ -32,10 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discovery document. Any other server refuses a `private_key_jwt` document, as it did before, and
   will not load a client already stored with that method, so the client can obtain no new tokens
   there, by refreshing or otherwise; access tokens already issued to it stay valid until they expire
-  or are revoked. A fetch refused this way does not arm the CIMD failure backoff. The method is
-  recorded in the application's `token_endpoint_auth_method` field. A refetched document replaces
-  the stored method and key source, so keys rotate and a client can move between `none` and
-  `private_key_jwt` without leaving stale key material behind; each such change is logged at `INFO`.
+  or are revoked. A fetch refused this way arms a backoff scoped to the node's policy rather than
+  the CIMD failure backoff the nodes share, so refetches are bounded without blocking nodes with a
+  different policy or outliving a policy change. The method is recorded in the application's
+  `token_endpoint_auth_method` field. A refetched document replaces the stored method and key
+  source, so keys rotate and a client can move between `none` and `private_key_jwt` without leaving
+  stale key material behind; each such change is logged at `INFO`.
   Being confidential, a `private_key_jwt` CIMD client keeps the default `can_introspect=True` and so
   can introspect by authenticating with a client assertion, which a public client cannot (see #1451
   under Security). Where anyone can host a metadata document (CIMD with no host allowlist), anyone

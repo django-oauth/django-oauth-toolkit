@@ -710,24 +710,50 @@ def test_resolve_confidential_document_rejected(cimd_enabled):
 
 
 @pytest.mark.django_db(databases="__all__")
-def test_resolve_unadvertised_private_key_jwt_does_not_back_off(cimd_enabled, mocker, caplog):
-    """The method gate is a policy refusal, like a permission-class denial: no backoff."""
+def test_resolve_unadvertised_private_key_jwt_backs_off_per_policy(cimd_enabled, mocker, caplog):
+    """The method gate arms a backoff scoped to this node's policy, never the shared one."""
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_PrivateKeyJWTFetcher)
+    cimd_enabled.CIMD_FAILURE_BACKOFF_SECONDS = 17
     fetch = mocker.spy(_PrivateKeyJWTFetcher, "fetch")
+    cache_set = mocker.spy(cimd.cache, "set")
 
     with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
         assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert "refused by server policy" in caplog.text
-    assert cache.get(cimd._backoff_cache_key(CLIENT_URL)) is None
     assert not Application.objects.filter(client_id=CLIENT_URL).exists()
+    # The shared failure backoff would block nodes whose policy accepts the document.
+    assert cache.get(cimd._backoff_cache_key(CLIENT_URL)) is None
+    assert cache.get(cimd._policy_backoff_cache_key(CLIENT_URL))
+    # The policy backoff lapses after CIMD_FAILURE_BACKOFF_SECONDS, like the shared one.
+    cache_set.assert_called_once_with(cimd._policy_backoff_cache_key(CLIENT_URL), True, 17)
 
-    # A node that advertises the method registers the client on the very next request.
+    # Within the window, the same policy does not fetch the document again.
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert fetch.call_count == 1
+
+    # A policy that advertises the method is keyed apart, so it fetches and
+    # registers the client on the very next request.
     cimd_enabled.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
         *cimd_enabled.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
         "private_key_jwt",
     ]
     assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is not None
     assert fetch.call_count == 2
+
+
+def test_policy_backoff_cache_key_is_bounded_and_policy_scoped(oauth2_settings):
+    """The key fits memcached's 250-byte limit and differs per client_id and per policy."""
+    long_url = "https://client.example.com/" + "a" * 228
+    key = cimd._policy_backoff_cache_key(long_url)
+    assert len(key) <= 250
+    assert key != cimd._backoff_cache_key(long_url)
+    assert key != cimd._policy_backoff_cache_key(CLIENT_URL)
+
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
+        *oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
+        "private_key_jwt",
+    ]
+    assert cimd._policy_backoff_cache_key(long_url) != key
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -1827,10 +1853,10 @@ def test_deadvertising_private_key_jwt_refuses_the_stored_client(
 
 
 @pytest.mark.django_db(databases="__all__")
-def test_deadvertised_stale_private_key_jwt_row_is_refetched_without_backoff(
+def test_deadvertised_stale_private_key_jwt_row_refetch_is_backed_off_per_policy(
     cimd_enabled, private_key_jwt_advertised, mocker
 ):
-    """A refetch refused by the method policy keeps the row, refuses it, and arms no backoff."""
+    """A refetch refused by the method policy keeps the row, refuses it, and is not repeated."""
     from oauth2_provider.oauth2_validators import OAuth2Validator
 
     fetcher = _private_key_jwt_fetcher(SIGNING_KEY)
@@ -1841,13 +1867,18 @@ def test_deadvertised_stale_private_key_jwt_row_is_refetched_without_backoff(
     stored = _stored_row()
 
     _deadvertise_private_key_jwt(private_key_jwt_advertised)
-    assert _authenticate_with(SIGNING_KEY)[0] is False
+    for _ in range(3):
+        assert _authenticate_with(SIGNING_KEY)[0] is False
+        assert OAuth2Validator()._load_application(CLIENT_URL, _token_request()) is None
+    # One refetch for the window: the stored row is returned while backed off
+    # and still refused by is_usable_registration.
     assert fetch.call_count == 2
     assert _stored_row() == stored
     assert cache.get(cimd._backoff_cache_key(CLIENT_URL)) is None
 
-    # Not backed off, so a document that has since moved to "none" is picked
-    # up on the very next use.
+    # Once the window lapses, a document that has since moved to "none" is
+    # picked up on the next use.
+    cache.delete(cimd._policy_backoff_cache_key(CLIENT_URL))
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
     assert OAuth2Validator().authenticate_client_id(CLIENT_URL, _token_request()) is True
     assert _stored_row()["token_endpoint_auth_method"] == Application.TOKEN_AUTH_METHOD_NONE
