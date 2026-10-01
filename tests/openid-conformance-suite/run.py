@@ -164,6 +164,8 @@ def wait_for_idp(suite_version: str, timeout: float = 300.0) -> None:
                     log(f"IdP is up: {IDP_PROBE_URL}")
                     return
         except (urllib.error.URLError, OSError, ConnectionError):
+            # Not up yet (connection refused, TLS handshake before gunicorn
+            # binds, or a 5xx while migrations run); fall through to the retry.
             pass
         if time.monotonic() > deadline:
             compose(
@@ -280,7 +282,6 @@ def main(argv: list[str] | None = None) -> int:
 
     log(f"starting the stack (conformance-suite {args.suite_version})")
     compose("up", "--build", "--detach", suite_version=args.suite_version)
-    status = 1
     try:
         wait_for_idp(args.suite_version)
         status = run_plans(runner_dir, plans, export_dir, args.verbose)
