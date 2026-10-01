@@ -44,6 +44,12 @@ To require authentication on only a single endpoint:
     def private_endpoint(request):
         return {"message": "This is a private endpoint"}
 
+When authentication succeeds, ``request.auth`` is set to the access token and
+``request.user`` is set to the access token's user. Access tokens issued through the
+``client_credentials`` grant have no user, in which case ``request.user`` is set to an
+``AnonymousUser`` (even if the request also carries a session cookie); check ``request.auth``
+to identify the client.
+
 
 Optional Authentication
 -----------------------
@@ -114,7 +120,8 @@ For example:
 
     class StaffOnlyOAuth2(HttpOAuth2):
         def authenticate(self, request: HttpRequest, access_token: AbstractAccessToken) -> Any | None:
-            if not access_token.user.is_staff:
+            # `client_credentials` tokens have no user
+            if access_token.user is None or not access_token.user.is_staff:
                 return None
 
             # Anything truthy can be returned, and will be available as `request.auth`
