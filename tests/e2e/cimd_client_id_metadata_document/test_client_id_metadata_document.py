@@ -23,6 +23,9 @@ from tests.e2e.helpers.oauth_client import token_data
 
 
 SPEC = "OAuth Client ID Metadata Document"
+# Defines token_endpoint_auth_methods_supported; the CIMD draft takes client metadata
+# from the IANA registry this spec registers it in.
+RP_METADATA_CHOICES = "OpenID Connect RP Metadata Choices 1.0"
 
 
 @pytest.mark.compliance(SPEC, "5", "client_id_metadata_document_supported is advertised when enabled")
@@ -149,7 +152,9 @@ def test_private_key_jwt_document_authorization_code_flow(cimd_oauth, cimd_user_
     assert token["access_token"]
 
 
-@pytest.mark.compliance(SPEC, "6.2", "An unsupported auth method is negotiated from the plural field")
+@pytest.mark.compliance(
+    RP_METADATA_CHOICES, "4", "An unsupported single auth method is negotiated from the plural field"
+)
 def test_plural_auth_method_document_authorization_code_flow(cimd_oauth, cimd_user_session, doc_server):
     """A document choosing a method this server does not register (#1857).
 

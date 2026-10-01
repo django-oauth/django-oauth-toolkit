@@ -60,6 +60,8 @@ SPEC_LABEL_TO_MARKER = {
     "RFC 7592": "spec_rfc7591",
     "RFC 9126": "spec_rfc9126",
     "OAuth Client ID Metadata Document": "spec_cimd",
+    # Defines token_endpoint_auth_methods_supported, which the CIMD resolver reads.
+    "OpenID Connect RP Metadata Choices 1.0": "spec_cimd",
     "OpenID Connect Core 1.0": "spec_oidc_core",
     "OpenID Connect Discovery 1.0": "spec_oidc_discovery",
     "OpenID Connect RP-Initiated Logout 1.0": "spec_oidc_rp_logout",
