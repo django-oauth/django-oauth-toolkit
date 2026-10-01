@@ -1,0 +1,23 @@
+volumes:
+  oracle-data:
+
+services:
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart
+    environment:
+      # Sets the SYS and SYSTEM passwords. The suite connects as SYSTEM because Django's
+      # Oracle test runner creates a throwaway test user and tablespace, which needs
+      # CREATE USER / CREATE TABLESPACE plus the privileges it grants that user (see
+      # django/db/backends/oracle/creation.py); SYSTEM has them, whereas the image's
+      # APP_USER (CONNECT, RESOURCE) does not.
+      ORACLE_PASSWORD: dot
+    ports:
+      - "${ORACLE_BIND_PORT:-51521}:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      # Oracle needs a few minutes on first start even with the faststart image.
+      retries: 30
