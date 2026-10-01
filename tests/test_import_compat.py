@@ -220,6 +220,31 @@ def test_admin_shim_survives_reentrant_import():
         register.assert_any_call(get_application_model(), custom)
 
 
+def test_admin_shim_getattr_before_moved_module_is_loaded():
+    """The shim's forwarding ``__getattr__`` only has something to forward to once the
+    moved module is in ``sys.modules``. Before that it must fail like any missing
+    attribute (``AttributeError``, so ``hasattr`` is ``False``), not with a ``KeyError``.
+    """
+    import importlib.util
+
+    import oauth2_provider
+
+    canonical = "oauth2_provider.authorization_server.admin"
+    # Hold the shim module object itself: the alias swap it performs at the end of its body
+    # makes it unreachable through sys.modules, so load the file directly.
+    spec = importlib.util.spec_from_file_location(
+        "oauth2_provider.admin", pathlib.Path(oauth2_provider.__file__).with_name("admin.py")
+    )
+    shim = importlib.util.module_from_spec(spec)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        spec.loader.exec_module(shim)
+
+    with _reimport_without_leaking(canonical):
+        assert not hasattr(shim, "ApplicationAdmin")
+    assert shim.ApplicationAdmin is sys.modules[canonical].ApplicationAdmin
+
+
 @pytest.mark.parametrize("old, symbol, new", sorted(SPLIT_SHIM_SYMBOLS))
 def test_split_shim_symbol_matches_canonical(old, symbol, new):
     with warnings.catch_warnings():
