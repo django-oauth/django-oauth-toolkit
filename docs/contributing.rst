@@ -478,6 +478,22 @@ not have; that is also why there is no ``docker/oracle-init`` directory. The Ora
 single-process: pytest-xdist gives each worker its own ``TEST['NAME']``, but Oracle derives the test schema from
 ``TEST['USER']``, which the workers would share.
 
+OpenID Foundation conformance suite
+-----------------------------------
+
+``tests/openid-conformance-suite`` runs the official `OpenID Conformance Suite
+<https://openid.net/certification/about-conformance-suite/>`_, the test modules used for OpenID
+Provider certification, against the ``tests/app/idp`` demo provider inside Docker. CI runs it as the
+``openid-conformance-suite`` job. Locally (Docker required)::
+
+  tox -e openid-conformance-suite
+
+Accepted deviations are recorded in ``tests/openid-conformance-suite/expected-failures.json``;
+any other failure or warning fails the run. ``tests/openid-conformance-suite/README.md`` describes
+the plans, how to run a single one, and how to update the waivers or the pinned suite version.
+These runs are not a certification: that still means running the hosted suite at
+certification.openid.net and submitting the results.
+
 Add the tests!
 --------------
 

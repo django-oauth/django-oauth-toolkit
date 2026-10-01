@@ -1,0 +1,249 @@
+"""Run the OpenID Foundation conformance suite against ``tests/app/idp``.
+
+From the repository root (Docker and ``docker compose`` required)::
+
+    tox -e openid-conformance-suite                 # the default plans
+    tox -e openid-conformance-suite -- --keep       # leave the stack running afterwards
+    tox -e openid-conformance-suite -- --plan oidcc-config-certification-test-plan
+
+What it does:
+
+1. Generates a throwaway self-signed certificate for the IdP. The suite requires
+   an https issuer but does not validate the certificate of the server under test.
+2. Brings up the stack in ``docker-compose.yml``: the suite's prebuilt images
+   pinned to ``--suite-version``, and the IdP built from this checkout.
+3. Downloads the suite's own CI runner (``scripts/run-test-plan.py`` plus its two
+   helper modules) at the same pinned tag, verifies their SHA-256, and runs the
+   requested plans with ``config/dot-oidcc.json`` and ``expected-failures.json``.
+4. Writes the exported results and the container logs to ``--export-dir``, then
+   tears the stack down (unless ``--keep``).
+
+The exit status is the runner's: non-zero on any failure or warning not listed in
+``expected-failures.json``, on an expected failure that did not occur, or when a
+module did not run to completion. ``--verbose`` makes the runner print a ready-made
+``expected-failures.json`` entry for every unexpected failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import ssl
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parents[1]
+
+DEFAULT_SUITE_VERSION = "release-v5.3.1"
+IDP_HOST = "dot-idp"
+# Published on the host by docker-compose.yml purely for this readiness probe.
+IDP_PROBE_URL = "https://127.0.0.1:9443/o/.well-known/openid-configuration"
+# The suite's public base URL. In "dev mode" (CONFORMANCE_SERVER unset) the runner
+# defaults to exactly this and skips TLS verification and the API token.
+SUITE_URL = "https://localhost.emobix.co.uk:8443/"
+
+COMPOSE_FILE = HERE / "docker-compose.yml"
+# Relative to HERE: the runner's plan grammar only allows [A-Za-z0-9-_./] in a
+# config path, so the absolute path of the checkout must not be part of it.
+CONFIG_FILE = Path("config") / "dot-oidcc.json"
+EXPECTED_FAILURES_FILE = HERE / "expected-failures.json"
+CERTS_DIR = HERE / ".certs"
+RUNNER_CACHE = HERE / ".runner"
+
+RUNNER_RAW_URL = "https://gitlab.com/openid/conformance-suite/-/raw/{ref}/scripts/{name}"
+# SHA-256 of the runner files at DEFAULT_SUITE_VERSION; bump both together
+# (``curl -sSL <RUNNER_RAW_URL> | sha256sum``). Other versions are downloaded
+# unverified, with a notice.
+RUNNER_SCRIPTS = {
+    "run-test-plan.py": "2abe903a8458efabda79e19dcb8f2be08a158fbe65d9e9169f1d6140fa36820e",
+    "conformance.py": "660214cc6ca9b3c09297f61908a575db7b1552e8f44eecd5740d1c27fa2cfca8",
+    "test_plan_parser.py": "2b00870b2dc46f1d44d047c715c0ef6978f24ece97a4a9d3b48ceeea8d01830f",
+}
+
+DEFAULT_PLANS = [
+    "oidcc-config-certification-test-plan",
+    "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client]",
+]
+
+
+def log(message: str) -> None:
+    print(f"[openid-conformance-suite] {message}", flush=True)
+
+
+def compose(
+    *args: str, suite_version: str, check: bool = True, capture: bool = False
+) -> subprocess.CompletedProcess:
+    env = {**os.environ, "IMAGE_TAG": suite_version}
+    return subprocess.run(
+        ["docker", "compose", "-f", str(COMPOSE_FILE), *args],
+        check=check,
+        env=env,
+        cwd=HERE,
+        capture_output=capture,
+        text=capture,
+    )
+
+
+def generate_certificate() -> None:
+    """Write ``.certs/cert.pem`` + ``.certs/key.pem`` for ``IDP_HOST``.
+
+    Reuses the e2e suite's generator; the repository root goes on ``sys.path`` only
+    here so the module import does not have to precede this file's constants.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    from tests.e2e.helpers.tls import generate_self_signed_cert
+
+    CERTS_DIR.mkdir(exist_ok=True)
+    cert_path, key_path = generate_self_signed_cert(CERTS_DIR, [IDP_HOST, "localhost"])
+    cert_path.replace(CERTS_DIR / "cert.pem")
+    key_path.replace(CERTS_DIR / "key.pem")
+    # The container reads the key as root; the generator's 0600 would hide it from
+    # a rootless engine running the container as another uid.
+    (CERTS_DIR / "key.pem").chmod(0o644)
+
+
+def wait_for_idp(suite_version: str, timeout: float = 300.0) -> None:
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with urllib.request.urlopen(IDP_PROBE_URL, context=context, timeout=5) as response:
+                if response.status == 200:
+                    log(f"IdP is up: {IDP_PROBE_URL}")
+                    return
+        except (urllib.error.URLError, OSError, ConnectionError):
+            pass
+        if time.monotonic() > deadline:
+            compose(
+                "logs",
+                "--no-color",
+                "dot-idp",
+                "idp-seed",
+                "idp-migrate",
+                suite_version=suite_version,
+                check=False,
+            )
+            raise SystemExit(f"IdP did not become ready within {timeout:.0f}s")
+        time.sleep(2)
+
+
+def fetch_runner(ref: str) -> Path:
+    """Download (and cache) the suite's CI runner scripts for ``ref``."""
+    runner_dir = RUNNER_CACHE / ref
+    runner_dir.mkdir(parents=True, exist_ok=True)
+    verify = ref == DEFAULT_SUITE_VERSION
+    if not verify:
+        log(f"NOTE: no pinned checksums for {ref}; the runner scripts are not verified")
+    for name, expected_sha256 in RUNNER_SCRIPTS.items():
+        target = runner_dir / name
+        if not target.exists():
+            url = RUNNER_RAW_URL.format(ref=ref, name=name)
+            log(f"fetching {url}")
+            with urllib.request.urlopen(url, timeout=60) as response:
+                target.write_bytes(response.read())
+        if verify:
+            actual = hashlib.sha256(target.read_bytes()).hexdigest()
+            if actual != expected_sha256:
+                target.unlink()
+                raise SystemExit(f"checksum mismatch for {name}@{ref}: {actual} != {expected_sha256}")
+    # run-test-plan.py lists this directory (client certificates for mTLS plans)
+    # unconditionally, so it has to exist even though nothing here uses it.
+    (runner_dir / "certs-keys").mkdir(exist_ok=True)
+    return runner_dir
+
+
+def run_plans(runner_dir: Path, plans: list[str], export_dir: Path, verbose: bool) -> int:
+    command = [
+        sys.executable,
+        str(runner_dir / "run-test-plan.py"),
+        "--export-dir",
+        str(export_dir),
+        "--expected-failures-file",
+        str(EXPECTED_FAILURES_FILE),
+    ]
+    if verbose:
+        command.append("--verbose")
+    for plan in plans:
+        command += [plan, str(CONFIG_FILE)]
+    env = os.environ.copy()
+    # Dev mode: the runner targets SUITE_URL without an API token.
+    env.pop("CONFORMANCE_SERVER", None)
+    env["PYTHONUNBUFFERED"] = "1"
+    log("running: " + " ".join(command[1:]))
+    return subprocess.run(command, cwd=HERE, env=env, check=False).returncode
+
+
+def collect_logs(export_dir: Path, suite_version: str) -> None:
+    result = compose(
+        "logs", "--no-color", "--timestamps", suite_version=suite_version, check=False, capture=True
+    )
+    (export_dir / "docker-compose.log").write_text(result.stdout + result.stderr)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--suite-version",
+        default=os.environ.get("OPENID_CONFORMANCE_SUITE_VERSION", DEFAULT_SUITE_VERSION),
+        help="conformance-suite git tag, used for the images and the runner scripts (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--plan",
+        action="append",
+        dest="plans",
+        metavar="PLAN[VARIANTS]",
+        help="test plan to run, repeatable; replaces the defaults: " + " ".join(DEFAULT_PLANS),
+    )
+    parser.add_argument(
+        "--export-dir",
+        type=Path,
+        default=HERE / "reports",
+        help="where the runner's exported results and the container logs go (default: %(default)s)",
+    )
+    parser.add_argument("--verbose", action="store_true", help="pass --verbose to run-test-plan.py")
+    parser.add_argument(
+        "--keep",
+        action="store_true",
+        help=f"leave the stack running afterwards (the suite UI is at {SUITE_URL})",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    plans = args.plans or DEFAULT_PLANS
+    export_dir = args.export_dir.resolve()
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    generate_certificate()
+    runner_dir = fetch_runner(args.suite_version)
+
+    log(f"starting the stack (conformance-suite {args.suite_version})")
+    compose("up", "--build", "--detach", suite_version=args.suite_version)
+    status = 1
+    try:
+        wait_for_idp(args.suite_version)
+        status = run_plans(runner_dir, plans, export_dir, args.verbose)
+    finally:
+        collect_logs(export_dir, args.suite_version)
+        if args.keep:
+            log(f"stack left running; suite UI: {SUITE_URL}  IdP: {IDP_PROBE_URL}")
+        else:
+            compose("down", "--volumes", "--remove-orphans", suite_version=args.suite_version, check=False)
+    log(f"finished with exit status {status}; results in {export_dir}")
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())
