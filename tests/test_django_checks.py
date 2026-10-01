@@ -1,3 +1,4 @@
+import warnings
 from datetime import timedelta
 
 import pytest
@@ -9,10 +10,12 @@ from django.test import override_settings
 from oauth2_provider.core.checks import (
     validate_access_token_expiry_configuration,
     validate_refresh_token_configuration,
+    validate_response_types_supported,
     validate_swapped_model_consistency,
     validate_token_configuration,
 )
 
+from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
 
 
@@ -152,3 +155,122 @@ class AccessTokenExpiryConfigurationCheckTestCase(TestCase):
                 messages = validate_access_token_expiry_configuration(None)
                 self.assertEqual([m.id for m in messages], ["oauth2_provider.E006"])
                 self.assertIsInstance(messages[0], checks.Error)
+
+
+class UnconstructibleServer:
+    """An OAUTH2_SERVER_CLASS that cannot be built at check time."""
+
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("not constructible at check time")
+
+
+class RegistrylessServer:
+    """An OAUTH2_SERVER_CLASS that builds but exposes no response type registry."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class ResponseTypesSupportedCheckTestCase(TestCase):
+    def _messages(self):
+        return [m for m in validate_response_types_supported(None) if m.id == "oauth2_provider.W013"]
+
+    def test_check_is_registered_as_a_deploy_check(self):
+        from django.core.checks.registry import registry as checks_registry
+
+        self.assertIn(
+            validate_response_types_supported,
+            checks_registry.get_checks(include_deployment_checks=True),
+        )
+        # Advertising an unreachable response type is a misconfiguration rather than a
+        # runtime fault, so it is only reported by `manage.py check --deploy`.
+        self.assertNotIn(validate_response_types_supported, checks_registry.get_checks())
+
+    def test_default_response_types_pass(self):
+        self.assertEqual(self._messages(), [])
+
+    def test_unregistered_response_type_warns_with_the_accepted_values(self):
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", "code assertion"]
+        (message,) = self._messages()
+        self.assertIsInstance(message, checks.Warning)
+        self.assertIn("code assertion", message.msg)
+        self.assertIn("OAUTH2_RESPONSE_TYPES_SUPPORTED", message.msg)
+        self.assertIn("The configured server accepts:", message.hint)
+
+    def test_oidc_response_types_are_not_checked_while_oidc_is_disabled(self):
+        # The OIDC discovery document that advertises them is not served, and the
+        # non-OIDC server registers none of the id_token response types.
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["id_token token", "token id_token"]
+        self.assertEqual(self._messages(), [])
+
+    def test_a_non_string_entry_is_reported_rather_than_raised(self):
+        # `manage.py check` does not catch exceptions raised by a check, so a malformed
+        # entry must not be allowed to abort the whole command.
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", 123]
+        (message,) = self._messages()
+        self.assertIsInstance(message, checks.Warning)
+        self.assertIn("123", message.msg)
+        self.assertIn("The configured server accepts:", message.hint)
+
+    def test_an_unusable_server_class_disables_the_check_rather_than_failing_it(self):
+        # A custom OAUTH2_SERVER_CLASS is not guaranteed to be constructible at check
+        # time, nor to expose a registry. There is then nothing to compare the advertised
+        # values against, and `manage.py check` must still complete.
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", "code assertion"]
+        for server_class in (
+            "tests.test_django_checks.UnconstructibleServer",
+            "tests.test_django_checks.RegistrylessServer",
+        ):
+            with self.subTest(server_class=server_class):
+                self.oauth2_settings.OAUTH2_SERVER_CLASS = server_class
+                self.assertEqual(self._messages(), [])
+
+    def test_the_check_survives_a_deprecated_backend_under_warnings_as_errors(self):
+        # The check must not depend on OAUTH2_BACKEND_CLASS being constructible: the
+        # deprecated JSONOAuthLibCore raises its DeprecationWarning as an exception under
+        # warnings-as-errors, which would otherwise silently return no messages.
+        self.oauth2_settings.OAUTH2_BACKEND_CLASS = "oauth2_provider.core.backends_oauthlib.JSONOAuthLibCore"
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", "code assertion"]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            (message,) = self._messages()
+        self.assertIn("code assertion", message.msg)
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class OIDCResponseTypesSupportedCheckTestCase(TestCase):
+    def _messages(self):
+        return [m for m in validate_response_types_supported(None) if m.id == "oauth2_provider.W013"]
+
+    def test_default_oidc_response_types_pass(self):
+        # Every default entry is a canonical ordering registered by oauthlib's OIDC server.
+        self.assertEqual(self._messages(), [])
+
+    def test_permuted_oidc_response_type_warns_with_the_canonical_ordering(self):
+        # "token id_token" is the same response type *set* as the registered
+        # "id_token token", but oauthlib only dispatches on the exact string.
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "token id_token"]
+        (message,) = self._messages()
+        self.assertIsInstance(message, checks.Warning)
+        self.assertIn("token id_token", message.msg)
+        self.assertIn("OIDC_RESPONSE_TYPES_SUPPORTED", message.msg)
+        self.assertIn("'id_token token'", message.hint)
+
+    def test_implicit_entries_dropped_by_the_bcp_gate_are_not_reported(self):
+        # With COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT enabled, bcp_filter_response_types()
+        # removes implicit entries from both discovery documents, so a permuted implicit
+        # entry is never advertised and warning about it would be wrong.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "token id_token"]
+        self.assertEqual(self._messages(), [])
+
+    def test_hybrid_entries_are_still_reported_under_the_bcp_gate(self):
+        # A response type containing `code` is not implicit, so the gate does not drop it
+        # and the permutation is still advertised and still unreachable.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "token code"]
+        (message,) = self._messages()
+        self.assertIn("token code", message.msg)
+        self.assertIn("'code token'", message.hint)
