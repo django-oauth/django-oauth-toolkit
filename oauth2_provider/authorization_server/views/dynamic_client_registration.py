@@ -156,7 +156,7 @@ def _resolve_grant_type(grant_types):
     return dot_grant, None
 
 
-def _build_application_kwargs(data):
+def _build_application_kwargs(data: dict[str, Any]) -> tuple[dict[str, Any] | None, JsonResponse | None]:
     """
     Convert RFC 7591 metadata dict to Application field kwargs.
 

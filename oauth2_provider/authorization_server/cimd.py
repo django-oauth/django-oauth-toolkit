@@ -22,6 +22,7 @@ import logging
 import re
 import threading
 from datetime import timedelta
+from typing import Any
 from urllib.parse import urlparse
 
 from django.core.cache import cache
@@ -251,7 +252,7 @@ def _resolve_grant_type(grant_types):
     return grant
 
 
-def _build_application_kwargs(metadata):
+def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     """Convert a CIMD metadata document to public-Application field kwargs.
 
     Requires ``token_endpoint_auth_method`` ``"none"`` — the spec forbids
