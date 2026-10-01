@@ -4,10 +4,12 @@ Tests for Dynamic Client Registration views (RFC 7591 / RFC 7592).
 
 import hashlib
 import json
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from jwcrypto import jwk, jwt
 
 from oauth2_provider.models import get_access_token_model, get_application_model
 
@@ -207,6 +209,18 @@ class TestDynamicClientRegistration(TestCase):
             body = response.json()
             assert body["error"] == "invalid_client_metadata"
             assert "id_token_signed_response_alg" in body["error_description"]
+
+    def test_register_explicit_rs256_is_honoured(self):
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["id_token_signed_response_alg"] == "RS256"
 
     def test_register_authorization_code_with_refresh_token(self):
         """[authorization_code, refresh_token] → maps cleanly, refresh_token ignored."""
@@ -873,6 +887,75 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert not Application.objects.filter(client_id=self.client_id).exists()
         # Registration token should also be gone (cascade)
         assert not AccessToken.objects.filter(token=self.registration_token).exists()
+
+
+# ---------------------------------------------------------------------------
+# OpenID Connect for dynamically registered clients (#1853)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings({**presets.DCR_SETTINGS, **presets.OIDC_SETTINGS_RW})
+class TestDynamicClientRegistrationOpenID(TestCase):
+    def setUp(self):
+        self.user = UserModel.objects.create_user("dcr_oidc_user", "dcr_oidc@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def test_registered_public_client_receives_id_token(self):
+        """Regression for #1853: an openid code flow mints an RS256 ID Token.
+
+        Before the fix the registered application had no signing algorithm and
+        the token endpoint raised ``ImproperlyConfigured`` ("This application
+        does not support signed tokens").
+        """
+        redirect_uri = "https://example.com/cb"
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        assert response.status_code == 201
+        registered = response.json()
+        assert registered["id_token_signed_response_alg"] == "RS256"
+        client_id = registered["client_id"]
+
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": client_id,
+                "response_type": "code",
+                "redirect_uri": redirect_uri,
+                "scope": "openid",
+                "state": "random_state_string",
+                "nonce": "random_nonce",
+                "allow": True,
+            },
+        )
+        assert response.status_code == 302, response.content
+        code = parse_qs(urlparse(response["Location"]).query)["code"][0]
+
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+            },
+        )
+        assert response.status_code == 200, response.content
+        content = response.json()
+        assert "id_token" in content
+
+        key = jwk.JWK.from_pem(presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"].encode("utf8"))
+        verified = jwt.JWT(key=key, jwt=content["id_token"])
+        assert verified.token.jose_header["alg"] == "RS256"
+        claims = json.loads(verified.claims)
+        assert claims["aud"] == client_id
+        assert claims["nonce"] == "random_nonce"
 
 
 # ---------------------------------------------------------------------------
