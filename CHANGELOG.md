@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1730 A `cleardcrapplications` management command that deletes DCR-registered applications
+  (`registration_source="dcr"`) which hold no live tokens or grants and were last registered or
+  modified at least `--min-unmodified-days` days ago (default 7). DCR clients that re-register
+  without deregistering leave behind tokenless "ghost" applications; the command reclaims that storage, batching its locked
+  liveness-check-and-delete like `clearcimdapplications`. The RFC 7592 registration access token an
+  application is issued at registration does not count as a live token.
 * #984 New throttle classes for the Django REST Framework and Django Ninja integrations,
   `OAuth2ClientRateThrottle` and `OAuth2UserOrClientRateThrottle`, that key rate limits on the
   OAuth2 credentials a request was made with. A `client_credentials` token has no user, so the

@@ -69,6 +69,41 @@ one transaction with the application rows locked, so a token minted concurrently
 between the check and the delete and be cascade-deleted with its application; batching keeps the
 number of rows locked at once bounded.
 
+.. _cleardcrapplications:
+
+cleardcrapplications
+~~~~~~~~~~~~~~~~~~~~
+
+The ``cleardcrapplications`` management command deletes
+:doc:`DCR-registered <views/dynamic_client_registration>` applications
+(``registration_source="dcr"``) that hold no live access token, ID token, grant, or unrevoked
+refresh token and were last registered or modified at least ``--min-unmodified-days`` days ago
+(default 7). DCR clients such as editors and MCP tools sometimes re-register without deregistering
+their previous client, so
+tokenless "ghost" applications accumulate; because a client simply re-registers on its next request,
+deleting a tokenless ghost only reclaims storage. Run it regularly (eg: via cron, alongside
+``cleartokens``) when :doc:`DCR <views/dynamic_client_registration>` is enabled.
+
+The RFC 7592 registration access token issued to every DCR application at registration does not
+count as a live token: it is created with a far-future expiry by default
+(``DCR_REGISTRATION_TOKEN_EXPIRE_SECONDS = None``) and grants nothing but management of the very
+application being considered, so counting it would spare every ghost forever. A token that also
+carries a further scope beyond ``DCR_REGISTRATION_SCOPE`` is treated as a normal token and does keep
+its application.
+
+The ``--min-unmodified-days`` grace period avoids racing a client that has just registered but has
+not yet completed its first authorization, and so does not hold a token yet. It is anchored on
+``updated`` rather than ``created``: a ghost is never touched after registration, so the two are
+equal and the default behaviour is the same, but an application that is still being re-configured
+through the :doc:`RFC 7592 <views/dynamic_client_registration>` management endpoint keeps renewing
+its grace period. Pass ``--min-unmodified-days 0`` to delete every tokenless DCR application
+regardless of age.
+
+Deletion is batched (``--batch-size``, default 1000). Each batch's liveness check and delete run in
+one transaction with the application rows locked, so a token minted concurrently cannot slip in
+between the check and the delete and be cascade-deleted with its application; batching keeps the
+number of rows locked at once bounded.
+
 .. _createapplication:
 
 createapplication
