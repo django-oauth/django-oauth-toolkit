@@ -79,19 +79,19 @@ Settings
     stored with a URL ``client_id`` (for example one created manually, or persisted while CIMD was
     enabled) keeps working as an ordinary stored client.
 
-``CIMD_METADATA_FETCHER`` (default ``"oauth2_provider.cimd.SafeMetadataFetcher"``)
+``CIMD_METADATA_FETCHER`` (default ``"oauth2_provider.authorization_server.cimd.SafeMetadataFetcher"``)
     Import path to the fetcher. Override it to route fetches through an egress proxy or to apply
     site-specific policy. A fetcher's ``fetch(client_id)`` returns ``(metadata_dict, max_age_seconds)``
-    or raises :class:`~oauth2_provider.cimd.CIMDError`.
+    or raises :class:`~oauth2_provider.authorization_server.cimd.CIMDError`.
 
-``CIMD_REGISTRATION_PERMISSION_CLASSES`` (default ``("oauth2_provider.cimd.AllowAllCIMDPermission",)``)
+``CIMD_REGISTRATION_PERMISSION_CLASSES`` (default ``("oauth2_provider.authorization_server.cimd.AllowAllCIMDPermission",)``)
     Permission classes run before any fetch; each must implement
     ``has_permission(request, client_id) -> bool`` and all must pass, an empty value denies
     everything. ``request`` is the *oauthlib* request the client_id arrived on (not a Django
     ``HttpRequest``; its ``headers`` carry the HTTP headers, for e.g. IP-bound policies). The
     default allows any URL, because resolution happens on the pre-auth authorize/token path where no
     authenticated user exists. Configure
-    :class:`~oauth2_provider.cimd.HostAllowlistCIMDPermission` to restrict registration to known
+    :class:`~oauth2_provider.authorization_server.cimd.HostAllowlistCIMDPermission` to restrict registration to known
     hosts.
 
 ``CIMD_ALLOWED_HOSTS`` (default ``[]``)
