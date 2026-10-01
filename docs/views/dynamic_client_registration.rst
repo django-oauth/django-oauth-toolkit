@@ -191,6 +191,15 @@ Open registration (no auth required):
         "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
     }
 
+.. note::
+    With open registration anyone can register ``private_key_jwt`` clients with a ``jwks_uri``.
+    The limit on cache-bypassing JWK Set re-fetches
+    (``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS``, see :doc:`/rfc7523`) is kept per exact
+    ``jwks_uri`` string, so registering many clients whose ``jwks_uri`` values differ only
+    trivially (a query string, a path segment) multiplies the number of fetches unauthenticated
+    requests can cause by the number of distinct values. Rate-limit or otherwise restrict the
+    registration endpoint accordingly.
+
 Custom permission class (e.g. initial-access token):
 
 .. code-block:: python

@@ -66,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`RESOURCE_SERVER_INTROSPECTION_JWT_*` settings), Dynamic Client Registration support for both methods with
   `jwks`/`jwks_uri` metadata, and `*_auth_signing_alg_values_supported` advertisement in the discovery documents.
   Note that `client_secret_jwt` requires the client secret to be stored unhashed (it is the HMAC key), like HS256.
+  An assertion whose `kid` matches no cached key triggers a cache-bypassing refetch of the `jwks_uri` at most once per
+  `CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS` (default 60; `0` or `None` disables it), so clients must publish a
+  new key at least that long before signing with it.
 * #657 `REQUIRE_FORM_ENCODED_REQUEST_BODY`, an opt-in setting that makes the endpoints that take the
   parameters comprising the request in an `application/x-www-form-urlencoded` body -- token
   (RFC 6749 §4.1.3, §4.3.2, §4.4.2 and §6), revocation (RFC 7009 §2.1), introspection
