@@ -207,7 +207,11 @@ for one release cycle:
   preserves object identity for every name (public and private).
 * A shim whose old path is imported by a framework at startup (e.g.
   ``oauth2_provider.admin``, imported by Django admin autodiscovery) is **silent**
-  (no warning) for the cycle.
+  (no warning) for the cycle. If the moved module resolves user-supplied import
+  strings while it is being imported (the admin module resolves ``*_ADMIN_CLASS``),
+  project code named there may import from the old path *before* the shim has
+  installed its ``sys.modules`` alias; such a shim also defines a module-level
+  ``__getattr__`` that forwards to the partially initialized moved module.
 * Update **all first-party imports** and any dotted-string settings defaults to
   the canonical path so the library never warns about its own imports.
 * Add an entry to the CHANGELOG ``Deprecated`` section with the old → new mapping.
