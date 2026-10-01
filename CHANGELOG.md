@@ -110,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` already drops from discovery are not reported. What the
   endpoints accept is unchanged.
 * #1843 Oracle Database 23ai (Free) is now covered by CI on Django 5.2 and 6.0, via the
-  `py{312,314}-dj{52,60}-ora23` and `migrations-dj{52,60}-ora23` tox environments and
+  `py312-dj52-ora23`, `py314-dj60-ora23` and `migrations-dj{52,60}-ora23` tox environments and
   `docker-compose.oracle.yml`. See "Standalone backend DB checks" in the contributing
   documentation to run them locally.
 ### Changed
