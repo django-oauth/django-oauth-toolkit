@@ -1,4 +1,4 @@
-Django>=4.2,<=5.2
+Django>=5.2,<5.3
 django-cors-headers==4.6.0
 django-environ==0.12.0
 whitenoise==6.8.2
