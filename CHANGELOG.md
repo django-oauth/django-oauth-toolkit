@@ -209,7 +209,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   successful ones. RFC 9207 §2 requires it on every authorization response, but it was only
   ever added on the success path in `create_authorization_response`; an error redirect (e.g.
   the resource owner denying access) built its `Location` header directly in
-  `AuthorizationServerViewMixin.error_response` with no `iss` injection at all.
+  `AuthorizationServerViewMixin.error_response` with no `iss` injection at all. Note that
+  OIDC Core §3.1.2.6 says error responses "SHOULD NOT" carry parameters beyond `error` and
+  `state`; RFC 9207's later, specific MUST — advertised through
+  `authorization_response_iss_parameter_supported` and opted into via this setting — is why
+  `iss` is added regardless.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such

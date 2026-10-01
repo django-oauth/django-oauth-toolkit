@@ -153,8 +153,8 @@ present an ``access_token`` query parameter at the resource server. The
 Mix-up attacks / issuer identification (§4.4, RFC 9207)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Set ``COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True`` to include the ``iss``
-parameter (`RFC 9207 <https://datatracker.ietf.org/doc/html/rfc9207>`_) in the
-authorization response and advertise
+parameter (`RFC 9207 <https://datatracker.ietf.org/doc/html/rfc9207>`_) in every
+authorization response -- error redirects included -- and advertise
 ``authorization_response_iss_parameter_supported`` in the metadata. The ``iss``
 value matches the metadata ``issuer`` (``OIDC_ISS_ENDPOINT`` when configured,
 otherwise derived from the request).

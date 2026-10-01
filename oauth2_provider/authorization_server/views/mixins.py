@@ -8,8 +8,8 @@ endpoints. It builds on the shared
 
 from django.http import HttpRequest
 
-from oauth2_provider.core.backends_oauthlib import _add_iss_to_redirect
 from oauth2_provider.core.exceptions import FatalClientError
+from oauth2_provider.core.utils import add_iss_to_redirect
 from oauth2_provider.core.views import OAuthLibCoreMixin
 from oauth2_provider.settings import oauth2_settings
 
@@ -94,31 +94,28 @@ class AuthorizationServerViewMixin(OAuthLibCoreMixin):
         """
         oauthlib_error = error.oauthlib_error
 
+        # A fatal error means the client_id/redirect_uri combination could not be
+        # trusted, so the error is rendered to the resource owner instead of
+        # redirected (RFC 6749 §4.1.2.1: the server "MUST NOT automatically
+        # redirect the user-agent to the invalid redirection URI").
+        redirect = not isinstance(error, FatalClientError)
+
         redirect_uri = oauthlib_error.redirect_uri or ""
         separator = "&" if "?" in redirect_uri else "?"
 
         url = redirect_uri + separator + oauthlib_error.urlencoded
 
-        # RFC 9207 §2 requires `iss` on *every* authorization response, including error
-        # responses -- not just successful ones (see _add_iss_to_redirect's other call
-        # site in backends_oauthlib.create_authorization_response). Only add it when
-        # there's an actual redirect_uri to redirect to: a FatalClientError has none (it
-        # renders an error page instead of redirecting, since the redirect_uri itself
-        # couldn't be trusted), and there's nothing to add `iss` to in that case.
-        if redirect_uri and oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
+        # RFC 9207 §2 requires `iss` on every authorization response returned to
+        # the client, including error responses. A fatal error returns nothing to
+        # the client, so its context-only URL gets no `iss`.
+        if redirect and redirect_uri and oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
             issuer = oauth2_settings.oauth2_authorization_server_issuer(self.request)
-            url = _add_iss_to_redirect(url, issuer)
+            url = add_iss_to_redirect(url, issuer)
 
         error_response = {
             "error": oauthlib_error,
             "url": url,
         }
         error_response.update(kwargs)
-
-        # If we got a malicious redirect_uri or client_id, we will *not* redirect back to the URL.
-        if isinstance(error, FatalClientError):
-            redirect = False
-        else:
-            redirect = True
 
         return redirect, error_response

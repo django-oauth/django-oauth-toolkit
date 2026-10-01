@@ -660,7 +660,8 @@ for the full mapping and a copy/paste compliant settings block.
 ``COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS``
     Default: ``False``. When ``True``, the
     `RFC 9207 <https://datatracker.ietf.org/doc/html/rfc9207>`_ ``iss`` parameter is
-    added to the authorization response and advertised in metadata (RFC 9700 §4.4).
+    added to every authorization response, including error redirects, and advertised
+    in metadata (RFC 9700 §4.4).
 
 ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE``
     Default: ``False``. When ``True``, access and refresh tokens are stored hashed

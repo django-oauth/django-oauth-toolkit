@@ -200,6 +200,31 @@ class TestPkcePlainGate(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("error=access_denied", response["Location"])
         self.assertIn("iss=http%3A%2F%2Ftestserver%2Fo", response["Location"])
+        # Adding `iss` re-encodes the query; the RFC 6749-required `state` echo and
+        # the error code must survive untouched alongside it.
+        self.assertIn("state=abc", response["Location"])
+
+    def test_iss_not_added_to_fatal_error_page(self):
+        # RFC 6749 §4.1.2.1: a mismatching redirect_uri is never redirected to; the
+        # error is rendered to the resource owner instead. RFC 9207 §2 covers only
+        # responses returned to the client, so the rejected URI gets no `iss` even
+        # with the gate enabled.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        self.client.login(username="co", password="123456")
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://attacker.example/cb",
+                "scope": "read",
+                "state": "abc",
+                "allow": True,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertNotIn("iss=", response.context["url"])
 
     def test_iss_omitted_from_authorization_error_redirect_by_default(self):
         self.client.login(username="co", password="123456")
