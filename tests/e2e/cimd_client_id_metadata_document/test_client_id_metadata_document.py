@@ -13,6 +13,7 @@ endpoints over HTTP.
 import pytest
 
 from tests.e2e import constants as c
+from tests.e2e.helpers.jwt_tools import decode_header, validate_id_token
 from tests.e2e.helpers.oauth_client import token_data
 
 
@@ -60,6 +61,50 @@ def test_url_client_id_completes_authorization_code_flow(cimd_oauth, cimd_user_s
     )
     assert token["access_token"]
     assert token["token_type"].lower() == "bearer"
+
+
+@pytest.mark.compliance(SPEC, "4.1", "A URL client_id is provisioned to receive RS256-signed ID Tokens")
+def test_url_client_id_receives_signed_id_token(cimd_oauth, cimd_idp, cimd_user_session, doc_server):
+    """OpenID Connect for a CIMD client (#1853).
+
+    The document says nothing about ``id_token_signed_response_alg``, so the
+    OpenID Connect Dynamic Client Registration 1.0 default of RS256 applies and
+    an ``openid`` code flow mints an ID Token verifiable against the IdP's JWKS.
+    """
+    client_id = doc_server.add_client("/clients/openid.json")
+
+    result = cimd_oauth.authorize(
+        cimd_user_session,
+        client_id=client_id,
+        response_type="code",
+        redirect_uri=c.REDIRECT_URI,
+        scope="openid",
+        nonce="n-cimd",
+    )
+    token = token_data(
+        cimd_oauth.exchange_code(
+            client_id=client_id, code=result.query_params["code"], redirect_uri=c.REDIRECT_URI
+        )
+    )
+    assert decode_header(token["id_token"])["alg"] == "RS256"
+    claims = validate_id_token(token["id_token"], issuer=cimd_idp.issuer, audience=client_id)
+    assert claims["nonce"] == "n-cimd"
+
+
+@pytest.mark.compliance(
+    SPEC, "4.1", "A document requesting an unsupported id_token_signed_response_alg is rejected"
+)
+def test_document_with_unsupported_id_token_alg_is_rejected(cimd_oauth, cimd_user_session, doc_server):
+    """HS256 signs with a client secret, which a CIMD client must not have."""
+    client_id = doc_server.add_client("/clients/hs256.json", id_token_signed_response_alg="HS256")
+    result = cimd_oauth.authorize(
+        cimd_user_session,
+        client_id=client_id,
+        response_type="code",
+        redirect_uri=c.REDIRECT_URI,
+        scope="read",
+    )
+    assert result.status_code == 400
 
 
 @pytest.mark.compliance(SPEC, "4.4", "The stored registration serves subsequent requests until it expires")

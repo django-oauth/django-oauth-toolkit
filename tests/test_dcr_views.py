@@ -4,10 +4,12 @@ Tests for Dynamic Client Registration views (RFC 7591 / RFC 7592).
 
 import hashlib
 import json
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from jwcrypto import jwk, jwt
 
 from oauth2_provider.models import get_access_token_model, get_application_model
 
@@ -146,6 +148,85 @@ class TestDynamicClientRegistration(TestCase):
         assert "client_secret" in body
         app = Application.objects.get(client_id=body["client_id"])
         assert app.client_type == Application.CLIENT_CONFIDENTIAL
+
+    # -- id_token_signed_response_alg (OIDC Dynamic Client Registration 1.0 §2)
+
+    def test_register_defaults_to_rs256_when_server_can_sign(self):
+        """Omitted id_token_signed_response_alg → RS256 once the server has an RSA key.
+
+        Regression for #1853: a registered client is provisioned to receive ID
+        Tokens without any manual step, and the response reports the value the
+        server provisioned (OIDC Registration 1.0 §3.2).
+        """
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.algorithm == Application.RS256_ALGORITHM
+
+    def test_register_explicit_rs256_is_honoured(self):
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["id_token_signed_response_alg"] == "RS256"
+
+    def test_register_without_server_key_leaves_algorithm_unset(self):
+        """No RSA key → registration succeeds with no signing algorithm, none reported."""
+        assert not self.oauth2_settings.OIDC_RSA_PRIVATE_KEY
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "id_token_signed_response_alg" not in body
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.algorithm == Application.NO_ALGORITHM
+
+    def test_register_explicit_rs256_without_server_key_is_400(self):
+        """A requested algorithm the server cannot sign with is refused, not substituted."""
+        assert not self.oauth2_settings.OIDC_RSA_PRIVATE_KEY
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "id_token_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg" in body["error_description"]
+
+    def test_register_unsupported_id_token_alg_is_400(self):
+        """Only RS256 is implemented: HS256 would sign with the hashed-at-rest secret."""
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        self.client.force_login(self.user)
+        for requested in ("HS256", "ES256", "none", "", 256):
+            with self.subTest(requested=requested):
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "id_token_signed_response_alg": requested,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 400
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert "id_token_signed_response_alg" in body["error_description"]
 
     def test_register_authorization_code_with_refresh_token(self):
         """[authorization_code, refresh_token] → maps cleanly, refresh_token ignored."""
@@ -676,6 +757,44 @@ class TestDynamicClientRegistrationManagement(TestCase):
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == ""
 
+    def test_put_and_get_track_server_signing_capability(self):
+        """PUT re-derives the signing algorithm like every other field (RFC 7592 §2.2).
+
+        A client registered before the server could sign gains RS256 on its
+        next update and GET reports it; once the key is gone the next PUT drops
+        it again instead of failing validation over a stale RS256.
+        """
+        update_data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
+
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id_token_signed_response_alg"] == "RS256"
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.RS256_ALGORITHM
+        token = body["registration_access_token"]  # rotated by the PUT
+
+        response = self.client.get(self.management_url, **_bearer(token))
+        assert response.status_code == 200
+        assert response.json()["id_token_signed_response_alg"] == "RS256"
+
+        self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = ""
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(token),
+        )
+        assert response.status_code == 200
+        assert "id_token_signed_response_alg" not in response.json()
+        assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
+
     def test_put_rotates_token_by_default(self):
         """PUT with DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE=True → new token issued."""
         update_data = {
@@ -779,6 +898,75 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert not Application.objects.filter(client_id=self.client_id).exists()
         # Registration token should also be gone (cascade)
         assert not AccessToken.objects.filter(token=self.registration_token).exists()
+
+
+# ---------------------------------------------------------------------------
+# OpenID Connect for dynamically registered clients (#1853)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings({**presets.DCR_SETTINGS, **presets.OIDC_SETTINGS_RW})
+class TestDynamicClientRegistrationOpenID(TestCase):
+    def setUp(self):
+        self.user = UserModel.objects.create_user("dcr_oidc_user", "dcr_oidc@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def test_registered_public_client_receives_id_token(self):
+        """Regression for #1853: an openid code flow mints an RS256 ID Token.
+
+        Before the fix the registered application had no signing algorithm and
+        the token endpoint raised ``ImproperlyConfigured`` ("This application
+        does not support signed tokens").
+        """
+        redirect_uri = "https://example.com/cb"
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        assert response.status_code == 201
+        registered = response.json()
+        assert registered["id_token_signed_response_alg"] == "RS256"
+        client_id = registered["client_id"]
+
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": client_id,
+                "response_type": "code",
+                "redirect_uri": redirect_uri,
+                "scope": "openid",
+                "state": "random_state_string",
+                "nonce": "random_nonce",
+                "allow": True,
+            },
+        )
+        assert response.status_code == 302, response.content
+        code = parse_qs(urlparse(response["Location"]).query)["code"][0]
+
+        response = self.client.post(
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+            },
+        )
+        assert response.status_code == 200, response.content
+        content = response.json()
+        assert "id_token" in content
+
+        key = jwk.JWK.from_pem(presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"].encode("utf8"))
+        verified = jwt.JWT(key=key, jwt=content["id_token"])
+        assert verified.token.jose_header["alg"] == "RS256"
+        claims = json.loads(verified.claims)
+        assert claims["aud"] == client_id
+        assert claims["nonce"] == "random_nonce"
 
 
 # ---------------------------------------------------------------------------

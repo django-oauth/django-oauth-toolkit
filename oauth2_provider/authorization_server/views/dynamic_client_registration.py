@@ -23,6 +23,11 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from oauth2_provider.authorization_server.oidc.client_metadata import (
+    UnsupportedClientMetadataError,
+    id_token_signed_response_alg,
+    id_token_signing_algorithm,
+)
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.utils import jwk_allows_verification, parse_bearer_token
 from oauth2_provider.models import (
@@ -151,7 +156,7 @@ def _resolve_grant_type(grant_types):
     return dot_grant, None
 
 
-def _build_application_kwargs(data):
+def _build_application_kwargs(data: dict[str, Any]) -> tuple[dict[str, Any] | None, JsonResponse | None]:
     """
     Convert RFC 7591 metadata dict to Application field kwargs.
 
@@ -268,6 +273,14 @@ def _build_application_kwargs(data):
     # way); every other method keeps the hashed-at-rest default.
     kwargs["hash_client_secret"] = auth_method != "client_secret_jwt"
 
+    # id_token_signed_response_alg → algorithm (OpenID Connect Dynamic Client
+    # Registration 1.0 section 2). Always set, so a PUT without it resets to
+    # the default like the fields above (RFC 7592 section 2.2).
+    try:
+        kwargs["algorithm"] = id_token_signing_algorithm(data)
+    except UnsupportedClientMetadataError as exc:
+        return None, _error_response("invalid_client_metadata", str(exc))
+
     return kwargs, None
 
 
@@ -339,6 +352,12 @@ def _application_to_response(
             data["jwks"] = jwks
     if application.client_jwks_uri:
         data["jwks_uri"] = application.client_jwks_uri
+    # Reported even when the server chose it (OpenID Connect Dynamic Client
+    # Registration 1.0 section 3.2: the response includes every registered
+    # value, including those the provider provisioned itself).
+    signing_alg = id_token_signed_response_alg(application)
+    if signing_alg is not None:
+        data["id_token_signed_response_alg"] = signing_alg
     return data
 
 
