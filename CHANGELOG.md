@@ -222,6 +222,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   access token with no user (such as one issued through the `client_credentials` grant), which
   made any endpoint reading `request.user.is_authenticated` fail with a 500. `request.user` is now
   an `AnonymousUser` for such tokens; the client remains identifiable through `request.auth`.
+* #1843 Refresh-token rotation no longer fails on Oracle, or any backend where `select_for_update()`
+  cannot be combined with `LIMIT`, with `NotSupportedError: LIMIT/OFFSET is not supported with
+  select_for_update on this database backend`. The previous access token is now looked up with
+  `.get()` instead of `.filter(...).first()`; `source_refresh_token` is a `OneToOneField`, so the
+  lookup matches at most one row either way.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
