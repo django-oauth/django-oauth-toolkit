@@ -1,0 +1,784 @@
+
+
+
+OpenID Connect Working Group                                  M.B. Jones
+                                                  Self-Issued Consulting
+                                                              R. Hedberg
+                                                             independent
+                                                              J. Bradley
+                                                                  Yubico
+                                                               F. Skokan
+                                                                    Okta
+                                                           25 March 2026
+                                                                   Final
+
+
+           OpenID Connect Relying Party Metadata Choices 1.0
+                 openid-connect-rp-metadata-choices-1_0
+
+Abstract
+
+   OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0
+   protocol.  It enables Clients to verify the identity of the End-User
+   based on the authentication performed by an Authorization Server, as
+   well as to obtain basic profile information about the End-User in an
+   interoperable and REST-like manner.
+
+   This specification extends the OpenID Connect Dynamic Client
+   Registration 1.0 specification to enable RPs to express a set of
+   supported values for some RP metadata parameters, rather than just
+   single values.  This functionality is particularly useful when
+   Automatic Registration, as defined in OpenID Federation 1.0, is used,
+   since there is no registration response from the OP to tell the RP
+   what choices were made by the OP.  This gives the OP the information
+   that it needs to make choices about how to interact with the RP in
+   ways that work for both parties.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   2
+     1.1.  Requirements Notation and Conventions . . . . . . . . . .   2
+     1.2.  Terminology . . . . . . . . . . . . . . . . . . . . . . .   3
+   2.  Client Metadata . . . . . . . . . . . . . . . . . . . . . . .   3
+   3.  Client Authentication Methods Supported . . . . . . . . . . .   6
+   4.  Implementation Considerations . . . . . . . . . . . . . . . .   7
+   5.  Security Considerations . . . . . . . . . . . . . . . . . . .   7
+   6.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   7
+     6.1.  OAuth Dynamic Client Registration Metadata Registry . . .   7
+       6.1.1.  Registry Contents . . . . . . . . . . . . . . . . . .   7
+   7.  References  . . . . . . . . . . . . . . . . . . . . . . . . .  11
+     7.1.  Normative References  . . . . . . . . . . . . . . . . . .  11
+     7.2.  Informative References  . . . . . . . . . . . . . . . . .  12
+   Appendix A.  Notices  . . . . . . . . . . . . . . . . . . . . . .  13
+
+
+
+Jones, et al.                Standards Track                    [Page 1]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .  14
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  14
+
+1.  Introduction
+
+   OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0
+   [RFC6749] protocol.  It enables Clients to verify the identity of the
+   End-User based on the authentication performed by an Authorization
+   Server, as well as to obtain basic profile information about the End-
+   User in an interoperable and REST-like manner.
+
+   In order for an OpenID Connect Relying Party to utilize OpenID
+   Connect services for an End-User, the RP needs to register with the
+   OpenID Provider to provide the OP information about itself.  This
+   specification extends the OpenID Connect Dynamic Client Registration
+   1.0 specification [OpenID.Registration] to enable RPs to express a
+   set of supported values for some RP metadata parameters, rather than
+   just single values.  This extension enables expression of multiple
+   choices for parameters including supported algorithms and token
+   endpoint authentication methods.  This functionality is particularly
+   useful when Automatic Registration [OpenID.Federation] is used, since
+   there is no registration response from the OP to tell the RP what
+   choices were made by the OP.  This gives the OP the information that
+   it needs to make choices about how to interact with the RP in ways
+   that work for both parties.
+
+   Single-valued metadata parameters for which corresponding multi-
+   valued metadata parameters are defined by this specification are
+   defined in these specifications:
+
+   *  OpenID Connect Dynamic Client Registration 1.0
+      [OpenID.Registration]
+
+   *  OpenID Connect Client-Initiated Backchannel Authentication Flow -
+      Core 1.0 [CIBA.Core]
+
+   *  JWT Secured Authorization Response Mode for OAuth 2.0 (JARM)
+      [JARM]
+
+   *  JSON Web Token (JWT) Response for OAuth Token Introspection
+      [RFC9701]
+
+1.1.  Requirements Notation and Conventions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174].
+
+
+
+Jones, et al.                Standards Track                    [Page 2]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   All uses of JSON Web Signature (JWS) [JWS] and JSON Web Encryption
+   (JWE) [JWE] data structures in this specification utilize the JWS
+   Compact Serialization or the JWE Compact Serialization; the JWS JSON
+   Serialization and the JWE JSON Serialization are not used.
+
+1.2.  Terminology
+
+   This specification uses the terms "Authorization Server", "Client",
+   "Client Authentication", "Client Identifier", and "Token Endpoint"
+   defined by OAuth 2.0 [RFC6749], the term "JSON Web Token (JWT)"
+   defined by JSON Web Token (JWT) [JWT], and the terms defined by
+   OpenID Connect Core 1.0 [OpenID.Core] and OpenID Connect Dynamic
+   Client Registration 1.0 [OpenID.Registration].
+
+2.  Client Metadata
+
+   Clients have metadata associated with their unique Client Identifier
+   at the Authorization Server.  These can range from human-facing
+   display strings, such as a Client name, to items that impact the
+   security of the protocol, such as the set of supported algorithms.
+
+   The Client Metadata values are used in two ways:
+
+   *  as input values to registration requests, and
+
+   *  as output values in registration responses and read responses.
+
+   Enabling the RP to express all the choices that it supports for
+   metadata parameters is particularly important when using Automatic
+   Registration, as defined in Section 12.1 of OpenID Federation 1.0
+   [OpenID.Federation], since it gives the OP the best opportunity to
+   make good choices of what parameters to use when interacting with the
+   RP.  This specification is intended to faciliate such interactions.
+
+   The Client Metadata parameters defined below MUST only be used as
+   input values to registration requests, and not as output values in
+   registration responses and read responses.  Any output values used
+   related to these multi-valued input parameters MUST be the associated
+   corresponding single-valued metadata parameter.
+
+   These Client Metadata parameters are defined by this specification:
+
+   subject_types_supported
+      OPTIONAL.  JSON array containing a list of the subject_type values
+      supported by the RP.  If a subject_type metadata parameter is also
+      present, its value MUST be in the list.
+
+
+
+
+
+Jones, et al.                Standards Track                    [Page 3]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   id_token_signing_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWS [JWS] alg
+      values supported by the RP when validating the ID Token signature.
+      If an id_token_signed_response_alg metadata parameter is also
+      present, its value MUST be in the list.
+
+   id_token_encryption_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE [JWE] alg
+      values supported by the RP when decrypting the ID Token.  If an
+      id_token_encrypted_response_alg metadata parameter is also
+      present, its value MUST be in the list.
+
+   id_token_encryption_enc_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE enc values
+      supported by the RP when decrypting the ID Token.  If an
+      id_token_encrypted_response_enc metadata parameter is also
+      present, its value MUST be in the list.
+
+   userinfo_signing_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWS alg values
+      supported by the RP when validating the UserInfo Response
+      signature.  If a userinfo_signed_response_alg metadata parameter
+      is also present, its value MUST be in the list.
+
+   userinfo_encryption_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE alg values
+      supported by the RP when decrypting the UserInfo Response.  If a
+      userinfo_encrypted_response_alg metadata parameter is also
+      present, its value MUST be in the list.
+
+   userinfo_encryption_enc_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE enc values
+      supported by the RP when decrypting the UserInfo Response.  If a
+      userinfo_encrypted_response_enc metadata parameter is also
+      present, its value MUST be in the list.
+
+   request_object_signing_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWS alg values
+      supported by the Client when signing Request Objects.  If a
+      request_object_signing_alg metadata parameter is also present, its
+      value MUST be in the list.
+
+   request_object_encryption_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE alg values
+      supported by the Client when encrypting Request Objects.  If a
+      request_object_encryption_alg metadata parameter is also present,
+      its value MUST be in the list.
+
+
+
+
+Jones, et al.                Standards Track                    [Page 4]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   request_object_encryption_enc_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE enc values
+      supported by the Client when encrypting Request Objects.  If a
+      request_object_encryption_enc metadata parameter is also present,
+      its value MUST be in the list.
+
+   token_endpoint_auth_methods_supported
+      OPTIONAL.  JSON array containing a list of the Client
+      Authentication methods supported by the Client.  If a
+      token_endpoint_auth_method metadata parameter is also present, its
+      value MUST be in the list.  Also see the discussion of this
+      parameter in Section 3.
+
+   token_endpoint_auth_signing_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWS alg values
+      supported by the Client when signing the JWT used to authenticate
+      the Client at the Token Endpoint for the private_key_jwt and
+      client_secret_jwt authentication methods.  If a
+      token_endpoint_auth_signing_alg metadata parameter is also
+      present, its value MUST be in the list.
+
+   backchannel_authentication_request_signing_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWS alg values
+      supported by the Client when signing the JWT used for CIBA
+      authentication requests.  If a
+      backchannel_authentication_request_signing_alg metadata parameter
+      is also present, its value MUST be in the list.
+
+   authorization_signing_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWS alg values
+      supported by the Client for validating signed responses.  If an
+      authorization_signed_response_alg metadata parameter is also
+      present, its value MUST be in the list.
+
+   authorization_encryption_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE alg values
+      supported by the Client for decrypting encrypted responses.  If an
+      authorization_encrypted_response_alg metadata parameter is also
+      present, its value MUST be in the list.
+
+   authorization_encryption_enc_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE enc values
+      supported by the Client for decrypting encrypted responses.  If an
+      authorization_encrypted_response_enc metadata parameter is also
+      present, its value MUST be in the list.
+
+
+
+
+
+
+Jones, et al.                Standards Track                    [Page 5]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   introspection_signing_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWS alg values
+      supported by the Client when validating the Introspection Response
+      signature.  If an introspection_signed_response_alg metadata
+      parameter is also present, its value MUST be in the list.
+
+   introspection_encryption_alg_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE alg values
+      supported by the Client when decrypting the Introspection
+      Response.  If an introspection_encrypted_response_alg metadata
+      parameter is also present, its value MUST be in the list.
+
+   introspection_encryption_enc_values_supported
+      OPTIONAL.  JSON array containing a list of the JWE enc values
+      supported by the Client when decrypting the Introspection
+      Response.  If an introspection_encrypted_response_enc metadata
+      parameter is also present, its value MUST be in the list.
+
+   Additional Client Metadata parameters MAY be defined and used, as
+   described in [RFC7591].
+
+   Note that the naming convention used for these metadata parameters is
+   to use the name of the corresponding Authorization Server Metadata
+   parameter when it exists.  When it does not exist, the names chosen
+   use the pattern *_values_supported, where * is the name of the
+   corresponding single-valued Client Metadata parameter.
+
+3.  Client Authentication Methods Supported
+
+   The token_endpoint_auth_methods_supported metadata value is used, in
+   practice, to indicate the Client Authentication Methods supported at
+   any Authorization Server endpoint, not just the Token Endpoint.  For
+   instance, these same methods MUST be supported at the Revocation
+   Endpoint [RFC7009], the Introspection Endpoint [RFC7662], and the
+   Pushed Authorization Request Endpoint [RFC9126], when they exist.
+
+   It is a consensus position within the OpenID Connect working group
+   that it was a mistake to create separate
+   revocation_endpoint_auth_methods_supported and
+   introspection_endpoint_auth_methods_supported Authorization Server
+   Metadata parameters in [RFC8414].  This aligns with the decision by
+   the OAuth Working group to use the
+   token_endpoint_auth_methods_supported and token_endpoint_auth_method
+   metadata parameters to describe the capabilities of the Pushed
+   Authorization Request (PAR) Endpoint [RFC9126], rather than creating
+   new parameters that were PAR-specific.
+
+
+
+
+
+Jones, et al.                Standards Track                    [Page 6]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   Consequently, this specification does not create
+   revocation_endpoint_auth_methods_supported or
+   introspection_endpoint_auth_methods_supported Client Metadata
+   parameters.
+
+4.  Implementation Considerations
+
+   To facilitate interoperability with implementations not supporting
+   this specification, deployments SHOULD include the single-valued
+   metadata parameter alongside the corresponding multi-valued metadata
+   parameter with their preferred single value.
+
+   Note that the Authorization Server might not support the single-
+   valued parameter value.  For instance, consider these metadata
+   values:
+
+   "id_token_signing_alg_values_supported": ["ES256", "PS256", "RS256"],
+   "id_token_signed_response_alg": "RS256"
+
+   Authorization Server SHOULD NOT consider it an error when it doesn't
+   support RS256 if it supports either of the other choices ES256 or
+   PS256.  It SHOULD use one of the choices that it does support, or
+   reject the registration with the invalid_client_metadata error when
+   none of the client-provided values are supported.
+
+5.  Security Considerations
+
+   The security considerations when using these metadata parameters are
+   the same as those when using the corresponding metadata parameters in
+   [OpenID.Registration] and [OpenID.Discovery] or the other
+   specifications in which they are defined.
+
+6.  IANA Considerations
+
+6.1.  OAuth Dynamic Client Registration Metadata Registry
+
+   This specification registers the following client metadata
+   definitions in the IANA "OAuth Dynamic Client Registration Metadata"
+   registry [IANA.OAuth.Parameters] established by [RFC7591].
+
+6.1.1.  Registry Contents
+
+   *  Client Metadata Name: subject_types_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      subject_type values supported by the RP
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+
+
+Jones, et al.                Standards Track                    [Page 7]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   *  Client Metadata Name: id_token_signing_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWS [JWS] alg values supported by the RP when validating the ID
+      Token signature
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: id_token_encryption_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE [JWE] alg values supported by the RP when decrypting the ID
+      Token
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: id_token_encryption_enc_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE enc values supported by the RP when decrypting the ID Token
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: userinfo_signing_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWS alg values supported by the RP when validating the UserInfo
+      Response signature
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: userinfo_encryption_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE alg values supported by the RP when decrypting the UserInfo
+      Response
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: userinfo_encryption_enc_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE enc values supported by the RP when decrypting the UserInfo
+      Response
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: request_object_signing_alg_values_supported
+
+
+
+Jones, et al.                Standards Track                    [Page 8]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   *  Client Metadata Description: JSON array containing a list of the
+      JWS alg values supported by the Client when signing Request
+      Objects
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      request_object_encryption_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE alg values supported by the Client when encrypting Request
+      Objects
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      request_object_encryption_enc_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE enc values supported by the Client when encrypting Request
+      Objects
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: token_endpoint_auth_methods_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      Client Authentication methods supported by the Client
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      token_endpoint_auth_signing_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWS alg values supported by the Client when signing the JWT used
+      to authenticate the Client at the Token Endpoint
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      backchannel_authentication_request_signing_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWS alg values supported by the Client when signing the JWT used
+      for CIBA authentication requests
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+
+
+
+Jones, et al.                Standards Track                    [Page 9]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: authorization_signing_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWS alg values supported by the Client for signed responses
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      authorization_encryption_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE alg values supported by the Client for encrypted responses
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      authorization_encryption_enc_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE enc values supported by the Client for encrypted responses
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name: introspection_signing_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWS alg values supported by the Client when validating the
+      Introspection Response signature
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      introspection_encryption_alg_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE alg values supported by the Client when decrypting the
+      Introspection Response
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+   *  Client Metadata Name:
+      introspection_encryption_enc_values_supported
+   *  Client Metadata Description: JSON array containing a list of the
+      JWE enc values supported by the Client when decrypting the
+      Introspection Response
+
+
+
+
+Jones, et al.                Standards Track                   [Page 10]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   *  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   *  Specification Document(s): Section 2 of this specification
+
+7.  References
+
+7.1.  Normative References
+
+   [CIBA.Core]
+              Rodriguez, G., Walter, F., Nennker, A., Tonge, D., and B.
+              Campbell, "OpenID Connect Client-Initiated Backchannel
+              Authentication Flow - Core 1.0", 1 September 2021,
+              <https://openid.net/specs/openid-client-initiated-
+              backchannel-authentication-core-1_0.html>.
+
+   [IANA.OAuth.Parameters]
+              IANA, "OAuth Parameters",
+              <https://www.iana.org/assignments/oauth-parameters>.
+
+   [JARM]     Lodderstedt, T. and B. Campbell, "JWT Secured
+              Authorization Response Mode for OAuth 2.0 (JARM)", 17
+              August 2025,
+              <https://openid.net/specs/oauth-v2-jarm.html>.
+
+   [JWE]      Jones, M.B. and J. Hildebrand, "JSON Web Encryption
+              (JWE)", RFC 7516, DOI 10.17487/RFC7516, May 2015,
+              <https://tools.ietf.org/html/rfc7516>.
+
+   [JWS]      Jones, M.B., Bradley, J., and N. Sakimura, "JSON Web
+              Signature (JWS)", RFC 7515, DOI 10.17487/RFC7515, May
+              2015, <https://tools.ietf.org/html/rfc7515>.
+
+   [JWT]      Jones, M.B., Bradley, J., and N. Sakimura, "JSON Web Token
+              (JWT)", RFC 7519, DOI 10.17487/RFC7519, May 2015,
+              <https://tools.ietf.org/html/rfc7519>.
+
+   [OpenID.Core]
+              Sakimura, N., Bradley, J., Jones, M.B., de Medeiros, B.,
+              and C. Mortimore, "OpenID Connect Core 1.0", 15 December
+              2023,
+              <https://openid.net/specs/openid-connect-core-1_0.html>.
+
+   [OpenID.Discovery]
+              Sakimura, N., Bradley, J., Jones, M.B., and E. Jay,
+              "OpenID Connect Discovery 1.0", 15 December 2023,
+              <https://openid.net/specs/openid-connect-discovery-
+              1_0.html>.
+
+
+
+
+Jones, et al.                Standards Track                   [Page 11]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   [OpenID.Federation]
+              Hedberg, R., Ed., Jones, M.B., Solberg, A.Å., Bradley, J.,
+              De Marco, G., and V. Dzhuvinov, "OpenID Federation 1.0",
+              17 February 2026,
+              <https://openid.net/specs/openid-federation-1_0.html>.
+
+   [OpenID.Registration]
+              Sakimura, N., Bradley, J., and M.B. Jones, "OpenID Connect
+              Dynamic Client Registration 1.0", 15 December 2023,
+              <https://openid.net/specs/openid-connect-registration-
+              1_0.html>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC6749]  Hardt, D., Ed., "The OAuth 2.0 Authorization Framework",
+              RFC 6749, DOI 10.17487/RFC6749, October 2012,
+              <https://www.rfc-editor.org/info/rfc6749>.
+
+   [RFC7009]  Lodderstedt, T., Ed., Dronia, S., and M. Scurtescu, "OAuth
+              2.0 Token Revocation", RFC 7009, DOI 10.17487/RFC7009,
+              August 2013, <https://www.rfc-editor.org/info/rfc7009>.
+
+   [RFC7662]  Richer, J., Ed., "OAuth 2.0 Token Introspection",
+              RFC 7662, DOI 10.17487/RFC7662, October 2015,
+              <https://www.rfc-editor.org/info/rfc7662>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+   [RFC9126]  Lodderstedt, T., Campbell, B., Sakimura, N., Tonge, D.,
+              and F. Skokan, "OAuth 2.0 Pushed Authorization Requests",
+              RFC 9126, DOI 10.17487/RFC9126, September 2021,
+              <https://www.rfc-editor.org/info/rfc9126>.
+
+   [RFC9701]  Lodderstedt, T., Ed. and V. Dzhuvinov, "JSON Web Token
+              (JWT) Response for OAuth Token Introspection", RFC 9701,
+              DOI 10.17487/RFC9701, January 2025,
+              <https://www.rfc-editor.org/info/rfc9701>.
+
+7.2.  Informative References
+
+
+
+
+
+
+
+Jones, et al.                Standards Track                   [Page 12]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+   [RFC7591]  Richer, J., Ed., Jones, M., Bradley, J., Machulak, M., and
+              P. Hunt, "OAuth 2.0 Dynamic Client Registration Protocol",
+              RFC 7591, DOI 10.17487/RFC7591, July 2015,
+              <https://www.rfc-editor.org/info/rfc7591>.
+
+   [RFC8414]  Jones, M., Sakimura, N., and J. Bradley, "OAuth 2.0
+              Authorization Server Metadata", RFC 8414,
+              DOI 10.17487/RFC8414, June 2018,
+              <https://www.rfc-editor.org/info/rfc8414>.
+
+Appendix A.  Notices
+
+   Copyright (c) 2026 The OpenID Foundation.
+
+   The OpenID Foundation (OIDF) grants to any Contributor, developer,
+   implementer, or other interested party a non-exclusive, royalty free,
+   worldwide copyright license to reproduce, prepare derivative works
+   from, distribute, perform and display, this Implementers Draft, Final
+   Specification, or Final Specification Incorporating Errata
+   Corrections solely for the purposes of (i) developing specifications,
+   and (ii) implementing Implementers Drafts, Final Specifications, and
+   Final Specification Incorporating Errata Corrections based on such
+   documents, provided that attribution be made to the OIDF as the
+   source of the material, but that such attribution does not indicate
+   an endorsement by the OIDF.
+
+   The technology described in this specification was made available
+   from contributions from various sources, including members of the
+   OpenID Foundation and others.  Although the OpenID Foundation has
+   taken steps to help ensure that the technology is available for
+   distribution, it takes no position regarding the validity or scope of
+   any intellectual property or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this specification or the extent to which any license under such
+   rights might or might not be available; neither does it represent
+   that it has made any independent effort to identify any such rights.
+   The OpenID Foundation and the contributors to this specification make
+   no (and hereby expressly disclaim any) warranties (express, implied,
+   or otherwise), including implied warranties of merchantability, non-
+   infringement, fitness for a particular purpose, or title, related to
+   this specification, and the entire risk as to implementing this
+   specification is assumed by the implementer.  The OpenID Intellectual
+   Property Rights policy (found at openid.net) requires contributors to
+   offer a patent promise not to assert certain patent claims against
+   other contributors and against implementers.  OpenID invites any
+   interested party to bring to its attention any copyrights, patents,
+   patent applications, or other proprietary rights that may cover
+   technology that may be required to practice this specification.
+
+
+
+Jones, et al.                Standards Track                   [Page 13]
+
+                   OpenID Connect RP Metadata Choices         March 2026
+
+
+Acknowledgements
+
+   The authors wish to acknowledge the contributions of the following
+   people to this specification: Vladimir Dzhuvinov, Michael Fraser,
+   Joseph Heenan, Frederik Krogsdal Jacobsen, Eduardo Perottoni, and
+   Stefan Santesson.
+
+Authors' Addresses
+
+   Michael B. Jones
+   Self-Issued Consulting
+   Email: michael_b_jones@hotmail.com
+   URI:   https://self-issued.info/
+
+
+   Roland Hedberg
+   independent
+   Email: roland@catalogix.se
+
+
+   John Bradley
+   Yubico
+   Email: ve7jtb@ve7jtb.com
+   URI:   https://www.linkedin.com/in/ve7jtb/
+
+
+   Filip Skokan
+   Okta
+   Email: panva.ip@gmail.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones, et al.                Standards Track                   [Page 14]

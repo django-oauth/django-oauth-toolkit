@@ -74,6 +74,8 @@ This directory contains plain-text standards documents used by this repository.
   - Source: https://openid.net/specs/openid-connect-session-1_0.txt
 - `openid-connect-backchannel-1_0.txt` - OpenID Connect Back-Channel Logout 1.0
   - Source: https://openid.net/specs/openid-connect-backchannel-1_0.txt
+- `openid-connect-rp-metadata-choices-1_0.txt` - OpenID Connect Relying Party Metadata Choices 1.0
+  - Source: https://openid.net/specs/openid-connect-rp-metadata-choices-1_0.txt
 
 ## Notes
 
