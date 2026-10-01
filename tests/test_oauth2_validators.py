@@ -743,6 +743,65 @@ class TestOAuth2Validator(TransactionTestCase):
         self.assertEqual(1, RefreshToken.objects.count())
         self.assertEqual(1, AccessToken.objects.count())
 
+    def test_save_bearer_token__rotating_a_refresh_token_that_minted_no_access_token(self):
+        # The previously issued access token is looked up by the OneToOne via get()
+        access_token = AccessToken.objects.create(
+            token="123",
+            user=self.user,
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            application=self.application,
+        )
+        refresh_token = RefreshToken.objects.create(
+            access_token=access_token, token="abc", user=self.user, application=self.application
+        )
+        self.assertFalse(AccessToken.objects.filter(source_refresh_token=refresh_token).exists())
+
+        self.request.refresh_token_instance = refresh_token
+        token = {
+            "scope": "foo bar",
+            "refresh_token": "rotated-refresh-token",
+            "access_token": "rotated-access-token",
+        }
+
+        self.validator.save_bearer_token(token, self.request)
+
+        self.assertEqual(token["access_token"], "rotated-access-token")
+        self.assertEqual(token["refresh_token"], "rotated-refresh-token")
+        self.assertTrue(AccessToken.objects.filter(token="rotated-access-token").exists())
+
+    def test_save_bearer_token__rotating_a_refresh_token_within_the_grace_period(self):
+        # the refresh token created a new token, so the lookup
+        # finds it and the grace window replays that pair instead of creating a new one.
+        self.oauth2_settings.REFRESH_TOKEN_GRACE_PERIOD_SECONDS = 120
+        refresh_token = RefreshToken.objects.create(token="abc", user=self.user, application=self.application)
+        successor_access_token = AccessToken.objects.create(
+            token="successor-access-token",
+            user=self.user,
+            scope="foo bar",
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            application=self.application,
+            source_refresh_token=refresh_token,
+        )
+        successor_refresh_token = RefreshToken.objects.create(
+            access_token=successor_access_token,
+            token="successor-refresh-token",
+            user=self.user,
+            application=self.application,
+        )
+
+        self.request.refresh_token_instance = refresh_token
+        token = {
+            "scope": "foo bar",
+            "refresh_token": "rotated-refresh-token",
+            "access_token": "rotated-access-token",
+        }
+
+        self.validator.save_bearer_token(token, self.request)
+
+        self.assertEqual(token["access_token"], successor_access_token.token)
+        self.assertEqual(token["refresh_token"], successor_refresh_token.token)
+        self.assertFalse(AccessToken.objects.filter(token="rotated-access-token").exists())
+
     def test_save_bearer_token__with_no_refresh_token__creates_new_access_token_only(self):
         token = {
             "scope": "foo bar",

@@ -256,6 +256,7 @@ quality checks. The final release train must pass the complete supported matrix:
 * SQLite across the supported Python and Django combinations.
 * PostgreSQL standalone and primary/replica topologies.
 * MySQL standalone and primary/replica topologies.
+* Oracle standalone topology.
 * Migration checks for each database topology.
 * Multi-database and swapped-model migration scenarios.
 * The demonstration relying-party build.

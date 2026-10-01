@@ -109,6 +109,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the entry contains `code`. The warning names the canonical ordering to use instead. Entries that
   `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` already drops from discovery are not reported. What the
   endpoints accept is unchanged.
+* #1843 Oracle Database 23ai (Free) is now covered by CI on Django 5.2 and 6.0, via the
+  `py312-dj52-ora23`, `py314-dj60-ora23` and `migrations-dj{52,60}-ora23` tox environments and
+  `docker-compose.oracle.yml`. See "Standalone backend DB checks" in the contributing
+  documentation to run them locally.
 ### Changed
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
@@ -218,6 +222,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   access token with no user (such as one issued through the `client_credentials` grant), which
   made any endpoint reading `request.user.is_authenticated` fail with a 500. `request.user` is now
   an `AnonymousUser` for such tokens; the client remains identifiable through `request.auth`.
+* #1843 Refresh-token rotation no longer fails on Oracle, or any backend where `select_for_update()`
+  cannot be combined with `LIMIT`, with `NotSupportedError: LIMIT/OFFSET is not supported with
+  select_for_update on this database backend`. The previous access token is now looked up with
+  `.get()` instead of `.filter(...).first()`; `source_refresh_token` is a `OneToOneField`, so the
+  lookup matches at most one row either way.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such

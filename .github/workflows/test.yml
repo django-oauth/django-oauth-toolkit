@@ -25,6 +25,7 @@ jobs:
       mysql-matrix: ${{ steps.discover.outputs.mysql-matrix }}
       mysql-standalone-matrix: ${{ steps.discover.outputs.mysql-standalone-matrix }}
       mysql-pr-matrix: ${{ steps.discover.outputs.mysql-pr-matrix }}
+      oracle-standalone-matrix: ${{ steps.discover.outputs.oracle-standalone-matrix }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,18 +69,23 @@ jobs:
           core_envs = list_envs("-f", "lite3")
           postgres_envs = list_envs("-f", "pg16")
           mysql_envs = list_envs("-f", "my84")
+          oracle_envs = list_envs("-f", "ora23")
 
           core = []
           postgres_tests = {}
           mysql_tests = {}
+          oracle_tests = {}
           postgres_migrations = {}
           mysql_migrations = {}
+          oracle_migrations = {}
 
           core_pat = re.compile(r"^py(\d+)-dj(\d+|main)-lite\d+(?:-[a-z0-9]+)?$")
           pg_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
           my_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-my(\d+)(?:-([a-z0-9]+))?$")
           pg_mig_pat = re.compile(r"^migrations-dj(\d+|main)-pg(\d+)(?:-([a-z0-9]+))?$")
           my_mig_pat = re.compile(r"^migrations-dj(\d+|main)-my(\d+)(?:-([a-z0-9]+))?$")
+          ora_test_pat = re.compile(r"^py(\d+)-dj(\d+|main)-ora(\d+)(?:-([a-z0-9]+))?$")
+          ora_mig_pat = re.compile(r"^migrations-dj(\d+|main)-ora(\d+)(?:-([a-z0-9]+))?$")
 
           for env in core_envs:
             m = core_pat.match(env)
@@ -127,6 +133,23 @@ jobs:
               dj_factor, db_version, topology = m.groups()
               mysql_migrations[(dj_factor, db_version, topology or "standalone")] = env
 
+          for env in oracle_envs:
+            m = ora_test_pat.match(env)
+            if m:
+              py_factor, dj_factor, db_version, topology = m.groups()
+              oracle_tests[(dj_factor, db_version, topology or "standalone")] = {
+                "toxenv": env,
+                "python-version": py_factor_to_version(py_factor),
+                "django-version": dj_factor_to_version(dj_factor),
+                "db-topology": topology or "standalone",
+              }
+              continue
+
+            m = ora_mig_pat.match(env)
+            if m:
+              dj_factor, db_version, topology = m.groups()
+              oracle_migrations[(dj_factor, db_version, topology or "standalone")] = env
+
           def build_backend_matrix(tests: dict[tuple[str, str, str], dict[str, str]], migrations: dict[tuple[str, str, str], str], engine: str) -> list[dict[str, str]]:
             rows = []
             for key, test_entry in tests.items():
@@ -143,10 +166,12 @@ jobs:
           core.sort(key=lambda x: x["toxenv"])
           postgres = build_backend_matrix(postgres_tests, postgres_migrations, "pg")
           mysql = build_backend_matrix(mysql_tests, mysql_migrations, "my")
+          oracle = build_backend_matrix(oracle_tests, oracle_migrations, "ora")
           postgres_standalone = [row for row in postgres if row["db-topology"] == "standalone"]
           postgres_pr = [row for row in postgres if row["db-topology"] == "pr"]
           mysql_standalone = [row for row in mysql if row["db-topology"] == "standalone"]
           mysql_pr = [row for row in mysql if row["db-topology"] == "pr"]
+          oracle_standalone = [row for row in oracle if row["db-topology"] == "standalone"]
 
           outputs = {
             "core-matrix": {"include": core},
@@ -156,6 +181,7 @@ jobs:
             "mysql-matrix": {"include": mysql},
             "mysql-standalone-matrix": {"include": mysql_standalone},
             "mysql-pr-matrix": {"include": mysql_pr},
+            "oracle-standalone-matrix": {"include": oracle_standalone},
           }
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
@@ -505,6 +531,49 @@ jobs:
           MYSQL_PRIMARY_BIND_PORT: '3306'
           MYSQL_REPLICA_BIND_PORT: '3307'
 
+  oracle-standalone:
+    needs: discover-matrices
+    name: DOT Oracle Standalone (Python ${{ matrix.python-version }}, Django ${{ matrix.django-version }})
+    runs-on: ubuntu-latest
+    # Oracle takes minutes to start and the suite runs single-process against it (see the
+    # ora23 envs in tox.ini), so this is the slowest cell; still, a hung container must not
+    # hold the runner for the six-hour default.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-matrices.outputs.oracle-standalone-matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Start oracle DB layer
+        run: docker compose -f docker-compose.oracle.yml up -d --wait
+        env:
+          ORACLE_BIND_PORT: '1521'
+
+      - name: Run oracle standalone tests
+        run: tox -e ${{ matrix.toxenv }}
+        env:
+          ORACLE_PORT: '1521'
+
+      - name: Run oracle migration checks
+        run: tox -e ${{ matrix.migration_toxenv }}
+        env:
+          ORACLE_PORT: '1521'
+
+      - name: Stop oracle DB layer
+        if: always()
+        run: docker compose -f docker-compose.oracle.yml down -v
+        env:
+          ORACLE_BIND_PORT: '1521'
+
   test-demo-rp:
     name: Demo Relying Party
     runs-on: ubuntu-latest
@@ -617,6 +686,7 @@ jobs:
       - postgres-pr
       - mysql-standalone
       - mysql-pr
+      - oracle-standalone
       - e2e-compliance
     runs-on: ubuntu-latest
     name: Test successful

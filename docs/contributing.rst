@@ -404,9 +404,10 @@ The first thing the core committers will do is run this command. Any pull reques
 Standalone backend DB checks
 ----------------------------
 
-In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL and MySQL.
-To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release in each supported
-major line: 4.2, 5.2, and 6.0.
+In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL, MySQL
+and Oracle. To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release in each
+supported major line: 4.2, 5.2, and 6.0. Oracle covers 5.2 and 6.0 only: Django 4.2's Oracle backend requires
+``cx_Oracle`` and an Oracle Instant Client, whereas 5.2 onwards speaks ``python-oracledb``'s thin mode natively.
 
 Backend env names follow ``py{python}-dj{django}-{db}``, and migration env names mirror that
 with ``migrations-dj{django}-{db}``. For example, ``py312-dj52-pg16`` and
@@ -459,6 +460,22 @@ Run MySQL primary/replica topology checks locally::
   tox -e py314-dj60-my84-pr
   tox -e migrations-dj60-my84-pr
   docker compose -f docker-compose.mysql-pr.yml down -v
+
+Run Oracle standalone checks locally::
+
+  docker compose -f docker-compose.oracle.yml up -d --wait
+  tox -e py312-dj52-ora23
+  tox -e migrations-dj52-ora23
+  tox -e py314-dj60-ora23
+  tox -e migrations-dj60-ora23
+  docker compose -f docker-compose.oracle.yml down -v
+
+A few things differ for Oracle. The container is ``gvenzl/oracle-free`` and takes a few minutes to become healthy on
+its first start. The suite connects as ``SYSTEM`` (see :file:`tests/oracle_settings.py`) because Django's Oracle test
+runner creates and drops its own test user and tablespaces, which needs privileges the image's application user does
+not have; that is also why there is no ``docker/oracle-init`` directory. The Oracle environments run the suite
+single-process: pytest-xdist gives each worker its own ``TEST['NAME']``, but Oracle derives the test schema from
+``TEST['USER']``, which the workers would share.
 
 Add the tests!
 --------------
