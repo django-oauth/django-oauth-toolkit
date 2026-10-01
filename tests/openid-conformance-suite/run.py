@@ -77,8 +77,9 @@ RUNNER_SCRIPTS = {
 # keyed by the short name used with --plan and in the CI matrix. Form Post,
 # Session Management, Front-/Back-Channel Logout and 3rd-party initiated login
 # are absent because the toolkit does not implement those specifications.
-# ``code\ id_token`` is how the runner's grammar spells a response type with a
-# space (as the suite's own CI invokes these plans).
+# A response type with a space is written as is: the grammar accepts the space
+# inside the brackets and the value reaches the suite verbatim (the suite's own
+# shell scripts escape it only for the shell's benefit).
 PLANS = {
     "config": ("oidcc-config-certification-test-plan", STATIC_CONFIG),
     "basic": (
@@ -113,7 +114,7 @@ PLANS = {
     ),
     "rp-initiated-logout-dcr": (
         "oidcc-rp-initiated-logout-certification-test-plan"
-        "[response_type=code\\ id_token][client_registration=dynamic_client]",
+        "[response_type=code id_token][client_registration=dynamic_client]",
         DCR_CONFIG,
     ),
 }
