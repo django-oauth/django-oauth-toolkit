@@ -69,12 +69,15 @@ DCR_CLIENTS = [
 ]
 
 
-def login_task(screenshot=False):
+def login_task(screenshot=None):
     commands = []
     if screenshot:
         # Fills the module's screenshot placeholder with the login page, which is
         # how the prompt=login / max_age modules prove the End-User was re-prompted.
-        commands.append(["wait", "xpath", "//*", 10, "Log In", "update-image-placeholder-optional"])
+        # "update-image-placeholder-optional" leaves the module WAITING for a manual
+        # upload when the prompt never appears; the non-optional form fails it
+        # after the timeout instead, which is the right outcome for an OP gap.
+        commands.append(["wait", "xpath", "//*", 10, "Log In", screenshot])
     commands += [
         ["text", "id", "id_username", USERNAME],
         ["text", "id", "id_password", PASSWORD],
@@ -98,27 +101,28 @@ VERIFY_CALLBACK = {
 }
 
 
-def authorize_block(screenshot=False, comment=None):
+def authorize_block(screenshot=None, comment=None):
     block = {"match": AUTHORIZE, "tasks": [login_task(screenshot), CONSENT, VERIFY_CALLBACK]}
     if comment:
         block = {"comment": comment, **block}
     return block
 
 
-def error_page_block(match, comment):
+def error_page_block(match, comment, login_first=False):
     # Fatal errors are rendered to the End-User as "Error: <code>" rather than
-    # redirected (oauth2_provider/authorize.html and logout_confirm.html).
-    return {
-        "comment": comment,
-        "match": match,
-        "tasks": [
-            {
-                "task": "Expect an error page",
-                "match": match,
-                "commands": [["wait", "xpath", "//*", 10, "Error:", "update-image-placeholder"]],
-            }
-        ],
-    }
+    # redirected (oauth2_provider/authorize.html and logout_confirm.html). The
+    # authorization endpoint authenticates the End-User before it validates the
+    # request, so a module that starts with a fresh browser session sees the
+    # login page first and the error page only after logging in.
+    tasks = [login_task()] if login_first else []
+    tasks.append(
+        {
+            "task": "Expect an error page",
+            "match": match,
+            "commands": [["wait", "xpath", "//*", 10, "Error:", "update-image-placeholder"]],
+        }
+    )
+    return {"comment": comment, "match": match, "tasks": tasks}
 
 
 CONFIRM_LOGOUT = {
@@ -151,14 +155,22 @@ LOGOUT_TO_HOME_BLOCK = {
 
 def overrides():
     result = {}
-    for module in ("oidcc-prompt-login", "oidcc-max-age-1"):
-        result[module] = {
-            "browser": [
-                authorize_block(
-                    screenshot=True, comment="screenshots the re-login prompt during the second authorization"
-                )
-            ]
-        }
+    result["oidcc-prompt-login"] = {
+        "browser": [
+            authorize_block(
+                screenshot="update-image-placeholder-optional",
+                comment="screenshots the re-login prompt during the second authorization",
+            )
+        ]
+    }
+    result["oidcc-max-age-1"] = {
+        "browser": [
+            authorize_block(
+                screenshot="update-image-placeholder",
+                comment="screenshots the re-login prompt the elapsed max_age must trigger",
+            )
+        ]
+    }
     for module in (
         "oidcc-ensure-registered-redirect-uri",
         "oidcc-ensure-redirect-uri-in-authorization-request",
@@ -166,7 +178,9 @@ def overrides():
         "oidcc-redirect-uri-query-mismatch",
     ):
         result[module] = {
-            "browser": [error_page_block(AUTHORIZE, "expect an immediate error page instead of a redirect")]
+            "browser": [
+                error_page_block(AUTHORIZE, "expect an error page instead of a redirect", login_first=True)
+            ]
         }
     for module in (
         "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri",
@@ -192,8 +206,8 @@ def overrides():
     return result
 
 
-def config(alias, clients):
-    return {
+def config(alias, clients, static=True):
+    result = {
         "alias": alias,
         "description": f"django-oauth-toolkit tests/app/idp ({alias})",
         "server": {"discoveryUrl": f"{IDP}/o/.well-known/openid-configuration"},
@@ -202,6 +216,11 @@ def config(alias, clients):
         "browser": [authorize_block(), LOGOUT_BLOCK],
         "override": overrides(),
     }
+    if static:
+        # The oidcc-server-client-secret-post module takes its client from this
+        # block; the second seeded client serves, the module runs on its own.
+        result["client_secret_post"] = clients[1]
+    return result
 
 
 def main():
@@ -209,7 +228,7 @@ def main():
         "dot-oidcc.json": config("dot", STATIC_CLIENTS["code"]),
         "dot-oidcc-implicit.json": config("dot-implicit", STATIC_CLIENTS["implicit"]),
         "dot-oidcc-hybrid.json": config("dot-hybrid", STATIC_CLIENTS["hybrid"]),
-        "dot-oidcc-dcr.json": config("dot-dcr", DCR_CLIENTS),
+        "dot-oidcc-dcr.json": config("dot-dcr", DCR_CLIENTS, static=False),
     }
     for name, content in files.items():
         with open(HERE / name, "w") as handle:

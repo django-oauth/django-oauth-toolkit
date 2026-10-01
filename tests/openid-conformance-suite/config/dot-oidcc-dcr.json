@@ -159,7 +159,7 @@
         "oidcc-max-age-1": {
             "browser": [
                 {
-                    "comment": "screenshots the re-login prompt during the second authorization",
+                    "comment": "screenshots the re-login prompt the elapsed max_age must trigger",
                     "match": "https://dot-idp/o/authorize/*",
                     "tasks": [
                         {
@@ -173,7 +173,7 @@
                                     "//*",
                                     10,
                                     "Log In",
-                                    "update-image-placeholder-optional"
+                                    "update-image-placeholder"
                                 ],
                                 [
                                     "text",
@@ -226,9 +226,33 @@
         "oidcc-ensure-registered-redirect-uri": {
             "browser": [
                 {
-                    "comment": "expect an immediate error page instead of a redirect",
+                    "comment": "expect an error page instead of a redirect",
                     "match": "https://dot-idp/o/authorize/*",
                     "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
                         {
                             "task": "Expect an error page",
                             "match": "https://dot-idp/o/authorize/*",
@@ -250,9 +274,33 @@
         "oidcc-ensure-redirect-uri-in-authorization-request": {
             "browser": [
                 {
-                    "comment": "expect an immediate error page instead of a redirect",
+                    "comment": "expect an error page instead of a redirect",
                     "match": "https://dot-idp/o/authorize/*",
                     "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
                         {
                             "task": "Expect an error page",
                             "match": "https://dot-idp/o/authorize/*",
@@ -274,9 +322,33 @@
         "oidcc-redirect-uri-query-added": {
             "browser": [
                 {
-                    "comment": "expect an immediate error page instead of a redirect",
+                    "comment": "expect an error page instead of a redirect",
                     "match": "https://dot-idp/o/authorize/*",
                     "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
                         {
                             "task": "Expect an error page",
                             "match": "https://dot-idp/o/authorize/*",
@@ -298,9 +370,33 @@
         "oidcc-redirect-uri-query-mismatch": {
             "browser": [
                 {
-                    "comment": "expect an immediate error page instead of a redirect",
+                    "comment": "expect an error page instead of a redirect",
                     "match": "https://dot-idp/o/authorize/*",
                     "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
                         {
                             "task": "Expect an error page",
                             "match": "https://dot-idp/o/authorize/*",

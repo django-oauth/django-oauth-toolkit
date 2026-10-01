@@ -226,6 +226,11 @@ def run_plans(runner_dir: Path, plan_names: list[str], export_dir: Path, verbose
     # Dev mode: the runner targets SUITE_URL without an API token.
     env.pop("CONFORMANCE_SERVER", None)
     env["PYTHONUNBUFFERED"] = "1"
+    # The runner aborts the whole plan after N consecutive modules that did not
+    # run to completion, to cut short a run against a dead server. Here a
+    # cluster of modules hitting one OP gap is the normal case, and the report
+    # for the rest of the plan is the point; the job timeout bounds the worst case.
+    env.setdefault("CONFORMANCE_MAX_CONSECUTIVE_FAILURES", "25")
     log("running: " + " ".join(command[1:]))
     return subprocess.run(command, cwd=HERE, env=env, check=False).returncode
 
