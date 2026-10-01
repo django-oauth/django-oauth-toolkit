@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [unreleased]
 ### Added
 * An `openid-conformance-suite` CI job and `tox -e openid-conformance-suite` environment
-  (`tests/openid-conformance-suite/`) that run the OpenID Foundation conformance suite's Config OP
-  and Basic OP certification plans against the `tests/app/idp` demo provider in Docker, with the
-  suite version pinned and accepted deviations recorded in an expected-failures file.
+  (`tests/openid-conformance-suite/`) that run the OpenID Foundation conformance suite against the
+  `tests/app/idp` demo provider in Docker: the Config, Basic, Implicit, Hybrid, Dynamic and
+  RP-Initiated Logout OP certification plans, with static and RFC 7591 dynamically registered
+  clients, one CI matrix entry per plan, the suite version pinned and accepted deviations recorded
+  in an expected-failures file.
 * #1730 A `cleardcrapplications` management command that deletes DCR-registered applications
   (`registration_source="dcr"`) which hold no live tokens or grants and were last registered or
   modified at least `--min-unmodified-days` days ago (default 7). DCR clients that re-register

@@ -14,10 +14,11 @@ formality.
 Docker with `docker compose` v2 is required. From the repository root:
 
 ```bash
-tox -e openid-conformance-suite                                            # default plans
-tox -e openid-conformance-suite -- --plan oidcc-config-certification-test-plan
-tox -e openid-conformance-suite -- --keep                                  # leave the stack running
-tox -e openid-conformance-suite -- --verbose                               # print waiver templates
+tox -e openid-conformance-suite                      # every plan, sequentially
+tox -e openid-conformance-suite -- --plan basic      # one plan (repeatable)
+tox -e openid-conformance-suite -- --list-plans      # the plan table
+tox -e openid-conformance-suite -- --keep            # leave the stack running
+tox -e openid-conformance-suite -- --verbose         # print waiver templates
 ```
 
 `run.py` does the work:
@@ -30,7 +31,7 @@ tox -e openid-conformance-suite -- --verbose                               # pri
    `seed_idp.py` runs once inside the IdP container to create the test user and the two
    statically registered clients.
 3. Downloads the suite's own CI runner (`scripts/run-test-plan.py` and its two helper modules)
-   at the same tag, checks their SHA-256, and runs the plans with `config/dot-oidcc.json` and
+   at the same tag, checks their SHA-256, and runs the plans with their `config/*.json` and
    `expected-failures.json`.
 4. Writes the runner's exported results plus `docker-compose.log` to `reports/` and tears the
    stack down. With `--keep` the stack stays up: the suite UI is at
@@ -43,25 +44,51 @@ run to completion.
 
 ## Plans
 
-| Plan | Default | Notes |
+`PLANS` in `run.py` maps a short name to a certification plan and the configuration file it
+runs with. CI runs one matrix job per name, each with its own stack, so a plan's failure is
+visible on its own and the jobs run in parallel.
+
+| Name | Plan | Clients |
 |---|---|---|
-| `oidcc-config-certification-test-plan` | yes | Discovery document checks only. |
-| `oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client]` | yes | Authorization code flow: the Basic OP profile. |
-| `oidcc-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]` | no | `config/dot-oidcc.json` already carries the logout browser steps; run it with `--plan`. |
-| `oidcc-hybrid-...`, `oidcc-implicit-...`, `oidcc-dynamic-...` | no | Supported by the toolkit and worth adding once Basic is calibrated. |
+| `config` | `oidcc-config-certification-test-plan` | static |
+| `basic` | `oidcc-basic-certification-test-plan` (discovery, static client) | static |
+| `implicit` | `oidcc-implicit-certification-test-plan` (discovery, static client) | static |
+| `hybrid` | `oidcc-hybrid-certification-test-plan` (discovery, static client) | static |
+| `basic-dcr` | `oidcc-basic-certification-test-plan` (discovery, dynamic client) | RFC 7591 |
+| `implicit-dcr` | `oidcc-implicit-certification-test-plan` (discovery, dynamic client) | RFC 7591 |
+| `hybrid-dcr` | `oidcc-hybrid-certification-test-plan` (discovery, dynamic client) | RFC 7591 |
+| `dynamic` | `oidcc-dynamic-certification-test-plan` (`response_type=code`) | RFC 7591 |
+| `rp-initiated-logout` | `oidcc-rp-initiated-logout-certification-test-plan` (`code`, static client) | static |
+| `rp-initiated-logout-dcr` | `oidcc-rp-initiated-logout-certification-test-plan` (`code id_token`, dynamic client) | RFC 7591 |
+
+"Static" clients are the two `seed_idp.py` registers; "RFC 7591" means the suite registers
+its own through the toolkit's dynamic client registration endpoint, which the demo IdP leaves
+open (`AllowAllDCRPermission`). That is why the Basic, Implicit and Hybrid plans run twice: the
+second run exercises registration as well as the flow.
+
+Two of the `-dcr` plans are expected to expose gaps in the registration endpoint rather than
+in the flows, and are in the matrix for exactly that reason: it rejects a `grant_types` list
+with both `authorization_code` and `implicit`, which is what a hybrid client registers, and it
+ignores `post_logout_redirect_uris`.
 
 Form Post, Session Management, Front-Channel/Back-Channel Logout, 3rd-party initiated login and
-the FAPI profiles are out of reach until the toolkit implements those specifications.
+the FAPI profiles are out of reach until the toolkit implements those specifications. The
+suite has no OpenID Connect plans for the toolkit's OAuth-only features (device grant,
+introspection, revocation, PAR, resource indicators); those stay covered by `tests/e2e`.
 
 ## Configuration
 
-`config/dot-oidcc.json` is a standard suite configuration:
+`config/generate.py` writes the two suite configuration files; edit the script and re-run it
+rather than the JSON. `config/dot-oidcc.json` (alias `dot`) is used with static clients and
+`config/dot-oidcc-dcr.json` (alias `dot-dcr`) with dynamically registered ones. Both are
+standard suite configurations:
 
 * `server.discoveryUrl` points at `https://dot-idp/o/.well-known/openid-configuration` on the
   compose network.
-* `client` / `client2` are the clients `seed_idp.py` registers, with the suite's redirect URIs
-  for the `dot` alias: `https://localhost.emobix.co.uk:8443/test/a/dot/callback`, the same with
-  the query component `?dummy1=lorem&dummy2=ipsum`, and `.../post_logout_redirect`.
+* `client` / `client2` are either the clients `seed_idp.py` registers, with the suite's redirect
+  URIs for the `dot` alias (`https://localhost.emobix.co.uk:8443/test/a/dot/callback`, the same
+  with the query component `?dummy1=lorem&dummy2=ipsum`, and `.../post_logout_redirect`), or
+  just a `client_name` for the suite to register itself.
 * `browser` tells the suite's built-in browser how to drive the IdP: fill `id_username` /
   `id_password` on the Django login page, click the `allow` button on the consent and logout
   pages, and wait for the suite's own callback page.

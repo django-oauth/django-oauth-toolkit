@@ -483,10 +483,13 @@ OpenID Foundation conformance suite
 
 ``tests/openid-conformance-suite`` runs the official `OpenID Conformance Suite
 <https://openid.net/certification/about-conformance-suite/>`_, the test modules used for OpenID
-Provider certification, against the ``tests/app/idp`` demo provider inside Docker. CI runs it as the
-``openid-conformance-suite`` job. Locally (Docker required)::
+Provider certification, against the ``tests/app/idp`` demo provider inside Docker: every
+certification plan whose profile the toolkit implements (Config, Basic, Implicit, Hybrid, Dynamic
+and RP-Initiated Logout, with static and dynamically registered clients). CI runs it as the
+``openid-conformance-suite`` job, one matrix entry per plan. Locally (Docker required)::
 
-  tox -e openid-conformance-suite
+  tox -e openid-conformance-suite                  # every plan
+  tox -e openid-conformance-suite -- --plan basic  # one plan; --list-plans shows them
 
 Accepted deviations are recorded in ``tests/openid-conformance-suite/expected-failures.json``;
 any other failure or warning fails the run. ``tests/openid-conformance-suite/README.md`` describes
