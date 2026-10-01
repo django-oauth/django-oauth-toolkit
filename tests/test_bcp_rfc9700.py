@@ -226,6 +226,39 @@ class TestPkcePlainGate(TestCase):
         self.assertNotIn("Location", response)
         self.assertNotIn("iss=", response.context["url"])
 
+    def _prompt_none_unauthenticated(self):
+        # No login: handle_no_permission() builds the OIDC Core 3.1.2.6
+        # login_required error redirect for prompt=none.
+        return self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "redirect_uri": "https://example.org/cb",
+                "scope": "read",
+                "state": "abc",
+                "prompt": "none",
+                "code_challenge": "a" * 43,
+                "code_challenge_method": "plain",
+            },
+        )
+
+    def test_iss_added_to_prompt_none_login_required_redirect(self):
+        # The login_required redirect is an authorization error response too, so
+        # RFC 9207 §2 applies to it just like the error_response-built redirects.
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        response = self._prompt_none_unauthenticated()
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=login_required", response["Location"])
+        self.assertIn("state=abc", response["Location"])
+        self.assertIn("iss=http%3A%2F%2Ftestserver%2Fo", response["Location"])
+
+    def test_iss_omitted_from_prompt_none_login_required_redirect_by_default(self):
+        response = self._prompt_none_unauthenticated()
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("error=login_required", response["Location"])
+        self.assertNotIn("iss=", response["Location"])
+
     def test_iss_omitted_from_authorization_error_redirect_by_default(self):
         self.client.login(username="co", password="123456")
         response = self.client.post(

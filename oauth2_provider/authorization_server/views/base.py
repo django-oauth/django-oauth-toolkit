@@ -26,6 +26,7 @@ from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
 from oauth2_provider.core.http import OAuth2ResponseRedirect
 from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.core.signals import app_authorized
+from oauth2_provider.core.utils import add_iss_to_redirect
 from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.models import get_access_token_model, get_application_model, get_device_grant_model
 from oauth2_provider.resource_server.validators import is_valid_resource_uri
@@ -518,6 +519,12 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
             separator = "&" if "?" in redirect_uri else "?"
             redirect_to = redirect_uri + separator + urlencode(response_parameters)
+            # RFC 9207 §2 requires `iss` on every authorization response returned
+            # to the client, error responses included; the redirect URI used here
+            # was validated against the registered client above.
+            if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
+                issuer = oauth2_settings.oauth2_authorization_server_issuer(self.request)
+                redirect_to = add_iss_to_redirect(redirect_to, issuer)
             return self.redirect(redirect_to, application)
 
         if "create" in prompt:
