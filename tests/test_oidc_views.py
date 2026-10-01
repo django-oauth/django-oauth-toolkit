@@ -67,6 +67,18 @@ class TestConnectDiscoveryInfoView(TestCase):
         self.assertEqual(response.status_code, 200)
         assert response.json() == expected_response
 
+    def test_get_connect_discovery_info_advertises_registration_endpoint(self):
+        self.oauth2_settings.DCR_ENABLED = True
+        response = self.client.get("/o/.well-known/openid-configuration")
+        self.assertEqual(response.status_code, 200)
+        assert response.json()["registration_endpoint"] == "http://localhost/o/register/"
+
+    def test_get_connect_discovery_info_omits_registration_endpoint_when_dcr_disabled(self):
+        # DCR_ENABLED defaults to False; the endpoint 404s, so it must not be advertised.
+        response = self.client.get("/o/.well-known/openid-configuration")
+        self.assertEqual(response.status_code, 200)
+        assert "registration_endpoint" not in response.json()
+
     def test_get_connect_discovery_info_advertises_cimd_when_enabled(self):
         self.oauth2_settings.CIMD_ENABLED = True
         response = self.client.get("/o/.well-known/openid-configuration")
