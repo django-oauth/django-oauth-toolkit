@@ -298,6 +298,53 @@ class TestDynamicClientRegistration(TestCase):
                 assert body["error"] == "invalid_client_metadata"
                 assert "id_token_signed_response_alg" in body["error_description"]
 
+    def test_register_hs256_is_400_for_every_client(self):
+        """HS256 is not offered at registration, even to a client_secret_jwt client.
+
+        HS256 would make the client secret the ID Token signing key, and RS256
+        is the algorithm OpenID Connect Core 1.0 section 15.1 requires of an
+        OpenID Provider that signs its ID Tokens. The refusal holds whatever the
+        server can sign with; its advice follows what the server can do.
+        """
+        servers = (
+            ("rs256-key", True, presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]),
+            ("no-rsa-key", True, ""),
+            ("oidc-disabled", False, ""),
+        )
+        clients = (
+            {"token_endpoint_auth_method": "client_secret_jwt"},
+            {"token_endpoint_auth_method": "client_secret_basic"},
+            {"token_endpoint_auth_method": "client_secret_post"},
+            {"token_endpoint_auth_method": "private_key_jwt", "jwks": _public_jwks()},
+            {"token_endpoint_auth_method": "none"},
+            {"token_endpoint_auth_method": "client_secret_jwt", "grant_types": ["implicit"]},
+        )
+        self.client.force_login(self.user)
+        for server, oidc_enabled, rsa_key in servers:
+            self.oauth2_settings.OIDC_ENABLED = oidc_enabled
+            self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = rsa_key
+            for metadata in clients:
+                with self.subTest(server=server, metadata=metadata):
+                    data = {
+                        "redirect_uris": ["https://example.com/cb"],
+                        "grant_types": ["authorization_code"],
+                        "id_token_signed_response_alg": "HS256",
+                        **metadata,
+                    }
+                    response = _post_register(self.client, data)
+                    assert response.status_code == 400, response.content
+                    body = response.json()
+                    assert body["error"] == "invalid_client_metadata"
+                    description = body["error_description"]
+                    assert description.startswith("Unsupported id_token_signed_response_alg: 'HS256'.")
+                    assert "not offered to self-registered clients" in description
+                    if server == "rs256-key":
+                        assert "use RS256" in description
+                    else:
+                        assert "use RS256" not in description
+                        assert "omit id_token_signed_response_alg" in description
+        assert not Application.objects.exists()
+
     def test_register_authorization_code_with_refresh_token(self):
         """[authorization_code, refresh_token] → maps cleanly, refresh_token ignored."""
         self.client.force_login(self.user)
@@ -1026,6 +1073,226 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert response.status_code == 200
         assert "id_token_signed_response_alg" not in response.json()
         assert Application.objects.get(client_id=self.client_id).algorithm == Application.NO_ALGORITHM
+
+    def _register_client_secret_jwt(self):
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_jwt",
+            },
+        )
+        self.client.logout()
+        assert response.status_code == 201, response.content
+        return response.json()
+
+    def _register_client_secret_jwt_with_admin_hs256(self):
+        """Register a client_secret_jwt client, then set HS256 as an administrator would."""
+        registered = self._register_client_secret_jwt()
+        Application.objects.filter(client_id=registered["client_id"]).update(
+            algorithm=Application.HS256_ALGORITHM
+        )
+        return registered
+
+    def _put_hs256(self, registered, **metadata):
+        return self.client.put(
+            _management_url(registered["client_id"]),
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://updated.example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "token_endpoint_auth_method": "client_secret_jwt",
+                    "id_token_signed_response_alg": "HS256",
+                    **metadata,
+                }
+            ),
+            content_type="application/json",
+            **_bearer(registered["registration_access_token"]),
+        )
+
+    def test_put_echoing_hs256_with_rs256_available_is_200(self):
+        """An echoed administrator-set HS256 is kept, not replaced by the RS256 default."""
+        _enable_rs256(self.oauth2_settings)
+        registered = self._register_client_secret_jwt_with_admin_hs256()
+        response = self._put_hs256(registered)
+        assert response.status_code == 200, response.content
+        assert response.json()["id_token_signed_response_alg"] == "HS256"
+        app = Application.objects.get(client_id=registered["client_id"])
+        assert app.algorithm == Application.HS256_ALGORITHM
+        assert app.redirect_uris == "https://updated.example.com/cb"
+        assert app.client_secret == registered["client_secret"]
+
+    def test_put_echoing_hs256_for_ineligible_client_is_400(self):
+        """An echoed HS256 is refused with the reason once the PUT makes the client ineligible.
+
+        The row is left unchanged, the plaintext secret included.
+        """
+        self.oauth2_settings.OIDC_ENABLED = True
+        registered = self._register_client_secret_jwt_with_admin_hs256()
+        # client_secret_basic is covered by test_put_echoing_hs256_while_dropping_its_preconditions_is_400.
+        cases = (
+            ({"token_endpoint_auth_method": "none"}, "public client"),
+            ({"grant_types": ["implicit"]}, "implicit"),
+        )
+        for metadata, reason in cases:
+            with self.subTest(metadata=metadata):
+                response = self._put_hs256(registered, **metadata)
+                assert response.status_code == 400, response.content
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                description = body["error_description"]
+                assert description.startswith("id_token_signed_response_alg 'HS256' is not available")
+                assert reason in description
+                assert "hash_client_secret" not in description
+                app = Application.objects.get(client_id=registered["client_id"])
+                assert app.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT
+                assert app.authorization_grant_type == Application.GRANT_AUTHORIZATION_CODE
+                assert app.algorithm == Application.HS256_ALGORITHM
+                assert app.hash_client_secret is False
+                assert app.redirect_uris == "https://example.com/cb"
+                assert app.client_secret == registered["client_secret"]
+
+    def test_put_new_hs256_is_400(self):
+        """A PUT cannot ask for HS256 afresh, even for an otherwise eligible client.
+
+        Only an HS256 already stored (an administrator's choice) is kept when
+        echoed; anything else is refused as at registration, row unchanged.
+        """
+        for oidc_enabled, rsa_key, stored in (
+            (False, "", Application.NO_ALGORITHM),
+            (True, presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"], Application.RS256_ALGORITHM),
+        ):
+            with self.subTest(stored=stored):
+                self.oauth2_settings.OIDC_ENABLED = oidc_enabled
+                self.oauth2_settings.OIDC_RSA_PRIVATE_KEY = rsa_key
+                registered = self._register_client_secret_jwt()
+                assert registered.get("id_token_signed_response_alg", "") == stored
+                response = self._put_hs256(registered)
+                assert response.status_code == 400, response.content
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                description = body["error_description"]
+                assert description.startswith("Unsupported id_token_signed_response_alg: 'HS256'.")
+                assert "not offered to self-registered clients" in description
+                app = Application.objects.get(client_id=registered["client_id"])
+                assert app.algorithm == stored
+                assert app.redirect_uris == "https://example.com/cb"
+
+    def _assert_switch_to_client_secret_jwt_refused(self, extra_metadata):
+        """A hashed secret cannot become the HMAC key, so the PUT is refused with RFC names."""
+        self.oauth2_settings.OIDC_ENABLED = True
+        before = Application.objects.get(client_id=self.client_id)
+        assert before.token_endpoint_auth_method == "client_secret_basic"
+        assert Application._client_secret_is_hashed(before.client_secret)
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(
+                {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "client_name": "Managed App",
+                    "token_endpoint_auth_method": "client_secret_jwt",
+                    **extra_metadata,
+                }
+            ),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 400, response.content
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        description = body["error_description"]
+        assert "token_endpoint_auth_method 'client_secret_jwt'" in description
+        assert "stored hashed" in description
+        assert "register a new client" in description
+        assert "hash_client_secret" not in description
+        assert "client_secret:" not in description
+        after = Application.objects.get(client_id=self.client_id)
+        assert after.token_endpoint_auth_method == before.token_endpoint_auth_method
+        assert after.hash_client_secret is True
+        assert after.client_secret == before.client_secret
+        assert after.algorithm == before.algorithm
+
+    def test_put_switch_hashed_secret_client_to_client_secret_jwt_is_400(self):
+        """client_secret_jwt needs the plaintext secret, which a hashed row lost."""
+        self._assert_switch_to_client_secret_jwt_refused({})
+
+    def test_put_switch_hashed_secret_client_to_client_secret_jwt_hs256_is_400(self):
+        """Asking for HS256 in the same PUT is refused for the same reason."""
+        self._assert_switch_to_client_secret_jwt_refused({"id_token_signed_response_alg": "HS256"})
+
+    def test_hashed_secret_check_asks_the_application_instance(self):
+        """The hashed-secret check goes through the application, as clean() does.
+
+        A swapped model may redefine ``_client_secret_is_hashed`` as an
+        ordinary method. On registration the view does not ask it (a fresh
+        secret is never hashed) and only Application.clean() does, so a faithful
+        override must leave registration working. An update must honour the
+        model's answer with the RFC-worded refusal rather than
+        Application.clean()'s model-field wording.
+        """
+        from unittest import mock
+
+        from oauth2_provider.models import AbstractApplication
+
+        def faithful_instance_override(self, client_secret):
+            return AbstractApplication._client_secret_is_hashed(client_secret)
+
+        def always_hashed_instance_override(self, client_secret):
+            return True
+
+        with mock.patch.object(Application, "_client_secret_is_hashed", faithful_instance_override):
+            registered = self._register_client_secret_jwt()
+        with mock.patch.object(Application, "_client_secret_is_hashed", always_hashed_instance_override):
+            response = self.client.put(
+                _management_url(registered["client_id"]),
+                data=json.dumps(
+                    {
+                        "redirect_uris": ["https://example.com/cb"],
+                        "grant_types": ["authorization_code"],
+                        "token_endpoint_auth_method": "client_secret_jwt",
+                    }
+                ),
+                content_type="application/json",
+                **_bearer(registered["registration_access_token"]),
+            )
+        assert response.status_code == 400, response.content
+        description = response.json()["error_description"]
+        assert "stored hashed" in description
+        assert "hash_client_secret" not in description
+
+    def test_put_echoing_hs256_needs_a_stored_client_secret_of_32_octets(self):
+        """OIDC Core 1.0 §16.19: an HS256 client secret must hold at least 32 octets.
+
+        An administrator-set HS256 echoed back is refused when the stored
+        secret is one octet short of an HMAC key, leaving the row unchanged,
+        and kept at exactly 32. The pair also proves the PUT checks the stored
+        secret rather than an empty default, which would fail both.
+        """
+        self.oauth2_settings.OIDC_ENABLED = True
+        self.oauth2_settings.CLIENT_SECRET_GENERATOR_LENGTH = 31
+        short = self._register_client_secret_jwt_with_admin_hs256()
+        assert len(short["client_secret"]) == 31
+        response = self._put_hs256(short)
+        assert response.status_code == 400, response.content
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "id_token_signed_response_alg 'HS256'" in body["error_description"]
+        assert "at least 32 octets" in body["error_description"]
+        assert "OpenID Connect Core 1.0 section 16.19" in body["error_description"]
+        app = Application.objects.get(client_id=short["client_id"])
+        assert app.algorithm == Application.HS256_ALGORITHM
+        assert app.redirect_uris == "https://example.com/cb"
+        assert app.client_secret == short["client_secret"]
+
+        self.oauth2_settings.CLIENT_SECRET_GENERATOR_LENGTH = 32
+        exact = self._register_client_secret_jwt_with_admin_hs256()
+        assert len(exact["client_secret"]) == 32
+        response = self._put_hs256(exact)
+        assert response.status_code == 200, response.content
+        assert response.json()["id_token_signed_response_alg"] == "HS256"
 
     def test_put_rotates_token_by_default(self):
         """PUT with DCR_ROTATE_REGISTRATION_TOKEN_ON_UPDATE=True → new token issued."""
