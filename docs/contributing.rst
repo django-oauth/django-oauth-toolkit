@@ -491,7 +491,7 @@ and RP-Initiated Logout, with static and dynamically registered clients). CI run
   tox -e openid-conformance-suite                  # every plan
   tox -e openid-conformance-suite -- --plan basic  # one plan; --list-plans shows them
 
-Accepted deviations are recorded in ``tests/openid-conformance-suite/expected-failures.json``;
+Accepted deviations are recorded per plan under ``tests/openid-conformance-suite/expected/``;
 any other failure or warning fails the run. ``tests/openid-conformance-suite/README.md`` describes
 the plans, how to run a single one, and how to update the waivers or the pinned suite version.
 These runs are not a certification: that still means running the hosted suite at

@@ -735,7 +735,7 @@ jobs:
       - oracle-standalone
       - e2e-compliance
       # openid-conformance-suite is not a gate yet: add it here once its first
-      # runs have calibrated tests/openid-conformance-suite/expected-failures.json.
+      # runs have calibrated the files under tests/openid-conformance-suite/expected/.
     runs-on: ubuntu-latest
     name: Test successful
     steps:

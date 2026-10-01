@@ -31,16 +31,17 @@ tox -e openid-conformance-suite -- --verbose         # print waiver templates
    `seed_idp.py` runs once inside the IdP container to create the test user and the two
    statically registered clients.
 3. Downloads the suite's own CI runner (`scripts/run-test-plan.py` and its two helper modules)
-   at the same tag, checks their SHA-256, and runs the plans with their `config/*.json` and
-   `expected-failures.json`.
+   at the same tag, checks their SHA-256, and runs the plans with their `config/*.json` and the
+   plan's calibration files under `expected/`.
 4. Writes the runner's exported results plus `docker-compose.log` to `reports/` and tears the
    stack down. With `--keep` the stack stays up: the suite UI is at
    <https://localhost.emobix.co.uk:8443/> (a public hostname that resolves to 127.0.0.1) and the
    IdP at <https://127.0.0.1:9443/>.
 
-The exit status is the runner's. It is non-zero for any failure or warning not listed in
-`expected-failures.json`, for a listed failure that did not occur, and for a module that did not
-run to completion.
+The exit status is the runner's. It is non-zero for any failure or warning not listed in the
+plan's `expected/<name>.failures.json`, for a module skipped without an entry in
+`expected/<name>.skips.json`, for a listed failure or skip that did not occur, and for a module
+that did not run to completion.
 
 ## Plans
 
@@ -113,13 +114,16 @@ output) show which one.
 
 ## Waivers
 
-`expected-failures.json` lists the deviations that are accepted, in the suite's own format: a
-module name, a variant filter, a config filename glob, the failing condition class and whether
-a `failure` or a `warning` is expected, plus a comment saying why. Run with `--verbose` to get a
-ready-made entry for every unexpected failure. Add an entry only with a reason that would
-survive review: a feature the toolkit does not implement, or something CI cannot do (key
-rotation). A fix in `oauth2_provider` is the right response to everything else, and the
-runner fails the build when a listed failure no longer happens, so stale waivers are caught.
+`expected/<name>.failures.json` and `expected/<name>.skips.json` hold, per plan, the deviations
+that are accepted, in the suite's own format: a module name, a variant filter, a config filename
+glob, and for failures the failing condition class, whether a `failure` or a `warning` is expected,
+and a comment saying why; skips name the modules the suite skips because the OP does not
+support what they test (unsigned ID tokens, for one). Run with `--verbose` to get a ready-made
+failures entry for every unexpected failure. The files are per plan because the runner fails a
+run whose entries match no module it ran. Add an entry only with a reason that would survive
+review: a feature the toolkit does not implement, or something CI cannot do. A fix in
+`oauth2_provider` is the right response to everything else, and the runner fails the build
+when a listed failure or skip no longer happens, so stale waivers are caught.
 
 ## Upgrading the suite
 
@@ -129,4 +133,4 @@ override it for a one-off run (unverified runner download). To move the pin, upd
 version and the three SHA-256 values in `RUNNER_SCRIPTS`
 (`curl -sSL https://gitlab.com/openid/conformance-suite/-/raw/<tag>/scripts/<name> | sha256sum`),
 and the `IMAGE_TAG` defaults in `docker-compose.yml`, then re-run: new suite releases add and
-tighten checks, so expect to revisit `expected-failures.json`.
+tighten checks, so expect to revisit the files under `expected/`.

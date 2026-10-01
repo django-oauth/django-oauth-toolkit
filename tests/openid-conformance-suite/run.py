@@ -14,14 +14,15 @@ What it does:
    pinned to ``--suite-version``, and the IdP built from this checkout.
 3. Downloads the suite's own CI runner (``scripts/run-test-plan.py`` plus its two
    helper modules) at the same pinned tag, verifies their SHA-256, and runs the
-   requested plans with their ``config/*.json`` and ``expected-failures.json``.
+   requested plans with their ``config/*.json`` and ``expected/*.json``.
 4. Writes the exported results and the container logs to ``--export-dir``, then
    tears the stack down (unless ``--keep``).
 
 The exit status is the runner's: non-zero on any failure or warning not listed in
-``expected-failures.json``, on an expected failure that did not occur, or when a
-module did not run to completion. ``--verbose`` makes the runner print a ready-made
-``expected-failures.json`` entry for every unexpected failure.
+the plan's ``expected/<name>.failures.json``, on a module skipped without an entry
+in ``expected/<name>.skips.json``, on a listed failure or skip that did not occur,
+or when a module did not run to completion. ``--verbose`` makes the runner print a
+ready-made failures entry for every unexpected failure.
 """
 
 from __future__ import annotations
@@ -59,7 +60,10 @@ STATIC_CONFIG = "config/dot-oidcc.json"
 IMPLICIT_CONFIG = "config/dot-oidcc-implicit.json"
 HYBRID_CONFIG = "config/dot-oidcc-hybrid.json"
 DCR_CONFIG = "config/dot-oidcc-dcr.json"
-EXPECTED_FAILURES_FILE = HERE / "expected-failures.json"
+# Per-plan calibration files: expected/<plan name>.failures.json and
+# expected/<plan name>.skips.json, in the runner's own format. They are kept per
+# plan because the runner fails a run whose entries match no module it ran.
+EXPECTED_DIR = HERE / "expected"
 CERTS_DIR = HERE / ".certs"
 RUNNER_CACHE = HERE / ".runner"
 
@@ -211,14 +215,13 @@ def fetch_runner(ref: str) -> Path:
 
 
 def run_plans(runner_dir: Path, plan_names: list[str], export_dir: Path, verbose: bool) -> int:
-    command = [
-        sys.executable,
-        str(runner_dir / "run-test-plan.py"),
-        "--export-dir",
-        str(export_dir),
-        "--expected-failures-file",
-        str(EXPECTED_FAILURES_FILE),
-    ]
+    command = [sys.executable, str(runner_dir / "run-test-plan.py"), "--export-dir", str(export_dir)]
+    # The runner takes several files per option, "|"-separated.
+    for option, suffix in (("--expected-failures-file", "failures"), ("--expected-skips-file", "skips")):
+        files = [EXPECTED_DIR / f"{name}.{suffix}.json" for name in plan_names]
+        files = [str(path) for path in files if path.exists()]
+        if files:
+            command += [option, "|".join(files)]
     if verbose:
         command.append("--verbose")
     for name in plan_names:
