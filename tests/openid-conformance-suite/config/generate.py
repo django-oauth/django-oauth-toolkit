@@ -1,11 +1,14 @@
 """Generate the suite configuration files in this directory.
 
-The two files differ only in the ``alias`` (the suite's per-configuration
-namespace, which decides the callback URIs) and in how the clients are
-registered: ``dot-oidcc.json`` names the two clients ``seed_idp.py`` creates,
-for the ``[client_registration=static_client]`` plans; ``dot-oidcc-dcr.json``
-only names the clients, for the ``[client_registration=dynamic_client]`` plans,
-where the suite registers them itself through the RFC 7591 endpoint.
+The files differ only in the ``alias`` (the suite's per-configuration
+namespace, which decides the callback URIs) and in the client block.
+``dot-oidcc.json``, ``dot-oidcc-implicit.json`` and ``dot-oidcc-hybrid.json``
+name the clients ``seed_idp.py`` creates for the authorization-code, implicit
+and hybrid grant (an Application serves exactly one grant type, so each
+``[client_registration=static_client]`` plan needs the matching pair);
+``dot-oidcc-dcr.json`` only names the clients, for the
+``[client_registration=dynamic_client]`` plans, where the suite registers them
+itself through the RFC 7591 endpoint.
 
 Everything else, in particular the browser automation for the Django login,
 consent and logout pages, is shared, so edit this script and re-run it rather
@@ -28,10 +31,38 @@ LOGOUT = f"{IDP}/o/logout/*"
 # Must match seed_idp.py.
 USERNAME = "conformance"
 PASSWORD = "conformance-password"
-STATIC_CLIENTS = [
-    {"client_id": "openid-conformance-suite-client-1", "client_secret": "openid-conformance-suite-secret-1"},
-    {"client_id": "openid-conformance-suite-client-2", "client_secret": "openid-conformance-suite-secret-2"},
-]
+STATIC_CLIENTS = {
+    "code": [
+        {
+            "client_id": "openid-conformance-suite-client-1",
+            "client_secret": "openid-conformance-suite-secret-1",
+        },
+        {
+            "client_id": "openid-conformance-suite-client-2",
+            "client_secret": "openid-conformance-suite-secret-2",
+        },
+    ],
+    "implicit": [
+        {
+            "client_id": "openid-conformance-suite-implicit-1",
+            "client_secret": "openid-conformance-suite-implicit-secret-1",
+        },
+        {
+            "client_id": "openid-conformance-suite-implicit-2",
+            "client_secret": "openid-conformance-suite-implicit-secret-2",
+        },
+    ],
+    "hybrid": [
+        {
+            "client_id": "openid-conformance-suite-hybrid-1",
+            "client_secret": "openid-conformance-suite-hybrid-secret-1",
+        },
+        {
+            "client_id": "openid-conformance-suite-hybrid-2",
+            "client_secret": "openid-conformance-suite-hybrid-secret-2",
+        },
+    ],
+}
 DCR_CLIENTS = [
     {"client_name": "openid-conformance-suite-client-1"},
     {"client_name": "openid-conformance-suite-client-2"},
@@ -52,11 +83,13 @@ def login_task(screenshot=False):
     return {"task": "Login", "optional": True, "match": LOGIN, "commands": commands}
 
 
+# "optional" on the click: a module that lands on an error page at the same URL
+# must not fail on the missing button (the suite reports what happened instead).
 CONSENT = {
     "task": "Consent",
     "optional": True,
     "match": AUTHORIZE,
-    "commands": [["click", "css", "input[name='allow']"]],
+    "commands": [["click", "css", "input[name='allow']", "optional"]],
 }
 VERIFY_CALLBACK = {
     "task": "Verify Complete",
@@ -88,16 +121,30 @@ def error_page_block(match, comment):
     }
 
 
+CONFIRM_LOGOUT = {
+    "task": "Confirm logout",
+    "optional": True,
+    "match": LOGOUT,
+    "commands": [["click", "css", "input[name='allow']", "optional"]],
+}
 LOGOUT_BLOCK = {
     "match": LOGOUT,
+    "tasks": [CONFIRM_LOGOUT, {"task": "Verify Complete", "match": "*/test/*/post*"}],
+}
+# Without a post_logout_redirect_uri the toolkit sends the End-User to the site
+# root after logging them out; these modules want a screenshot of that page.
+LOGOUT_TO_HOME_BLOCK = {
+    "comment": "no post_logout_redirect_uri: expect the IdP home page after logout",
+    "match": LOGOUT,
     "tasks": [
+        CONFIRM_LOGOUT,
         {
-            "task": "Confirm logout",
-            "optional": True,
-            "match": LOGOUT,
-            "commands": [["click", "css", "input[name='allow']"]],
+            "task": "Expect the IdP home page",
+            "match": f"{IDP}/",
+            "commands": [
+                ["wait", "xpath", "//*", 10, "Welcome to the Identity Provider", "update-image-placeholder"]
+            ],
         },
-        {"task": "Verify Complete", "match": "*/test/*/post*"},
     ],
 }
 
@@ -126,6 +173,9 @@ def overrides():
         "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri",
         "oidcc-rp-initiated-logout-modified-id-token-hint",
         "oidcc-rp-initiated-logout-bad-id-token-hint",
+        # The toolkit refuses a post_logout_redirect_uri that comes without an
+        # id_token_hint (RP-Initiated Logout 1.0 section 2 lets the OP decline).
+        "oidcc-rp-initiated-logout-no-id-token-hint",
     ):
         result[module] = {
             "browser": [
@@ -133,6 +183,12 @@ def overrides():
                 error_page_block(LOGOUT, "expect an immediate error page instead of a redirect"),
             ]
         }
+    for module in (
+        "oidcc-rp-initiated-logout-no-params",
+        "oidcc-rp-initiated-logout-no-post-logout-redirect-uri",
+        "oidcc-rp-initiated-logout-only-state",
+    ):
+        result[module] = {"browser": [authorize_block(), LOGOUT_TO_HOME_BLOCK]}
     return result
 
 
@@ -150,7 +206,9 @@ def config(alias, clients):
 
 def main():
     files = {
-        "dot-oidcc.json": config("dot", STATIC_CLIENTS),
+        "dot-oidcc.json": config("dot", STATIC_CLIENTS["code"]),
+        "dot-oidcc-implicit.json": config("dot-implicit", STATIC_CLIENTS["implicit"]),
+        "dot-oidcc-hybrid.json": config("dot-hybrid", STATIC_CLIENTS["hybrid"]),
         "dot-oidcc-dcr.json": config("dot-dcr", DCR_CLIENTS),
     }
     for name, content in files.items():

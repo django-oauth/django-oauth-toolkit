@@ -28,11 +28,24 @@ POST_LOGOUT_REDIRECT_URIS = [f"{SUITE_ALIAS_BASE}/post_logout_redirect"]
 USERNAME = "conformance"
 PASSWORD = "conformance-password"
 
-# (client_id, client_secret): "client" and "client2" in config/dot-oidcc.json.
-CLIENTS = [
-    ("openid-conformance-suite-client-1", "openid-conformance-suite-secret-1"),
-    ("openid-conformance-suite-client-2", "openid-conformance-suite-secret-2"),
-]
+# One pair of clients per authorization grant type: an Application serves exactly
+# one grant type, and the Basic, Implicit and Hybrid plans each need the matching
+# one. (client_id, client_secret) per pair; the ids are what config/generate.py
+# puts in the "client" / "client2" blocks of the static-client configurations.
+CLIENTS_BY_GRANT = {
+    "authorization-code": [
+        ("openid-conformance-suite-client-1", "openid-conformance-suite-secret-1"),
+        ("openid-conformance-suite-client-2", "openid-conformance-suite-secret-2"),
+    ],
+    "implicit": [
+        ("openid-conformance-suite-implicit-1", "openid-conformance-suite-implicit-secret-1"),
+        ("openid-conformance-suite-implicit-2", "openid-conformance-suite-implicit-secret-2"),
+    ],
+    "openid-hybrid": [
+        ("openid-conformance-suite-hybrid-1", "openid-conformance-suite-hybrid-secret-1"),
+        ("openid-conformance-suite-hybrid-2", "openid-conformance-suite-hybrid-secret-2"),
+    ],
+}
 
 
 def main() -> None:
@@ -53,21 +66,24 @@ def main() -> None:
     user.save()
 
     application_model = get_application_model()
-    for index, (client_id, client_secret) in enumerate(CLIENTS, start=1):
-        application_model.objects.update_or_create(
-            client_id=client_id,
-            defaults={
-                "user": user,
-                "name": f"OpenID Conformance Suite client {index}",
-                "client_type": application_model.CLIENT_CONFIDENTIAL,
-                "authorization_grant_type": application_model.GRANT_AUTHORIZATION_CODE,
-                "client_secret": client_secret,
-                "algorithm": application_model.RS256_ALGORITHM,
-                "redirect_uris": " ".join(REDIRECT_URIS),
-                "post_logout_redirect_uris": " ".join(POST_LOGOUT_REDIRECT_URIS),
-            },
-        )
-    print(f"Seeded user {USERNAME!r} and {len(CLIENTS)} conformance clients.")
+    count = 0
+    for grant_type, clients in CLIENTS_BY_GRANT.items():
+        for index, (client_id, client_secret) in enumerate(clients, start=1):
+            application_model.objects.update_or_create(
+                client_id=client_id,
+                defaults={
+                    "user": user,
+                    "name": f"OpenID Conformance Suite {grant_type} client {index}",
+                    "client_type": application_model.CLIENT_CONFIDENTIAL,
+                    "authorization_grant_type": grant_type,
+                    "client_secret": client_secret,
+                    "algorithm": application_model.RS256_ALGORITHM,
+                    "redirect_uris": " ".join(REDIRECT_URIS),
+                    "post_logout_redirect_uris": " ".join(POST_LOGOUT_REDIRECT_URIS),
+                },
+            )
+            count += 1
+    print(f"Seeded user {USERNAME!r} and {count} conformance clients.")
 
 
 if __name__ == "__main__":

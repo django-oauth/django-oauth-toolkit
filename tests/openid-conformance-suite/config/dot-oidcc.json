@@ -48,7 +48,8 @@
                         [
                             "click",
                             "css",
-                            "input[name='allow']"
+                            "input[name='allow']",
+                            "optional"
                         ]
                     ]
                 },
@@ -77,7 +78,8 @@
                         [
                             "click",
                             "css",
-                            "input[name='allow']"
+                            "input[name='allow']",
+                            "optional"
                         ]
                     ]
                 },
@@ -135,7 +137,8 @@
                                 [
                                     "click",
                                     "css",
-                                    "input[name='allow']"
+                                    "input[name='allow']",
+                                    "optional"
                                 ]
                             ]
                         },
@@ -201,7 +204,8 @@
                                 [
                                     "click",
                                     "css",
-                                    "input[name='allow']"
+                                    "input[name='allow']",
+                                    "optional"
                                 ]
                             ]
                         },
@@ -354,7 +358,8 @@
                                 [
                                     "click",
                                     "css",
-                                    "input[name='allow']"
+                                    "input[name='allow']",
+                                    "optional"
                                 ]
                             ]
                         },
@@ -431,7 +436,8 @@
                                 [
                                     "click",
                                     "css",
-                                    "input[name='allow']"
+                                    "input[name='allow']",
+                                    "optional"
                                 ]
                             ]
                         },
@@ -508,7 +514,8 @@
                                 [
                                     "click",
                                     "css",
-                                    "input[name='allow']"
+                                    "input[name='allow']",
+                                    "optional"
                                 ]
                             ]
                         },
@@ -585,7 +592,8 @@
                                 [
                                     "click",
                                     "css",
-                                    "input[name='allow']"
+                                    "input[name='allow']",
+                                    "optional"
                                 ]
                             ]
                         },
@@ -617,6 +625,357 @@
                                     "//*",
                                     10,
                                     "Error:",
+                                    "update-image-placeholder"
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-rp-initiated-logout-no-id-token-hint": {
+            "browser": [
+                {
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Consent",
+                            "optional": true,
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/*/callback*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "id",
+                                    "submission_complete",
+                                    10
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "comment": "expect an immediate error page instead of a redirect",
+                    "match": "https://dot-idp/o/logout/*",
+                    "tasks": [
+                        {
+                            "task": "Expect an error page",
+                            "match": "https://dot-idp/o/logout/*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Error:",
+                                    "update-image-placeholder"
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-rp-initiated-logout-no-params": {
+            "browser": [
+                {
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Consent",
+                            "optional": true,
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/*/callback*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "id",
+                                    "submission_complete",
+                                    10
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "comment": "no post_logout_redirect_uri: expect the IdP home page after logout",
+                    "match": "https://dot-idp/o/logout/*",
+                    "tasks": [
+                        {
+                            "task": "Confirm logout",
+                            "optional": true,
+                            "match": "https://dot-idp/o/logout/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Expect the IdP home page",
+                            "match": "https://dot-idp/",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Welcome to the Identity Provider",
+                                    "update-image-placeholder"
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-rp-initiated-logout-no-post-logout-redirect-uri": {
+            "browser": [
+                {
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Consent",
+                            "optional": true,
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/*/callback*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "id",
+                                    "submission_complete",
+                                    10
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "comment": "no post_logout_redirect_uri: expect the IdP home page after logout",
+                    "match": "https://dot-idp/o/logout/*",
+                    "tasks": [
+                        {
+                            "task": "Confirm logout",
+                            "optional": true,
+                            "match": "https://dot-idp/o/logout/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Expect the IdP home page",
+                            "match": "https://dot-idp/",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Welcome to the Identity Provider",
+                                    "update-image-placeholder"
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-rp-initiated-logout-only-state": {
+            "browser": [
+                {
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Consent",
+                            "optional": true,
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/*/callback*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "id",
+                                    "submission_complete",
+                                    10
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "comment": "no post_logout_redirect_uri: expect the IdP home page after logout",
+                    "match": "https://dot-idp/o/logout/*",
+                    "tasks": [
+                        {
+                            "task": "Confirm logout",
+                            "optional": true,
+                            "match": "https://dot-idp/o/logout/*",
+                            "commands": [
+                                [
+                                    "click",
+                                    "css",
+                                    "input[name='allow']",
+                                    "optional"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Expect the IdP home page",
+                            "match": "https://dot-idp/",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Welcome to the Identity Provider",
                                     "update-image-placeholder"
                                 ]
                             ]

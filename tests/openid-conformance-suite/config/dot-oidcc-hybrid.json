@@ -1,14 +1,16 @@
 {
-    "alias": "dot-dcr",
-    "description": "django-oauth-toolkit tests/app/idp (dot-dcr)",
+    "alias": "dot-hybrid",
+    "description": "django-oauth-toolkit tests/app/idp (dot-hybrid)",
     "server": {
         "discoveryUrl": "https://dot-idp/o/.well-known/openid-configuration"
     },
     "client": {
-        "client_name": "openid-conformance-suite-client-1"
+        "client_id": "openid-conformance-suite-hybrid-1",
+        "client_secret": "openid-conformance-suite-hybrid-secret-1"
     },
     "client2": {
-        "client_name": "openid-conformance-suite-client-2"
+        "client_id": "openid-conformance-suite-hybrid-2",
+        "client_secret": "openid-conformance-suite-hybrid-secret-2"
     },
     "browser": [
         {

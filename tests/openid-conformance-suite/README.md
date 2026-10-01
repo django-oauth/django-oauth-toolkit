@@ -78,24 +78,27 @@ introspection, revocation, PAR, resource indicators); those stay covered by `tes
 
 ## Configuration
 
-`config/generate.py` writes the two suite configuration files; edit the script and re-run it
-rather than the JSON. `config/dot-oidcc.json` (alias `dot`) is used with static clients and
-`config/dot-oidcc-dcr.json` (alias `dot-dcr`) with dynamically registered ones. Both are
-standard suite configurations:
+`config/generate.py` writes the suite configuration files; edit the script and re-run it
+rather than the JSON. An Application serves exactly one grant type, so each static-client plan
+gets the seeded pair for its grant: `config/dot-oidcc.json` (alias `dot`, authorization code),
+`config/dot-oidcc-implicit.json` (alias `dot-implicit`) and `config/dot-oidcc-hybrid.json`
+(alias `dot-hybrid`); `config/dot-oidcc-dcr.json` (alias `dot-dcr`) is for the dynamically
+registered plans. All are standard suite configurations:
 
 * `server.discoveryUrl` points at `https://dot-idp/o/.well-known/openid-configuration` on the
   compose network.
 * `client` / `client2` are either the clients `seed_idp.py` registers, with the suite's redirect
-  URIs for the `dot` alias (`https://localhost.emobix.co.uk:8443/test/a/dot/callback`, the same
+  URIs for the alias (`https://localhost.emobix.co.uk:8443/test/a/<alias>/callback`, the same
   with the query component `?dummy1=lorem&dummy2=ipsum`, and `.../post_logout_redirect`), or
   just a `client_name` for the suite to register itself.
 * `browser` tells the suite's built-in browser how to drive the IdP: fill `id_username` /
   `id_password` on the Django login page, click the `allow` button on the consent and logout
   pages, and wait for the suite's own callback page.
 * `override` adjusts that per module, in the same way the suite's own CI configuration does:
-  the `prompt=login` and `max_age` modules screenshot the re-login prompt, and the modules that
-  expect the OP to refuse a bad redirect URI wait for the toolkit's `Error:` page instead of a
-  redirect.
+  the `prompt=login` and `max_age` modules screenshot the re-login prompt, the modules that
+  expect the OP to refuse a bad redirect URI or logout request wait for the toolkit's `Error:`
+  page instead of a redirect, and the logout modules without a `post_logout_redirect_uri` wait
+  for the IdP home page the toolkit sends the End-User to.
 
 Changing a template or URL in `tests/app/idp` can therefore break a browser step here; the
 `docker-compose.log` in `reports/` and the suite's log-detail pages (linked from the runner
