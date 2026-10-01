@@ -196,6 +196,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `requests`, `datetime` and `AccessToken`. See `docs/upgrade.rst` for the full list; runtime behavior
   is unchanged in every case, only subclassing and patching are affected.
 
+### Deprecated
+* `oauth2_provider.core.backends_oauthlib._add_iss_to_redirect` was promoted to the public
+  `oauth2_provider.core.utils.add_iss_to_redirect`, so the view layer and external code can
+  build RFC 9207-compliant redirects without importing a private name. The old private name
+  (and its `oauth2_provider.oauth2_backends` shim re-export) still resolves to the same
+  function but emits a `DeprecationWarning` and will be removed in django-oauth-toolkit 4.0.
+
 ### Fixed
 * #1846 The `iss` authorization-response parameter (RFC 9207, gated by
   `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`) is now added to error redirects as well as

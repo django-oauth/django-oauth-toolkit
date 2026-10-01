@@ -237,6 +237,17 @@ def test_private_names_resolve_via_old_path():
         from oauth2_provider.oauth2_backends import _add_iss_to_redirect  # noqa: F401
 
 
+def test_add_iss_to_redirect_old_private_name_warns():
+    # `_add_iss_to_redirect` was promoted to the public
+    # `oauth2_provider.core.utils.add_iss_to_redirect`; the old private name must
+    # keep resolving to the same object while warning.
+    from oauth2_provider.core.utils import add_iss_to_redirect
+
+    with pytest.warns(DeprecationWarning, match="add_iss_to_redirect"):
+        from oauth2_provider.core.backends_oauthlib import _add_iss_to_redirect
+    assert _add_iss_to_redirect is add_iss_to_redirect
+
+
 def test_oauth2_validator_composition_and_reexports():
     from oauth2_provider.oauth2_validators import (
         OAuth2Validator,

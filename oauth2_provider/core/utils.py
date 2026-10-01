@@ -1,5 +1,6 @@
 import functools
 import secrets
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from django.conf import settings
 from jwcrypto import jwk
@@ -117,6 +118,28 @@ def user_code_generator(user_code_length: int = 8) -> str:
         user_code[i] = secrets.choice(character_space)
 
     return "".join(user_code)
+
+
+def add_iss_to_redirect(uri: str, issuer: str) -> str:
+    """
+    Append the RFC 9207 ``iss`` parameter to an authorization-response redirect URI.
+
+    The parameter is added to the fragment for implicit responses (which carry their
+    parameters in the fragment) and to the query component otherwise.
+    """
+    parts = list(urlparse(uri))
+    # RFC 9207 requires a single, unambiguous issuer, so drop any pre-existing `iss`
+    # from BOTH the query and the fragment (e.g. one carried in the registered redirect
+    # URI) before adding the server's value to whichever component carries the response.
+    query = [(k, v) for k, v in parse_qsl(parts[4], keep_blank_values=True) if k != "iss"]
+    fragment = [(k, v) for k, v in parse_qsl(parts[5], keep_blank_values=True) if k != "iss"]
+    if parts[5]:  # fragment present -> implicit/hybrid front-channel response
+        fragment.append(("iss", issuer))
+    else:
+        query.append(("iss", issuer))
+    parts[4] = urlencode(query)
+    parts[5] = urlencode(fragment)
+    return urlunparse(parts)
 
 
 def set_oauthlib_user_to_device_request_user(request: Request) -> None:

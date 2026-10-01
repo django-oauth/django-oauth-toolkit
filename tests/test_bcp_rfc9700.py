@@ -17,7 +17,7 @@ from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
-from oauth2_provider.core.backends_oauthlib import _add_iss_to_redirect
+from oauth2_provider.core.utils import add_iss_to_redirect
 from oauth2_provider.models import get_access_token_model, get_application_model, set_token_value
 from oauth2_provider.views import ProtectedResourceView
 
@@ -373,13 +373,13 @@ def test_bcp_filter_response_types_is_token_order_independent(oauth2_settings):
 
 
 def test_add_iss_to_redirect_query():
-    result = _add_iss_to_redirect("https://c.example/cb?code=abc&state=x", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb?code=abc&state=x", "https://as.example")
     assert result == "https://c.example/cb?code=abc&state=x&iss=https%3A%2F%2Fas.example"
 
 
 def test_add_iss_to_redirect_replaces_existing_iss():
     # RFC 9207 requires a single issuer: a pre-existing iss must be dropped.
-    result = _add_iss_to_redirect("https://c.example/cb?code=abc&iss=evil", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb?code=abc&iss=evil", "https://as.example")
     assert result.count("iss=") == 1
     assert "iss=https%3A%2F%2Fas.example" in result
     assert "evil" not in result
@@ -387,14 +387,14 @@ def test_add_iss_to_redirect_replaces_existing_iss():
 
 def test_add_iss_to_redirect_single_iss_across_query_and_fragment():
     # A query iss on a fragment (implicit/hybrid) response must not leave two iss values.
-    result = _add_iss_to_redirect("https://c.example/cb?iss=evil#access_token=abc", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb?iss=evil#access_token=abc", "https://as.example")
     assert result.count("iss=") == 1
     assert "evil" not in result
     assert "iss=https%3A%2F%2Fas.example" in result
 
 
 def test_add_iss_to_redirect_fragment():
-    result = _add_iss_to_redirect("https://c.example/cb#access_token=abc", "https://as.example")
+    result = add_iss_to_redirect("https://c.example/cb#access_token=abc", "https://as.example")
     assert result.startswith("https://c.example/cb#")
     assert "iss=https%3A%2F%2Fas.example" in result
     assert "?" not in result  # added to the fragment, not the query
