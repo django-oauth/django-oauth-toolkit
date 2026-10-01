@@ -80,7 +80,8 @@ To expose them, write a ``ModelForm`` naming the fields you want and point the
 ``APPLICATION_FORM_CLASS`` setting at it::
 
     # your_app_name/forms.py
-    from oauth2_provider.authorization_server.forms import APPLICATION_FIELDS, ApplicationForm
+    from oauth2_provider.authorization_server.forms import ApplicationForm
+    from oauth2_provider.authorization_server.views.application import APPLICATION_FIELDS
 
     class MyApplicationForm(ApplicationForm):
         class Meta:

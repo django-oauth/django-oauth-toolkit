@@ -3,9 +3,22 @@ from django.forms.models import modelform_defines_fields, modelform_factory
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from oauth2_provider.authorization_server.forms import APPLICATION_FIELDS
 from oauth2_provider.models import get_application_model
 from oauth2_provider.settings import oauth2_settings
+
+
+APPLICATION_FIELDS = (
+    "name",
+    "client_id",
+    "client_secret",
+    "hash_client_secret",
+    "client_type",
+    "authorization_grant_type",
+    "redirect_uris",
+    "post_logout_redirect_uris",
+    "allowed_origins",
+    "algorithm",
+)
 
 
 class ApplicationFormMixin:
