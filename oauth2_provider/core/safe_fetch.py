@@ -209,7 +209,9 @@ def read_json_document(
         raise exc_class("document exceeds the maximum allowed size")
     try:
         data = json.loads(body)
-    except (json.JSONDecodeError, ValueError) as exc:
+    except (json.JSONDecodeError, ValueError, RecursionError) as exc:
+        # RecursionError: a deeply nested document well within max_size
+        # exhausts the parser's recursion limit; it is just as invalid.
         raise exc_class("document is not valid JSON") from exc
     if not isinstance(data, dict):
         raise exc_class("document must be a JSON object")

@@ -568,6 +568,22 @@ def test_fetch_failure_arms_backoff(mocker):
     assert fetch.call_count == 1
 
 
+def test_unexpected_jwks_fetch_error_fails_authentication_and_arms_backoff(mocker, caplog):
+    app = pkj_app(client_jwks_uri="https://client.example.com/jwks.json")
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        side_effect=RuntimeError("unexpected"),
+    )
+    with caplog.at_level(logging.ERROR, logger="oauth2_provider.authorization_server.client_assertions"):
+        for _ in range(2):
+            assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+            ok, _request = authenticate(assertion, app)
+            assert ok is False
+    assert fetch.call_count == 1
+    assert "Unexpected error fetching client jwks_uri" in caplog.text
+
+
 JWKS_URI = "https://client.example.com/jwks.json"
 
 

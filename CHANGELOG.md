@@ -339,6 +339,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1899 An unexpected error while fetching or reading a `private_key_jwt` client's `jwks_uri`
+  (RFC 7523), such as a deeply nested JSON document that exhausts the parser's recursion limit, now
+  fails client authentication with `invalid_client` and arms the fetch failure backoff, instead of
+  returning a 500 on every attempt. `safe_fetch.fetch_https_json` reports such a document as invalid
+  JSON.
 * #1013 `prompt=login` now works with pushed authorization requests (RFC 9126). The pushed
   `request_uri` is used up when the authorization request is read, yet the login page's return URL
   carried the expanded parameters instead, which a client required to use PAR could not complete.

@@ -607,6 +607,13 @@ def _load_remote_jwks(application: "AbstractApplication", *, force: bool = False
     except ClientAssertionError:
         cache.set(backoff_key, True, timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS)
         raise
+    except Exception as exc:
+        # The fetch runs before the client has authenticated, against a URL the
+        # client chose, so an unexpected error must fail authentication, never
+        # become a 500, and must back off like any other failure.
+        log.exception("Unexpected error fetching client jwks_uri %r", uri)
+        cache.set(backoff_key, True, timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS)
+        raise ClientAssertionError("client jwks_uri fetch failed") from exc
     cache.set(
         cache_key,
         key_set.export(private_keys=False),
