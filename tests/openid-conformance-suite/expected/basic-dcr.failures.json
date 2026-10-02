@@ -1,33 +1,5 @@
 [
     {
-        "test-name": "oidcc-alternate-happy-flow",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "VerifyScopesReturnedInUserInfoClaims",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-alternate-happy-flow",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Verify authorization endpoint response",
-        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
         "test-name": "oidcc-claims-essential",
         "variant": {
             "client_auth_type": "client_secret_basic",
@@ -206,90 +178,6 @@
         "current-block": "",
         "condition": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
         "expected-result": "failure",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-scope-address",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "VerifyScopesReturnedInUserInfoClaims",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-scope-all",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "VerifyScopesReturnedInUserInfoClaims",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-scope-email",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "VerifyScopesReturnedInUserInfoClaims",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-scope-email",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Verify authorization endpoint response",
-        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-scope-phone",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "VerifyScopesReturnedInUserInfoClaims",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-scope-profile",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "VerifyScopesReturnedInUserInfoClaims",
-        "expected-result": "warning",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
     },

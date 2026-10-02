@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1882 New `OIDC_COMPLIANT_SCOPE_CLAIMS` setting. When `True`, the claims requested by the
+  `profile`, `email`, `address` and `phone` scope values are returned from the UserInfo endpoint
+  and left out of the ID Token whenever an access token is issued, and are put in the ID Token only
+  for `response_type=id_token` (OpenID Connect Core 1.0 §5.4). The default `False` keeps returning
+  them in both; it is scheduled to change to `True` in 4.0. The scope values affected are listed in
+  `OAuth2Validator.oidc_userinfo_only_scopes`.
 * An `openid-conformance-suite` CI job and `tox -e openid-conformance-suite` environment
   (`tests/openid-conformance-suite/`) that run the OpenID Foundation conformance suite against the
   `tests/app/idp` demo provider in Docker: the Config, Basic, Implicit, Hybrid, Dynamic and

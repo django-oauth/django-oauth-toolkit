@@ -257,7 +257,9 @@ Customizing the OIDC responses
 
 This basic configuration will give you a basic working OIDC setup, but your
 ID tokens will have very few claims in them, and the ``UserInfo`` service will
-just return the same claims as the ID token.
+just return the same claims as the ID token (see
+:ref:`scope-claims-id-token-or-userinfo` for how ``OIDC_COMPLIANT_SCOPE_CLAIMS``
+changes that).
 
 To configure all of these things we need to customize the
 ``OAUTH2_VALIDATOR_CLASS`` in ``django-oauth-toolkit``. Create a new file in
@@ -370,6 +372,32 @@ Set ``oidc_claim_scope = None`` to return all claims irrespective of the granted
 You have to make sure you've added additional claims via ``get_additional_claims``
 and defined the ``OAUTH2_PROVIDER["SCOPES"]`` in your settings in order for this functionality to work.
 
+.. _scope-claims-id-token-or-userinfo:
+
+ID Token or ``UserInfo``
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Section 5.4 also says *where* the claims requested by the ``profile``, ``email``,
+``address`` and ``phone`` scope values are returned: from the ``UserInfo`` endpoint
+when the response type issues an access token, and in the ID Token only when no
+access token is issued (``response_type=id_token``).
+
+By default the toolkit returns those claims in both the ID Token and the
+``UserInfo`` response. Set ``OIDC_COMPLIANT_SCOPE_CLAIMS`` to ``True`` to follow
+section 5.4: they are then left out of every ID Token except the one issued for
+``response_type=id_token`` (including ID Tokens from the token endpoint and from
+refresh), and relying parties read them from ``UserInfo``. ``sub`` and claims gated
+by your own scopes stay in the ID Token. To treat another scope value the same way,
+extend the ``oidc_userinfo_only_scopes`` class attribute:
+
+.. code-block:: python
+
+    class CustomOAuth2Validator(OAuth2Validator):
+        oidc_userinfo_only_scopes = OAuth2Validator.oidc_userinfo_only_scopes + ("permissions",)
+
+The ``claims`` request parameter (`5.5 Requesting Claims using the "claims" Request Parameter`_),
+which lets a client ask for individual claims in the ID Token, is not yet honoured.
+
 .. note::
     This ``request`` object is not a ``django.http.Request`` object, but an
     ``oauthlib.common.Request`` object. This has a number of attributes that
@@ -399,8 +427,9 @@ retrieved at login as a ``Bearer`` token or as a form-encoded ``access_token`` b
 for a POST request.
 
 Again, to modify the content delivered, we need to add a function to our
-custom validator. The default implementation adds the claims from the ID
-token, so you will probably want to reuse that::
+custom validator. The default implementation returns the claims from
+``get_additional_claims`` that the access token's scopes allow, so you will
+probably want to reuse that::
 
     class CustomOAuth2Validator(OAuth2Validator):
 

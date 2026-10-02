@@ -813,6 +813,26 @@ you prefer to control them with CORS middleware such as `django-cors-headers
 installed it answers every CORS preflight before any view runs, so the userinfo path has to be
 allowed there too even when this setting is left on.
 
+OIDC_COMPLIANT_SCOPE_CLAIMS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Controls where the claims requested through the ``profile``, ``email``, ``address`` and
+``phone`` scope values are returned. `OpenID Connect Core 1.0 section 5.4
+<https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims>`_ says they are returned
+from the UserInfo endpoint when the response type issues an access token, and in the ID Token
+only when no access token is issued (``response_type=id_token``).
+
+When ``True``, those claims are left out of every ID Token except the one issued for
+``response_type=id_token``, and are returned from the UserInfo endpoint. ``sub`` and claims
+gated by custom scopes are not affected. The scope values that are treated this way are listed
+in ``OAuth2Validator.oidc_userinfo_only_scopes``.
+
+When ``False`` (the legacy behavior), the claims are returned in both the ID Token and the
+UserInfo response. This default is scheduled to change to ``True`` in the 4.0 release; set it
+to ``True`` now to adopt the compliant behavior early. Relying parties that read profile or
+email claims from the ID Token must call the UserInfo endpoint instead.
+
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~
 Default: ``""``

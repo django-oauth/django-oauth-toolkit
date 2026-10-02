@@ -66,6 +66,7 @@ def test_authorization_code_exchanged_for_tokens(oauth, user_session, issuer):
 
 @pytest.mark.compliance("RFC 6749", "4.1.2", "Authorization Response")
 @pytest.mark.compliance("OpenID Connect Core 1.0", "3.1.2.7", "ID Token Validation")
+@pytest.mark.compliance("OpenID Connect Core 1.0", "5.4", "Requesting Claims using Scope Values")
 def test_authorization_code_issues_valid_id_token(oauth, user_session, issuer):
     result = oauth.authorize(
         user_session,
@@ -88,8 +89,13 @@ def test_authorization_code_issues_valid_id_token(oauth, user_session, issuer):
 
     claims = validate_id_token(body["id_token"], issuer=issuer, audience=c.CONFIDENTIAL_CODE_CLIENT_ID)
     assert claims["nonce"] == "n-123"
-    assert claims["email"] == c.E2E_EMAIL
-    assert claims["given_name"] == c.E2E_GIVEN_NAME
+    # An access token is issued, so the email/profile scope claims are returned from
+    # UserInfo rather than the ID Token (the demo IdP enables OIDC_COMPLIANT_SCOPE_CLAIMS).
+    assert "email" not in claims
+    assert "given_name" not in claims
+    userinfo = oauth.userinfo(body["access_token"]).json()
+    assert userinfo["email"] == c.E2E_EMAIL
+    assert userinfo["given_name"] == c.E2E_GIVEN_NAME
 
 
 @pytest.mark.compliance("RFC 6749", "4.1.3", "Access Token Request")

@@ -10,6 +10,7 @@ Idempotent, so the stack can be brought up repeatedly against the same volume.
 The credentials below are test fixtures for a throwaway container, not secrets.
 """
 
+import datetime
 import os
 
 import django
@@ -70,6 +71,7 @@ def main() -> None:
     django.setup()
 
     from django.contrib.auth import get_user_model
+    from idp.models import UserProfile
 
     from oauth2_provider.models import get_application_model
 
@@ -81,6 +83,30 @@ def main() -> None:
     user.email = "conformance@example.com"
     user.set_password(PASSWORD)
     user.save()
+    # Sources for the remaining profile claims and the email_verified, phone and address
+    # claims (see idp.models.UserProfile).
+    UserProfile.objects.update_or_create(
+        user=user,
+        defaults={
+            "middle_name": "Q.",
+            "nickname": "conf",
+            "profile": "https://example.com/conformance",
+            "picture": "https://example.com/conformance.png",
+            "website": "https://example.com",
+            "gender": "unspecified",
+            "birthdate": datetime.date(2000, 1, 1),
+            "zoneinfo": "America/Los_Angeles",
+            "locale": "en-US",
+            "email_verified": True,
+            "phone_number": "+1 (555) 555-0100",
+            "phone_number_verified": True,
+            "street_address": "1 Conformance Way",
+            "locality": "Testville",
+            "region": "CA",
+            "postal_code": "90210",
+            "country": "US",
+        },
+    )
 
     application_model = get_application_model()
     count = 0

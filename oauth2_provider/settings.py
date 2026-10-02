@@ -241,6 +241,10 @@ DEFAULTS = {
     "OIDC_ISS_ENDPOINT": "",
     "OIDC_USERINFO_ENDPOINT": "",
     "OIDC_USERINFO_CORS_ENABLED": True,
+    # OIDC Core §5.4: when an access token is issued, the profile/email/address/phone
+    # scope claims are returned from UserInfo rather than the ID Token. ``False`` keeps
+    # the legacy behavior (claims in both); scheduled to default to ``True`` in 4.0.
+    "OIDC_COMPLIANT_SCOPE_CLAIMS": False,
     "OIDC_RSA_PRIVATE_KEY": "",
     "OIDC_RSA_PRIVATE_KEYS_INACTIVE": [],
     "OIDC_JWKS_MAX_AGE_SECONDS": 3600,
