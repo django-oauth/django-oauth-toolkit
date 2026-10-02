@@ -102,8 +102,11 @@ def _served_response_types(dot_grant: str) -> list[str]:
         supported = oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED
     else:
         supported = oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED
+    # A non-string entry can never be served; drop it before the BCP filter,
+    # which splits each entry.
     advertised = {
-        _response_type_values(rt) for rt in bcp_filter_response_types(supported) if isinstance(rt, str)
+        _response_type_values(rt)
+        for rt in bcp_filter_response_types([rt for rt in supported if isinstance(rt, str)])
     }
     return [
         rt for rt in RESPONSE_TYPES_BY_GRANT.get(dot_grant, ()) if _response_type_values(rt) in advertised
@@ -252,14 +255,21 @@ def _check_response_types(data: dict[str, Any], dot_grant: str) -> JsonResponse 
         return _error_response("invalid_client_metadata", "Each response_type must be a string")
 
     served = {_response_type_values(rt) for rt in _served_response_types(dot_grant)}
+    grant_serves = {_response_type_values(rt) for rt in RESPONSE_TYPES_BY_GRANT.get(dot_grant, ())}
     for response_type in response_types:
         values = _response_type_values(response_type)
-        if values is None or values not in served:
+        if values in served:
+            continue
+        if values is None:
+            reason = "repeats a value"
+        elif values in grant_serves:
+            # Consistent with the grant, but the server's configuration rules
+            # it out (no OpenID Connect, or the RFC 9700 implicit gate).
+            reason = "is not supported by this server"
+        else:
             grant_types = ", ".join(_dot_grant_to_rfc_grant_types(dot_grant))
-            return _error_response(
-                "invalid_client_metadata",
-                f"response_type {response_type!r} is inconsistent with grant_types [{grant_types}]",
-            )
+            reason = f"is inconsistent with grant_types [{grant_types}]"
+        return _error_response("invalid_client_metadata", f"response_type {response_type!r} {reason}")
     return None
 
 

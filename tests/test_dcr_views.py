@@ -581,7 +581,12 @@ class TestDynamicClientRegistration(TestCase):
                 assert response.status_code == 400, response.content
                 body = response.json()
                 assert body["error"] == "invalid_client_metadata"
-                assert "response_type" in body["error_description"]
+                description = body["error_description"]
+                assert description.startswith(f"response_type {response_types[-1]!r} ")
+                if len(set(response_types[-1].split())) != len(response_types[-1].split()):
+                    assert description.endswith("repeats a value")
+                else:
+                    assert "is inconsistent with grant_types [" in description
                 # Refusals speak RFC 7591, never DOT's internal grant constants.
                 assert "openid-hybrid" not in body["error_description"]
                 assert "authorization-code" not in body["error_description"]
@@ -615,7 +620,25 @@ class TestDynamicClientRegistration(TestCase):
                 assert response.status_code == 400, response.content
                 body = response.json()
                 assert body["error"] == "invalid_client_metadata"
-                assert "response_type" in body["error_description"]
+                assert body["error_description"] == (
+                    f"response_type {response_types[0]!r} is not supported by this server"
+                )
+
+    def test_non_string_supported_response_type_is_ignored(self):
+        """A non-string entry in the advertised list is never served, and does not
+        break registration, also with COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT
+        filtering the list."""
+        self.oauth2_settings.OIDC_ENABLED = True
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", None, "code id_token"]
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code", "implicit"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201, response.content
+        assert response.json()["response_types"] == ["code id_token"]
 
     def test_register_malformed_response_types_is_400(self):
         """response_types must be an array of strings."""
