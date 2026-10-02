@@ -80,6 +80,7 @@ class BaseAuthorizationView(LoginRequiredMixin, AuthorizationServerViewMixin, Vi
 RFC3339 = "%Y-%m-%dT%H:%M:%SZ"
 
 
+@method_decorator(login_not_required, name="dispatch")
 class AuthorizationView(BaseAuthorizationView, FormView):
     """
     Implements an endpoint to handle *Authorization Requests* as in :rfc:`4.1.1` and prompting the
@@ -245,16 +246,28 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         only once the client and redirect URI have been validated; otherwise it is
         rendered like any other fatal authorization error.
 
-        Returns ``None`` when the request carries neither parameter. A PAR
-        ``request_uri`` has already been resolved by this point, and the PAR
-        endpoint refuses to store either parameter, so whatever remains is
-        unsupported.
+        This runs from :meth:`dispatch`, before the login gate: the request is
+        validated before the end-user is authenticated (sections 3.1.2.2 and
+        3.1.2.3), so an anonymous request, including a ``prompt=none`` one, gets
+        the unsupported-parameter error rather than a login page or
+        ``login_required``.
+
+        Returns ``None`` to leave the request to the normal flow: when it carries
+        neither parameter, when its ``request_uri`` is a PAR request URI (the
+        pushed request is authoritative, and the PAR endpoint refuses to store
+        either parameter), and when the client must use PAR, which the PAR
+        enforcement in :meth:`get` reports instead.
         """
+        request_uri = request.GET.get("request_uri")
+        if request_uri and request_uri.startswith(par.REQUEST_URI_PREFIX):
+            return None
         if request.GET.get("request"):
             error_class = RequestNotSupported
-        elif request.GET.get("request_uri"):
+        elif request_uri:
             error_class = RequestURINotSupported
         else:
+            return None
+        if par.pushed_authorization_required(request.GET.get("client_id")):
             return None
 
         # Validate what remains of the request so the error only goes to a
@@ -291,14 +304,19 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         error = OAuthToolkitError(error=unsupported, redirect_uri=redirect_uri)
         return self.error_response(error, application)
 
+    def dispatch(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        # Request objects are rejected before LoginRequiredMixin can send the
+        # user to log in (or answer prompt=none with login_required).
+        if request.method == "GET":
+            unsupported_response = self._reject_request_objects(request)
+            if unsupported_response is not None:
+                return unsupported_response
+        return super().dispatch(request, *args, **kwargs)
+
     def get(self, request, *args, **kwargs):
         par_response = self._handle_pushed_authorization_request(request)
         if par_response is not None:
             return par_response
-
-        unsupported_response = self._reject_request_objects(request)
-        if unsupported_response is not None:
-            return unsupported_response
 
         try:
             scopes, credentials = self.validate_authorization_request(request)

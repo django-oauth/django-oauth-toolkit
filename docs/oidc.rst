@@ -261,7 +261,9 @@ Request objects (OpenID Connect Core 1.0 section 6), passed by value in the
 Once the client and redirect URI have been validated, the authorization endpoint
 redirects such a request back to the client with the section 3.1.2.6 error
 ``request_not_supported`` or ``request_uri_not_supported``. If the client or
-redirect URI is invalid, the error is shown to the user instead. Parameters inside a
+redirect URI is invalid, the error is shown to the user instead. The request is
+checked before the user is asked to log in, so a client gets this error even when the
+user is not logged in, including for a ``prompt=none`` request. Parameters inside a
 request object are never read, so a ``state`` sent only inside it is not echoed.
 
 The discovery document publishes ``request_parameter_supported`` and

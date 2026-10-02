@@ -287,11 +287,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which the toolkit does not support, instead of ignoring them. A `request` parameter is answered
   with `request_not_supported`, and a `request_uri` that is not a PAR request URI with
   `request_uri_not_supported`. The error is redirected to the client once its redirect URI has been
-  validated. Before, `request` was silently ignored, losing the `state` and `nonce` it carried, and
-  every `request_uri` was treated as a PAR reference and failed with an error page. Both discovery
-  documents now publish `request_parameter_supported` and `request_uri_parameter_supported` as
-  `false`; OpenID Connect Discovery defaults the latter to `true`. PAR `request_uri` handling is
-  unchanged.
+  validated, before the user is asked to log in, so `prompt=none` gets it too. Before, `request` was
+  silently ignored, losing the `state` and `nonce` it carried, and every `request_uri` was treated
+  as a PAR reference and failed with an error page. Both discovery documents now publish
+  `request_parameter_supported` and `request_uri_parameter_supported` as `false`; OpenID Connect
+  Discovery defaults the latter to `true`. PAR `request_uri` handling is unchanged.
 * #1853 Applications registered from a Client ID Metadata Document or through Dynamic Client
   Registration (RFC 7591) now get an ID Token signing algorithm. Neither path set
   `Application.algorithm`, so an `openid` request from such a client failed at the token endpoint

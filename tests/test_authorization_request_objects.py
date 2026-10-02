@@ -10,6 +10,7 @@ from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from oauthlib.oauth2.rfc6749.errors import InvalidRequestError
@@ -18,6 +19,7 @@ from oauth2_provider.authorization_server.par import REQUEST_URI_PREFIX
 from oauth2_provider.authorization_server.views.base import AuthorizationView
 from oauth2_provider.core.exceptions import OAuthToolkitError
 from oauth2_provider.models import create_pushed_authorization_request, get_application_model
+from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
@@ -134,8 +136,8 @@ class TestUnsupportedRequestObjects(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("required for this client", response.content.decode().lower())
 
-    def test_par_request_uri_is_still_resolved(self):
-        par = create_pushed_authorization_request(
+    def make_par(self):
+        return create_pushed_authorization_request(
             request_uri=f"{REQUEST_URI_PREFIX}test-reference-value",
             client_id=self.application.client_id,
             parameters={
@@ -147,9 +149,84 @@ class TestUnsupportedRequestObjects(TestCase):
             },
             expires_in=60,
         )
+
+    def test_par_request_uri_is_still_resolved(self):
+        par = self.make_par()
         response = self.client.get(
             reverse("oauth2_provider:authorize"),
             {"client_id": self.application.client_id, "request_uri": par.request_uri},
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context_data["state"], "pushed_state")
+
+    def test_request_alongside_par_request_uri_is_ignored(self):
+        # The pushed request is authoritative (RFC 9126), so a request parameter
+        # sent next to a PAR request_uri is ignored like any other.
+        par = self.make_par()
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            {
+                "client_id": self.application.client_id,
+                "request_uri": par.request_uri,
+                "request": REQUEST_OBJECT,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context_data["state"], "pushed_state")
+
+
+class TestUnsupportedRequestObjectsAnonymous(TestUnsupportedRequestObjects):
+    """The same requests from an end-user who is not logged in.
+
+    The request is validated before the end-user is authenticated, so the
+    unsupported-parameter error comes back without a detour through login.
+    """
+
+    def setUp(self):
+        pass
+
+    def assertLoginRedirect(self, response):
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response["Location"]).path, settings.LOGIN_URL)
+
+    # oauthlib asks the validator about silent login for prompt=none; deny it, as
+    # for an end-user who is not logged in, which would give login_required.
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=False)
+    def test_request_parameter_with_prompt_none(self, _validate_silent_login):
+        response = self.authorize(request=REQUEST_OBJECT, prompt="none")
+        self.assertErrorRedirect(response, "request_not_supported")
+
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=False)
+    def test_request_uri_with_prompt_none(self, _validate_silent_login):
+        response = self.authorize(request_uri="https://client.example/req.jwt", prompt="none")
+        self.assertErrorRedirect(response, "request_uri_not_supported")
+
+    def test_par_required_client_gets_par_error(self):
+        # PAR enforcement keeps precedence and, as before, runs after login.
+        self.application.require_pushed_authorization_requests = True
+        self.application.save()
+        response = self.authorize(request_uri="https://client.example/req.jwt")
+        self.assertLoginRedirect(response)
+
+    def test_par_request_uri_is_still_resolved(self):
+        # A PAR request_uri is single use, so it is not consumed before login.
+        par = self.make_par()
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            {"client_id": self.application.client_id, "request_uri": par.request_uri},
+        )
+        self.assertLoginRedirect(response)
+        par.refresh_from_db()  # still there: consuming deletes it
+
+    def test_request_alongside_par_request_uri_is_ignored(self):
+        par = self.make_par()
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            {
+                "client_id": self.application.client_id,
+                "request_uri": par.request_uri,
+                "request": REQUEST_OBJECT,
+            },
+        )
+        self.assertLoginRedirect(response)
+        par.refresh_from_db()
