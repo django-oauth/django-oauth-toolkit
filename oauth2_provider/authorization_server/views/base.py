@@ -306,8 +306,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
     def dispatch(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
         # Request objects are rejected before LoginRequiredMixin can send the
-        # user to log in (or answer prompt=none with login_required).
-        if request.method == "GET":
+        # user to log in (or answer prompt=none with login_required). HEAD is
+        # included because Django's View routes it to get().
+        if request.method in ("GET", "HEAD"):
             unsupported_response = self._reject_request_objects(request)
             if unsupported_response is not None:
                 return unsupported_response

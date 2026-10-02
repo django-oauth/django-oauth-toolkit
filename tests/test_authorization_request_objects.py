@@ -59,7 +59,7 @@ class TestUnsupportedRequestObjects(TestCase):
     def setUp(self):
         self.client.login(username="test_user", password="123456")
 
-    def authorize(self, **params):
+    def authorize(self, method="get", **params):
         query = {
             "client_id": self.application.client_id,
             "response_type": "code",
@@ -68,7 +68,8 @@ class TestUnsupportedRequestObjects(TestCase):
             "state": "outer_state",
         }
         query.update(params)
-        return self.client.get(reverse("oauth2_provider:authorize"), {k: v for k, v in query.items() if v})
+        send = getattr(self.client, method)
+        return send(reverse("oauth2_provider:authorize"), {k: v for k, v in query.items() if v})
 
     def assertErrorRedirect(self, response, error, state="outer_state"):
         self.assertEqual(response.status_code, 302)
@@ -103,6 +104,20 @@ class TestUnsupportedRequestObjects(TestCase):
 
     def test_request_uri_is_rejected(self):
         response = self.authorize(request_uri="https://client.example/req.jwt")
+        self.assertErrorRedirect(response, "request_uri_not_supported")
+
+    # Django's View answers HEAD with get(); with skip_authorization a request
+    # that slipped past the check would be issued a code.
+    def test_head_request_parameter_is_rejected(self):
+        self.application.skip_authorization = True
+        self.application.save()
+        response = self.authorize(method="head", request=REQUEST_OBJECT)
+        self.assertErrorRedirect(response, "request_not_supported")
+
+    def test_head_request_uri_is_rejected(self):
+        self.application.skip_authorization = True
+        self.application.save()
+        response = self.authorize(method="head", request_uri="https://client.example/req.jwt")
         self.assertErrorRedirect(response, "request_uri_not_supported")
 
     def test_request_takes_precedence_over_request_uri(self):
