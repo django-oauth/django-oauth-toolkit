@@ -303,7 +303,8 @@ def _build_application_kwargs(
 
     # post_logout_redirect_uris (OpenID Connect RP-Initiated Logout 1.0 section
     # 3.1). Always set, so a PUT that omits it clears it (full replacement,
-    # RFC 7592 section 2.2). Each entry is checked like a redirect_uri.
+    # RFC 7592 section 2.2). Application.clean() validates each entry like a
+    # redirect_uri, and in strict mode refuses http for a public client.
     post_logout_redirect_uris = data.get("post_logout_redirect_uris", [])
     if not isinstance(post_logout_redirect_uris, list):
         return None, _error_response("invalid_client_metadata", "post_logout_redirect_uris must be an array")
@@ -311,15 +312,13 @@ def _build_application_kwargs(
         return None, _error_response(
             "invalid_client_metadata", "Each post_logout_redirect_uri must be a string"
         )
-    uri_validator = get_application_model()().get_redirect_uri_validator()
-    for uri in post_logout_redirect_uris:
-        try:
-            uri_validator(uri)
-        except ValidationError as exc:
-            return None, _error_response(
-                "invalid_client_metadata",
-                f"Invalid post_logout_redirect_uri {uri!r}: {' '.join(exc.messages)}",
-            )
+    # The list is stored space-joined and read back split, so an empty entry or
+    # one containing whitespace would not come back as the client sent it.
+    if any(uri.split() != [uri] for uri in post_logout_redirect_uris):
+        return None, _error_response(
+            "invalid_client_metadata",
+            "Each post_logout_redirect_uri must be a non-empty URI without whitespace",
+        )
     kwargs["post_logout_redirect_uris"] = " ".join(post_logout_redirect_uris)
 
     # client_name — always set so a request is a full replacement of the
