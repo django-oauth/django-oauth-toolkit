@@ -1,9 +1,12 @@
 import hashlib
 import json
 import logging
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from django import http
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ImproperlyConfigured
@@ -12,7 +15,8 @@ from django.shortcuts import resolve_url
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
+from django.utils.encoding import escape_uri_path
+from django.views.decorators.csrf import csrf_exempt, csrf_protect, requires_csrf_token
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, OAuth2Error
@@ -92,6 +96,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
     *authorize/do not authorize*.
 
     * then receive a ``POST`` request possibly after user authorized the access
+
+    The authorization request itself may also be sent by ``POST``, with its parameters
+    form-serialized in the body (OpenID Connect Core 1.0 section 3.1.2.1). Such a request
+    is told apart from a consent submission by :meth:`is_consent_submission` and answered
+    with a redirect to the same request sent by ``GET``.
 
     Some information contained in the ``GET`` request and needed to create a Grant token during
     the ``POST`` request would be lost between the two steps above, so they are temporarily stored in
@@ -314,7 +323,80 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         error = OAuthToolkitError(error=unsupported, redirect_uri=redirect_uri)
         return self.error_response(error, application)
 
+    @classmethod
+    def as_view(cls, **initkwargs: Any) -> Callable[..., http.HttpResponse]:
+        # CSRF is enforced on the consent form only (see dispatch): an authorization
+        # request sent by POST (OpenID Connect Core 1.0 section 3.1.2.1) comes from
+        # the client's site and carries no CSRF token. Exempting the view here,
+        # rather than decorating dispatch, keeps the exemption when a subclass
+        # overrides dispatch.
+        return csrf_exempt(super().as_view(**initkwargs))
+
+    def is_consent_submission(self, request: http.HttpRequest) -> bool:
+        """Whether a ``POST`` submits the consent form rather than an authorization request.
+
+        OpenID Connect Core 1.0 section 3.1.2.1 requires the authorization endpoint to
+        accept the authorization request by ``POST`` as well as ``GET``, and the consent
+        form posts back to the same endpoint. A consent submission is recognized by what
+        only it carries: the form's ``allow`` field or a CSRF token, in the
+        ``csrfmiddlewaretoken`` field or the CSRF header. Every other ``POST`` is an
+        authorization request. Override this if a custom consent form submits neither.
+
+        A consent submission has its CSRF token checked; an authorization request has
+        none to check. That is safe because an authorization request is only redirected
+        to its ``GET`` form, which a cross-site page can link to anyway.
+        """
+        return (
+            "allow" in request.POST
+            or "csrfmiddlewaretoken" in request.POST
+            or settings.CSRF_HEADER_NAME in request.META
+        )
+
+    @method_decorator(csrf_protect)
+    def _dispatch_csrf_protected(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        """Dispatch a consent submission, or any other unsafe request, with CSRF protection.
+
+        The view itself is exempt so an authorization request can be sent by ``POST``.
+        """
+        return super().dispatch(request, *args, **kwargs)
+
+    @method_decorator(requires_csrf_token)
+    def _dispatch_with_csrf_token(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        """Dispatch a safe request, which may render the consent form, with CSRF token support.
+
+        The consent submission's token is checked against the CSRF cookie. When the
+        consent form uses the token, this sets that cookie, which the view, being exempt,
+        would otherwise leave unset when ``CsrfViewMiddleware`` is not installed; other
+        responses, such as redirects, are left without it.
+        """
+        return super().dispatch(request, *args, **kwargs)
+
+    @staticmethod
+    def _get_form_url(request: http.HttpRequest) -> str:
+        """Return the URL of an authorization request sent by ``POST``, sent by ``GET``.
+
+        The form-serialized parameters join any query string, so a parameter sent in
+        both is repeated, as it would be in a ``GET``.
+        """
+        parameters = {key: request.GET.getlist(key) for key in request.GET}
+        for key, values in request.POST.lists():
+            parameters.setdefault(key, []).extend(values)
+        query = urlencode(parameters, doseq=True)
+        return f"{escape_uri_path(request.path)}?{query}" if query else escape_uri_path(request.path)
+
     def dispatch(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        if request.method == "POST" and not self.is_consent_submission(request):
+            # An authorization request sent by POST (OpenID Connect Core 1.0
+            # section 3.1.2.1) is redirected to the same request sent by GET, so
+            # every step, consent included, sees the parameters exactly as for a
+            # GET. A cross-site POST also arrives without a SameSite=Lax session
+            # cookie, which the browser does send with the GET, so a signed-in
+            # user is not taken for an anonymous one.
+            return HttpResponseRedirect(self._get_form_url(request), status=303)
+        if request.method not in ("GET", "HEAD", "OPTIONS", "TRACE"):
+            # The consent submission, and any other method that could submit the
+            # form (FormView handles PUT like POST), keep their CSRF protection.
+            return self._dispatch_csrf_protected(request, *args, **kwargs)
         # Request objects are rejected before LoginRequiredMixin can send the
         # user to log in (or answer prompt=none with login_required). HEAD is
         # included because Django's View routes it to get().
@@ -322,7 +404,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             unsupported_response = self._reject_request_objects(request)
             if unsupported_response is not None:
                 return unsupported_response
-        return super().dispatch(request, *args, **kwargs)
+        return self._dispatch_with_csrf_token(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         par_response = self._handle_pushed_authorization_request(request)
