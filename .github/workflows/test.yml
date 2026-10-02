@@ -701,6 +701,9 @@ jobs:
         # An optional plan must not fail the job; its result is still in the
         # step status, the summary below and the artifact.
         continue-on-error: ${{ matrix.optional == true }}
+        # "shell: bash" runs with -o pipefail, so the step takes tox's exit
+        # status rather than tee's; the default shell would pass every plan.
+        shell: bash
         run: |
           mkdir -p tests/openid-conformance-suite/reports
           tox -e openid-conformance-suite -- --plan ${{ matrix.plan }} 2>&1 \
