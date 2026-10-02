@@ -2437,6 +2437,108 @@ class TestDCRFullRoundtrip(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# RFC 7591 §2 display metadata (client_uri, logo_uri, policy_uri, tos_uri)
+# ---------------------------------------------------------------------------
+
+DISPLAY_METADATA = {
+    "client_uri": "https://client.example.com/",
+    "logo_uri": "https://client.example.com/logo.png",
+    "policy_uri": "https://client.example.com/policy",
+    "tos_uri": "https://client.example.com/tos",
+}
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.DCR_SETTINGS)
+class TestDCRDisplayMetadata(TestCase):
+    """#1904: the metadata the server SHOULD show the End-User during approval."""
+
+    base = {"redirect_uris": ["https://client.example.com/cb"], "grant_types": ["authorization_code"]}
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("display_user", "display@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def _put(self, body, data):
+        return self.client.put(
+            _management_url(body["client_id"]),
+            data=json.dumps(data),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+
+    def test_register_stores_and_echoes_display_metadata(self):
+        response = _post_register(self.client, {**self.base, **DISPLAY_METADATA})
+        assert response.status_code == 201, response.content
+        body = response.json()
+        app = Application.objects.get(client_id=body["client_id"])
+        for name, value in DISPLAY_METADATA.items():
+            assert body[name] == value
+            assert getattr(app, name) == value
+
+    def test_register_without_display_metadata_omits_it(self):
+        response = _post_register(self.client, {**self.base, "logo_uri": None, "tos_uri": ""})
+        assert response.status_code == 201, response.content
+        body = response.json()
+        app = Application.objects.get(client_id=body["client_id"])
+        for name in DISPLAY_METADATA:
+            assert name not in body
+            assert getattr(app, name) == ""
+
+    def test_register_rejects_invalid_display_metadata(self):
+        invalid = (
+            123,
+            ["https://client.example.com/logo.png"],
+            "http://client.example.com/logo.png",
+            "javascript:alert(1)",
+            "data:image/png;base64,AAAA",
+            "/logo.png",
+            "https://client.example.com/" + "a" * 500,
+        )
+        for name in DISPLAY_METADATA:
+            for value in invalid:
+                with self.subTest(name=name, value=value):
+                    response = _post_register(self.client, {**self.base, name: value})
+                    assert response.status_code == 400, response.content
+                    body = response.json()
+                    assert body["error"] == "invalid_client_metadata"
+                    assert body["error_description"].startswith(name)
+        assert not Application.objects.exists()
+
+    def test_management_get_put_round_trip(self):
+        body = _post_register(self.client, {**self.base, **DISPLAY_METADATA}).json()
+        self.client.logout()
+
+        response = self.client.get(
+            _management_url(body["client_id"]), **_bearer(body["registration_access_token"])
+        )
+        assert response.status_code == 200
+        for name, value in DISPLAY_METADATA.items():
+            assert response.json()[name] == value
+
+        # PUT replaces the values it sends and, as a full replacement
+        # (RFC 7592 §2.2), clears the ones it omits.
+        response = self._put(body, {**self.base, "logo_uri": "https://client.example.com/new-logo.png"})
+        assert response.status_code == 200, response.content
+        put_body = response.json()
+        assert put_body["logo_uri"] == "https://client.example.com/new-logo.png"
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.logo_uri == "https://client.example.com/new-logo.png"
+        for name in ("client_uri", "policy_uri", "tos_uri"):
+            assert name not in put_body
+            assert getattr(app, name) == ""
+
+    def test_management_put_rejects_invalid_display_metadata(self):
+        body = _post_register(self.client, {**self.base, **DISPLAY_METADATA}).json()
+        self.client.logout()
+        response = self._put(body, {**self.base, "policy_uri": "http://client.example.com/policy"})
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.policy_uri == DISPLAY_METADATA["policy_uri"]
+
+
+# ---------------------------------------------------------------------------
 # RFC 9700 hashed-at-rest token storage
 # ---------------------------------------------------------------------------
 

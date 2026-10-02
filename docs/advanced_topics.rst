@@ -703,6 +703,12 @@ served with the package's own static files, so ``style-src 'self'`` is enough â€
 third-party style host and no inline ``<style>``. See :ref:`default-stylesheet` if you
 replace those styles with your own.
 
+The one exception is a client's registered logo (``logo_uri``), which the consent page loads as an
+image from the client's own host. Under a policy such as ``default-src 'self'`` the browser blocks
+it, and the page shows only its ``alt`` text. To show logos, allow them in ``img-src`` â€” for example
+``img-src 'self' https:``, or, as with ``form-action`` above, only the requesting application's
+``logo_uri`` origin on the consent page.
+
 .. _debug-redirect-uri:
 
 Debugging redirect URI mismatches

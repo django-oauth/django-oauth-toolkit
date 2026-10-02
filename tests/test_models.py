@@ -1778,6 +1778,19 @@ def test_application_clean_rejects_non_https_client_jwks_uri():
     assert "https" in str(exc.value)
 
 
+@pytest.mark.parametrize("field", ["client_uri", "logo_uri", "policy_uri", "tos_uri"])
+def test_application_clean_requires_https_display_uris(field):
+    """#1904: the consent page puts these values in an href or src, so only https is accepted."""
+    for value in ("http://client.example.com/x", "javascript:alert(1)"):
+        app = _client_assertion_application(**{field: value})
+        with pytest.raises(ValidationError) as exc:
+            app.clean()
+        assert field in exc.value.message_dict
+        assert "https" in str(exc.value)
+
+    _client_assertion_application(**{field: "https://client.example.com/x"}).clean()
+
+
 def test_application_clean_rejects_jwks_without_verification_keys():
     # A key set that can never verify a signature (enc-only use, or key_ops
     # without "verify") is a dead configuration; clean() fails fast.

@@ -198,3 +198,25 @@ textarea {
     gap: 8px;
     margin-top: 15px;
 }
+
+/* Client logo and links on the consent page (oauth2_provider/client_branding.html).
+ * The logo is a remote image, so its rendered size is bounded here. */
+.client-branding {
+    margin-bottom: 15px;
+}
+
+.client-logo {
+    display: block;
+    max-width: 96px;
+    max-height: 96px;
+    margin-bottom: 10px;
+}
+
+.client-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}

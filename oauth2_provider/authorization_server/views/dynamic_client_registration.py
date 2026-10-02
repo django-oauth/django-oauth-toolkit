@@ -15,6 +15,7 @@ from typing import Any
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import reverse
@@ -79,6 +80,13 @@ RESPONSE_TYPES_BY_GRANT = {
     AbstractApplication.GRANT_IMPLICIT: ("id_token", "id_token token", "token"),
     AbstractApplication.GRANT_OPENID_HYBRID: ("code id_token", "code token", "code id_token token"),
 }
+
+# RFC 7591 section 2 metadata shown to the End-User during approval. Each is
+# stored on the Application field of the same name.
+DISPLAY_URI_FIELDS = ("client_uri", "logo_uri", "policy_uri", "tos_uri")
+# Matches the max_length of those Application fields.
+DISPLAY_URI_MAX_LENGTH = 500
+_https_url_validator = URLValidator(schemes=["https"])
 
 
 def _response_type_values(response_type: str) -> frozenset[str] | None:
@@ -176,6 +184,31 @@ def _parse_metadata(body):
     if not isinstance(data, dict):
         return None, _error_response("invalid_client_metadata", "Request body must be a JSON object")
     return data, None
+
+
+def _display_uri(data: dict[str, Any], name: str) -> tuple[str, JsonResponse | None]:
+    """
+    Read the display URI *name* from RFC 7591 metadata *data*.
+
+    Returns (value, error_response). An absent, null or empty value yields ""
+    so a request is a full replacement of the metadata (RFC 7592 section 2.2). The
+    value is shown to the End-User as a link or image, so only an absolute
+    https URL is accepted; checking here reports the RFC 7591 field name.
+    """
+    value = data.get(name)
+    if value is None or value == "":
+        return "", None
+    if not isinstance(value, str):
+        return "", _error_response("invalid_client_metadata", f"{name} must be a string")
+    if len(value) > DISPLAY_URI_MAX_LENGTH:
+        return "", _error_response(
+            "invalid_client_metadata", f"{name} must be at most {DISPLAY_URI_MAX_LENGTH} characters"
+        )
+    try:
+        _https_url_validator(value)
+    except ValidationError:
+        return "", _error_response("invalid_client_metadata", f"{name} must be an absolute https URL")
+    return value, None
 
 
 def _resolve_grant_type(grant_types: list[str]) -> tuple[str | None, JsonResponse | None]:
@@ -328,6 +361,13 @@ def _build_application_kwargs(
     # Application.name to empty, consistent with the other fields below. On
     # POST this is equivalent to the model's blank default.
     kwargs["name"] = data.get("client_name", "")
+
+    # client_uri, logo_uri, policy_uri, tos_uri — likewise always set.
+    for name in DISPLAY_URI_FIELDS:
+        value, err = _display_uri(data, name)
+        if err:
+            return None, err
+        kwargs[name] = value
 
     # grant_types → authorization_grant_type
     grant_types = data.get("grant_types", ["authorization_code"])
@@ -547,6 +587,10 @@ def _application_to_response(
     }
     if application.name:
         data["client_name"] = application.name
+    for name in DISPLAY_URI_FIELDS:
+        value = getattr(application, name)
+        if value:
+            data[name] = value
     if application.client_jwks:
         jwks = _stored_jwks_for_response(application)
         if jwks is not None:

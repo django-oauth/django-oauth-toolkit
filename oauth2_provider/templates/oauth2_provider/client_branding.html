@@ -1,0 +1,29 @@
+{% load i18n %}
+{% comment %}
+    The client metadata the authorization server SHOULD show the End-User during
+    approval (RFC 7591 section 2): its logo and links to its home page, privacy
+    policy and terms of service. Renders nothing when none are registered. Expects
+    ``application`` in the context. Application.clean() only accepts https URLs for
+    these fields.
+{% endcomment %}
+{% if application.logo_uri or application.client_uri or application.policy_uri or application.tos_uri %}
+    <div class="client-branding">
+        {% if application.logo_uri %}
+            {% firstof application.name application.client_id as client_label %}
+            <img class="client-logo" src="{{ application.logo_uri }}" alt="{% blocktrans with name=client_label %}{{ name }} logo{% endblocktrans %}" referrerpolicy="no-referrer">
+        {% endif %}
+        {% if application.client_uri or application.policy_uri or application.tos_uri %}
+            <ul class="client-links">
+                {% if application.client_uri %}
+                    <li><a href="{{ application.client_uri }}" rel="noopener noreferrer nofollow" target="_blank">{% trans "Home page" %}</a></li>
+                {% endif %}
+                {% if application.policy_uri %}
+                    <li><a href="{{ application.policy_uri }}" rel="noopener noreferrer nofollow" target="_blank">{% trans "Privacy policy" %}</a></li>
+                {% endif %}
+                {% if application.tos_uri %}
+                    <li><a href="{{ application.tos_uri }}" rel="noopener noreferrer nofollow" target="_blank">{% trans "Terms of service" %}</a></li>
+                {% endif %}
+            </ul>
+        {% endif %}
+    </div>
+{% endif %}
