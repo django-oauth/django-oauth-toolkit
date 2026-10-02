@@ -66,24 +66,21 @@ REDIRECT_REQUIRED_GRANT_TYPES = {
     AbstractApplication.GRANT_OPENID_HYBRID,
 }
 
-# The response types an application of each DOT grant type can use, as sets of
-# their space-delimited values, which are unordered (OAuth 2.0 Multiple
-# Response Type Encoding Practices section 2). They mirror
+# The response types an application of each DOT grant type can use, in the
+# canonical form registration responses report them in. They mirror
 # OAuth2Validator.validate_response_type. A grant type absent here serves no
 # response type.
 RESPONSE_TYPES_BY_GRANT = {
-    AbstractApplication.GRANT_AUTHORIZATION_CODE: frozenset({frozenset({"code"})}),
-    AbstractApplication.GRANT_IMPLICIT: frozenset(
-        {frozenset({"token"}), frozenset({"id_token"}), frozenset({"id_token", "token"})}
-    ),
-    AbstractApplication.GRANT_OPENID_HYBRID: frozenset(
-        {
-            frozenset({"code", "id_token"}),
-            frozenset({"code", "token"}),
-            frozenset({"code", "id_token", "token"}),
-        }
-    ),
+    AbstractApplication.GRANT_AUTHORIZATION_CODE: ("code",),
+    AbstractApplication.GRANT_IMPLICIT: ("id_token", "id_token token", "token"),
+    AbstractApplication.GRANT_OPENID_HYBRID: ("code id_token", "code token", "code id_token token"),
 }
+
+
+def _response_type_values(response_type: str) -> frozenset[str]:
+    """The values of a space-delimited response type, whose order is not
+    significant (RFC 6749 section 3.1.1)."""
+    return frozenset(response_type.split())
 
 
 def _error_response(error, description, status=400):
@@ -200,8 +197,12 @@ def _check_response_types(data: dict[str, Any], dot_grant: str) -> JsonResponse 
     application will be able to use: OpenID Connect Dynamic Client
     Registration 1.0 section 2 lists the grant types each response type needs,
     and DOT serves one grant type per application, so a hybrid client cannot
-    use the plain ``code`` response type either. response_types is not stored;
-    when it is omitted there is nothing to check.
+    use the plain ``code`` response type either.
+
+    response_types is not stored. Whether or not the client sent it, the
+    server provisions every response type the grant serves and the response
+    reports them (RFC 7591 sections 2 and 3.2.1), so an omitted field, whose
+    default of ``code`` a hybrid client cannot use, has nothing to check.
 
     Returns an error response, or None when the response types are consistent.
     """
@@ -213,9 +214,9 @@ def _check_response_types(data: dict[str, Any], dot_grant: str) -> JsonResponse 
     if not all(isinstance(rt, str) for rt in response_types):
         return _error_response("invalid_client_metadata", "Each response_type must be a string")
 
-    served = RESPONSE_TYPES_BY_GRANT.get(dot_grant, frozenset())
+    served = {_response_type_values(rt) for rt in RESPONSE_TYPES_BY_GRANT.get(dot_grant, ())}
     for response_type in response_types:
-        if frozenset(response_type.split()) not in served:
+        if _response_type_values(response_type) not in served:
             grant_types = ", ".join(_dot_grant_to_rfc_grant_types(dot_grant))
             return _error_response(
                 "invalid_client_metadata",
@@ -454,6 +455,9 @@ def _application_to_response(
         "client_id_issued_at": int(application.created.timestamp()),
         "redirect_uris": application.redirect_uris.split() if application.redirect_uris else [],
         "grant_types": _dot_grant_to_rfc_grant_types(application.authorization_grant_type),
+        # Derived from the grant, see _check_response_types. Always present: an
+        # omitted response_types means "code" (RFC 7591 section 2).
+        "response_types": list(RESPONSE_TYPES_BY_GRANT.get(application.authorization_grant_type, ())),
         "token_endpoint_auth_method": auth_method,
         "registration_access_token": registration_access_token,
         "registration_client_uri": request.build_absolute_uri(

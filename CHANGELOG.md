@@ -302,7 +302,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `response_types` list, previously ignored, is now checked against the grant types (RFC 7591
   section 2.1, OpenID Connect Dynamic Client Registration 1.0 section 2). A response type the
   registered grant cannot serve is refused with `invalid_client_metadata`, for example `code
-  id_token` without `implicit`, or plain `code` for a hybrid client.
+  id_token` without `implicit`, or plain `code` for a hybrid client. Registration and management
+  responses now include `response_types`: the response types the registered grant serves, which
+  the server provisions whether or not the request sent the field (an empty list for grants without
+  an authorization endpoint flow).
 * #1880 The Dynamic Client Registration (RFC 7591) response now includes `client_secret_expires_at`
   (`0`, since the toolkit's client secrets do not expire) whenever it returns a `client_secret`, as
   RFC 7591 section 3.2.1 requires, and reports `client_id_issued_at` in registration and RFC 7592

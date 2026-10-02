@@ -428,6 +428,9 @@ class TestDynamicClientRegistration(TestCase):
                 assert response.status_code == 201, response.content
                 body = response.json()
                 assert body["grant_types"] == ["authorization_code", "implicit", "refresh_token"]
+                # The response reports what the client can use, canonically ordered, also
+                # when it sent no response_types (RFC 7591 section 3.2.1).
+                assert body["response_types"] == ["code id_token", "code token", "code id_token token"]
                 app = Application.objects.get(client_id=body["client_id"])
                 assert app.authorization_grant_type == Application.GRANT_OPENID_HYBRID
 
@@ -453,6 +456,34 @@ class TestDynamicClientRegistration(TestCase):
                 response = _post_register(self.client, data)
                 assert response.status_code == 400
                 assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_reports_response_types(self):
+        """Responses report the response types the registered grant serves.
+
+        response_types is not stored, so the server provisions these whether or
+        not the client sent the field, and the response says so (RFC 7591
+        sections 2 and 3.2.1). A grant with no authorization endpoint flow
+        reports an explicit empty list, since an omitted field means "code".
+        """
+        self.client.force_login(self.user)
+        cases = (
+            (["authorization_code"], ["code"]),
+            (["implicit"], ["id_token", "id_token token", "token"]),
+            (["client_credentials"], []),
+            (["password"], []),
+        )
+        for grant_types, expected in cases:
+            with self.subTest(grant_types=grant_types):
+                data = {"redirect_uris": ["https://example.com/cb"], "grant_types": grant_types}
+                response = _post_register(self.client, data)
+                assert response.status_code == 201, response.content
+                body = response.json()
+                assert body["response_types"] == expected
+                response = self.client.get(
+                    _management_url(body["client_id"]), **_bearer(body["registration_access_token"])
+                )
+                assert response.status_code == 200
+                assert response.json()["response_types"] == expected
 
     def test_register_consistent_response_types(self):
         """response_types the registered grant serves are accepted (RFC 7591 section 2.1)."""
@@ -1507,7 +1538,9 @@ class TestDynamicClientRegistrationManagement(TestCase):
         )
         assert response.status_code == 200, response.content
         hybrid_grant_types = ["authorization_code", "implicit", "refresh_token"]
+        hybrid_response_types = ["code id_token", "code token", "code id_token token"]
         assert response.json()["grant_types"] == hybrid_grant_types
+        assert response.json()["response_types"] == hybrid_response_types
         app = Application.objects.get(client_id=self.client_id)
         assert app.authorization_grant_type == Application.GRANT_OPENID_HYBRID
 
@@ -1515,6 +1548,30 @@ class TestDynamicClientRegistrationManagement(TestCase):
         response = self.client.get(self.management_url, **_bearer(token))
         assert response.status_code == 200
         assert response.json()["grant_types"] == hybrid_grant_types
+        assert response.json()["response_types"] == hybrid_response_types
+
+    def test_put_echoing_read_response_is_200(self):
+        """RFC 7592 section 2.2: a client can PUT back the metadata a read returned.
+
+        The response_types reported are ones the registered grant serves, so
+        echoing them passes the consistency check and changes nothing.
+        """
+        response = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert response.status_code == 200
+        metadata = response.json()
+        # RFC 7592 section 2.2: these must not be sent in an update request.
+        for field in ("registration_access_token", "registration_client_uri", "client_id_issued_at"):
+            metadata.pop(field)
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(metadata),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200, response.content
+        body = response.json()
+        assert body["grant_types"] == metadata["grant_types"]
+        assert body["response_types"] == metadata["response_types"] == ["code"]
 
     def test_put_inconsistent_response_types_is_400(self):
         """A PUT is checked like a registration; the row is left unchanged."""

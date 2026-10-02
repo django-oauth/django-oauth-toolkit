@@ -45,6 +45,7 @@ Creates a new OAuth2 application (RFC 7591).  Authentication is controlled by
      "client_secret_expires_at": 0,
      "redirect_uris": ["https://example.com/callback"],
      "grant_types": ["authorization_code", "refresh_token"],
+     "response_types": ["code"],
      "token_endpoint_auth_method": "client_secret_basic",
      "client_name": "My Application",
      "registration_access_token": "...",
@@ -109,8 +110,9 @@ Field Mapping
 |                                     |                                   | ``openid-hybrid``; see the note  |
 |                                     |                                   | below                            |
 +-------------------------------------+-----------------------------------+----------------------------------+
-| ``response_types`` (array)          | (not stored)                      | Checked against ``grant_types``; |
-|                                     |                                   | see the note below               |
+| ``response_types`` (array)          | (not stored)                      | Checked against ``grant_types``  |
+|                                     |                                   | and derived from them in         |
+|                                     |                                   | responses; see the note below    |
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``token_endpoint_auth_method: none``| ``client_type = "public"``        |                                  |
 +-------------------------------------+-----------------------------------+----------------------------------+
@@ -139,6 +141,12 @@ Field Mapping
     - ``authorization_code`` with ``implicit``: ``code id_token``, ``code token`` and
       ``code id_token token``. A hybrid client cannot also use plain ``code``;
     - any other grant type: none.
+
+    Registration and management responses report those response types for the registered grant,
+    in that canonical form, whether or not the request sent ``response_types``: the server
+    provisions every response type the grant serves (RFC 7591 sections 2 and 3.2.1). A grant with
+    none reports an empty list, because an omitted ``response_types`` would mean ``code``. Sending
+    the reported list back in a ``PUT`` passes the check.
 
 .. note::
     ``id_token_signed_response_alg`` (`OpenID Connect Dynamic Client Registration 1.0 section 2
