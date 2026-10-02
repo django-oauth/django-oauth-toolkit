@@ -123,3 +123,79 @@ def test_main_writes_and_removes_the_plan_file(baseline, tmp_path, monkeypatch):
     log.write_text("2026-10-02 01:02:20 Results for [1] plan with configuration config/x.json:\n")
     assert baseline.main(["hybrid", str(log)]) == 0
     assert not (tmp_path / "hybrid.failures.json").exists()
+
+
+# A run that already used the plan's baseline: one known gap still happens and
+# is reported as expected, one was fixed and is reported as not happening, and
+# one new condition is unexpected.
+RERUN_LOG = "\n".join(
+    [
+        f"{CI}Results for [1] {PLAN} with configuration config/dot-oidcc-hybrid.json:",
+        f"{CI}Test [1:1] oidcc-server[response_type=code id_token] AbC123 FINISHED - result FAILED.",
+        f"{CI}Expected warning: ",
+        f"{CI}\tBlock name: '{VERIFY}' - Condition: 'StillHappens'",
+        f"{CI}Expected failure: ",
+        f"{CI}\tBlock name: '' - Condition: 'VerifyNewJwksHasNewSigningKey'",
+        f"{CI}{RED}Expected failure did not happen: {RESET}",
+        f"{CI}{RED}\tBlock name: '' - Condition: 'FixedSince'{RESET}",
+        f"{CI}{RED}Unexpected failure: {RESET}",
+        f"{CI}{RED}\tBlock name: '' - Condition: 'NewGap'{RESET}",
+        f"{CI}Overall totals: ran 1 test modules.",
+    ]
+)
+
+
+def _entry(baseline, condition, result, block=""):
+    return {
+        "test-name": "oidcc-server",
+        "variant": {"response_type": "code id_token"},
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": block,
+        "condition": condition,
+        "expected-result": result,
+        "comment": baseline.BASELINE_COMMENT,
+        "baseline": True,
+    }
+
+
+def test_expected_keys_lists_only_conditions_reported_as_expected(baseline):
+    keys = baseline.expected_keys(RERUN_LOG)
+
+    assert {(key[4], result) for key, result in keys} == {
+        ("StillHappens", "warning"),
+        ("VerifyNewJwksHasNewSigningKey", "failure"),
+    }
+
+
+def test_main_regenerates_from_a_run_that_used_the_baseline(baseline, tmp_path, monkeypatch):
+    monkeypatch.setattr(baseline, "EXPECTED_DIR", tmp_path)
+    monkeypatch.setattr(baseline, "HERE", tmp_path)
+    waiver = {
+        "test-name": "oidcc-server",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyNewJwksHasNewSigningKey",
+        "expected-result": "failure",
+        "comment": "CI cannot rotate the key",
+    }
+    still = {**_entry(baseline, "StillHappens", "warning", VERIFY), "comment": "kept verbatim"}
+    fixed = _entry(baseline, "FixedSince", "failure")
+    (tmp_path / "hybrid.failures.json").write_text(json.dumps([waiver, still, fixed], indent=4) + "\n")
+    log = tmp_path / "runner.log"
+    log.write_text(RERUN_LOG)
+
+    assert baseline.main(["hybrid", str(log)]) == 0
+
+    written = json.loads((tmp_path / "hybrid.failures.json").read_text())
+    # The waiver stays first and is not duplicated as a baseline entry, the gap
+    # that still happens is carried over unchanged, the fixed one is dropped and
+    # the new one is added.
+    assert written == [waiver, _entry(baseline, "NewGap", "failure"), still]
+
+
+def test_merge_drops_a_baseline_entry_whose_result_changed(baseline):
+    entry = _entry(baseline, "StillHappens", "failure", VERIFY)
+    still_expected = {(baseline._key(entry), "warning")}
+
+    assert baseline.merge([entry], [], still_expected) == []
