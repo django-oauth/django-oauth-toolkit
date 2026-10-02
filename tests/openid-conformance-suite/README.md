@@ -137,7 +137,8 @@ The failures files hold two kinds of entry:
   them by hand.
 * **Waivers** (no `baseline` key) are hand-written, each with a reason that would survive review:
   a feature the toolkit does not implement on purpose, or something CI cannot do (rotating the
-  OP's signing key, reaching a `jwks_uri` on the suite's private host). `baseline.py` keeps them.
+  OP's signing key, reaching a `jwks_uri` on the suite's private host; see
+  [What CI cannot satisfy](#what-ci-cannot-satisfy)). `baseline.py` keeps them.
 
 To update a plan's baseline after a change that moves it, take the runner output (in CI, the
 job's `runner.log` artifact or its log; locally, the terminal output), regenerate, and commit the
@@ -152,6 +153,78 @@ runner still reports as expected, drops each one it no longer reports (a fixed g
 "Expected failure did not happen") and adds each unexpected failure or warning.
 
 Run with `--verbose` to get a ready-made entry for a single unexpected failure instead.
+
+## What CI cannot satisfy
+
+The `dynamic` plan carries the only waivers. CI runs all three modules, but each one has a
+condition that CI cannot satisfy, and that condition is waived. None of them covers a toolkit gap.
+
+| Module | Waived condition | Why CI cannot satisfy it | For certification |
+|---|---|---|---|
+| `oidcc-server-rotate-keys` | `VerifyNewJwksHasNewSigningKey` | The OP's signing key has to be rotated between two JWKS fetches. | Manual step, [below](#rotating-the-signing-key). |
+| `oidcc-registration-jwks-uri` | `CheckTokenEndpointHttpStatus200` | The IdP cannot fetch the suite's `jwks_uri`. | Expected to pass against the hosted suite. |
+| `oidcc-refresh-token-rp-key-rotation` | `CheckTokenEndpointHttpStatus200` | The same `jwks_uri`. | Expected to pass against the hosted suite. |
+
+### Rotating the signing key
+
+`oidcc-server-rotate-keys` fetches the OP's JWKS when the module is created, waits for the tester
+to rotate the signing key and press **Start**, then fetches the JWKS again. It expects the second
+set to contain a new key (a failure if not) and still contain the old one (a warning if not). The
+suite's runner presses Start as soon as the module is ready. It has no hook to run anything in
+between, so CI cannot rotate the key there, and the suite's own CI waives the condition in the same
+way. The module's description says that an OP which cannot rotate during the test self-asserts key
+rotation in its certification attestation.
+
+The demo IdP can rotate, which is an IdP restart with a new `OIDC_RSA_PRIVATE_KEY` and the old
+key in `OIDC_RSA_PRIVATE_KEYS_INACTIVE`. `docker-compose.rotate-keys.yml` recreates `dot-idp` that
+way. To pass the module by hand:
+
+1. Run the plan with the stack kept up: `tox -e openid-conformance-suite -- --plan dynamic --keep`.
+2. Open the plan in the suite UI (any log-detail link the runner printed leads to it) and run
+   `oidcc-server-rotate-keys` again. It waits for you to press **Start**.
+3. From `tests/openid-conformance-suite/`, write the current key and a new one to `.certs/`, then
+   recreate the IdP with them:
+
+   ```sh
+   docker compose exec -T dot-idp python -c \
+     'from idp import settings; print(settings.OAUTH2_PROVIDER["OIDC_RSA_PRIVATE_KEY"].strip())' \
+     > .certs/original-key.pem
+   openssl genrsa -out .certs/rotated-key.pem 2048
+   chmod 644 .certs/original-key.pem .certs/rotated-key.pem
+   docker compose -f docker-compose.yml -f docker-compose.rotate-keys.yml up -d --no-deps --force-recreate dot-idp
+   ```
+
+   `--force-recreate` matters on a retry: Compose otherwise keeps a container whose configuration
+   has not changed, and the running IdP would go on serving the keys it loaded at startup.
+
+   Wait until the JWKS at <https://127.0.0.1:9443/o/.well-known/jwks.json> lists two `kid`s:
+   the module fetches it once on **Start** and fails if the IdP is not answering yet.
+4. Press **Start**. Both `VerifyNewJwks*` conditions pass.
+5. `docker compose down --volumes` when done. To go back to the original key and keep the stack
+   up, run the last command of step 3 again without `-f docker-compose.rotate-keys.yml`.
+
+### The client's `jwks_uri`
+
+These two modules register a `private_key_jwt` client whose `jwks_uri` is on the suite's own host,
+`https://localhost.emobix.co.uk:8443/...`. The IdP fetches that document through
+`oauth2_provider.core.safe_fetch` to verify the client assertion. Inside the compose network two
+things stop the fetch:
+
+* The `nginx` alias resolves to a private compose address, and the SSRF guard refuses every
+  non-public address. Unlike the CIMD metadata fetch, which the demo IdP can swap out through
+  `CIMD_METADATA_FETCHER`, the `jwks_uri` fetch has no pluggable fetcher, so the demo IdP has no
+  supported way to allow the suite's host.
+* The suite's `nginx` image serves a self-signed certificate for `CN=localhost` with no
+  `localhost.emobix.co.uk` name, so the IdP's default TLS verification would refuse it even from a
+  public address.
+
+Client authentication therefore fails and the token endpoint returns an error. The modules whose
+clients register an inline `jwks` cover client assertion verification in this plan. Fetching a
+`jwks_uri`, and refetching it when a new `kid` appears, are covered by the unit tests in
+`tests/test_client_assertions.py`. At certification.openid.net the `jwks_uri` is on the hosted
+suite's public hostname with a publicly trusted certificate, so both modules are expected to pass
+there for an OP the hosted suite can reach, with no manual step. They have not been run there
+yet.
 
 ## Upgrading the suite
 
