@@ -16,9 +16,13 @@ and commit it with the change::
 
     python tests/openid-conformance-suite/baseline.py basic reports/runner.log
 
-Only conditions reported as *unexpected* are recorded, so already-waived
-conditions are not duplicated. A module that did not run to completion cannot
-be baselined; the runner fails the plan for it regardless.
+The log normally comes from a run that already used the current file, so a
+known gap that still happens is reported as *expected*. Such a baseline entry
+is kept as it is, one the runner no longer reports (a fixed gap) is dropped,
+and each condition reported as *unexpected* becomes a new baseline entry.
+Conditions matched by a hand-written waiver are never recorded, so they are
+not duplicated. A module that did not run to completion cannot be baselined;
+the runner fails the plan for it regardless.
 """
 
 from __future__ import annotations
@@ -55,6 +59,10 @@ SECTIONS = {
     "Unexpected failure:": "failure",
     "Unexpected warning:": "warning",
 }
+EXPECTED_SECTIONS = {
+    "Expected failure:": "failure",
+    "Expected warning:": "warning",
+}
 
 
 def _content(line: str) -> str:
@@ -66,12 +74,23 @@ def _content(line: str) -> str:
 
 def parse_log(text: str) -> list[dict]:
     """Return one entry per unexpected (module, variant, block, condition, result)."""
-    entries: list[dict] = []
+    return [entry for entry, unexpected in _parse(text) if unexpected]
+
+
+def expected_keys(text: str) -> set[tuple]:
+    """Return the (key, result) of every condition the runner reported as expected."""
+    return {(_key(entry), entry["expected-result"]) for entry, unexpected in _parse(text) if not unexpected}
+
+
+def _parse(text: str) -> list[tuple[dict, bool]]:
+    """Return (entry, unexpected) per reported (module, variant, block, condition, result)."""
+    entries: list[tuple[dict, bool]] = []
     seen: set[tuple] = set()
     config = None
     module = None
     variant: dict[str, str] = {}
     section = None
+    unexpected = False
     for raw in text.splitlines():
         line = _content(raw)
         stripped = line.strip()
@@ -92,29 +111,38 @@ def parse_log(text: str) -> list[dict]:
             section = None
             continue
         if stripped in SECTIONS:
-            section = SECTIONS[stripped]
+            section, unexpected = SECTIONS[stripped], True
+            continue
+        if stripped in EXPECTED_SECTIONS:
+            section, unexpected = EXPECTED_SECTIONS[stripped], False
             continue
         if stripped.endswith(":") and not stripped.startswith("Block name"):
-            # "Expected failure:", "Expected warning:" and the like.
+            # "Expected failure did not happen:" and the like.
             section = None
             continue
         if module and section and (match := CONDITION.match(line)):
-            key = (module, json.dumps(variant, sort_keys=True), config, match["block"], match["condition"])
+            key = (
+                module,
+                json.dumps(variant, sort_keys=True),
+                config,
+                match["block"],
+                match["condition"],
+                unexpected,
+            )
             if key in seen:
                 continue
             seen.add(key)
-            entries.append(
-                {
-                    "test-name": module,
-                    "variant": dict(sorted(variant.items())),
-                    "configuration-filename": config,
-                    "current-block": match["block"],
-                    "condition": match["condition"],
-                    "expected-result": section,
-                    "comment": BASELINE_COMMENT,
-                    "baseline": True,
-                }
-            )
+            entry = {
+                "test-name": module,
+                "variant": dict(sorted(variant.items())),
+                "configuration-filename": config,
+                "current-block": match["block"],
+                "condition": match["condition"],
+                "expected-result": section,
+                "comment": BASELINE_COMMENT,
+                "baseline": True,
+            }
+            entries.append((entry, unexpected))
     return entries
 
 
@@ -128,12 +156,23 @@ def _key(entry: dict) -> tuple:
     )
 
 
-def merge(existing: list[dict], baseline: list[dict]) -> list[dict]:
-    """Keep hand-written entries first, then the new baseline, without duplicate keys."""
+def merge(existing: list[dict], baseline: list[dict], still_expected: set[tuple] = frozenset()) -> list[dict]:
+    """Keep hand-written entries first, then the new baseline, without duplicate keys.
+
+    *baseline* holds the newly reported (unexpected) conditions. An existing
+    baseline entry whose (key, result) is in *still_expected* is still
+    happening, so it is carried over unchanged; any other one is dropped.
+    """
     kept = [entry for entry in existing if not entry.get("baseline")]
     taken = {_key(entry) for entry in kept}
-    fresh = sorted((entry for entry in baseline if _key(entry) not in taken), key=_key)
-    return kept + fresh
+    carried = [
+        entry
+        for entry in existing
+        if entry.get("baseline") and (_key(entry), entry["expected-result"]) in still_expected
+    ]
+    fresh = [entry for entry in carried + baseline if _key(entry) not in taken]
+    unique = {_key(entry): entry for entry in reversed(fresh)}
+    return kept + sorted(unique.values(), key=_key)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -144,10 +183,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("log", type=Path, help="runner output for that plan (runner.log or a CI job log)")
     args = parser.parse_args(argv)
 
-    baseline = parse_log(args.log.read_text(errors="replace"))
+    text = args.log.read_text(errors="replace")
     path = EXPECTED_DIR / f"{args.plan}.failures.json"
     existing = json.loads(path.read_text()) if path.exists() else []
-    entries = merge(existing, baseline)
+    entries = merge(existing, parse_log(text), expected_keys(text))
     if entries:
         path.write_text(json.dumps(entries, indent=4) + "\n")
     elif path.exists():

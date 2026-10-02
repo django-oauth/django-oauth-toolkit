@@ -153,6 +153,10 @@ diff with the change:
 python tests/openid-conformance-suite/baseline.py basic path/to/runner.log
 ```
 
+The log comes from a run against the current file, so `baseline.py` keeps each baseline entry the
+runner still reports as expected, drops each one it no longer reports (a fixed gap, listed under
+"Expected failure did not happen") and adds each unexpected failure or warning.
+
 Run with `--verbose` to get a ready-made entry for a single unexpected failure instead.
 
 ## Upgrading the suite
