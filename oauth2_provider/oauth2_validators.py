@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 from collections import OrderedDict
-from datetime import timedelta
+from datetime import datetime, timedelta
 from datetime import timezone as datetime_timezone
 from urllib.parse import unquote_plus
 
@@ -125,6 +125,12 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         "phone_number": "phone",
         "phone_number_verified": "phone",
     }
+
+    # Scope values whose claims OIDC Core §5.4 returns from the UserInfo endpoint, not
+    # the ID Token, when an access token is issued. Applied only when
+    # OIDC_COMPLIANT_SCOPE_CLAIMS is enabled.
+    # see https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
+    oidc_userinfo_only_scopes = ("profile", "email", "address", "phone")
 
     def _extract_basic_auth(self, request):
         """
@@ -1178,7 +1184,24 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
                 claims[k] = v(request) if callable(v) else v
         return claims
 
-    def get_id_token_dictionary(self, token, token_handler, request):
+    def _id_token_includes_scope_claims(self, request: OauthlibRequest) -> bool:
+        """
+        Whether the ``profile``/``email``/``address``/``phone`` scope claims belong
+        in the ID Token for this request.
+
+        OIDC Core §5.4: they are returned from the UserInfo endpoint when the
+        response type issues an access token, and in the ID Token only when none is
+        issued, i.e. for ``response_type=id_token``. At the token endpoint (code
+        exchange, refresh) there is no ``response_type`` and an access token is
+        always issued.
+        """
+        if not oauth2_settings.OIDC_COMPLIANT_SCOPE_CLAIMS:
+            return True
+        return set((request.response_type or "").split()) == {"id_token"}
+
+    def get_id_token_dictionary(
+        self, token: dict, token_handler, request: OauthlibRequest
+    ) -> tuple[dict, datetime]:
         """
         Get the claims to put in the ID Token.
 
@@ -1186,9 +1209,19 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         ``oauthlib`` - aud, iat, nonce, at_hash, c_hash.
 
         This function adds in iss, exp and auth_time, plus any claims added from
-        calling ``get_oidc_claims()``
+        calling ``get_oidc_claims()``. With ``OIDC_COMPLIANT_SCOPE_CLAIMS`` enabled,
+        the claims of ``oidc_userinfo_only_scopes`` are left out unless no access
+        token is issued (OIDC Core §5.4).
         """
         claims = self.get_oidc_claims(token, token_handler, request)
+
+        if not self._id_token_includes_scope_claims(request):
+            # Fall back to the standard mapping when scope gating is disabled
+            # (oidc_claim_scope = None) so standard claims are still recognised.
+            claim_scope = self.oidc_claim_scope or OAuth2Validator.oidc_claim_scope
+            claims = {
+                k: v for k, v in claims.items() if claim_scope.get(k) not in self.oidc_userinfo_only_scopes
+            }
 
         expiration_time = timezone.now() + timedelta(seconds=oauth2_settings.ID_TOKEN_EXPIRE_SECONDS)
 
@@ -1338,11 +1371,10 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         if nonce:
             return nonce
 
-    def get_userinfo_claims(self, request):
+    def get_userinfo_claims(self, request: OauthlibRequest) -> dict:
         """
-        Generates and saves a new JWT for this request, and returns it as the
-        current user's claims.
-
+        Return the current user's claims for the UserInfo response, limited by
+        the scopes granted to the access token.
         """
         return self.get_oidc_claims(request.access_token, None, request)
 
