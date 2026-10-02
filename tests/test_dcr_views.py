@@ -175,8 +175,12 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 201
         body = response.json()
         assert body["token_endpoint_auth_method"] == "none"
+        # No secret is issued, so there is no expiry to report either.
+        assert "client_secret" not in body
+        assert "client_secret_expires_at" not in body
         app = Application.objects.get(client_id=body["client_id"])
         assert app.client_type == Application.CLIENT_PUBLIC
+        assert body["client_id_issued_at"] == int(app.created.timestamp())
 
     def test_register_confidential_client(self):
         """token_endpoint_auth_method=client_secret_basic → client_type=confidential."""
@@ -191,8 +195,11 @@ class TestDynamicClientRegistration(TestCase):
         body = response.json()
         assert body["token_endpoint_auth_method"] == "client_secret_basic"
         assert "client_secret" in body
+        # RFC 7591 section 3.2.1: REQUIRED alongside client_secret; 0 = never expires.
+        assert body["client_secret_expires_at"] == 0
         app = Application.objects.get(client_id=body["client_id"])
         assert app.client_type == Application.CLIENT_CONFIDENTIAL
+        assert body["client_id_issued_at"] == int(app.created.timestamp())
 
     # -- id_token_signed_response_alg (OIDC Dynamic Client Registration 1.0 §2)
 
@@ -666,6 +673,7 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert response.status_code == 201
         body = response.json()
         self.client_id = body["client_id"]
+        self.client_id_issued_at = body["client_id_issued_at"]
         self.registration_token = body["registration_access_token"]
         self.management_url = _management_url(self.client_id)
         self.client.logout()
@@ -680,6 +688,10 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert body["client_id"] == self.client_id
         assert body["client_name"] == "Managed App"
         assert "https://example.com/cb" in body["redirect_uris"]
+        assert body["client_id_issued_at"] == self.client_id_issued_at
+        # The secret is only returned at registration, and its expiry with it.
+        assert "client_secret" not in body
+        assert "client_secret_expires_at" not in body
 
     def test_get_reports_algorithm_set_outside_registration(self):
         """An administrator-chosen HS256 is reported too (OIDC Registration 1.0 §3.2)."""
@@ -855,6 +867,7 @@ class TestDynamicClientRegistrationManagement(TestCase):
         body = response.json()
         assert body["client_name"] == "Updated App"
         assert "https://updated.example.com/cb" in body["redirect_uris"]
+        assert body["client_id_issued_at"] == self.client_id_issued_at
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == "Updated App"
 
@@ -1767,6 +1780,7 @@ class TestDCRJwtAuthMethods(TestCase):
         assert body["jwks"] == jwks
         # The client authenticates with its key; no secret is issued.
         assert "client_secret" not in body
+        assert "client_secret_expires_at" not in body
 
         application = Application.objects.get(client_id=body["client_id"])
         assert application.token_endpoint_auth_method == "private_key_jwt"
@@ -1845,6 +1859,7 @@ class TestDCRJwtAuthMethods(TestCase):
         assert body["token_endpoint_auth_method"] == "client_secret_jwt"
         # The secret is the HMAC key: returned raw and stored unhashed.
         assert body["client_secret"]
+        assert body["client_secret_expires_at"] == 0
         application = Application.objects.get(client_id=body["client_id"])
         assert application.hash_client_secret is False
         assert application.client_secret == body["client_secret"]
