@@ -304,6 +304,25 @@ def main(argv: list[str] | None = None) -> int:
 
     log(f"starting the stack (conformance-suite {args.suite_version})")
     compose("up", "--build", "--detach", suite_version=args.suite_version)
+    # Make a stack kept from an earlier run (--keep) behave like a fresh one:
+    # - generate_certificate() minted a new suite certificate, which the IdP
+    #   trusts at once (it reads SSL_CERT_FILE from the mounted directory on every
+    #   fetch), while nginx still serves the one it loaded at startup through its
+    #   single-file mount;
+    # - the suite registers the same jwks_uri on every run with new keys, and the
+    #   IdP's in-memory cache still holds the previous run's set, which its
+    #   unknown-kid refetch limit may keep it from replacing in time.
+    # Recreating both picks up the new certificate and empties the cache; the
+    # IdP's database stays in its volume.
+    compose(
+        "up",
+        "--detach",
+        "--no-deps",
+        "--force-recreate",
+        "nginx",
+        "dot-idp",
+        suite_version=args.suite_version,
+    )
     try:
         wait_for_idp(args.suite_version)
         status = run_plans(runner_dir, plans, export_dir, args.verbose)

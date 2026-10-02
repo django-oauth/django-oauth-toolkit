@@ -218,6 +218,13 @@ both:
   one for `localhost.emobix.co.uk`, `docker-compose.yml` mounts it over the image's, and the IdP
   trusts it through `SSL_CERT_FILE`.
 
+On a stack kept from an earlier run (`--keep`), `run.py` recreates the nginx and IdP containers
+after `docker compose up`, so that each run starts as on a fresh stack. Every run mints a new suite
+certificate, which nginx would not otherwise pick up. And the suite registers the same `jwks_uri` on
+every run with new keys: the IdP would still have the previous run's key set cached, and its
+unknown-`kid` refetch limit can refuse a re-run that starts within a minute of the last one. The
+IdP's database stays in its volume.
+
 Both live in the conformance stack only. "Custom outbound fetchers" in the docs
 (`docs/advanced_topics.rst`) lists what a production fetcher must keep doing.
 
