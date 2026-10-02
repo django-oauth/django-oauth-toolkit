@@ -18,6 +18,8 @@ import json
 import socket
 import ssl
 import time
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlsplit
 
 import urllib3
@@ -185,27 +187,44 @@ def media_type_is_json(content_type):
     )
 
 
+def read_json_document(
+    response: urllib3.response.HTTPResponse, *, max_size: int, exc_class: type[Exception] = SafeFetchError
+) -> tuple[dict[str, Any], Mapping[str, str]]:
+    """Read an unread urllib3 *response* as a JSON object.
+
+    Enforces HTTP 200, a JSON media type, the *max_size* byte cap and that the
+    body is a JSON object, raising *exc_class* otherwise. Returns
+    ``(data, response_headers)``. Used by :func:`fetch_https_json`, and by
+    custom fetchers that open the connection themselves. A transport error
+    while reading the body (a read timeout, a dropped connection) is raised as
+    the ``urllib3.exceptions.HTTPError`` it is; the caller converts it, as
+    :func:`fetch_https_document` does.
+    """
+    if response.status != 200:
+        raise exc_class(f"document returned HTTP {response.status}")
+    if not media_type_is_json(response.headers.get("Content-Type")):
+        raise exc_class(f"document is not JSON (Content-Type: {response.headers.get('Content-Type')!r})")
+    body = response.read(max_size + 1)
+    if len(body) > max_size:
+        raise exc_class("document exceeds the maximum allowed size")
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise exc_class("document is not valid JSON") from exc
+    if not isinstance(data, dict):
+        raise exc_class("document must be a JSON object")
+    return data, response.headers
+
+
 def fetch_https_json(url, *, timeout, max_size, exc_class=SafeFetchError):
     """Fetch *url* (SSRF-pinned) and return its body as a parsed JSON object.
 
     Enforces HTTP 200, a JSON media type, the *max_size* byte cap and that the
-    body is a JSON object. Returns ``(data, response_headers)``.
+    body is a JSON object (see :func:`read_json_document`). Returns
+    ``(data, response_headers)``.
     """
 
     def _read(response):
-        if response.status != 200:
-            raise exc_class(f"document returned HTTP {response.status}")
-        if not media_type_is_json(response.headers.get("Content-Type")):
-            raise exc_class(f"document is not JSON (Content-Type: {response.headers.get('Content-Type')!r})")
-        body = response.read(max_size + 1)
-        if len(body) > max_size:
-            raise exc_class("document exceeds the maximum allowed size")
-        try:
-            data = json.loads(body)
-        except (json.JSONDecodeError, ValueError) as exc:
-            raise exc_class("document is not valid JSON") from exc
-        if not isinstance(data, dict):
-            raise exc_class("document must be a JSON object")
-        return data, response.headers
+        return read_json_document(response, max_size=max_size, exc_class=exc_class)
 
     return fetch_https_document(url, timeout=timeout, read_response=_read, exc_class=exc_class)

@@ -111,6 +111,33 @@ def test_fetch_https_json_accepts_structured_json_suffix(mocker):
     assert data == {"keys": []}
 
 
+def test_read_json_document_returns_object_and_headers():
+    response = _FakeHTTPResponse(body=b'{"keys": []}')
+    data, headers = safe_fetch.read_json_document(response, max_size=1024)
+    assert data == {"keys": []}
+    assert headers is response.headers
+
+
+class _CallerError(Exception):
+    pass
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        _FakeHTTPResponse(status=404),
+        _FakeHTTPResponse(headers={"Content-Type": "text/html"}),
+        _FakeHTTPResponse(body=b'{"keys": [' + b"0, " * 64 + b"0]}"),
+        _FakeHTTPResponse(body=b"not json"),
+        _FakeHTTPResponse(body=b"[]"),
+    ],
+    ids=["non-200", "non-json-media-type", "oversized", "invalid-json", "non-object"],
+)
+def test_read_json_document_raises_callers_exception(response):
+    with pytest.raises(_CallerError):
+        safe_fetch.read_json_document(response, max_size=64, exc_class=_CallerError)
+
+
 def test_media_type_is_json():
     assert safe_fetch.media_type_is_json("application/json") is True
     assert safe_fetch.media_type_is_json("application/jwk-set+json; charset=utf-8") is True
