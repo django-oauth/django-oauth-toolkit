@@ -102,6 +102,8 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``client_name``                     | ``name``                          |                                  |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``post_logout_redirect_uris``       | ``post_logout_redirect_uris``     | array, stored space-joined       |
++-------------------------------------+-----------------------------------+----------------------------------+
 | ``grant_types`` (array)             | ``authorization_grant_type``      | ``refresh_token`` is ignored;    |
 |                                     |                                   | only one non-refresh grant type  |
 |                                     |                                   | is supported per application,    |

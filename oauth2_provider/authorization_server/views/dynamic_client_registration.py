@@ -301,6 +301,27 @@ def _build_application_kwargs(
         return None, _error_response("invalid_client_metadata", "Each redirect_uri must be a string")
     kwargs["redirect_uris"] = " ".join(redirect_uris)
 
+    # post_logout_redirect_uris (OpenID Connect RP-Initiated Logout 1.0 section
+    # 3.1). Always set, so a PUT that omits it clears it (full replacement,
+    # RFC 7592 section 2.2). Each entry is checked like a redirect_uri.
+    post_logout_redirect_uris = data.get("post_logout_redirect_uris", [])
+    if not isinstance(post_logout_redirect_uris, list):
+        return None, _error_response("invalid_client_metadata", "post_logout_redirect_uris must be an array")
+    if not all(isinstance(uri, str) for uri in post_logout_redirect_uris):
+        return None, _error_response(
+            "invalid_client_metadata", "Each post_logout_redirect_uri must be a string"
+        )
+    uri_validator = get_application_model()().get_redirect_uri_validator()
+    for uri in post_logout_redirect_uris:
+        try:
+            uri_validator(uri)
+        except ValidationError as exc:
+            return None, _error_response(
+                "invalid_client_metadata",
+                f"Invalid post_logout_redirect_uri {uri!r}: {' '.join(exc.messages)}",
+            )
+    kwargs["post_logout_redirect_uris"] = " ".join(post_logout_redirect_uris)
+
     # client_name — always set so a request is a full replacement of the
     # metadata (RFC 7592 §2.2): on PUT an omitted client_name resets
     # Application.name to empty, consistent with the other fields below. On
@@ -502,6 +523,9 @@ def _application_to_response(
         # was issued. It never changes, so management responses repeat it.
         "client_id_issued_at": int(application.created.timestamp()),
         "redirect_uris": application.redirect_uris.split() if application.redirect_uris else [],
+        "post_logout_redirect_uris": (
+            application.post_logout_redirect_uris.split() if application.post_logout_redirect_uris else []
+        ),
         "grant_types": _dot_grant_to_rfc_grant_types(application.authorization_grant_type),
         # Derived from the grant, see _check_response_types. Always present: an
         # omitted response_types means "code" (RFC 7591 section 2).

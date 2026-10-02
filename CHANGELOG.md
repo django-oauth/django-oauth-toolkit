@@ -279,6 +279,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1896 Dynamic Client Registration (RFC 7591) and its RFC 7592 management endpoint now accept
+  `post_logout_redirect_uris` (OpenID Connect RP-Initiated Logout 1.0 §3.1), validate each entry like
+  a `redirect_uri`, store them on the application, and return them in registration, read and update
+  responses. A PUT that omits the field clears it.
 * #1894 The authorization endpoint accepts the authorization request by HTTP POST, with the
   parameters form-serialized in the body, as OpenID Connect Core 1.0 §3.1.2.1 requires; it was
   refused as a consent submission without a CSRF token. It answers with a redirect (303) to the

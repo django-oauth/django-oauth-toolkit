@@ -694,6 +694,63 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
+    def test_register_post_logout_redirect_uris_are_stored_and_echoed(self):
+        """post_logout_redirect_uris (RP-Initiated Logout 1.0 §3.1) are stored and returned."""
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["https://example.com/logged-out", "https://example.com/bye"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["post_logout_redirect_uris"] == data["post_logout_redirect_uris"]
+        app = Application.objects.get(client_id=response.json()["client_id"])
+        assert app.post_logout_redirect_uris == "https://example.com/logged-out https://example.com/bye"
+        assert app.post_logout_redirect_uri_allowed("https://example.com/bye")
+
+    def test_register_without_post_logout_redirect_uris_echoes_empty_list(self):
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["post_logout_redirect_uris"] == []
+
+    def test_register_post_logout_redirect_uris_not_array_is_400(self):
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": "https://example.com/logged-out",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert "post_logout_redirect_uris" in response.json()["error_description"]
+
+    def test_register_non_string_post_logout_redirect_uri_is_400(self):
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": [1],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_invalid_post_logout_redirect_uri_is_400(self):
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["not-a-valid-uri!"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert Application.objects.count() == 0
+
     def test_register_invalid_json_is_400(self):
         """Non-JSON body → 400."""
         self.client.force_login(self.user)
@@ -1136,6 +1193,40 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert "client_name" not in body
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == ""
+
+    def test_put_updates_and_clears_post_logout_redirect_uris(self):
+        """PUT replaces post_logout_redirect_uris, and omitting it clears them (RFC 7592 §2.2)."""
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["https://example.com/logged-out"],
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        assert response.json()["post_logout_redirect_uris"] == ["https://example.com/logged-out"]
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.post_logout_redirect_uris == "https://example.com/logged-out"
+        get_response = self.client.get(
+            self.management_url, **_bearer(response.json()["registration_access_token"])
+        )
+        assert get_response.json()["post_logout_redirect_uris"] == ["https://example.com/logged-out"]
+
+        del update_data["post_logout_redirect_uris"]
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(response.json()["registration_access_token"]),
+        )
+        assert response.status_code == 200
+        assert response.json()["post_logout_redirect_uris"] == []
+        app.refresh_from_db()
+        assert app.post_logout_redirect_uris == ""
 
     def test_put_leaves_can_introspect_to_the_administrator(self):
         """#1451: can_introspect is not client metadata. A PUT can neither turn on a
