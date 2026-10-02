@@ -126,6 +126,39 @@ def test_refresh_token_id_token_omits_scope_claims(oauth2_settings, test_user, a
 
 
 @pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(COMPLIANT_SETTINGS)
+def test_token_endpoint_response_type_id_token_does_not_bypass_filtering(
+    oauth2_settings, test_user, application, client, oidc_key
+):
+    # A client can add response_type=id_token to a token request; an access token is
+    # still issued, so the scope claims must stay out of both ID Tokens.
+    code = _authorize(client, test_user, application, "code")["code"][0]
+    client.logout()
+    token_data = _token(
+        client,
+        application,
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "http://example.org",
+            "response_type": "id_token",
+        },
+    )
+    assert "email" not in _claims(token_data["id_token"], oidc_key)
+
+    refreshed = _token(
+        client,
+        application,
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": token_data["refresh_token"],
+            "response_type": "id_token",
+        },
+    )
+    assert "email" not in _claims(refreshed["id_token"], oidc_key)
+
+
+@pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(LEGACY_SETTINGS)
 def test_code_flow_legacy_scope_claims_in_id_token(oauth2_settings, test_user, application, client, oidc_key):
     token_data = _code_flow(client, test_user, application)
@@ -215,6 +248,27 @@ def test_get_id_token_dictionary_response_types(oauth2_settings, rf, response_ty
     assert ("nickname" in claims) is in_id_token
     # sub and claims outside the §5.4 scope values are unaffected.
     assert claims["sub"] == "1"
+    assert claims["custom"] == "value"
+
+
+@pytest.mark.oauth2_settings(COMPLIANT_SETTINGS)
+@pytest.mark.parametrize(
+    "grant_type,token",
+    [
+        ("authorization_code", {"access_token": "at"}),
+        ("refresh_token", {"access_token": "at"}),
+        (None, {"access_token": "at"}),
+    ],
+)
+def test_get_id_token_dictionary_id_token_with_access_token(oauth2_settings, rf, grant_type, token):
+    # response_type=id_token is client-supplied; it must not put the scope claims in an
+    # ID Token issued alongside an access token.
+    request = _validator_request(rf, "id_token")
+    request.grant_type = grant_type
+    claims, _ = UngatedClaimsValidator().get_id_token_dictionary(token, None, request)
+
+    assert "email" not in claims
+    assert "nickname" not in claims
     assert claims["custom"] == "value"
 
 

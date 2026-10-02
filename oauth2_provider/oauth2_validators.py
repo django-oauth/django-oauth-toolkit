@@ -1184,23 +1184,31 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
                 claims[k] = v(request) if callable(v) else v
         return claims
 
-    def _id_token_includes_scope_claims(self, request: OauthlibRequest) -> bool:
+    def _id_token_includes_scope_claims(self, token: dict | None, request: OauthlibRequest) -> bool:
         """
         Whether the ``profile``/``email``/``address``/``phone`` scope claims belong
         in the ID Token for this request.
 
         OIDC Core §5.4: they are returned from the UserInfo endpoint when the
         response type issues an access token, and in the ID Token only when none is
-        issued, i.e. for ``response_type=id_token``. At the token endpoint (code
-        exchange, refresh) there is no ``response_type`` and an access token is
-        always issued.
+        issued, i.e. for ``response_type=id_token`` at the authorization endpoint.
+
+        ``response_type`` alone is not trusted: oauthlib keeps any parameter a client
+        sends, so a token request (code exchange, refresh) can carry
+        ``response_type=id_token`` while still issuing an access token. The decision
+        therefore also requires an authorization-endpoint request (no ``grant_type``)
+        whose response carries no access token.
         """
         if not oauth2_settings.OIDC_COMPLIANT_SCOPE_CLAIMS:
             return True
-        return set((request.response_type or "").split()) == {"id_token"}
+        return (
+            request.grant_type is None
+            and set((request.response_type or "").split()) == {"id_token"}
+            and "access_token" not in (token or {})
+        )
 
     def get_id_token_dictionary(
-        self, token: dict, token_handler, request: OauthlibRequest
+        self, token: dict | None, token_handler, request: OauthlibRequest
     ) -> tuple[dict, datetime]:
         """
         Get the claims to put in the ID Token.
@@ -1215,7 +1223,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         """
         claims = self.get_oidc_claims(token, token_handler, request)
 
-        if not self._id_token_includes_scope_claims(request):
+        if not self._id_token_includes_scope_claims(token, request):
             # Fall back to the standard mapping when scope gating is disabled
             # (oidc_claim_scope = None) so standard claims are still recognised.
             claim_scope = self.oidc_claim_scope or OAuth2Validator.oidc_claim_scope
