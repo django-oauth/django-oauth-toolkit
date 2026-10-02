@@ -358,6 +358,21 @@ class TestAuthorizationRequestByPost(TestCase):
 
         self.assertIn("code", self.assertRedirectParameters(response))
 
+    def test_csrf_cookie_is_set_only_with_the_consent_form(self):
+        middleware = [m for m in settings.MIDDLEWARE if m != "django.middleware.csrf.CsrfViewMiddleware"]
+        with self.settings(MIDDLEWARE=middleware):
+            consent = self.authorize_by_post()
+            self.assertIn(settings.CSRF_COOKIE_NAME, consent.cookies)
+
+            self.client.cookies.clear()
+            self.application.skip_authorization = True
+            self.application.save()
+            self.client.login(username="test_user", password="123456")
+            response = self.authorize_by_post()
+
+        self.assertIn("code", self.assertRedirectParameters(response))
+        self.assertNotIn(settings.CSRF_COOKIE_NAME, response.cookies)
+
 
 class TestAuthorizationViewSubclass(TestCase):
     def test_csrf_exemption_survives_dispatch_override(self):
