@@ -616,6 +616,54 @@
                 }
             ]
         },
+        "oidcc-ensure-request-object-with-redirect-uri": {
+            "browser": [
+                {
+                    "comment": "expect an error page instead of a redirect",
+                    "match": "https://dot-idp/o/authorize/*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://dot-idp/accounts/login/*",
+                            "commands": [
+                                [
+                                    "text",
+                                    "id",
+                                    "id_username",
+                                    "conformance"
+                                ],
+                                [
+                                    "text",
+                                    "id",
+                                    "id_password",
+                                    "conformance-password"
+                                ],
+                                [
+                                    "click",
+                                    "css",
+                                    "button[type='submit']"
+                                ]
+                            ]
+                        },
+                        {
+                            "task": "Expect an error page",
+                            "match": "https://dot-idp/o/authorize/*",
+                            "commands": [
+                                [
+                                    "wait",
+                                    "xpath",
+                                    "//*",
+                                    10,
+                                    "Error:",
+                                    "update-image-placeholder"
+                                ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
         "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri": {
             "browser": [
                 {
