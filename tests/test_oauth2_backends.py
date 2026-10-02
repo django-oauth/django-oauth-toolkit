@@ -6,10 +6,15 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.utils.timezone import now, timedelta
 
-from oauth2_provider.core.backends_oauthlib import JSONOAuthLibCore, OAuthLibCore
+from oauth2_provider.core.backends_oauthlib import (
+    _AUTHENTICATED_CLIENT_ATTRIBUTE,
+    JSONOAuthLibCore,
+    OAuthLibCore,
+)
 from oauth2_provider.models import get_access_token_model, get_application_model, redirect_to_uri_allowed
 from oauth2_provider.resource_server.backends import get_oauthlib_core
 from tests.common_testing import OAuth2ProviderTestCase as TestCase
+from tests.utils import post_form
 
 
 try:
@@ -211,6 +216,47 @@ class TestOAuthLibCore(TestCase):
 
         oauthlib_core = get_oauthlib_core()
         oauthlib_core.verify_request(request, scopes=[])
+
+    def test_authenticate_client_request_exposes_the_authenticated_client(self):
+        user = UserModel.objects.create_user("client_owner", "owner@example.com")
+        application = ApplicationModel.objects.create(
+            name="test_client_credentials_app",
+            user=user,
+            client_type=ApplicationModel.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=ApplicationModel.GRANT_CLIENT_CREDENTIALS,
+            client_secret="1234567890qwertyuiop",
+        )
+        credentials = base64.b64encode(f"{application.client_id}:1234567890qwertyuiop".encode()).decode()
+        request = post_form(self.factory, "/o/introspect/", HTTP_AUTHORIZATION=f"Basic {credentials}")
+
+        oauthlib_core = get_oauthlib_core()
+        valid, oauthlib_request = oauthlib_core.authenticate_client_request(request)
+        self.assertTrue(valid)
+        self.assertEqual(oauthlib_request.client, application)
+        self.assertEqual(getattr(request, _AUTHENTICATED_CLIENT_ATTRIBUTE), application)
+        # The boolean wrapper is unchanged, and records the client too.
+        request = post_form(self.factory, "/o/introspect/", HTTP_AUTHORIZATION=f"Basic {credentials}")
+        self.assertIs(oauthlib_core.authenticate_client(request), True)
+        self.assertEqual(getattr(request, _AUTHENTICATED_CLIENT_ATTRIBUTE), application)
+
+        bad = base64.b64encode(f"{application.client_id}:wrong".encode()).decode()
+        request = post_form(self.factory, "/o/introspect/", HTTP_AUTHORIZATION=f"Basic {bad}")
+        valid, _oauthlib_request = oauthlib_core.authenticate_client_request(request)
+        self.assertFalse(valid)
+        self.assertIsNone(getattr(request, _AUTHENTICATED_CLIENT_ATTRIBUTE))
+        # Body credentials with a wrong secret leave the oauthlib request's client set,
+        # so nothing but the recorded None stops it being read as authenticated.
+        request = post_form(
+            self.factory, "/o/introspect/", {"client_id": application.client_id, "client_secret": "wrong"}
+        )
+        valid, oauthlib_request = oauthlib_core.authenticate_client_request(request)
+        self.assertFalse(valid)
+        self.assertEqual(oauthlib_request.client, application)
+        self.assertIsNone(getattr(request, _AUTHENTICATED_CLIENT_ATTRIBUTE))
+        # A failure overwrites a client recorded earlier on the same request.
+        setattr(request, _AUTHENTICATED_CLIENT_ATTRIBUTE, application)
+        self.assertIs(oauthlib_core.authenticate_client(request), False)
+        self.assertIsNone(getattr(request, _AUTHENTICATED_CLIENT_ATTRIBUTE))
 
 
 @pytest.mark.parametrize(

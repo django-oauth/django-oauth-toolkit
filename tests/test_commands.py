@@ -70,6 +70,25 @@ class CreateApplicationTest(TestCase):
 
         self.assertFalse(app.skip_authorization)
 
+    def test_application_created_with_can_introspect_flags(self):
+        # #1451: an administrator provisioning a client decides whether it may
+        # introspect tokens; without a flag the model default applies.
+        for client_id, flags, expected in (
+            ("default", [], True),
+            ("allowed", ["--can-introspect"], True),
+            ("refused", ["--no-can-introspect"], False),
+        ):
+            with self.subTest(flags=flags):
+                call_command(
+                    "createapplication",
+                    "confidential",
+                    "client-credentials",
+                    f"--client-id={client_id}",
+                    *flags,
+                    stdout=StringIO(),
+                )
+                self.assertIs(Application.objects.get(client_id=client_id).can_introspect, expected)
+
     def test_application_created_with_name(self):
         call_command(
             "createapplication",

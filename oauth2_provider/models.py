@@ -163,6 +163,10 @@ class AbstractApplication(models.Model):
     * :attr:`require_pushed_authorization_requests` Whether this client may only
                               start an authorization request via PAR (:rfc:`9126`).
                               ``None`` defers to the server-wide setting.
+    * :attr:`can_introspect` Whether this client may call the token
+                             introspection endpoint (:rfc:`7662`), with an access
+                             token issued to it or, if it is confidential, by
+                             authenticating as itself.
     """
 
     class RegistrationSource(models.TextChoices):
@@ -339,6 +343,19 @@ class AbstractApplication(models.Model):
             "Leave unset to defer to the REQUIRE_PUSHED_AUTHORIZATION_REQUESTS setting."
         ),
         verbose_name=_("require pushed authorization requests"),
+    )
+    # An opt-out capability: every application may call the token introspection
+    # endpoint unless an operator turns this off (in the admin, or with
+    # createapplication --no-can-introspect). RFC 7662 section 4 recommends
+    # answering only callers specifically authorized to introspect; deployments
+    # that want that turn it off for everything but their resource servers.
+    can_introspect = models.BooleanField(
+        default=True,
+        help_text=_(
+            "Allow this client to call the token introspection endpoint (RFC 7662) with an "
+            "access token issued to it, or, if it is confidential, by authenticating as itself."
+        ),
+        verbose_name=_("can introspect tokens"),
     )
 
     class Meta:

@@ -116,6 +116,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `py312-dj52-ora23`, `py314-dj60-ora23` and `migrations-dj{52,60}-ora23` tox environments and
   `docker-compose.oracle.yml`. See "Standalone backend DB checks" in the contributing
   documentation to run them locally.
+* #1451 `Application.can_introspect`, an opt-out capability that lets an application call the token
+  introspection endpoint (RFC 7662); see the Security entry below for how it is enforced. It
+  defaults to `True`, every way of creating an application keeps that default (the admin, code,
+  `createapplication`, the self-service registration view, DCR and CIMD), and it is editable (and
+  filterable) in the Django admin only; it is not client metadata, so DCR and CIMD cannot set or
+  change it. Migration `0026_application_can_introspect` adds it with the default `True`. The
+  migration skips a swapped Application model: run `makemigrations` for your app to add the field
+  (no data step is needed). The `createapplication` management command gains
+  `--can-introspect`/`--no-can-introspect`. `OAuthLibCore` gains `authenticate_client_request()`,
+  which returns the oauthlib request (and so the authenticated client) alongside the result of
+  `authenticate_client()`, and records the authenticated client on the Django request; its
+  `authenticate_client()` delegates to it. See "Who may introspect" in `docs/resource_server.rst`.
 ### Changed
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
@@ -296,6 +308,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A duplicate can now only arise from a custom `REFRESH_TOKEN_GENERATOR` that returns an
   already-stored value; `_create_refresh_token` logs that and raises `InvalidGrantError`, so
   the token endpoint answers `400 invalid_grant` rather than raising a 500.
+
+### Security
+* #1451 The token introspection endpoint could be called by a caller that had not really
+  authenticated, contrary to
+  [RFC 7662 section 4](https://datatracker.ietf.org/doc/html/rfc7662#section-4), which requires the
+  authorization server to authenticate the protected resources that call it so that the endpoint
+  cannot be used to scan for tokens
+  ([section 2.1](https://datatracker.ietf.org/doc/html/rfc7662#section-2.1) requires some form of
+  authorization, such as client authentication or a separate access token). The validator
+  authenticates a public client without a secret when the request carries
+  `grant_type=urn:ietf:params:oauth:grant-type:device_code`, so anyone who knew a public client's
+  `client_id` could introspect any token. Operators also had no way to keep a client from
+  introspecting.
+
+  On the client-authentication path (HTTP Basic, body credentials or an RFC 7523 client
+  assertion) the authenticated client must now be confidential and have the new
+  `can_introspect` flag. On the bearer path the token must carry the `introspection` scope, as
+  before, and the client it was issued to, public or confidential, must have `can_introspect`.
+  Refused callers get the same bare `403` as unauthenticated ones. `can_introspect` is an opt-out
+  capability: it defaults to `True` and every way of creating an application keeps that default.
+  [RFC 7662 section 4](https://datatracker.ietf.org/doc/html/rfc7662#section-4) recommends
+  answering only callers specifically authorized to introspect; to follow it, turn
+  `can_introspect` off, in the admin or with `createapplication --no-can-introspect`, for every
+  application except your resource servers. A future release may also require the introspecting
+  client to be an audience of the token, as the Red Hat build of Keycloak 26.4.12 does; that is
+  planned as a follow-up.
+
+  Clients that register themselves (DCR, CIMD, or the self-service registration view) keep the
+  default too. Where anyone can register a client, anyone can therefore get one that introspects
+  straight away, so the authentication requirement does not stop token scanning; see "Introspection
+  when registration is open" in `docs/resource_server.rst` for turning the flag off as such clients
+  register, and for those that registered before.
+
+  **This refuses callers that used to be answered.** Check your resource servers before upgrading:
+  - A public client can no longer introspect through client authentication: neither through the
+    device-code shortcut with no secret, nor by presenting a secret.
+  - A custom `OAUTH2_BACKEND_CLASS` whose `authenticate_client()` returns `True` without
+    `OAuthLibCore.authenticate_client_request()` recording the client during that call, or after
+    `OAuthLibCore` refused the client, authorizes nobody (logged at `WARNING`, once per backend
+    class per process). The endpoint calls the backend's own `authenticate_client()` and
+    authorizes the client recorded while it ran, so a backend subclassing `OAuthLibCore` keeps
+    working as long as its `authenticate_client()` calls `super().authenticate_client(request)`
+    (or `self.authenticate_client_request(request)`) or returns `False`.
+  - On the bearer path, access tokens with no application are refused: tokens created by hand
+    without one, and the tokens a resource server configured with
+    `RESOURCE_SERVER_INTROSPECTION_URL` caches from a remote introspection response, which it
+    stores with no application.
+  - On the bearer path, tokens accepted by a custom `OAUTH2_VALIDATOR_CLASS` whose
+    `validate_bearer_token()` sets neither `request.access_token` to an object with an
+    `application` nor `request.client` are refused; for example, a validator that keeps a JWT's
+    claims in `request.access_token`. It must set `request.client` or
+    `request.access_token.application` to an instance of the Application model; when
+    `request.access_token` has an `application` attribute, that attribute decides, even if it is
+    `None`.
+  - Any application whose `can_introspect` an operator turns off is refused on both paths.
+
+  A form configured through `APPLICATION_FORM_CLASS` must not expose `can_introspect`, neither
+  through `Meta.fields = "__all__"` nor through `Meta.exclude`, or an owner can turn back on a flag
+  an operator turned off.
 
 ## [3.4.1] - 2026-08-21
 

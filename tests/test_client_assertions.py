@@ -1293,8 +1293,46 @@ def test_introspection_endpoint_accepts_client_assertion(
         token=token.token,
     )
     response = post_form(client, reverse("oauth2_provider:introspect"), data=data)
+    # Accepted, so the endpoint checked the assertion's jti only once: a second
+    # check within the request would have seen it as a replay.
     assert response.status_code == 200, response.content
     assert json.loads(response.content)["active"] is True
+    # And that one check consumed it.
+    replay = post_form(client, reverse("oauth2_provider:introspect"), data=data)
+    assert replay.status_code == 403
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_introspection_endpoint_refuses_client_assertion_without_can_introspect(
+    client, private_key_jwt_application, client_rsa_jwk, django_user_model
+):
+    # #1451: a valid assertion authenticates the client, but the application must
+    # also be authorized to introspect.
+    from datetime import timedelta
+
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from oauth2_provider.models import get_access_token_model
+
+    private_key_jwt_application.can_introspect = False
+    private_key_jwt_application.save(update_fields=["can_introspect"])
+    token = get_access_token_model().objects.create(
+        user=django_user_model.objects.create_user("introspect_user"),
+        token="introspectable-token",
+        application=private_key_jwt_application,
+        expires=timezone.now() + timedelta(days=1),
+        scope="read",
+    )
+    data = _assertion_post_data(
+        private_key_jwt_application,
+        client_rsa_jwk,
+        audience="http://testserver" + reverse("oauth2_provider:introspect"),
+        token=token.token,
+    )
+    response = post_form(client, reverse("oauth2_provider:introspect"), data=data)
+    assert response.status_code == 403
+    assert response.content == b""
 
 
 @pytest.mark.django_db(databases="__all__")

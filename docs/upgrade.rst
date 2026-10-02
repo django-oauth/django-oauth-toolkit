@@ -234,6 +234,57 @@ toolkit rather than merely importing from it.
   paths. The laziness is deliberate: it keeps importing the package from touching the app registry
   before ``django.setup()``.
 
+A security fix also changes who the token introspection endpoint answers.
+
+* **Introspection checks the authenticated client and ``Application.can_introspect`` (#1451).**
+  RFC 7662 requires some form of authorization to call the endpoint (section 2.1) and the caller
+  to authenticate (section 4). The endpoint now requires a client that authenticates as itself to
+  be confidential, and checks a new ``can_introspect`` flag on that client, or on the client a
+  bearer token was issued to. The flag defaults to ``True``, the migration gives every existing
+  application ``True``, and every way of creating an application keeps that default, so the flag
+  itself takes nothing away until you turn it off. Run ``migrate``, then check that every resource
+  server that introspects still can:
+
+  - A public client can no longer introspect by authenticating as itself: neither through the
+    device-code shortcut with no secret (a request carrying
+    ``grant_type=urn:ietf:params:oauth:grant-type:device_code``), nor by presenting a secret.
+    Authenticate as a confidential client, or use an access token with the ``introspection``
+    scope; tokens issued to public clients are still accepted on the bearer path.
+  - On the client-authentication path, the endpoint calls your ``OAUTH2_BACKEND_CLASS``'s
+    ``authenticate_client()`` and authorizes the client that
+    ``OAuthLibCore.authenticate_client_request()`` recorded while it ran. A backend that
+    subclasses ``OAuthLibCore`` keeps working as long as its ``authenticate_client()`` calls
+    ``super().authenticate_client(request)`` (or ``self.authenticate_client_request(request)``) or
+    returns ``False``. A backend whose ``authenticate_client()`` returns ``True`` without that
+    call recording the client, or after it refused the client, authorizes nobody (logged at
+    ``WARNING``, once per backend class).
+  - On the bearer path, access tokens with no application are refused, including hand-made ones
+    and the tokens a resource server configured with ``RESOURCE_SERVER_INTROSPECTION_URL`` caches.
+    Use a token issued to an application.
+  - On the bearer path, tokens accepted by a custom ``OAUTH2_VALIDATOR_CLASS`` whose
+    ``validate_bearer_token()`` sets neither ``request.access_token`` to an object with an
+    ``application`` (such as an access token model instance) nor ``request.client`` are refused,
+    where they used to be answered; for example, a validator that keeps a JWT's claims in
+    ``request.access_token``. Such a validator must set ``request.client`` or
+    ``request.access_token.application`` to the instance of the (swappable) Application model
+    the token was issued to. When ``request.access_token`` has an ``application`` attribute, that
+    attribute decides, even if it is ``None``; ``request.client`` is used only when it has none.
+  - Any application whose ``can_introspect`` an operator turns off is refused on both paths.
+  - If you swapped the Application model, run ``makemigrations`` to add the field in your own
+    migration. No data step is needed.
+
+  RFC 7662 section 4 recommends answering only callers specifically authorized to introspect. To
+  follow it, turn ``can_introspect`` off, in the admin or with
+  ``createapplication --no-can-introspect``, for every application except your resource servers.
+
+  Clients that register themselves (Dynamic Client Registration, CIMD, or the self-service
+  registration view) keep the default ``True``, so if anyone can register, anyone can get a client
+  that introspects straight away, and the authentication requirement does not stop token
+  scanning. To turn the flag off as such clients register, and for those that registered
+  before, see :ref:`introspection-open-registration`.
+
+  See :ref:`introspection-authorization`.
+
 .. note::
    For the full, authoritative list of changes in every release — including the releases that
    asked nothing of you and so have no section here — see the :doc:`changelog`.

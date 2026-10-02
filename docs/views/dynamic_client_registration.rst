@@ -54,6 +54,12 @@ the ``Application`` model, so dynamically registered clients can be distinguishe
 provisioned ones (``registration_source="manual"``) — the Django admin's application list can be
 filtered on this field.
 
+``can_introspect`` is not client metadata: a registered client gets the default ``True``, and
+neither registration nor an RFC 7592 update can set or change it; only an administrator can, in
+the Django admin (see :ref:`introspection-authorization`). So anyone the registration permission
+classes admit can register a confidential client and introspect with it straight away; to turn the
+flag off as clients register, see :ref:`introspection-open-registration`.
+
 GET/PUT/DELETE /o/register/{client_id}/
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

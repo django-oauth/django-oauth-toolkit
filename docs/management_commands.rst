@@ -118,6 +118,7 @@ The ``createapplication`` management command provides a shortcut to create a new
                                        [--post-logout-redirect-uris POST_LOGOUT_REDIRECT_URIS]
                                        [--client-secret CLIENT_SECRET]
                                        [--name NAME] [--skip-authorization]
+                                       [--can-introspect | --no-can-introspect]
                                        [--algorithm ALGORITHM] [--version]
                                        [-v {0,1,2,3}] [--settings SETTINGS]
                                        [--pythonpath PYTHONPATH] [--traceback]
@@ -150,6 +151,10 @@ The ``createapplication`` management command provides a shortcut to create a new
       --name NAME           The name this application
       --skip-authorization  If set, completely bypass the authorization form, even
                             on the first use of the application
+      --can-introspect, --no-can-introspect
+                            Allow or refuse calls to the token introspection
+                            endpoint (RFC 7662) by this application; if neither
+                            is given, the model default (allow) applies
       --algorithm ALGORITHM
                             The OIDC token signing algorithm for this application,
                             one of: RS256, HS256
@@ -170,3 +175,6 @@ The ``createapplication`` management command provides a shortcut to create a new
       --skip-checks         Skip system checks.
 
 If you let ``createapplication`` auto-generate the secret then it displays the value before hashing it.
+
+Use ``--no-can-introspect`` for a client that should not call the token introspection endpoint
+(see :ref:`introspection-authorization`).

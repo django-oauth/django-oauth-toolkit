@@ -15,7 +15,7 @@ from oauth2_provider.models import get_access_token_model, get_application_model
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import post_form
+from .utils import get_basic_auth_header, post_form
 
 
 UserModel = get_user_model()
@@ -84,6 +84,44 @@ class TestDynamicClientRegistration(TestCase):
         assert body["grant_types"] == ["authorization_code", "refresh_token"]
         app = Application.objects.get(client_id=body["client_id"])
         assert app.registration_source == Application.RegistrationSource.DCR
+
+    def test_registered_client_can_introspect(self):
+        """#1451: a DCR client keeps the can_introspect default, so a confidential one
+        can introspect with its own credentials. The capability is not client
+        metadata: a registration request can neither set nor clear it."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        self.client.force_login(self.user)
+        data = {
+            "grant_types": ["client_credentials"],
+            "token_endpoint_auth_method": "client_secret_basic",
+            "can_introspect": False,
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "can_introspect" not in body
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.client_type == Application.CLIENT_CONFIDENTIAL
+        assert app.can_introspect is True
+
+        token = AccessToken.objects.create(
+            token="dcr-introspected-token",
+            application=app,
+            expires=timezone.now() + timedelta(hours=1),
+            scope="read",
+        )
+        self.client.logout()
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": token.token},
+            **get_basic_auth_header(body["client_id"], body["client_secret"]),
+        )
+        assert response.status_code == 200, response.content
+        assert response.json()["active"] is True
 
     def test_manually_created_application_registration_source_is_manual(self):
         """Applications created outside DCR default to registration_source="manual"."""
@@ -795,6 +833,36 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert "client_name" not in body
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == ""
+
+    def test_put_leaves_can_introspect_to_the_administrator(self):
+        """#1451: can_introspect is not client metadata. A PUT can neither turn on a
+        value an administrator turned off nor turn off one left on."""
+        Application.objects.filter(client_id=self.client_id).update(can_introspect=False)
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "can_introspect": True,
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        assert "can_introspect" not in response.json()
+        assert Application.objects.get(client_id=self.client_id).can_introspect is False
+
+        Application.objects.filter(client_id=self.client_id).update(can_introspect=True)
+        update_data["can_introspect"] = False
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(response.json()["registration_access_token"]),
+        )
+        assert response.status_code == 200
+        assert Application.objects.get(client_id=self.client_id).can_introspect is True
 
     def test_put_keeps_algorithm_echoed_from_get(self):
         """A PUT sending back what GET reported is not refused (RFC 7592 §2.2).

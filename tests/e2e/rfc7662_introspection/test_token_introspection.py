@@ -1,6 +1,7 @@
 """RFC 7662 — OAuth 2.0 Token Introspection."""
 
 import pytest
+import requests
 
 from tests.e2e import constants as c
 from tests.e2e.helpers.oauth_client import token_data
@@ -77,3 +78,37 @@ def test_introspection_without_scope_is_rejected(oauth, user_session):
     )["access_token"]
     resp = oauth.introspect(token=token, bearer=non_introspection)
     assert resp.status_code in (401, 403)
+
+
+@pytest.fixture
+def self_registered_client(oauth):
+    """A confidential client_credentials client registered through DCR (RFC 7591);
+    it keeps the ``can_introspect`` default (#1451)."""
+    resp = requests.post(
+        oauth.url("/o/register/"),
+        json={
+            "client_name": "Self-registered introspector",
+            "grant_types": ["client_credentials"],
+            "token_endpoint_auth_method": "client_secret_basic",
+        },
+        timeout=10,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+@pytest.mark.compliance("RFC 7662", "4", "Caller authenticates as a confidential client")
+def test_self_registered_confidential_client_can_introspect(oauth, user_session, self_registered_client):
+    # With registration open, anyone can do this; operators who want RFC 7662
+    # section 4's "specifically authorized" turn can_introspect off for such
+    # clients (see "Introspection when registration is open" in
+    # docs/resource_server.rst).
+    token = _subject_token(oauth, user_session)
+    resp = requests.post(
+        oauth.url("/o/introspect/"),
+        data={"token": token},
+        auth=(self_registered_client["client_id"], self_registered_client["client_secret"]),
+        timeout=10,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["active"] is True

@@ -71,6 +71,19 @@ class TestModels(BaseTestModels):
         self.assertTrue(access_token.allow_scopes([]))
         self.assertFalse(access_token.allow_scopes(["write", "destroy"]))
 
+    def test_can_introspect_defaults_to_true(self):
+        # #1451: can_introspect is an opt-out capability; every application has
+        # it unless an operator turns it off.
+        app = Application.objects.create(
+            name="test_app",
+            user=self.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+        )
+
+        app.refresh_from_db()
+        self.assertIs(app.can_introspect, True)
+
     def test_hashed_secret(self):
         app = Application.objects.create(
             name="test_app",

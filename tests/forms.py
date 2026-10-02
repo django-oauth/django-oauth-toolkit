@@ -15,7 +15,7 @@ class ExcludeApplicationForm(ApplicationForm):
     class Meta:
         # client_jwks_uri only to keep Django's URLField default-scheme deprecation
         # warning out of the test run; the rest is what such a form would exclude.
-        exclude = ("user", "skip_authorization", "custom_field", "client_jwks_uri")
+        exclude = ("user", "skip_authorization", "custom_field", "client_jwks_uri", "can_introspect")
 
 
 class OwnerEditableApplicationForm(ApplicationForm):
