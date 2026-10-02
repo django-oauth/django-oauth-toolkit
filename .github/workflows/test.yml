@@ -682,6 +682,11 @@ jobs:
           - dynamic
           - rp-initiated-logout
           - rp-initiated-logout-dcr
+        include:
+          # DCR ignores post_logout_redirect_uris (#1896), so the logout
+          # modules that redirect back to the RP never complete.
+          - plan: rp-initiated-logout-dcr
+            optional: true
     steps:
       - uses: actions/checkout@v4
 

@@ -496,8 +496,10 @@ any other failure or warning fails the run. The toolkit's known gaps are recorde
 baseline, so every plan is required for a merge and a new failure or warning in any of them fails
 CI. A change that fixes a gap makes CI fail too until its baseline entries are removed: regenerate
 them with ``tests/openid-conformance-suite/baseline.py`` from the job's ``runner.log`` and commit
-the diff with the fix. ``tests/openid-conformance-suite/README.md`` describes the plans, how to run
-a single one, and how to update the waivers or the pinned suite version.
+the diff with the fix. The one plan that cannot complete yet (RP-Initiated Logout with dynamically
+registered clients) is marked ``optional`` in the workflow and only reports its results.
+``tests/openid-conformance-suite/README.md`` describes the plans, how to run a single one, and how
+to update the waivers or the pinned suite version.
 These runs are not a certification: that still means running the hosted suite at
 certification.openid.net and submitting the results.
 

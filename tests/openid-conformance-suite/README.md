@@ -49,12 +49,14 @@ that did not run to completion.
 runs with. CI runs one matrix job per name, each with its own stack, so a plan's failure is
 visible on its own and the jobs run in parallel.
 
-Every plan gates the merge through the `Test successful` check. A plan whose modules cannot run
-to completion, which leaves nothing to baseline, can be marked `optional` in the workflow
-matrix's `include` list until they do; none is today. Each plan's known toolkit gaps are recorded
-in its baseline (see [Baseline and waivers](#baseline-and-waivers)), so a new failure or warning
-anywhere fails CI, and so does a fixed one until its entry is removed. Every job also writes the
-runner's totals to its summary and uploads the full report.
+Every plan gates the merge through the `Test successful` check, except `rp-initiated-logout-dcr`,
+which is marked `optional` in the workflow matrix: the registration endpoint ignores
+`post_logout_redirect_uris` (#1896), so the logout modules that redirect back to the relying party
+never run to completion. Each plan's known toolkit gaps are recorded in its baseline (see
+[Baseline and waivers](#baseline-and-waivers)), so a new failure or warning anywhere fails CI,
+and so does a fixed one until its entry is removed. Every job also writes the runner's totals to
+its summary and uploads the full report. Once `rp-initiated-logout-dcr` completes, record its
+baseline and drop it from the matrix's `include` list.
 
 The plan names are the OpenID Provider certification profiles, which are named after the
 OpenID Connect flow they test rather than the OAuth grant:
