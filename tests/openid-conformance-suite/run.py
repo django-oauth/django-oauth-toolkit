@@ -8,8 +8,10 @@ From the repository root (Docker and ``docker compose`` required)::
 
 What it does:
 
-1. Generates a throwaway self-signed certificate for the IdP. The suite requires
-   an https issuer but does not validate the certificate of the server under test.
+1. Generates throwaway self-signed certificates: one for the IdP (the suite
+   requires an https issuer but does not validate the certificate of the server
+   under test), and one for the suite's own host, which the IdP trusts so it can
+   fetch the ``jwks_uri`` of the suite's private_key_jwt clients.
 2. Brings up the stack in ``docker-compose.yml``: the suite's prebuilt images
    pinned to ``--suite-version``, and the IdP built from this checkout.
 3. Downloads the suite's own CI runner (``scripts/run-test-plan.py`` plus its two
@@ -48,7 +50,8 @@ IDP_HOST = "dot-idp"
 IDP_PROBE_URL = "https://127.0.0.1:9443/o/.well-known/openid-configuration"
 # The suite's public base URL. In "dev mode" (CONFORMANCE_SERVER unset) the runner
 # defaults to exactly this and skips TLS verification and the API token.
-SUITE_URL = "https://localhost.emobix.co.uk:8443/"
+SUITE_HOST = "localhost.emobix.co.uk"
+SUITE_URL = f"https://{SUITE_HOST}:8443/"
 
 COMPOSE_FILE = HERE / "docker-compose.yml"
 # Relative to HERE: the runner's plan grammar only allows [A-Za-z0-9-_./] in a
@@ -143,7 +146,13 @@ def compose(
 
 
 def generate_certificate() -> None:
-    """Write ``.certs/cert.pem`` + ``.certs/key.pem`` for ``IDP_HOST``.
+    """Write the throwaway TLS certificates the stack uses into ``.certs/``.
+
+    ``cert.pem`` + ``key.pem`` are the IdP's, for ``IDP_HOST``.
+    ``suite-cert.pem`` + ``suite-key.pem`` replace the suite nginx's own
+    self-signed certificate, which is for ``CN=localhost`` only: this one names
+    ``SUITE_HOST``, and the IdP trusts it, so it can fetch the ``jwks_uri`` the
+    suite registers for its private_key_jwt clients.
 
     Reuses the e2e suite's generator; the repository root goes on ``sys.path`` only
     here so the module import does not have to precede this file's constants.
@@ -152,12 +161,13 @@ def generate_certificate() -> None:
     from tests.e2e.helpers.tls import generate_self_signed_cert
 
     CERTS_DIR.mkdir(exist_ok=True)
-    cert_path, key_path = generate_self_signed_cert(CERTS_DIR, [IDP_HOST, "localhost"])
-    cert_path.replace(CERTS_DIR / "cert.pem")
-    key_path.replace(CERTS_DIR / "key.pem")
-    # The container reads the key as root; the generator's 0600 would hide it from
-    # a rootless engine running the container as another uid.
-    (CERTS_DIR / "key.pem").chmod(0o644)
+    for prefix, hostnames in (("", [IDP_HOST, "localhost"]), ("suite-", [SUITE_HOST, "localhost"])):
+        cert_path, key_path = generate_self_signed_cert(CERTS_DIR, hostnames)
+        cert_path.replace(CERTS_DIR / f"{prefix}cert.pem")
+        key_path.replace(CERTS_DIR / f"{prefix}key.pem")
+        # The containers read the key as root; the generator's 0600 would hide it
+        # from a rootless engine running the container as another uid.
+        (CERTS_DIR / f"{prefix}key.pem").chmod(0o644)
 
 
 def wait_for_idp(suite_version: str, timeout: float = 300.0) -> None:
@@ -294,6 +304,25 @@ def main(argv: list[str] | None = None) -> int:
 
     log(f"starting the stack (conformance-suite {args.suite_version})")
     compose("up", "--build", "--detach", suite_version=args.suite_version)
+    # Make a stack kept from an earlier run (--keep) behave like a fresh one:
+    # - generate_certificate() minted a new suite certificate, which the IdP
+    #   trusts at once (it reads SSL_CERT_FILE from the mounted directory on every
+    #   fetch), while nginx still serves the one it loaded at startup through its
+    #   single-file mount;
+    # - the suite registers the same jwks_uri on every run with new keys, and the
+    #   IdP's in-memory cache still holds the previous run's set, which its
+    #   unknown-kid refetch limit may keep it from replacing in time.
+    # Recreating both picks up the new certificate and empties the cache; the
+    # IdP's database stays in its volume.
+    compose(
+        "up",
+        "--detach",
+        "--no-deps",
+        "--force-recreate",
+        "nginx",
+        "dot-idp",
+        suite_version=args.suite_version,
+    )
     try:
         wait_for_idp(args.suite_version)
         status = run_plans(runner_dir, plans, export_dir, args.verbose)

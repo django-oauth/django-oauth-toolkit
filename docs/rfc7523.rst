@@ -54,9 +54,10 @@ For ``private_key_jwt``, register the client's public keys on the application:
     ``private_key_jwt``.
 
 ``client_jwks_uri``
-    An ``https`` URL serving the client's JWK Set. The server fetches it with the same SSRF
-    hardening used for :doc:`CIMD <cimd>` (public-IP validation and pinning, no redirects, size and
-    timeout caps) and caches it for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` seconds. Fetch failures
+    An ``https`` URL serving the client's JWK Set. The default fetcher (see
+    ``CLIENT_ASSERTION_JWKS_FETCHER`` below) fetches it with the same SSRF hardening used for
+    :doc:`CIMD <cimd>` (public-IP validation and pinning, no redirects, size and timeout caps), and
+    the server caches it for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` seconds. Fetch failures
     back off for ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS``. Symmetric (``oct``) keys and
     keys carrying private material in the fetched set are skipped.
 
@@ -232,6 +233,16 @@ Settings
 
 ``CLIENT_ASSERTION_CLIENT_SECRET_JWT_ALGS`` (default ``["HS256", "HS384", "HS512"]``)
     JWS algorithms accepted for ``client_secret_jwt`` assertions.
+
+``CLIENT_ASSERTION_JWKS_FETCHER`` (default ``"oauth2_provider.authorization_server.client_assertions.SafeJWKSFetcher"``)
+    Import path to the class that fetches a ``client_jwks_uri`` document. Override it to route the
+    fetch through an egress proxy or to apply site-specific policy. A fetcher's ``fetch(uri)``
+    returns the JWK Set document as a ``dict`` or raises
+    :class:`~oauth2_provider.authorization_server.client_assertions.ClientAssertionError`; the
+    timeout and size settings below are the default fetcher's, so a replacement should honour them
+    too. Key filtering, caching, the failure backoff and the refetch limit are applied to whatever
+    it returns. A replacement takes over the default's SSRF defences; see :ref:`custom-fetchers`
+    for what it must keep doing.
 
 ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` (default ``3600``)
     Seconds a fetched ``client_jwks_uri`` document is cached (in the default Django cache).

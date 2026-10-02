@@ -181,6 +181,8 @@ Settings
     Import path to the fetcher. Override it to route fetches through an egress proxy or to apply
     site-specific policy. A fetcher's ``fetch(client_id)`` returns ``(metadata_dict, max_age_seconds)``
     or raises :class:`~oauth2_provider.authorization_server.cimd.CIMDError`.
+    A replacement takes over the default's SSRF defences; see :ref:`custom-fetchers` for what it
+    must keep doing.
 
 ``CIMD_REGISTRATION_PERMISSION_CLASSES`` (default ``("oauth2_provider.authorization_server.cimd.AllowAllCIMDPermission",)``)
     Permission classes run before any fetch; each must implement

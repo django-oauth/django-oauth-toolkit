@@ -102,6 +102,17 @@ def test_fetch_https_json_rejects_non_object_json(mocker):
         fetch_https_json("https://example.com/jwks.json", timeout=5, max_size=1024)
 
 
+def test_fetch_https_json_rejects_deeply_nested_json(mocker):
+    # A deeply nested document within the size cap makes json.loads raise
+    # RecursionError; it must surface as the caller's error. Raised directly so
+    # the test does not depend on the interpreter's recursion limit.
+    _patch_network(mocker, _FakeHTTPResponse(body=b"[[[]]]"))
+    mocker.patch("oauth2_provider.core.safe_fetch.json.loads", side_effect=RecursionError)
+    with pytest.raises(SafeFetchError, match="not valid JSON") as excinfo:
+        fetch_https_json("https://example.com/jwks.json", timeout=5, max_size=1024)
+    assert isinstance(excinfo.value.__cause__, RecursionError)
+
+
 def test_fetch_https_json_accepts_structured_json_suffix(mocker):
     _patch_network(
         mocker,
@@ -109,6 +120,33 @@ def test_fetch_https_json_accepts_structured_json_suffix(mocker):
     )
     data, _ = fetch_https_json("https://example.com/jwks.json", timeout=5, max_size=1024)
     assert data == {"keys": []}
+
+
+def test_read_json_document_returns_object_and_headers():
+    response = _FakeHTTPResponse(body=b'{"keys": []}')
+    data, headers = safe_fetch.read_json_document(response, max_size=1024)
+    assert data == {"keys": []}
+    assert headers is response.headers
+
+
+class _CallerError(Exception):
+    pass
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        _FakeHTTPResponse(status=404),
+        _FakeHTTPResponse(headers={"Content-Type": "text/html"}),
+        _FakeHTTPResponse(body=b'{"keys": [' + b"0, " * 64 + b"0]}"),
+        _FakeHTTPResponse(body=b"not json"),
+        _FakeHTTPResponse(body=b"[]"),
+    ],
+    ids=["non-200", "non-json-media-type", "oversized", "invalid-json", "non-object"],
+)
+def test_read_json_document_raises_callers_exception(response):
+    with pytest.raises(_CallerError):
+        safe_fetch.read_json_document(response, max_size=64, exc_class=_CallerError)
 
 
 def test_media_type_is_json():

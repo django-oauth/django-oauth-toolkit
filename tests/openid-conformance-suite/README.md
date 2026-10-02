@@ -23,8 +23,10 @@ tox -e openid-conformance-suite -- --verbose         # print waiver templates
 
 `run.py` does the work:
 
-1. Generates a throwaway self-signed certificate for the IdP hostname `dot-idp`. The suite
-   requires an https issuer; it does not validate the certificate of the server under test.
+1. Generates two throwaway self-signed certificates. One is for the IdP hostname `dot-idp`: the
+   suite requires an https issuer, but does not validate the certificate of the server under test.
+   The other is for the suite's own host, `localhost.emobix.co.uk`. It replaces the certificate in
+   the suite's nginx image, and the IdP trusts it (see [The client's `jwks_uri`](#the-clients-jwks_uri)).
 2. `docker compose up --build` on `docker-compose.yml`: the suite's prebuilt images from
    `registry.gitlab.com/openid/conformance-suite` pinned to the suite version, MongoDB, and the IdP
    image built from this checkout (the root `Dockerfile`), served over TLS by gunicorn.
@@ -137,7 +139,8 @@ The failures files hold two kinds of entry:
   them by hand.
 * **Waivers** (no `baseline` key) are hand-written, each with a reason that would survive review:
   a feature the toolkit does not implement on purpose, or something CI cannot do (rotating the
-  OP's signing key, reaching a `jwks_uri` on the suite's private host). `baseline.py` keeps them.
+  OP's signing key; see [What CI cannot satisfy](#what-ci-cannot-satisfy)). `baseline.py` keeps
+  them.
 
 To update a plan's baseline after a change that moves it, take the runner output (in CI, the
 job's `runner.log` artifact or its log; locally, the terminal output), regenerate, and commit the
@@ -152,6 +155,78 @@ runner still reports as expected, drops each one it no longer reports (a fixed g
 "Expected failure did not happen") and adds each unexpected failure or warning.
 
 Run with `--verbose` to get a ready-made entry for a single unexpected failure instead.
+
+## What CI cannot satisfy
+
+The `dynamic` plan carries the only waiver. CI runs `oidcc-server-rotate-keys`, but cannot
+satisfy its `VerifyNewJwksHasNewSigningKey` condition, so that condition is waived. It does not
+cover a toolkit gap, and the manual step [below](#rotating-the-signing-key) passes it.
+
+### Rotating the signing key
+
+`oidcc-server-rotate-keys` fetches the OP's JWKS when the module is created, waits for the tester
+to rotate the signing key and press **Start**, then fetches the JWKS again. It expects the second
+set to contain a new key (a failure if not) and still contain the old one (a warning if not). The
+suite's runner presses Start as soon as the module is ready. It has no hook to run anything in
+between, so CI cannot rotate the key there, and the suite's own CI waives the condition in the same
+way. The module's description says that an OP which cannot rotate during the test self-asserts key
+rotation in its certification attestation.
+
+The demo IdP can rotate, which is an IdP restart with a new `OIDC_RSA_PRIVATE_KEY` and the old
+key in `OIDC_RSA_PRIVATE_KEYS_INACTIVE`. `docker-compose.rotate-keys.yml` recreates `dot-idp` that
+way. To pass the module by hand:
+
+1. Run the plan with the stack kept up: `tox -e openid-conformance-suite -- --plan dynamic --keep`.
+2. Open the plan in the suite UI (any log-detail link the runner printed leads to it) and run
+   `oidcc-server-rotate-keys` again. It waits for you to press **Start**.
+3. From `tests/openid-conformance-suite/`, write the current key and a new one to `.certs/`, then
+   recreate the IdP with them:
+
+   ```sh
+   docker compose exec -T dot-idp python -c \
+     'from idp import settings; print(settings.OAUTH2_PROVIDER["OIDC_RSA_PRIVATE_KEY"].strip())' \
+     > .certs/original-key.pem
+   openssl genrsa -out .certs/rotated-key.pem 2048
+   chmod 644 .certs/original-key.pem .certs/rotated-key.pem
+   docker compose -f docker-compose.yml -f docker-compose.rotate-keys.yml up -d --no-deps --force-recreate dot-idp
+   ```
+
+   `--force-recreate` matters on a retry: Compose otherwise keeps a container whose configuration
+   has not changed, and the running IdP would go on serving the keys it loaded at startup.
+
+   Wait until the JWKS at <https://127.0.0.1:9443/o/.well-known/jwks.json> lists two `kid`s:
+   the module fetches it once on **Start** and fails if the IdP is not answering yet.
+4. Press **Start**. Both `VerifyNewJwks*` conditions pass.
+5. `docker compose down --volumes` when done. To go back to the original key and keep the stack
+   up, run the last command of step 3 again without `-f docker-compose.rotate-keys.yml`.
+
+## The client's `jwks_uri`
+
+`oidcc-registration-jwks-uri` and `oidcc-refresh-token-rp-key-rotation` register a
+`private_key_jwt` client whose `jwks_uri` is on the suite's own host,
+`https://localhost.emobix.co.uk:8443/...`, and the IdP has to fetch it to verify the client's
+assertions. Inside the compose network two things would stop that fetch, and the stack deals with
+both:
+
+* The host resolves to a private compose address, which the library's SSRF guard refuses.
+  `docker-compose.yml` sets `CLIENT_ASSERTION_JWKS_FETCHER` to the demo IdP's test-only
+  `idp.client_assertions.PrivateHostJWKSFetcher`. It lets the hosts in `JWKS_URI_PRIVATE_HOSTS`,
+  here only the suite's host, resolve to private addresses, and sends every other host through the
+  default fetcher. It still requires `https`, verifies the certificate, refuses redirects and
+  applies the default size and content checks.
+* The suite's nginx image serves a self-signed certificate for `CN=localhost` only. `run.py` mints
+  one for `localhost.emobix.co.uk`, `docker-compose.yml` mounts it over the image's, and the IdP
+  trusts it through `SSL_CERT_FILE`.
+
+On a stack kept from an earlier run (`--keep`), `run.py` recreates the nginx and IdP containers
+after `docker compose up`, so that each run starts as on a fresh stack. Every run mints a new suite
+certificate, which nginx would not otherwise pick up. And the suite registers the same `jwks_uri` on
+every run with new keys: the IdP would still have the previous run's key set cached, and its
+unknown-`kid` refetch limit can refuse a re-run that starts within a minute of the last one. The
+IdP's database stays in its volume.
+
+Both live in the conformance stack only. "Custom outbound fetchers" in the docs
+(`docs/advanced_topics.rst`) lists what a production fetcher must keep doing.
 
 ## Upgrading the suite
 

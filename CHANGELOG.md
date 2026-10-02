@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1899 New `CLIENT_ASSERTION_JWKS_FETCHER` setting: the import path of the class that fetches a
+  `private_key_jwt` client's `jwks_uri` (RFC 7523), so the fetch can go through an egress proxy or
+  follow site-specific policy, as `CIMD_METADATA_FETCHER` already allows for CIMD. The default,
+  `SafeJWKSFetcher`, makes the same SSRF-hardened fetch as before; key filtering, caching, the failure
+  backoff and the refetch limit still apply to whatever a replacement returns. The new "Custom outbound
+  fetchers" section of the docs lists what a replacement must keep doing to stay SSRF-safe, and
+  `oauth2_provider.core.safe_fetch.read_json_document()` exposes the default's response checks for reuse.
 * #1896 Dynamic Client Registration (RFC 7591) and its RFC 7592 management endpoint now accept
   `post_logout_redirect_uris` (OpenID Connect RP-Initiated Logout 1.0 §3.1), store them on the
   application, and return them in registration, read and update responses. A PUT that omits the field
@@ -339,6 +346,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1899 An unexpected error while fetching or reading a `private_key_jwt` client's `jwks_uri`
+  (RFC 7523), such as a deeply nested JSON document that exhausts the parser's recursion limit, now
+  fails client authentication with `invalid_client` and arms the fetch failure backoff, instead of
+  returning a 500 on every attempt. `safe_fetch.fetch_https_json` reports such a document as invalid
+  JSON.
 * #1013 `prompt=login` now works with pushed authorization requests (RFC 9126). The pushed
   `request_uri` is used up when the authorization request is read, yet the login page's return URL
   carried the expanded parameters instead, which a client required to use PAR could not complete.
