@@ -75,8 +75,11 @@ def login_task(screenshot=None):
         # Fills the module's screenshot placeholder with the login page, which is
         # how the prompt=login / max_age modules prove the End-User was re-prompted.
         # "update-image-placeholder-optional" leaves the module WAITING for a manual
-        # upload when the prompt never appears; the non-optional form fails it
-        # after the timeout instead, which is the right outcome for an OP gap.
+        # upload when the prompt never appears, so the run still fails on an OP gap;
+        # the non-optional form fails it after the timeout instead. A module that
+        # logs in more than once must use the optional form: its placeholder only
+        # exists for the re-login, and the non-optional form fails on the first
+        # login page, before the placeholder is created.
         commands.append(["wait", "xpath", "//*", 10, "Log In", screenshot])
     commands += [
         ["text", "id", "id_username", USERNAME],
@@ -166,7 +169,9 @@ def overrides():
     result["oidcc-max-age-1"] = {
         "browser": [
             authorize_block(
-                screenshot="update-image-placeholder",
+                # Optional: the first authorization shows the login page too,
+                # before the module creates the placeholder.
+                screenshot="update-image-placeholder-optional",
                 comment="screenshots the re-login prompt the elapsed max_age must trigger",
             )
         ]

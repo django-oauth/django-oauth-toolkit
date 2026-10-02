@@ -559,6 +559,59 @@ currently supported. See
 OIDC's `3.1.2.1 Authentication Request <https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest>`_
 for details.
 
+Clients can also require that the user logged in recently by sending the
+``max_age`` parameter, the number of seconds allowed since the user last
+logged in. If the login that authenticated the user's current browser session
+is older than that, the user is sent to log in again before the request
+continues. A ``max_age`` of ``0`` is treated as ``prompt=login``, as the
+specification says it is equivalent to. ``max_age`` applies only to OpenID
+Connect requests (those with the ``openid`` scope); other requests ignore it.
+A request with ``prompt=none`` whose ``max_age`` has passed gets a
+``login_required`` error instead of a login page. A value that is not a
+non-negative integer, or a ``prompt`` or ``max_age`` given more than once,
+gets an ``invalid_request`` error, also from the PAR endpoint.
+
+Each login is recorded in the Django session it authenticated, when Django's
+:func:`~django.contrib.auth.login` runs: its time, and an identifier that
+tells one login from the next. ``last_login`` is not used, since every session
+of the account shares it: logging in on another browser does not make this one
+fresh. A session authenticated before this was recorded, or without
+:func:`~django.contrib.auth.login`, counts as not having logged in recently.
+
+``prompt=login`` and ``max_age`` stay in the request while the user logs in.
+A new login since the authorization endpoint asked for one satisfies them,
+even when it no longer fits the value (``0``, or a slow return from the login
+page), as long as the user comes back to the same request within five minutes.
+Coming back to that request without a new login gets a ``login_required``
+error for the client rather than another login page, so the flow cannot loop.
+A login made before the authorization endpoint sent the user to log in for
+the request does not count either. One login satisfies all the requests
+pending at the time (in several tabs, say). Django clears the session when
+a different user logs in, so a user who switches accounts at the login page may
+be asked to log in once more.
+
+When the request was pushed (PAR), its ``request_uri`` has already been used,
+so for ``max_age`` and ``prompt=login`` the request is pushed again for the
+same client and the login page returns to the new ``request_uri``. Logging in
+has to finish within ``PAR_REQUEST_URI_LIFETIME_SECONDS``, as it already does
+when a user who is not logged in follows a pushed request.
+
+These checks are made by the authorization endpoint. The ID Token's
+``auth_time`` claim is still taken from the user's ``last_login``, which every
+session of the account shares: after the user logs in on another browser, an
+ID Token issued to this one (at the code exchange, or on refresh) reports that
+other login. Recording the authentication time of each authorization and
+carrying it to the ID Token is planned separately.
+
+When users authenticate with an upstream identity provider (SAML, an OpenID
+provider, CAS, an SSO proxy), the toolkit sees only the local
+:func:`~django.contrib.auth.login`, which may simply restore the upstream
+session. Making that login a fresh authentication upstream is up to the
+deployment: point the login URL used by ``AuthorizationView`` (Django's
+``LOGIN_URL``, or an override of ``get_login_url()``) at an entry point that
+asks the provider for one, for example SAML ``ForceAuthn``, or ``prompt=login``
+or ``max_age`` for an OpenID provider.
+
 OIDC Views
 ==========
 

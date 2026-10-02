@@ -79,8 +79,7 @@ open (`AllowAllDCRPermission`). That is why the Basic, Implicit and Hybrid plans
 second run exercises registration as well as the flow.
 
 Some modules are expected to expose gaps in the toolkit rather than in the harness, and are
-in the matrix for exactly that reason. Known from the first runs: an elapsed `max_age` does not
-force re-authentication (`oidcc-max-age-1`).
+in the matrix for exactly that reason.
 
 A module that does not run to completion counts toward the runner's circuit breaker
 (`CONFORMANCE_MAX_CONSECUTIVE_FAILURES`, set to 25 by `run.py` so one gap does not hide the

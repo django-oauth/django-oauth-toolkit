@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
@@ -19,13 +20,18 @@ from django.utils.encoding import escape_uri_path
 from django.views.decorators.csrf import csrf_exempt, csrf_protect, requires_csrf_token
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
-from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, OAuth2Error
+from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestError, OAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid.connect.core.exceptions import RequestNotSupported, RequestURINotSupported
 
 from oauth2_provider.authorization_server import par
 from oauth2_provider.authorization_server.forms import AllowForm
+from oauth2_provider.authorization_server.oidc.max_age import INVALID_MAX_AGE_DESCRIPTION, is_valid_max_age
 from oauth2_provider.authorization_server.response_modes import add_params_to_authorization_redirect
+from oauth2_provider.authorization_server.sessions import (
+    get_session_authentication_event,
+    get_session_authentication_time,
+)
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
@@ -40,6 +46,12 @@ from oauth2_provider.settings import oauth2_settings
 
 
 log = logging.getLogger("oauth2_provider")
+
+# Where AuthorizationView records that it sent the user to log in, and how long
+# that record lets a login count as the one it asked for.
+REAUTHENTICATION_SESSION_KEY = "_oauth2_provider_reauthentication"
+REAUTHENTICATION_WINDOW_SECONDS = 300
+REAUTHENTICATION_RECORD_LIMIT = 10
 
 
 # login_not_required decorator to bypass LoginRequiredMiddleware
@@ -223,6 +235,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             parameters = par.consume_pushed_request(request_uri, request.GET.get("client_id"))
         except par.PushedAuthorizationError as error:
             return self._fatal_par_error(error.description)
+        self.pushed_request = True
+        self.pushed_request_uri = request_uri
         # Re-inject the pushed parameters so the existing authorization flow, which
         # reads from the query string, proceeds unchanged. Any parameters supplied
         # alongside request_uri are intentionally ignored: the pushed request is
@@ -385,6 +399,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         return f"{escape_uri_path(request.path)}?{query}" if query else escape_uri_path(request.path)
 
     def dispatch(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        # Whether the request being authorized was resolved from a pushed
+        # request_uri, which can be used only once (RFC 9126 section 4).
+        self.pushed_request = False
+        self.pushed_request_uri = None
         if request.method == "POST" and not self.is_consent_submission(request):
             # An authorization request sent by POST (OpenID Connect Core 1.0
             # section 3.1.2.1) is redirected to the same request sent by GET, so
@@ -417,6 +435,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # Application is not available at this time.
             return self.error_response(error, application=None)
 
+        oidc_request = oauth2_settings.OIDC_ENABLED and "openid" in scopes
+        repeated = self._repeated_authentication_parameter(oidc_request)
+        if repeated is not None:
+            return self._invalid_request_response(credentials, f"{repeated} must not be repeated.")
+        # The request is validated before the user is asked to authenticate
+        # (OpenID Connect Core 1.0 sections 3.1.2.2 and 3.1.2.3).
+        max_age = request.GET.get("max_age")
+        if oidc_request and max_age and not is_valid_max_age(max_age):
+            return self._invalid_request_response(credentials, INVALID_MAX_AGE_DESCRIPTION)
+
         # prompt is a space-delimited, case-sensitive list of ASCII values
         # (OpenID Connect Core 1.0 section 3.1.2.1). Prompt Create 1.0
         # recommends that create not be combined with other values, but when
@@ -430,8 +458,28 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             response = self.handle_prompt_create()
             if response is not None:
                 return response
-        if "login" in prompt:
+        # A login this view asked for satisfies the login prompt and max_age
+        # of the request it was asked for; both stay in the request until then.
+        # Coming back to that request without the fresh login it still needs
+        # gets login_required (OpenID Connect Core 1.0 section 3.1.2.1) rather
+        # than another trip to the login page, so the flow can never loop.
+        if self.pushed_request:
+            returning = {"request_uri": [self.pushed_request_uri]}
+        else:
+            returning = dict(request.GET.lists())
+        reauthentication = self._reauthentication_outcome(returning)
+        reauthenticated = reauthentication is True
+        returned_without_login = reauthentication is False
+        if "login" in prompt and not reauthenticated:
+            if returned_without_login:
+                return self._login_required_response(credentials)
             return self.handle_prompt_login()
+        if oidc_request:
+            max_age_response = self._handle_max_age(
+                credentials, prompt, reauthenticated, returned_without_login
+            )
+            if max_age_response is not None:
+                return max_age_response
 
         all_scopes = get_scopes_backend().get_all_scopes()
         kwargs["scopes_descriptions"] = [all_scopes[scope] for scope in scopes]
@@ -534,31 +582,211 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
         return self.render_to_response(self.get_context_data(**kwargs))
 
-    def handle_prompt_login(self):
-        path = self.request.build_absolute_uri()
+    def handle_prompt_login(self) -> HttpResponse:
+        return self._redirect_to_login()
+
+    def _redirect_to_login(self) -> HttpResponse:
+        """Send the user to log in, returning to this authorization request after.
+
+        Used for ``prompt=login`` and an elapsed ``max_age``.
+
+        The return URL keeps the whole request, ``prompt`` and ``max_age``
+        included: the login is only taken as satisfying them once
+        :meth:`_reauthentication_outcome` has verified it, so following the
+        return URL without logging in gains nothing.
+
+        A pushed request has already used up its ``request_uri`` (RFC 9126
+        section 4), so its parameters are pushed again for the same client and
+        the return URL carries only the new ``request_uri``: the request stays
+        on the server, and a client that must use PAR can still complete it.
+        """
+        parameters = dict(self.request.GET.lists())
+        if self.pushed_request:
+            client_id = self.request.GET["client_id"]
+            # Stored in the shape par.collect_pushed_parameters gives them.
+            pushed = {key: values if key == "resource" else values[-1] for key, values in parameters.items()}
+            request_uri, _expires_in = par.store_pushed_request(client_id, pushed)
+            parameters = {"client_id": [client_id], "request_uri": [request_uri]}
+        self._request_reauthentication(parameters, fresh=True)
+
+        path = escape_uri_path(self.request.path)
         resolved_login_url = resolve_url(self.get_login_url())
 
         # If the login url is the same scheme and net location then use the
         # path as the "next" url.
         login_scheme, login_netloc = urlparse(resolved_login_url)[:2]
-        current_scheme, current_netloc = urlparse(path)[:2]
-        if (not login_scheme or login_scheme == current_scheme) and (
-            not login_netloc or login_netloc == current_netloc
+        current_scheme, current_netloc = urlparse(self.request.build_absolute_uri(path))[:2]
+        if not (
+            (not login_scheme or login_scheme == current_scheme)
+            and (not login_netloc or login_netloc == current_netloc)
         ):
-            path = self.request.get_full_path()
-
-        parsed = urlparse(path)
-
-        parsed_query = dict(parse_qsl(parsed.query))
-        parsed_query.pop("prompt")
-
-        parsed = parsed._replace(query=urlencode(parsed_query))
+            path = self.request.build_absolute_uri(path)
 
         return redirect_to_login(
-            parsed.geturl(),
+            f"{path}?{urlencode(parameters, doseq=True)}",
             resolved_login_url,
             self.get_redirect_field_name(),
         )
+
+    def _handle_max_age(
+        self, credentials: dict, prompt: set, reauthenticated: bool, returned_without_login: bool
+    ) -> HttpResponse | None:
+        """Re-authenticate the user if this session was authenticated more than
+        ``max_age`` seconds ago (OpenID Connect Core 1.0 section 3.1.2.1).
+
+        The time is that of the login that authenticated the current session;
+        a session whose login time is unknown counts as not authenticated
+        recently enough. ``max_age=0`` is treated as ``prompt=login``, as the
+        specification says it is equivalent to: only a login this view asked
+        for satisfies it. That login also satisfies any other value, so a slow
+        return from the login page does not ask again. ``prompt=none``, and a
+        user who came back from the login page this view sent them to without
+        logging in, get a ``login_required`` error instead.
+
+        Returns ``None`` when ``max_age`` is absent or satisfied.
+        """
+        max_age = self.request.GET.get("max_age")
+        if not max_age:
+            return None
+        if reauthenticated:
+            return None
+        auth_time = get_session_authentication_time(self.request)
+        # More significant digits than this is over 300 years: no limit, and
+        # int() is never asked to convert an arbitrarily long string. No
+        # significant digits is max_age=0, which only a new login meets.
+        seconds = max_age.lstrip("0")
+        if (
+            seconds
+            and auth_time is not None
+            and (len(seconds) > 10 or time.time() - auth_time <= int(seconds))
+        ):
+            return None
+        if "none" in prompt or returned_without_login:
+            return self._login_required_response(credentials)
+        return self._redirect_to_login()
+
+    def _repeated_authentication_parameter(self, oidc_request: bool) -> str | None:
+        """The name of ``prompt`` or (for an OpenID Connect request) ``max_age``
+        if the request repeats it, else ``None``.
+
+        Parameters must not be included more than once (RFC 6749 section 3.1);
+        oauthlib checks the ones it reads, and these two decide whether the
+        user has to log in, so a repeat must not silently pick one value.
+        """
+        names = ("prompt", "max_age") if oidc_request else ("prompt",)
+        for name in names:
+            if len(self.request.GET.getlist(name)) > 1:
+                return name
+        return None
+
+    def _invalid_request_response(self, credentials: dict, description: str) -> HttpResponse:
+        """Redirect an ``invalid_request`` error to the client."""
+        error = OAuthToolkitError(
+            error=InvalidRequestError(
+                description=description,
+                state=credentials.get("state"),
+            ),
+            redirect_uri=credentials["redirect_uri"],
+        )
+        # Lets error_response encode it like the successful response.
+        error.oauthlib_error.response_type = credentials["response_type"]
+        error.oauthlib_error.response_mode = self.request.GET.get("response_mode")
+        application = get_application_model().objects.get(client_id=credentials["client_id"])
+        return self.error_response(error, application)
+
+    @staticmethod
+    def _reauthentication_binding(parameters: dict[str, list[str]]) -> str:
+        """Identify the authorization request that the user returns with.
+
+        A pushed request is identified by its ``request_uri``, and any other
+        by its parameters. ``prompt`` is left out, so a login asked for by an
+        anonymous request without one still matches.
+        """
+        request_uri = parameters.get("request_uri")
+        if request_uri and request_uri[-1].startswith(par.REQUEST_URI_PREFIX):
+            identity = ["request_uri", request_uri[-1]]
+        else:
+            identity = sorted([key, values] for key, values in parameters.items() if key != "prompt")
+        return hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+
+    def _request_reauthentication(self, parameters: dict[str, list[str]], fresh: bool) -> None:
+        """Record in the session that this view sent the user to log in for
+        the authorization request with ``parameters``.
+
+        :meth:`_reauthentication_outcome` uses it to tell whether the user
+        logged in since, so a login asked for by ``prompt=login`` or
+        ``max_age`` is not asked for a second time. ``fresh`` is set when the
+        view asked for a new login (:meth:`_redirect_to_login`) rather than
+        for a login of any kind. The record keeps the identifier of the login
+        that authenticated the session at the time, so that any later login,
+        however soon, can be told from it.
+
+        Each pending request has its own record, so a second tab does not
+        discard the first one's; records older than
+        ``REAUTHENTICATION_WINDOW_SECONDS`` are dropped, and at most
+        ``REAUTHENTICATION_RECORD_LIMIT`` are kept.
+        """
+        now = time.time()
+        records = {
+            binding: record
+            for binding, record in self._reauthentication_records().items()
+            if now - record["at"] <= REAUTHENTICATION_WINDOW_SECONDS
+        }
+        records[self._reauthentication_binding(parameters)] = {
+            "at": now,
+            "event": get_session_authentication_event(self.request),
+            "fresh": fresh,
+        }
+        newest = sorted(records.items(), key=lambda item: item[1]["at"])[-REAUTHENTICATION_RECORD_LIMIT:]
+        self.request.session[REAUTHENTICATION_SESSION_KEY] = dict(newest)
+
+    def _reauthentication_records(self) -> dict[str, dict]:
+        """The well-formed re-login records in the session, by request binding."""
+        records = self.request.session.get(REAUTHENTICATION_SESSION_KEY)
+        if not isinstance(records, dict):
+            return {}
+        return {
+            binding: record
+            for binding, record in records.items()
+            if isinstance(record, dict) and isinstance(record.get("at"), (int, float))
+        }
+
+    def _reauthentication_outcome(self, parameters: dict[str, list[str]]) -> bool | None:
+        """Whether the user logged in after this view sent them to log in for
+        the authorization request with ``parameters``.
+
+        ``None`` when there is no such record: none was made, it was made for
+        another request, or more than ``REAUTHENTICATION_WINDOW_SECONDS`` ago.
+        Otherwise the record is removed, so it is used at most once, and the
+        result is ``True`` when the session has been authenticated by a login
+        other than the one it had when the record was made. Logins are told
+        apart by identifier, not by time, so one in the same clock tick still
+        counts and the old one never does. When there was no new login, the
+        result is ``False`` if the view had asked for one, and ``None`` if it
+        had only sent an anonymous user to log in by some means that does not
+        go through :func:`django.contrib.auth.login`.
+
+        Other pending requests (a second tab, say) keep their own records. A
+        login in another browser does not count, since it authenticates
+        another session.
+        """
+        records = self._reauthentication_records()
+        binding = self._reauthentication_binding(parameters)
+        requested = records.pop(binding, None)
+        if requested is None:
+            if REAUTHENTICATION_SESSION_KEY in self.request.session and binding in (
+                self.request.session[REAUTHENTICATION_SESSION_KEY] or {}
+            ):
+                # A malformed record for this request: drop it, as if none.
+                self.request.session[REAUTHENTICATION_SESSION_KEY] = records
+            return None
+        self.request.session[REAUTHENTICATION_SESSION_KEY] = records
+        if time.time() - requested["at"] > REAUTHENTICATION_WINDOW_SECONDS:
+            return None
+        event = get_session_authentication_event(self.request)
+        if event is not None and event != requested.get("event"):
+            return True
+        return False if requested.get("fresh") else None
 
     def handle_prompt_create(self):
         """
@@ -643,6 +871,38 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         redirect_to = parsed_registration._replace(query=urlencode(registration_query)).geturl()
         return HttpResponseRedirect(redirect_to)
 
+    def _login_required_response(self, credentials: dict) -> HttpResponse:
+        """Redirect a ``login_required`` error to the client (OpenID Connect
+        Core 1.0 section 3.1.2.6), for a request that oauthlib has validated.
+        """
+        # oauthlib has confirmed redirect_uri is registered for the client.
+        redirect_uri = credentials["redirect_uri"]
+        application = get_application_model().objects.get(client_id=credentials["client_id"])
+
+        response_parameters = {"error": "login_required"}
+
+        # REQUIRED if the Authorization Request included the state parameter.
+        # Set to the value received from the Client
+        state = credentials.get("state")
+        if state:
+            response_parameters["state"] = state
+
+        # Implicit and hybrid errors go in the fragment, like their successful
+        # responses (OpenID Connect Core 3.2.2.6 and 3.3.2.6).
+        redirect_to = add_params_to_authorization_redirect(
+            redirect_uri,
+            urlencode(response_parameters),
+            credentials.get("response_type"),
+            self.request.GET.get("response_mode"),
+        )
+        # RFC 9207 §2 requires `iss` on every authorization response returned
+        # to the client, error responses included; the redirect URI used here
+        # was validated against the registered client.
+        if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
+            issuer = oauth2_settings.oauth2_authorization_server_issuer(self.request)
+            redirect_to = add_iss_to_redirect(redirect_to, issuer)
+        return self.redirect(redirect_to, application)
+
     def handle_no_permission(self):
         """
         Generate response for unauthorized users.
@@ -655,15 +915,38 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         If the prompt parameter contains create, then we redirect to the
         registration page.
 
-        If the prompt parameter contains login, then we redirect straight to
-        the login flow with the prompt consumed, so the user is not sent to
-        login a second time when they return to this endpoint authenticated.
+        If the prompt parameter contains login, then we redirect to the login
+        flow recording that the login was asked for, so the user is not sent
+        to log in a second time when they return to this endpoint
+        authenticated.
 
         Some code copied from OAuthLibMixin.error_response, but that is designed
         to operate on OAuth2Error from oauthlib wrapped in a OAuthToolkitError
         """
         # prompt is a space-delimited, case-sensitive list of ASCII values
         # (OpenID Connect Core 1.0 section 3.1.2.1).
+        max_age = self.request.GET.get("max_age")
+        request_uri = self.request.GET.get("request_uri", "")
+        malformed = bool(max_age) and not is_valid_max_age(max_age)
+        repeated = any(len(self.request.GET.getlist(name)) > 1 for name in ("prompt", "max_age"))
+        if (malformed or repeated) and not request_uri.startswith(par.REQUEST_URI_PREFIX):
+            # The request is validated before the end-user is authenticated
+            # (OpenID Connect Core 1.0 sections 3.1.2.2 and 3.1.2.3), so a
+            # malformed or repeated max_age or prompt is reported now rather
+            # than after a login. error_response never redirects to an
+            # unregistered redirect_uri. A pushed request is authoritative and
+            # was checked when pushed.
+            try:
+                scopes, credentials = self.validate_authorization_request(self.request)
+            except OAuthToolkitError as error:
+                return self.error_response(error, application=None)
+            oidc_request = oauth2_settings.OIDC_ENABLED and "openid" in scopes
+            name = self._repeated_authentication_parameter(oidc_request)
+            if name is not None:
+                return self._invalid_request_response(credentials, f"{name} must not be repeated.")
+            if malformed and oidc_request:
+                return self._invalid_request_response(credentials, INVALID_MAX_AGE_DESCRIPTION)
+
         prompt = set(self.request.GET.get("prompt", "").split())
         if "none" in prompt:
             # Per OpenID Connect Core 1.0 section 3.1.2.6 (Authentication Error
@@ -687,33 +970,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 # redirect_uri, so this is safe.
                 return self.error_response(error, application=None)
 
-            # oauthlib has confirmed redirect_uri is registered for the client.
-            redirect_uri = credentials["redirect_uri"]
-            application = get_application_model().objects.get(client_id=credentials["client_id"])
+            return self._login_required_response(credentials)
 
-            response_parameters = {"error": "login_required"}
-
-            # REQUIRED if the Authorization Request included the state parameter.
-            # Set to the value received from the Client
-            state = credentials.get("state")
-            if state:
-                response_parameters["state"] = state
-
-            # Implicit and hybrid errors go in the fragment, like their successful
-            # responses (OpenID Connect Core 3.2.2.6 and 3.3.2.6).
-            redirect_to = add_params_to_authorization_redirect(
-                redirect_uri,
-                urlencode(response_parameters),
-                credentials.get("response_type"),
-                self.request.GET.get("response_mode"),
-            )
-            # RFC 9207 §2 requires `iss` on every authorization response returned
-            # to the client, error responses included; the redirect URI used here
-            # was validated against the registered client above.
-            if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
-                issuer = oauth2_settings.oauth2_authorization_server_issuer(self.request)
-                redirect_to = add_iss_to_redirect(redirect_to, issuer)
-            return self.redirect(redirect_to, application)
+        # Lets get() count the login that follows (after registering, too) as
+        # one it asked for, by max_age or by a pushed request's prompt or
+        # max_age (which are not in the query), so the user is not sent to log
+        # in a second time. Other requests do not need it, and are left without
+        # a session. A prompt=login redirect below records its own.
+        if "max_age" in self.request.GET or request_uri.startswith(par.REQUEST_URI_PREFIX):
+            self._request_reauthentication(dict(self.request.GET.lists()), fresh=False)
 
         if "create" in prompt:
             # If prompt contains create and the user is not authenticated,
@@ -721,10 +986,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             return self.handle_prompt_create()
 
         if "login" in prompt:
-            # Logging in satisfies the login prompt, and handle_prompt_login
-            # strips it from the next URL. Falling through to the default
-            # redirect instead would keep prompt=login in next, bouncing the
-            # user to the login page a second time after they authenticate.
+            # handle_prompt_login records that the login was asked for, so the
+            # one that follows satisfies the prompt still in the next URL.
             return self.handle_prompt_login()
 
         return super().handle_no_permission()
