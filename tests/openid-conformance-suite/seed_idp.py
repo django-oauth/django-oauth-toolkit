@@ -10,6 +10,7 @@ Idempotent, so the stack can be brought up repeatedly against the same volume.
 The credentials below are test fixtures for a throwaway container, not secrets.
 """
 
+import datetime
 import os
 
 import django
@@ -82,10 +83,20 @@ def main() -> None:
     user.email = "conformance@example.com"
     user.set_password(PASSWORD)
     user.save()
-    # Sources for the email_verified, phone and address claims (see idp.models.UserProfile).
+    # Sources for the remaining profile claims and the email_verified, phone and address
+    # claims (see idp.models.UserProfile).
     UserProfile.objects.update_or_create(
         user=user,
         defaults={
+            "middle_name": "Q.",
+            "nickname": "conf",
+            "profile": "https://example.com/conformance",
+            "picture": "https://example.com/conformance.png",
+            "website": "https://example.com",
+            "gender": "unspecified",
+            "birthdate": datetime.date(2000, 1, 1),
+            "zoneinfo": "America/Los_Angeles",
+            "locale": "en-US",
             "email_verified": True,
             "phone_number": "+1 (555) 555-0100",
             "phone_number_verified": True,

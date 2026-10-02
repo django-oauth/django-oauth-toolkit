@@ -74,6 +74,7 @@ class CustomOAuth2Validator(OAuth2Validator):
         # would misrepresent it.
         profile = getattr(user, "oidc_profile", None)
         if profile is not None:
+            claims.update(profile.profile_claims())
             claims["email_verified"] = profile.email_verified
             if profile.phone_number:
                 claims["phone_number"] = profile.phone_number
