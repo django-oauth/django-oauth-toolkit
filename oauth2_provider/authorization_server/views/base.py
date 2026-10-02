@@ -14,7 +14,7 @@ from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.encoding import escape_uri_path
-from django.views.decorators.csrf import csrf_exempt, csrf_protect
+from django.views.decorators.csrf import csrf_exempt, csrf_protect, ensure_csrf_cookie
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, OAuth2Error
@@ -83,10 +83,6 @@ class BaseAuthorizationView(LoginRequiredMixin, AuthorizationServerViewMixin, Vi
 RFC3339 = "%Y-%m-%dT%H:%M:%SZ"
 
 
-# CSRF is enforced on the consent form only (see AuthorizationView.dispatch): an
-# authorization request sent by POST (OpenID Connect Core 1.0 section 3.1.2.1)
-# comes from the client's site and carries no CSRF token.
-@method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
 class AuthorizationView(BaseAuthorizationView, FormView):
     """
@@ -325,6 +321,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         error = OAuthToolkitError(error=unsupported, redirect_uri=redirect_uri)
         return self.error_response(error, application)
 
+    @classmethod
+    def as_view(cls, **initkwargs):
+        # CSRF is enforced on the consent form only (see dispatch): an authorization
+        # request sent by POST (OpenID Connect Core 1.0 section 3.1.2.1) comes from
+        # the client's site and carries no CSRF token. Exempting the view here,
+        # rather than decorating dispatch, keeps the exemption when a subclass
+        # overrides dispatch.
+        return csrf_exempt(super().as_view(**initkwargs))
+
     def is_consent_submission(self, request: http.HttpRequest) -> bool:
         """Whether a ``POST`` submits the consent form rather than an authorization request.
 
@@ -350,6 +355,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         """Dispatch a consent submission, or any other unsafe request, with CSRF protection.
 
         The view itself is exempt so an authorization request can be sent by ``POST``.
+        """
+        return super().dispatch(request, *args, **kwargs)
+
+    @method_decorator(ensure_csrf_cookie)
+    def _dispatch_with_csrf_cookie(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        """Dispatch a safe request, which may render the consent form, setting the CSRF cookie.
+
+        The consent submission's token is checked against that cookie, which the view,
+        being exempt, would otherwise leave unset when ``CsrfViewMiddleware`` is not
+        installed.
         """
         return super().dispatch(request, *args, **kwargs)
 
@@ -386,7 +401,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             unsupported_response = self._reject_request_objects(request)
             if unsupported_response is not None:
                 return unsupported_response
-        return super().dispatch(request, *args, **kwargs)
+        return self._dispatch_with_csrf_cookie(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         par_response = self._handle_pushed_authorization_request(request)

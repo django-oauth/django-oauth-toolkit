@@ -293,9 +293,12 @@ The consent form posts to the same endpoint. A ``POST`` that carries the form's
 ``allow`` field or a CSRF token, in the ``csrfmiddlewaretoken`` field or the CSRF
 header, is taken to be a consent submission and is CSRF-protected; any other
 ``POST`` is an authorization request, which carries no CSRF token since it comes
-from the client's site. A custom ``authorize.html`` template must therefore keep
-``{% csrf_token %}`` in its form, as Django requires anyway. If a custom consent
-form submits neither the ``allow`` field nor a CSRF token, override
+from the client's site. The view enforces this itself, so consent submissions are
+CSRF-protected even where ``CsrfViewMiddleware`` is not installed, and the
+exemption is applied in ``AuthorizationView.as_view()``, so a subclass that
+overrides ``dispatch`` keeps it. A custom ``authorize.html`` template must
+therefore keep ``{% csrf_token %}`` in its form, as Django requires anyway. If a
+custom consent form submits neither the ``allow`` field nor a CSRF token, override
 ``AuthorizationView.is_consent_submission``.
 
 .. _oidc-request-objects:

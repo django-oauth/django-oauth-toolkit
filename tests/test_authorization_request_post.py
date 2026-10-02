@@ -12,10 +12,13 @@ import json
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import Client
+from django.middleware.csrf import CsrfViewMiddleware
+from django.test import Client, RequestFactory
 from django.urls import reverse
 
+from oauth2_provider.authorization_server.views.base import AuthorizationView
 from oauth2_provider.models import get_application_model
 
 from . import presets
@@ -343,3 +346,28 @@ class TestAuthorizationRequestByPost(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("POST", response["Allow"])
+
+    def test_consent_without_csrf_middleware(self):
+        # The view is CSRF-exempt and protects the consent submission itself, so
+        # it must also set the cookie the consent form's token is checked against.
+        middleware = [m for m in settings.MIDDLEWARE if m != "django.middleware.csrf.CsrfViewMiddleware"]
+        with self.settings(MIDDLEWARE=middleware):
+            consent = self.authorize_by_post()
+            self.assertEqual(self.submit_consent(consent, csrf_token=False).status_code, 403)
+            response = self.submit_consent(consent)
+
+        self.assertIn("code", self.assertRedirectParameters(response))
+
+
+class TestAuthorizationViewSubclass(TestCase):
+    def test_csrf_exemption_survives_dispatch_override(self):
+        class CustomAuthorizationView(AuthorizationView):
+            def dispatch(self, request, *args, **kwargs):
+                return super().dispatch(request, *args, **kwargs)
+
+        view = CustomAuthorizationView.as_view()
+        request = RequestFactory().post("/o/authorize/", {"client_id": "client"})
+
+        # The CSRF middleware lets the authorization request reach the view.
+        self.assertIsNone(CsrfViewMiddleware(lambda request: None).process_view(request, view, (), {}))
+        self.assertEqual(view(request).status_code, 303)
