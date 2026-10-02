@@ -416,6 +416,7 @@ class AbstractApplication(models.Model):
         field_errors: defaultdict[str, list[ValidationError]],
         field: str,
         exc: ValidationError,
+        validated_as: Optional[str] = None,
     ) -> None:
         """Fold a URI validator's ValidationError into the per-field error map.
 
@@ -426,10 +427,13 @@ class AbstractApplication(models.Model):
         ``clean()``. Honor the dict form by keying each of its messages to the field the
         validator named, which also lets a custom validator report on a field of a swapped
         application model.
+
+        *validated_as* names the field a shared validator was written for, when it was applied
+        to *field* instead: a dict-form error keyed to *validated_as* is reported on *field*.
         """
         if hasattr(exc, "error_dict"):
             for error_field, messages in exc.error_dict.items():
-                field_errors[error_field].extend(messages)
+                field_errors[field if error_field == validated_as else error_field].extend(messages)
         else:
             field_errors[field].extend(exc.error_list)
 
@@ -462,9 +466,16 @@ class AbstractApplication(models.Model):
         field_errors = defaultdict(list)
 
         redirect_uris = self.redirect_uris.strip().split()
+        # Post-logout redirect URIs are redirect targets too (OpenID Connect RP-Initiated
+        # Logout 1.0 section 3.1), so they get the same validator. Split before validating,
+        # as for redirect_uris, so every URI that post_logout_redirect_uri_allowed() can
+        # match is one that was validated.
+        post_logout_redirect_uris = self.post_logout_redirect_uris.strip().split()
+        if redirect_uris or post_logout_redirect_uris:
+            # Built once for both fields, so a database-backed factory queries once per save.
+            redirect_uri_validator = self.get_redirect_uri_validator()
 
         if redirect_uris:
-            redirect_uri_validator = self.get_redirect_uri_validator()
             for uri in redirect_uris:
                 try:
                     redirect_uri_validator(uri)
@@ -487,6 +498,34 @@ class AbstractApplication(models.Model):
                     allowed_origin_validator(uri)
                 except ValidationError as exc:
                     self._collect_uri_validation_error(field_errors, "allowed_origins", exc)
+
+        # In strict mode RP-Initiated Logout never redirects a client that is not confidential
+        # to an http URI (see validate_post_logout_redirect_uri()), so refuse to store one.
+        strict_post_logout = (
+            oauth2_settings.OIDC_ENABLED
+            and oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED
+            and oauth2_settings.OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS
+            and self.client_type != AbstractApplication.CLIENT_CONFIDENTIAL
+        )
+        for uri in post_logout_redirect_uris:
+            try:
+                redirect_uri_validator(uri)
+            except ValidationError as exc:
+                # The validator is shared with redirect_uris, so an error it keys to that field
+                # is about the post-logout URI it was given.
+                self._collect_uri_validation_error(
+                    field_errors, "post_logout_redirect_uris", exc, validated_as="redirect_uris"
+                )
+                continue
+            # A custom validator may accept a URI urlsplit() cannot parse; leave that one be.
+            with suppress(ValueError):
+                if strict_post_logout and urlsplit(uri).scheme == "http":
+                    field_errors["post_logout_redirect_uris"].append(
+                        ValidationError(
+                            _("http is only allowed with confidential clients: %(value)s"),
+                            params={"value": uri},
+                        )
+                    )
 
         if self.algorithm == AbstractApplication.RS256_ALGORITHM:
             if not oauth2_settings.OIDC_RSA_PRIVATE_KEY:
@@ -643,8 +682,9 @@ class AbstractApplication(models.Model):
 
     def get_redirect_uri_validator(self) -> Callable[[str], None]:
         """
-        Returns the validator ``clean()`` applies to each entry in ``redirect_uris``.
-        By default, builds one from the `REDIRECT_URI_VALIDATOR` setting.
+        Returns the validator ``clean()`` applies to each entry in ``redirect_uris`` and
+        ``post_logout_redirect_uris``. By default, builds one from the `REDIRECT_URI_VALIDATOR`
+        setting.
 
         The setting names a factory called with this application; the object it returns is
         called once per URI and raises ``ValidationError`` for anything unacceptable.

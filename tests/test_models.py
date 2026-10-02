@@ -1316,6 +1316,83 @@ def test_application_clean_reports_every_invalid_uri(oauth2_settings, applicatio
     assert "invalid-two" in messages[1]
 
 
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_validates_post_logout_redirect_uris(oauth2_settings, application):
+    """post_logout_redirect_uris get the redirect uri validator, keyed to their own field (#1896)."""
+    application.post_logout_redirect_uris = "javascript:alert(1)"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["post_logout_redirect_uris"]
+    assert "invalid_scheme: javascript:alert(1)" in exc.value.message_dict["post_logout_redirect_uris"][0]
+
+    application.post_logout_redirect_uris = "https://example.org/bye http://example.org/bye"
+    application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_validates_each_whitespace_separated_post_logout_redirect_uri(
+    oauth2_settings, application
+):
+    """Every URI post_logout_redirect_uri_allowed() can match is validated, whatever separates them."""
+    for separator in (" ", "\t", "\n"):
+        application.post_logout_redirect_uris = f"https://example.org/bye{separator}javascript:alert(1)"
+        with pytest.raises(ValidationError) as exc:
+            application.clean()
+        messages = exc.value.message_dict["post_logout_redirect_uris"]
+        assert len(messages) == 1
+        assert "javascript:alert(1)" in messages[0]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RP_LOGOUT_STRICT_REDIRECT_URI)
+def test_application_clean_strict_post_logout_redirect_uris(oauth2_settings, application):
+    """Strict RP-Initiated Logout never redirects a public client to http, so it is not stored."""
+    application.post_logout_redirect_uris = "https://example.org/bye http://example.org/bye"
+    application.clean()
+
+    application.client_type = Application.CLIENT_PUBLIC
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert exc.value.message_dict == {
+        "post_logout_redirect_uris": [
+            "http is only allowed with confidential clients: http://example.org/bye"
+        ]
+    }
+
+    # The setting has no effect while RP-Initiated Logout is disabled, so it refuses nothing.
+    oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = False
+    application.clean()
+    oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = True
+    oauth2_settings.OIDC_ENABLED = False
+    application.clean()
+    oauth2_settings.OIDC_ENABLED = True
+
+    oauth2_settings.OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS = False
+    application.clean()
+
+
+def accept_anything_redirect_uri_factory(application):
+    return lambda uri: None
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RP_LOGOUT_STRICT_REDIRECT_URI,
+        "REDIRECT_URI_VALIDATOR": "tests.test_models.accept_anything_redirect_uri_factory",
+    }
+)
+def test_application_clean_strict_post_logout_redirect_uris_tolerates_unparsable_uri(
+    oauth2_settings, application
+):
+    """A URI a custom validator lets through but urlsplit() cannot parse does not crash clean()."""
+    application.client_type = Application.CLIENT_PUBLIC
+    application.post_logout_redirect_uris = "http://[bad/bye"
+    application.clean()
+
+
 # --- Pluggable redirect uri / allowed origin validators (see #490) -------------------
 #
 # Module-level so the settings can name them by import string, which is what exercises
@@ -1366,11 +1443,29 @@ def test_application_clean_builds_the_redirect_uri_validator_once(oauth2_setting
     seen = []
     hook = mock.Mock(side_effect=lambda: seen.append)
     application.redirect_uris = "https://a.example/cb https://b.example/cb"
+    application.post_logout_redirect_uris = ""
     with mock.patch.object(type(application), "get_redirect_uri_validator", hook):
         application.clean()
 
     assert hook.call_count == 1
     assert seen == ["https://a.example/cb", "https://b.example/cb"]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_shares_the_redirect_uri_validator_with_post_logout_redirect_uris(
+    oauth2_settings, application
+):
+    """One factory call covers redirect_uris and post_logout_redirect_uris."""
+    seen = []
+    hook = mock.Mock(side_effect=lambda: seen.append)
+    application.redirect_uris = "https://a.example/cb"
+    application.post_logout_redirect_uris = "https://a.example/bye https://b.example/bye"
+    with mock.patch.object(type(application), "get_redirect_uri_validator", hook):
+        application.clean()
+
+    assert hook.call_count == 1
+    assert seen == ["https://a.example/cb", "https://a.example/bye", "https://b.example/bye"]
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -1417,6 +1512,7 @@ def test_redirect_uri_validator_setting_accepts_a_custom_scheme(oauth2_settings,
     assert "com.example.app" not in application.get_allowed_schemes()
 
     application.redirect_uris = "com.example.app:/oauth2redirect"
+    application.post_logout_redirect_uris = ""
     application.clean()
 
 
@@ -1430,10 +1526,29 @@ def test_redirect_uri_validator_setting_accepts_a_custom_scheme(oauth2_settings,
 def test_redirect_uri_validator_setting_can_reject(oauth2_settings, application):
     """A rejection from a custom validator is still keyed to redirect_uris."""
     application.redirect_uris = "https://example.org/cb"
+    application.post_logout_redirect_uris = ""
     with pytest.raises(ValidationError) as exc:
         application.clean()
     assert list(exc.value.message_dict) == ["redirect_uris"]
     assert "nope: https://example.org/cb" in exc.value.message_dict["redirect_uris"][0]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RW,
+        "REDIRECT_URI_VALIDATOR": "tests.test_models.deny_all_redirect_uri_factory",
+    }
+)
+def test_redirect_uri_validator_setting_applies_to_post_logout_redirect_uris(oauth2_settings, application):
+    """A custom redirect uri policy also gates post_logout_redirect_uris."""
+    application.redirect_uris = ""
+    application.authorization_grant_type = Application.GRANT_CLIENT_CREDENTIALS
+    application.post_logout_redirect_uris = "https://example.org/bye"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["post_logout_redirect_uris"]
+    assert "nope: https://example.org/bye" in exc.value.message_dict["post_logout_redirect_uris"][0]
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -1468,6 +1583,7 @@ def test_redirect_uri_validator_setting_accepts_a_class(oauth2_settings, applica
 def test_application_model_hook_overrides_the_setting(oauth2_settings, application):
     """What a swapped model overrides -- the hook wins over the configured default."""
     application.redirect_uris = "com.example.app:/oauth2redirect"
+    application.post_logout_redirect_uris = ""
     with pytest.raises(ValidationError):
         application.clean()
 
@@ -1503,10 +1619,49 @@ def test_uri_validator_settings_may_not_be_none(oauth2_settings, application, se
 def test_custom_validator_may_raise_a_field_keyed_error(oauth2_settings, application):
     """A dict-built ValidationError is honored rather than crashing on error_list."""
     application.redirect_uris = "https://example.org/cb"
+    application.post_logout_redirect_uris = ""
     with pytest.raises(ValidationError) as exc:
         application.clean()
     assert list(exc.value.message_dict) == ["allowed_origins"]
     assert exc.value.message_dict["allowed_origins"] == ["reported on another field"]
+
+
+def redirect_uris_keyed_error_factory(application):
+    """Rejects any URI with an error keyed to redirect_uris, as a redirect-only validator would."""
+
+    def validate(uri):
+        raise ValidationError(
+            {
+                "redirect_uris": [f"scheme not approved: {uri}"],
+                "post_logout_redirect_uris": [f"also refused: {uri}"],
+            }
+        )
+
+    return validate
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(
+    {
+        **presets.OIDC_SETTINGS_RW,
+        "REDIRECT_URI_VALIDATOR": "tests.test_models.redirect_uris_keyed_error_factory",
+    }
+)
+def test_redirect_uris_keyed_error_for_a_post_logout_uri_is_reported_on_its_field(
+    oauth2_settings, application
+):
+    """An error the shared validator keys to redirect_uris names the field that holds the URI."""
+    application.redirect_uris = ""
+    application.authorization_grant_type = Application.GRANT_CLIENT_CREDENTIALS
+    application.post_logout_redirect_uris = "https://example.org/bye"
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert exc.value.message_dict == {
+        "post_logout_redirect_uris": [
+            "scheme not approved: https://example.org/bye",
+            "also refused: https://example.org/bye",
+        ]
+    }
 
 
 def _client_assertion_application(**kwargs):

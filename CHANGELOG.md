@@ -166,6 +166,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `authenticate_client()`, and records the authenticated client on the Django request; its
   `authenticate_client()` delegates to it. See "Who may introspect" in `docs/resource_server.rst`.
 ### Changed
+* #1896 `Application.clean()` now validates each entry in `post_logout_redirect_uris` with the
+  `REDIRECT_URI_VALIDATOR` (by default against `ALLOWED_REDIRECT_URI_SCHEMES`), reporting problems on
+  that field, as it already did for `redirect_uris`. While RP-Initiated Logout is enabled with
+  `OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS` on, it also refuses an `http` entry for an
+  application that is not confidential, since RP-Initiated Logout would never redirect to it. This
+  applies to the admin, the application management views, `manage.py createapplication` and Dynamic
+  Client Registration alike, so an application whose stored post-logout redirect URIs break either
+  rule is now refused there until they are corrected.
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
   being applied inconsistently: `0` previously meant "expire immediately" for the stored token while
