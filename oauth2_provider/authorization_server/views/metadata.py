@@ -42,6 +42,20 @@ def bcp_filter_response_types(response_types):
     return [rt for rt in response_types if not _is_implicit_response_type(rt)]
 
 
+def bcp_filter_grant_types(grant_types):
+    """
+    Drop ``implicit`` and ``password`` from a discovery list when their gates
+    (``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT`` / ``COMPLIANT_BCP_RFC9700_PASSWORD_GRANT``)
+    are enabled. Shared by the RFC 8414 and OIDC discovery documents.
+    """
+    grant_types = list(grant_types)
+    if oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT:
+        grant_types = [gt for gt in grant_types if gt != "implicit"]
+    if oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT:
+        grant_types = [gt for gt in grant_types if gt != "password"]
+    return grant_types
+
+
 def bcp_filter_code_challenge_methods(methods):
     """
     Drop the ``plain`` PKCE method when its gate
@@ -100,11 +114,7 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
         # COMPLIANT_BCP_RFC9700_* gate has enabled, so discovery reflects what
         # the server will actually accept.
         response_types = bcp_filter_response_types(oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED)
-        grant_types = list(oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED)
-        if oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT:
-            grant_types = [gt for gt in grant_types if gt != "implicit"]
-        if oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT:
-            grant_types = [gt for gt in grant_types if gt != "password"]
+        grant_types = bcp_filter_grant_types(oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED)
 
         data = {
             "issuer": issuer_url,
