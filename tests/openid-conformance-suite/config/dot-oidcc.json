@@ -175,7 +175,7 @@
                                     "//*",
                                     10,
                                     "Log In",
-                                    "update-image-placeholder"
+                                    "update-image-placeholder-optional"
                                 ],
                                 [
                                     "text",

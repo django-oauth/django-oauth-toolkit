@@ -5,6 +5,7 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import View
 
 from oauth2_provider.authorization_server import par
+from oauth2_provider.authorization_server.oidc.max_age import INVALID_MAX_AGE_DESCRIPTION, is_valid_max_age
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.exceptions import OAuthToolkitError
@@ -93,9 +94,20 @@ class PushedAuthorizationRequestView(FormEncodedRequestMixin, AuthorizationServe
         # request. Parameters arrive in the POST body; oauthlib merges the body into
         # its Request, so the existing authorization validation applies unchanged.
         try:
-            core.validate_authorization_request(request)
+            scopes, _credentials = core.validate_authorization_request(request)
         except OAuthToolkitError as error:
             return self._error_from_oauthlib(error)
+        # The authorization endpoint checks prompt and max_age itself (oauthlib
+        # does not), so check them here too: the pushed request must be validated
+        # as it would be there (RFC 9126 §2.1). A repeat, counting the query
+        # string and the body together, would otherwise be stored as one value.
+        oidc_request = oauth2_settings.OIDC_ENABLED and "openid" in scopes
+        for name in ("prompt", "max_age") if oidc_request else ("prompt",):
+            if len(request.GET.getlist(name)) + len(request.POST.getlist(name)) > 1:
+                return self._error_response("invalid_request", f"{name} must not be repeated.", status=400)
+        max_age = request.POST.get("max_age", request.GET.get("max_age"))
+        if max_age and oidc_request and not is_valid_max_age(max_age):
+            return self._error_response("invalid_request", INVALID_MAX_AGE_DESCRIPTION, status=400)
 
         parameters = par.collect_pushed_parameters(request)
         request_uri, expires_in = par.store_pushed_request(client.client_id, parameters)

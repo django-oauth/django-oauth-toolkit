@@ -6,5 +6,8 @@ class DOTConfig(AppConfig):
     verbose_name = "Django OAuth Toolkit"
 
     def ready(self):
+        # Connect the receiver that records when each session was authenticated.
+        from .authorization_server import sessions  # noqa: F401
+
         # Import checks to ensure they run.
         from .core import checks  # noqa: F401

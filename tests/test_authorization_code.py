@@ -821,14 +821,19 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertIn("scope=read+write", next)
         self.assertIn(f"client_id={self.application.client_id}", next)
 
-        self.assertNotIn("prompt=login", next)
+        # The prompt stays in the request until the login has been verified.
+        self.assertIn("prompt=login", next)
+
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(next)
+        self.assertEqual(response.status_code, 200)
 
     def test_prompt_login_unauthenticated_single_redirect(self):
         """
         An unauthenticated prompt=login request goes straight to the login
-        page with the prompt stripped from next: logging in satisfies the
-        prompt, so the user must not be bounced to login a second time when
-        they return to the authorization endpoint authenticated.
+        page: logging in satisfies the prompt, so the user must not be bounced
+        to login a second time when they return to the authorization endpoint
+        authenticated.
         """
         self.oauth2_settings.PKCE_REQUIRED = False
 
@@ -849,9 +854,13 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertEqual(path, settings.LOGIN_URL)
 
         next = parse_qs(query)["next"][0]
-        self.assertNotIn("prompt=login", next)
+        self.assertIn("prompt=login", next)
         self.assertIn("state=random_state_string", next)
         self.assertIn(f"client_id={self.application.client_id}", next)
+
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(next)
+        self.assertEqual(response.status_code, 200)
 
     def test_prompt_none_unauthorized(self):
         """

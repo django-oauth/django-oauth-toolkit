@@ -225,8 +225,9 @@ class TestAuthorizationRequestByPost(TestCase):
         next_url = urlparse(parse_qs(login.query)["next"][0])
         self.assertEqual(next_url.path, self.authorize_url)
         next_parameters = parse_qs(next_url.query)
-        # The prompt is consumed; the rest of the request comes from the body.
-        self.assertNotIn("prompt", next_parameters)
+        # The prompt is kept until the login has been verified; the rest of the
+        # request comes from the body.
+        self.assertEqual(next_parameters["prompt"], ["login"])
         self.assertEqual(next_parameters["client_id"], [self.application.client_id])
         self.assertEqual(next_parameters["nonce"], ["random_nonce_string"])
 

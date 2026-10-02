@@ -20,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   application, and return them in registration, read and update responses. A PUT that omits the field
   clears it. An entry that is empty or contains whitespace is refused, as are entries
   `Application.clean()` refuses (see Changed).
+* #1013 The authorization endpoint supports the OpenID Connect `max_age` parameter (OpenID Connect
+  Core 1.0 §3.1.2.1). When the login that authenticated the user's current browser session is older
+  than `max_age` seconds, the user is sent to log in again; `max_age=0` is treated as
+  `prompt=login`. Each login is recorded in the Django session it authenticated, with its time and
+  an identifier, when Django's `login()` runs, so a login in another browser does not count; a
+  session authenticated before this was recorded is asked to log in. The login the endpoint asked
+  for satisfies `max_age`, so it does not loop, and coming back without logging in gets
+  `login_required`. `prompt=none` gets `login_required` instead of a login page; a value that is not
+  a non-negative integer, or a repeated `prompt` or `max_age`, gets `invalid_request`, at the
+  authorization and PAR endpoints. `max_age` is read from pushed authorization requests too. The ID
+  Token's `auth_time` is still taken from the user's `last_login`, which every session of the
+  account shares, so it can report a login made in another browser. The `oidcc-max-age-1`
+  conformance module now passes in the Basic, Implicit and Hybrid plans.
 * #1882 New `OIDC_COMPLIANT_SCOPE_CLAIMS` setting. When `True`, the claims requested by the
   `profile`, `email`, `address` and `phone` scope values are returned from the UserInfo endpoint
   and left out of the ID Token whenever an access token is issued, and are put in the ID Token only
@@ -292,6 +305,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1013 `prompt=login` now works with pushed authorization requests (RFC 9126). The pushed
+  `request_uri` is used up when the authorization request is read, yet the login page's return URL
+  carried the expanded parameters instead, which a client required to use PAR could not complete.
+  The parameters are now pushed again for the same client, and the return URL carries only the new
+  `request_uri`, which expires after `PAR_REQUEST_URI_LIFETIME_SECONDS`. Repeated `resource`
+  parameters are no longer reduced to the last one in the `prompt=login` return URL.
+* #1013 `prompt=login` can no longer be skipped by following the login page's return URL without
+  logging in. The prompt used to be dropped from that URL; it is now kept, and the login the
+  authorization endpoint asked for is verified by checking that the current session has been
+  authenticated by a new login since. Coming back without one gets `login_required` for the client,
+  and an anonymous user with a pushed `prompt=login` request logs in once rather than twice.
 * #1894 The authorization endpoint accepts the authorization request by HTTP POST, with the
   parameters form-serialized in the body, as OpenID Connect Core 1.0 §3.1.2.1 requires; it was
   refused as a consent submission without a CSRF token. It answers with a redirect (303) to the

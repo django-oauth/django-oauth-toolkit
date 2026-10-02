@@ -1,13 +1,16 @@
 import base64
 import hashlib
 import json
+import time
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from oauth2_provider.authorization_server.par import REQUEST_URI_PREFIX
+from oauth2_provider.authorization_server.sessions import AUTH_EVENT_SESSION_KEY, AUTH_TIME_SESSION_KEY
 from oauth2_provider.models import (
     create_pushed_authorization_request,
     get_application_model,
@@ -530,6 +533,163 @@ class TestPAREnforcement(PARBaseTestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("required for this client", response.content.decode().lower())
+
+
+class TestPARReauthentication(PARBaseTestCase):
+    """A pushed request that needs the user to log in again survives the login."""
+
+    def setUp(self):
+        super().setUp()
+        # The login redirect must work for a client that may only use PAR.
+        self.application.require_pushed_authorization_requests = True
+        self.application.save()
+
+    def _authorize(self, request_uri):
+        return self.client.get(
+            self.authorize_url, {"client_id": self.application.client_id, "request_uri": request_uri}
+        )
+
+    def _next_url(self, response):
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.path, settings.LOGIN_URL)
+        return parse_qs(location.query)["next"][0]
+
+    def test_prompt_login_pushes_the_request_again(self):
+        push = self.push(
+            extra={"prompt": "login", "resource": ["https://api.example.com", "https://other.example.com"]}
+        )
+        request_uri = json.loads(push.content)["request_uri"]
+        self.client.login(username="test_user", password="123456")
+
+        next_url = urlparse(self._next_url(self._authorize(request_uri)))
+
+        # The return URL carries only a new request_uri for the same client; the
+        # one the client sent has been used.
+        self.assertEqual(next_url.path, self.authorize_url)
+        next_query = parse_qs(next_url.query)
+        self.assertEqual(set(next_query), {"client_id", "request_uri"})
+        self.assertEqual(next_query["client_id"], [self.application.client_id])
+        new_request_uri = next_query["request_uri"][0]
+        self.assertTrue(new_request_uri.startswith(REQUEST_URI_PREFIX))
+        self.assertNotEqual(new_request_uri, request_uri)
+        pushed = PushedAuthorizationRequest.objects.get(request_uri=new_request_uri)
+        self.assertEqual(pushed.client_id, self.application.client_id)
+        # The prompt stays on the server until the login has been verified.
+        self.assertEqual(pushed.parameters["prompt"], "login")
+        self.assertEqual(pushed.parameters["state"], "some_state")
+        self.assertEqual(
+            pushed.parameters["resource"], ["https://api.example.com", "https://other.example.com"]
+        )
+
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(f"{next_url.path}?{next_url.query}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context_data["state"], "some_state")
+
+    def test_expired_max_age_pushes_the_request_again(self):
+        self.oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+        push = self.push(extra={"scope": "openid read", "max_age": "60"})
+        request_uri = json.loads(push.content)["request_uri"]
+        self.client.login(username="test_user", password="123456")
+        session = self.client.session
+        session[AUTH_TIME_SESSION_KEY] = time.time() - 3600
+        session.save()
+
+        # max_age is read from the pushed request, not from the query.
+        next_url = urlparse(self._next_url(self._authorize(request_uri)))
+
+        next_query = parse_qs(next_url.query)
+        self.assertEqual(set(next_query), {"client_id", "request_uri"})
+        pushed = PushedAuthorizationRequest.objects.get(request_uri=next_query["request_uri"][0])
+        self.assertEqual(pushed.parameters["max_age"], "60")
+
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(f"{next_url.path}?{next_url.query}")
+        self.assertEqual(response.status_code, 200)
+
+    def test_anonymous_prompt_login_logs_in_once(self):
+        # The pushed prompt is not in the query, so the login that LoginRequiredMixin
+        # asks for is the one that satisfies it.
+        push = self.push(extra={"prompt": "login"})
+        request_uri = json.loads(push.content)["request_uri"]
+
+        next_url = self._next_url(self._authorize(request_uri))
+        self.assertIn(urlencode({"request_uri": request_uri}), next_url)
+
+        self.client.login(username="test_user", password="123456")
+        response = self.client.get(next_url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_malformed_max_age_is_rejected_when_pushed(self):
+        # The pushed request is validated as at the authorization endpoint.
+        self.oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+        response = self.push(extra={"scope": "openid read", "max_age": "abc"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content)["error"], "invalid_request")
+
+        response = self.push(extra={"scope": "openid read", "max_age": "60"})
+        self.assertEqual(response.status_code, 201)
+
+    def test_query_max_age_beside_a_pushed_request_is_ignored(self):
+        # The pushed request is authoritative: a stray max_age in the query does
+        # not change how an anonymous user is handled.
+        self.oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+        request_uri = json.loads(self.push(extra={"scope": "openid read"}).content)["request_uri"]
+
+        response = self.client.get(
+            self.authorize_url,
+            {"client_id": self.application.client_id, "request_uri": request_uri, "max_age": "abc"},
+        )
+        self._next_url(response)
+
+    def test_anonymous_pushed_request_authenticated_without_a_recorded_login(self):
+        # A login that does not go through Django's login() records no login
+        # identifier; a pushed request that asks for no new login still works.
+        request_uri = json.loads(self.push().content)["request_uri"]
+        next_url = self._next_url(self._authorize(request_uri))
+        self.client.login(username="test_user", password="123456")
+        session = self.client.session
+        session.pop(AUTH_EVENT_SESSION_KEY)
+        session.save()
+
+        response = self.client.get(next_url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_repeated_parameters_are_rejected_when_pushed(self):
+        self.oauth2_settings.update(presets.OIDC_SETTINGS_RW)
+        # Split between the query string and the body.
+        response = self.push(extra={"scope": "openid read", "max_age": "0"}, QUERY_STRING="max_age=999999")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content)["error"], "invalid_request")
+
+        response = self.push(extra={"prompt": ["login", "none"]})
+        self.assertEqual(response.status_code, 400)
+
+    def test_following_the_return_url_without_logging_in_is_login_required(self):
+        self.client.login(username="test_user", password="123456")
+        request_uri = json.loads(self.push(extra={"prompt": "login"}).content)["request_uri"]
+        next_url = self._next_url(self._authorize(request_uri))
+
+        # The pushed request keeps its prompt=login, so a session that skips the
+        # login page does not reach consent; the client gets the error.
+        response = self.client.get(next_url)
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}", "http://example.org")
+        query = parse_qs(location.query)
+        self.assertEqual(query["error"], ["login_required"])
+        self.assertEqual(query["state"], ["some_state"])
+
+    def test_prompt_login_without_logging_in_is_sent_to_login_again(self):
+        self.client.login(username="test_user", password="123456")
+        first = json.loads(self.push(extra={"prompt": "login"}).content)["request_uri"]
+        self._next_url(self._authorize(first))
+
+        # Being sent to log in is not logging in: a stale session that skips the
+        # login page is asked again.
+        second = json.loads(self.push(extra={"prompt": "login"}).content)["request_uri"]
+        self._next_url(self._authorize(second))
 
 
 @pytest.mark.usefixtures("oauth2_settings")
