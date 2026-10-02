@@ -182,6 +182,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   way, to `oauth2_provider.authorization_server.{par,views.par}`. Because all of these modules are new
   in this unreleased cycle, they move without shims or deprecations. The package layout and its
   conventions are documented in `docs/package_layout.rst` (and summarized for agents in `AGENTS.md`).
+* #1874 An RFC 7592 `PUT` echoing an `id_token_signed_response_alg: HS256` that an administrator set is
+  now refused with `invalid_client_metadata` when the stored client secret is shorter than 32 octets,
+  since OpenID Connect Core 1.0 section 16.19 requires an HS256 client secret to hold at least that
+  many. The application is left unchanged. The default `CLIENT_SECRET_GENERATOR_LENGTH` of 128
+  satisfies it. An echoed value the client no longer qualifies for is still refused, but the
+  `error_description` now reads `id_token_signed_response_alg '<value>' is not available for this
+  client:` followed by the specific reason, instead of the previous single message naming
+  `client_secret_jwt` and the implicit grant.
+* #1874 The Dynamic Client Registration documentation now states that `id_token_signed_response_alg`
+  accepts only `RS256` at registration, and why `HS256` is not offered to dynamically registered
+  clients: `HS256` would make the client secret the ID Token signing key, and `RS256` is the
+  algorithm OpenID Connect Core 1.0 section 15.1 requires of an OpenID Provider that signs its ID
+  Tokens and OpenID Connect Discovery requires in `id_token_signing_alg_values_supported`. A newly
+  requested `HS256` is still refused, now with a message saying so. #1871, which proposed offering
+  it, is closed as not planned.
 
 ### Deprecated
 * `oauth2_provider.core.backends_oauthlib._add_iss_to_redirect` was promoted to the public
@@ -237,11 +252,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OIDC_ENABLED` and `OIDC_RSA_PRIVATE_KEY` are configured (the only algorithm a public or
   hashed-secret client can use), and no algorithm otherwise. An explicit
   `id_token_signed_response_alg` is honoured when it is `RS256` and refused otherwise
-  (`invalid_client_metadata` for DCR, an invalid document for CIMD; `HS256` for `client_secret_jwt`
-  clients is #1871). DCR responses report the registered `id_token_signed_response_alg`, and both a
+  (`invalid_client_metadata` for DCR, an invalid document for CIMD; `HS256` is not offered,
+  see #1871). DCR responses report the registered `id_token_signed_response_alg`, and both a
   CIMD re-fetch and a DCR `PUT` re-derive it, so a client registered before the key existed gains
-  `RS256` on its next refresh or update (a `PUT` echoing the reported value keeps it while the
-  server can still honour it). Note that a CIMD document naming any other algorithm was previously
+  `RS256` on its next refresh or update (a `PUT` echoing the reported `RS256` keeps it while the
+  server can still sign with it). Note that a CIMD document naming any other algorithm was previously
   accepted with the parameter ignored and is now refused: an existing client keeps its last good
   registration but no longer picks up document changes until the parameter is removed.
 * The OpenID Connect discovery document (`/.well-known/openid-configuration`) now advertises
@@ -320,6 +335,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A duplicate can now only arise from a custom `REFRESH_TOKEN_GENERATOR` that returns an
   already-stored value; `_create_refresh_token` logs that and raises `InvalidGrantError`, so
   the token endpoint answers `400 invalid_grant` rather than raising a 500.
+* An RFC 7592 `PUT` switching a dynamically registered client whose secret is stored hashed to
+  `token_endpoint_auth_method: client_secret_jwt` is now refused with `invalid_client_metadata`
+  naming the RFC 7591 metadata, explaining that the secret cannot be recovered and a new client must
+  be registered. It was refused before too, but with an error naming the model fields
+  `client_secret` and `hash_client_secret`.
 
 ### Security
 * #1451 The token introspection endpoint could be called by a caller that had not really

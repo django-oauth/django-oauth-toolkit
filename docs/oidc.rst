@@ -152,6 +152,18 @@ scopes in your ``settings.py``::
     ``RS256`` is the more secure algorithm for signing your JWTs. Only use ``HS256`` if you must.
     Using ``RS256`` will allow you to keep your ``client_secret`` hashed.
 
+``HS256`` is set by an administrator. Because the client secret is the HMAC
+key, it must be at least 32 octets long, as `OpenID Connect Core 1.0 section
+16.19 <https://openid.net/specs/openid-connect-core-1_0.html#SymmetricKeyEntropy>`_
+requires; the default ``CLIENT_SECRET_GENERATOR_LENGTH`` of 128 satisfies it.
+Clients that register themselves, through :doc:`Dynamic Client Registration
+<views/dynamic_client_registration>` or a :doc:`Client ID Metadata Document
+<cimd>`, cannot request ``HS256``: they are given ``RS256`` when the server has
+an ``OIDC_RSA_PRIVATE_KEY``, and no signing algorithm otherwise, so a server
+that should issue them ID Tokens needs an RSA key. An administrator can still
+set ``HS256`` on a dynamically registered client; the Dynamic Client
+Registration page describes when an update keeps it.
+
 
 RP-Initiated Logout
 ~~~~~~~~~~~~~~~~~~~

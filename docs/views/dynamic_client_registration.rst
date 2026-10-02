@@ -74,7 +74,12 @@ Read, update, or delete the client configuration (RFC 7592).  Requires a
   same JSON body as POST and **must include every metadata field the client wants to keep**. Omitted
   fields are reset to their registration defaults — for example, an omitted ``token_endpoint_auth_method``
   reverts the client to confidential and an omitted ``client_name`` clears the name. Read the current
-  configuration with ``GET`` first, modify it, and send the complete document back.
+  configuration with ``GET`` first, modify it, and send the complete document back. Every
+  ``token_endpoint_auth_method`` other than ``client_secret_jwt`` stores the secret hashed, whether
+  the client was registered with it or switched to it by a later ``PUT``, and a hash cannot be turned
+  back into the secret. A ``PUT`` switching such a client to ``client_secret_jwt``, whose HMAC key is
+  the plaintext secret, is therefore refused with ``invalid_client_metadata``; register a new client
+  instead.
 - **DELETE** — deletes the application and all associated tokens; returns 204
 
 
@@ -110,17 +115,37 @@ Field Mapping
     ``OIDC_RSA_PRIVATE_KEY``, so a dynamically registered client can use OpenID Connect without any
     manual step; otherwise the application is stored with no signing algorithm and cannot be issued
     ID Tokens. An explicit value the server cannot honour is rejected with ``invalid_client_metadata``
-    rather than substituted; today that is anything other than ``RS256``, since ``HS256`` signs with
-    the plaintext client secret, which registration stores hashed (honouring it for
-    ``client_secret_jwt`` clients, whose secret is kept in plaintext, is tracked in
-    `#1871 <https://github.com/django-oauth/django-oauth-toolkit/issues/1871>`_). The registered
-    value is reported in registration and management responses, and ``PUT`` re-derives it like every
-    other field, so a client registered before the server could sign gains ``RS256`` on its next
-    update. A ``PUT`` that sends back the value a previous response reported keeps it, even one set
-    outside registration (an administrator choosing ``HS256``), since RFC 7592 has the client echo
-    every field it was given, provided the server can still sign with it and the rest of the update
-    leaves the application valid for it (``HS256`` needs ``client_secret_jwt`` and a non-implicit
-    grant); omitting the parameter on ``PUT`` resets it to the default.
+    rather than substituted.
+
+    Registration accepts ``RS256`` only, which needs OpenID Connect enabled and an
+    ``OIDC_RSA_PRIVATE_KEY``. ``HS256`` is not offered to dynamically registered clients, whatever
+    their ``token_endpoint_auth_method``, because it would make the client secret the ID Token
+    signing key. ``RS256`` is the algorithm `OpenID Connect Core 1.0 section 15.1
+    <https://openid.net/specs/openid-connect-core-1_0.html#ServerMTI>`_ requires of an OpenID Provider
+    that signs its ID Tokens, and the one OpenID Connect Discovery requires in
+    ``id_token_signing_alg_values_supported``. Requesting ``HS256`` is refused with
+    ``invalid_client_metadata``.
+
+    The registered value is reported in registration and management responses, and ``PUT``
+    re-derives it like every other field: a client registered before the server could sign gains
+    ``RS256`` on its next update, and omitting the parameter resets it to the default. Because RFC
+    7592 has the client send back every field it was given, a ``PUT`` may also echo the value a
+    previous response reported, even one set outside registration:
+
+    - an ``HS256`` an administrator set is kept when echoed, even while OpenID Connect is disabled,
+      provided the client remains eligible for it: a confidential client using
+      ``client_secret_jwt`` (the one method that keeps the secret in plaintext, as the HMAC key), a
+      grant other than the implicit or hybrid one, and a stored client secret of at least 32 octets
+      (`OpenID Connect Core 1.0 section 16.19
+      <https://openid.net/specs/openid-connect-core-1_0.html#SymmetricKeyEntropy>`_; the default
+      ``CLIENT_SECRET_GENERATOR_LENGTH`` of 128 satisfies it). Otherwise the ``PUT`` is refused with
+      the reason and the application is left unchanged. A ``PUT`` asking for ``HS256`` when the
+      application does not already have it is refused as at registration;
+    - any other value an administrator set that registration does not offer, such as one a swapped
+      application model allows, is likewise kept when echoed while the client stays on
+      ``client_secret_jwt`` with a grant other than the implicit or hybrid one;
+    - an echoed ``RS256`` is kept only while the server can still sign with it, that is with OpenID
+      Connect enabled and an ``OIDC_RSA_PRIVATE_KEY``.
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since

@@ -24,8 +24,6 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from oauth2_provider.authorization_server.oidc.client_metadata import (
-    ID_TOKEN_SIGNED_RESPONSE_ALG,
-    SUPPORTED_ID_TOKEN_ALGS,
     UnsupportedClientMetadataError,
     id_token_signed_response_alg,
     id_token_signing_algorithm,
@@ -159,14 +157,22 @@ def _resolve_grant_type(grant_types):
 
 
 def _build_application_kwargs(
-    data: dict[str, Any], *, current_algorithm: str = ""
+    data: dict[str, Any],
+    *,
+    client_secret: str = "",
+    client_secret_is_hashed: bool = False,
+    current_algorithm: str = "",
 ) -> tuple[dict[str, Any] | None, JsonResponse | None]:
     """
     Convert RFC 7591 metadata dict to Application field kwargs.
 
-    *current_algorithm* is the stored ``algorithm`` on an update (RFC 7592
-    PUT), so a client echoing the value a previous response reported is not
-    refused. Returns (kwargs_dict, error_response).
+    On an update (RFC 7592 PUT) the caller passes the stored ``client_secret``,
+    whether the application reports it as hashed, and the stored
+    ``algorithm``, so a switch to client_secret_jwt can be refused for a
+    hashed secret and a client echoing the value a previous response reported
+    is not refused. Registration leaves them at their defaults: a freshly
+    issued secret is never hashed and there is no algorithm to echo. Returns
+    (kwargs_dict, error_response).
     """
     kwargs = {}
 
@@ -278,31 +284,43 @@ def _build_application_kwargs(
     # plaintext (the raw secret is returned in the registration response either
     # way); every other method keeps the hashed-at-rest default.
     kwargs["hash_client_secret"] = auth_method != "client_secret_jwt"
+    # A PUT switching a client registered with another method to
+    # client_secret_jwt finds its secret already hashed, and a hash cannot be
+    # turned back into the key. Application.clean() refuses that too, but in
+    # terms of hash_client_secret and client_secret; fail here with the RFC names.
+    # The caller asks the application itself, as Application.clean() does, so a
+    # swapped model's own detection applies.
+    if auth_method == "client_secret_jwt" and client_secret_is_hashed:
+        return None, _error_response(
+            "invalid_client_metadata",
+            "token_endpoint_auth_method 'client_secret_jwt' requires a plaintext client secret, "
+            "but this client's secret is stored hashed and cannot be recovered; register a new "
+            "client to use client_secret_jwt",
+        )
 
     # id_token_signed_response_alg → algorithm (OpenID Connect Dynamic Client
     # Registration 1.0 section 2). Always set, so a PUT without it resets to
     # the default like the fields above (RFC 7592 section 2.2).
+    #
+    # HS256 is never granted on request. The client facts derived above decide
+    # whether an echoed administrator-set value is kept on a PUT: the client
+    # must stay on client_secret_jwt and off the implicit/hybrid grants, and
+    # for HS256, which signs with the plaintext secret, the secret must be long
+    # enough to be the key. Application.clean() enforces the HS256 rule (bar
+    # the length), but in terms of hash_client_secret and algorithm, fields a
+    # registering client cannot set; the helper fails with the RFC names
+    # instead.
     try:
-        kwargs["algorithm"] = id_token_signing_algorithm(data, current=current_algorithm)
+        kwargs["algorithm"] = id_token_signing_algorithm(
+            data,
+            current=current_algorithm,
+            client_type=kwargs["client_type"],
+            token_endpoint_auth_method=auth_method,
+            authorization_grant_type=dot_grant,
+            client_secret=client_secret,
+        )
     except UnsupportedClientMetadataError as exc:
         return None, _error_response("invalid_client_metadata", str(exc))
-    # An echoed value registration would not itself grant (an administrator's
-    # HS256) is kept only while the rest of this request still allows it:
-    # HS256 signs with the plaintext secret, so the client must stay on
-    # client_secret_jwt and off the implicit/hybrid grants. Application.clean()
-    # enforces the same rule, but in terms of hash_client_secret and
-    # algorithm, fields a registering client cannot set; fail here with the
-    # RFC names instead.
-    if kwargs["algorithm"] and kwargs["algorithm"] not in SUPPORTED_ID_TOKEN_ALGS:
-        if auth_method != "client_secret_jwt" or dot_grant in (
-            AbstractApplication.GRANT_IMPLICIT,
-            AbstractApplication.GRANT_OPENID_HYBRID,
-        ):
-            return None, _error_response(
-                "invalid_client_metadata",
-                f"{ID_TOKEN_SIGNED_RESPONSE_ALG} {kwargs['algorithm']!r} requires "
-                "token_endpoint_auth_method client_secret_jwt and a grant type other than implicit",
-            )
 
     return kwargs, None
 
@@ -615,7 +633,12 @@ class DynamicClientRegistrationManagementView(View):
         if err:
             return err
 
-        app_kwargs, err = _build_application_kwargs(data, current_algorithm=application.algorithm)
+        app_kwargs, err = _build_application_kwargs(
+            data,
+            client_secret=application.client_secret,
+            client_secret_is_hashed=application._client_secret_is_hashed(application.client_secret),
+            current_algorithm=application.algorithm,
+        )
         if err:
             return err
 
