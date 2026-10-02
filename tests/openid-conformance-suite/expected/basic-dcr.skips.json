@@ -1,0 +1,8 @@
+[
+    {
+        "test-name": "oidcc-idtoken-unsigned",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "comment": "The suite skips this module because id_token_signing_alg_values_supported does not include 'none'; OPs are not required to support unsigned ID Tokens, and the toolkit deliberately does not."
+    }
+]

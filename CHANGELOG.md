@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* An `openid-conformance-suite` CI job and `tox -e openid-conformance-suite` environment
+  (`tests/openid-conformance-suite/`) that run the OpenID Foundation conformance suite against the
+  `tests/app/idp` demo provider in Docker: the Config, Basic, Implicit, Hybrid, Dynamic and
+  RP-Initiated Logout OP certification plans, with static and RFC 7591 dynamically registered
+  clients, one CI matrix entry per plan, the suite version pinned and accepted deviations recorded
+  in per-plan expected-failures files. Each plan's known gaps are recorded as a baseline
+  (`tests/openid-conformance-suite/baseline.py` regenerates it), so any conformance regression
+  fails CI.
 * #1730 A `cleardcrapplications` management command that deletes DCR-registered applications
   (`registration_source="dcr"`) which hold no live tokens or grants and were last registered or
   modified at least `--min-unmodified-days` days ago (default 7). DCR clients that re-register
@@ -236,6 +244,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server can still honour it). Note that a CIMD document naming any other algorithm was previously
   accepted with the parameter ignored and is now refused: an existing client keeps its last good
   registration but no longer picks up document changes until the parameter is removed.
+* The OpenID Connect discovery document (`/.well-known/openid-configuration`) now advertises
+  `registration_endpoint` when `DCR_ENABLED` is on, as the RFC 8414 metadata document already did.
+  Relying parties and the OpenID conformance suite locate the RFC 7591 endpoint through OpenID
+  Connect Discovery, where it is a RECOMMENDED field.
 * #1846 The `iss` authorization-response parameter (RFC 9207, gated by
   `COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`) is now added to error redirects as well as
   successful ones. RFC 9207 §2 requires it on every authorization response, but it was only

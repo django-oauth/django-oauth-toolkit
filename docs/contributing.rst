@@ -478,6 +478,30 @@ not have; that is also why there is no ``docker/oracle-init`` directory. The Ora
 single-process: pytest-xdist gives each worker its own ``TEST['NAME']``, but Oracle derives the test schema from
 ``TEST['USER']``, which the workers would share.
 
+OpenID Foundation conformance suite
+-----------------------------------
+
+``tests/openid-conformance-suite`` runs the official `OpenID Conformance Suite
+<https://openid.net/certification/about-conformance-suite/>`_, the test modules used for OpenID
+Provider certification, against the ``tests/app/idp`` demo provider inside Docker: every
+certification plan whose profile the toolkit implements (Config, Basic, Implicit, Hybrid, Dynamic
+and RP-Initiated Logout, with static and dynamically registered clients). CI runs it as the
+``openid-conformance-suite`` job, one matrix entry per plan. Locally (Docker required)::
+
+  tox -e openid-conformance-suite                  # every plan
+  tox -e openid-conformance-suite -- --plan basic  # one plan; --list-plans shows them
+
+Accepted deviations are recorded per plan under ``tests/openid-conformance-suite/expected/``;
+any other failure or warning fails the run. The toolkit's known gaps are recorded there as a
+baseline, so every plan is required for a merge and a new failure or warning in any of them fails
+CI. A change that fixes a gap makes CI fail too until its baseline entries are removed: regenerate
+them with ``tests/openid-conformance-suite/baseline.py`` from the job's ``runner.log`` and commit
+the diff with the fix. The one plan that cannot complete yet (Hybrid with dynamically registered
+clients) is marked ``optional`` in the workflow and only reports its results. ``tests/openid-conformance-suite/README.md`` describes
+the plans, how to run a single one, and how to update the waivers or the pinned suite version.
+These runs are not a certification: that still means running the hosted suite at
+certification.openid.net and submitting the results.
+
 Add the tests!
 --------------
 

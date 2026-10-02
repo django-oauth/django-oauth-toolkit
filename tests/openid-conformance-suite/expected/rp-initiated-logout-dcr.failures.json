@@ -1,0 +1,422 @@
+[
+    {
+        "test-name": "oidcc-rp-initiated-logout",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-bad-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-bad-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-bad-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-modified-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-modified-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-modified-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-params",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-params",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-params",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-state",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-state",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-no-state",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-only-state",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-only-state",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-only-state",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckNoErrorFromDynamicRegistrationEndpoint",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureHttpStatusCodeIs201",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractDynamicRegistrationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    }
+]

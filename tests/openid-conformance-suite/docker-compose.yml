@@ -1,0 +1,104 @@
+# The OpenID Foundation conformance suite plus the tests/app/idp provider it
+# tests, as one compose stack. Driven by run.py (see README.md).
+#
+# The suite half (mongodb, server, nginx) mirrors the suite's own
+# docker-compose-prebuilt.yml so the prebuilt images from registry.gitlab.com
+# are used unchanged, pinned by IMAGE_TAG. The IdP half mirrors the root
+# docker-compose.yml, except that gunicorn terminates TLS itself: the suite
+# requires an https issuer, and serving TLS in-process means Django sees
+# scheme=https without any proxy-header configuration.
+
+volumes:
+  idp-data:
+  mongo-data:
+
+x-idp: &idp
+  image: django-oauth-toolkit/idp
+  build:
+    context: ../..
+  volumes:
+    - idp-data:/data
+    - ./.certs:/certs:ro
+  environment:
+    DATABASE_URL: sqlite:////data/db.sqlite3
+    # seed_idp.py calls django.setup() itself rather than going through manage.py.
+    PYTHONPATH: /code/tests/app/idp
+    # Served over https, so the cookies may be Secure; Django must also trust the
+    # issuer origin for the login, consent and logout form POSTs.
+    SESSION_COOKIE_SECURE: "True"
+    CSRF_COOKIE_SECURE: "True"
+    CSRF_TRUSTED_ORIGINS: https://dot-idp
+    # The OpenID Connect Core scopes the suite's oidcc-scope-* modules request
+    # (django-environ dict form: comma-separated key=value pairs).
+    OAUTH2_PROVIDER_SCOPES: "openid=OpenID Connect scope,profile=Profile scope,email=Email scope,address=Address scope,phone=Phone scope,offline_access=Offline access scope"
+    OAUTH2_PROVIDER_DEFAULT_SCOPES: openid
+    # The certification clients are confidential clients that only send PKCE in
+    # the dedicated PKCE modules.
+    OAUTH2_PROVIDER_PKCE_REQUIRED: "False"
+    OAUTH2_PROVIDER_OIDC_ENABLED: "True"
+    OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED: "True"
+
+services:
+  idp-migrate:
+    <<: *idp
+    command: python manage.py migrate
+
+  idp-seed:
+    <<: *idp
+    command: python /code/tests/openid-conformance-suite/seed_idp.py
+    depends_on:
+      idp-migrate:
+        condition: service_completed_successfully
+
+  dot-idp:
+    <<: *idp
+    command: >
+      gunicorn idp.wsgi:application
+      -w 2 -b 0.0.0.0:443
+      --certfile /certs/cert.pem --keyfile /certs/key.pem
+      --worker-tmp-dir /dev/shm --timeout 120
+      --access-logfile - --error-logfile -
+    ports:
+      # Host-side readiness probe only (run.py waits on it). The suite reaches the
+      # IdP as https://dot-idp over the compose network.
+      - "127.0.0.1:9443:443"
+    depends_on:
+      idp-seed:
+        condition: service_completed_successfully
+
+  mongodb:
+    image: ${MONGODB_IMAGE:-mongo:6.0.13}
+    volumes:
+      - mongo-data:/data/db
+
+  server:
+    image: registry.gitlab.com/openid/conformance-suite:${IMAGE_TAG:-release-v5.3.1}
+    environment:
+      BASE_URL: https://localhost.emobix.co.uk:8443
+      BASE_MTLS_URL: https://localhost.emobix.co.uk:8444
+      MONGODB_HOST: mongodb
+      # The dev profile needs no API token, which is what run-test-plan.py's
+      # "dev mode" (CONFORMANCE_SERVER unset) assumes.
+      SPRING_PROFILES_ACTIVE: dev
+      # Placeholders for the suite's optional social logins, as in its own compose file.
+      OIDC_GOOGLE_CLIENTID: google-client
+      OIDC_GOOGLE_SECRET: google-secret
+      OIDC_GITLAB_CLIENTID: gitlab-client
+      OIDC_GITLAB_SECRET: gitlab-secret
+    depends_on:
+      - mongodb
+
+  nginx:
+    image: registry.gitlab.com/openid/conformance-suite/nginx:${IMAGE_TAG:-release-v5.3.1}
+    ports:
+      - "8443:8443"
+      - "8444:8444"
+    networks:
+      default:
+        aliases:
+          # The suite's own browser follows the IdP's redirects back to the suite's
+          # public hostname; without the alias, in-container DNS resolves
+          # localhost.emobix.co.uk to 127.0.0.1 (the server container itself).
+          - localhost.emobix.co.uk
+    depends_on:
+      - server

@@ -467,7 +467,10 @@ ConnectDiscoveryInfoView
 Available at ``/o/.well-known/openid-configuration``, this view provides auto
 discovery information to OIDC clients, telling them the JWT issuer to use, the
 location of the JWKs to verify JWTs with, the token and userinfo endpoints to
-query, and other details.
+query, and other details. When ``DCR_ENABLED`` is on it also advertises the
+:doc:`Dynamic Client Registration <views/dynamic_client_registration>` endpoint
+as ``registration_endpoint``, like the :doc:`RFC 8414 metadata document
+<oauth2_server_metadata>` does.
 
 
 JwksInfoView

@@ -1,0 +1,224 @@
+[
+    {
+        "test-name": "oidcc-server-rotate-keys",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "VerifyNewJwksHasNewSigningKey",
+        "expected-result": "failure",
+        "comment": "The module asks the tester to rotate the OP's signing key by hand between two JWKS fetches; nothing in CI does that, so the suite's own CI waives this condition the same way. The demo IdP's key is fixed for the run."
+    },
+    {
+        "test-name": "oidcc-registration-jwks-uri",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckTokenEndpointHttpStatus200",
+        "expected-result": "failure",
+        "comment": "The suite registers the client with a jwks_uri on its own host. Inside the compose network that host resolves to a private address and serves a self-signed certificate, and oauth2_provider.core.safe_fetch refuses both (SSRF guard, default TLS trust), so the private_key_jwt assertion cannot be verified and the token endpoint returns an error. Clients registering with an inline jwks pass the same flow; a public, trusted jwks_uri is an environment limitation of CI, not an OP gap."
+    },
+    {
+        "test-name": "oidcc-refresh-token-rp-key-rotation",
+        "variant": "*",
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckTokenEndpointHttpStatus200",
+        "expected-result": "failure",
+        "comment": "The suite registers the client with a jwks_uri on its own host. Inside the compose network that host resolves to a private address and serves a self-signed certificate, and oauth2_provider.core.safe_fetch refuses both (SSRF guard, default TLS trust), so the private_key_jwt assertion cannot be verified and the token endpoint returns an error. Clients registering with an inline jwks pass the same flow; a public, trusted jwks_uri is an environment limitation of CI, not an OP gap."
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "oidcc-ensure-request-object-with-redirect-uri",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-refresh-token",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Second client: Verify authorization endpoint response",
+        "condition": "EnsureServerConfigurationSupportsRefreshToken",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-refresh-token",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureServerConfigurationSupportsRefreshToken",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-signed-rs256",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckDiscEndpointRequestObjectSigningAlgValuesSupportedContainsRS256",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-signed-rs256",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-signed-rs256",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "oidcc-request-uri-signed-rs256",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-unsigned",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-unsigned",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "oidcc-request-uri-unsigned",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-userinfo-rs256",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "CheckDiscEndpointUserinfoSigningAlgValuesSupportedContainsRS256",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-userinfo-rs256",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "EnsureContentTypeApplicationJwt",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-userinfo-rs256",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ExtractSignedUserInfoFromUserInfoEndpointResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-userinfo-rs256",
+        "variant": {
+            "client_auth_type": "private_key_jwt",
+            "client_registration": "dynamic_client",
+            "response_mode": "default",
+            "server_metadata": "discovery"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "",
+        "condition": "ValidateUserInfoResponseSignature",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    }
+]

@@ -104,6 +104,13 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
         )
         if auth_signing_algs:
             data["token_endpoint_auth_signing_alg_values_supported"] = auth_signing_algs
+        # OpenID Connect Discovery 1.0 section 3: registration_endpoint is RECOMMENDED.
+        # Advertise it exactly as the RFC 8414 metadata does: gated on the setting,
+        # because the route stays registered while the view 404s with DCR off.
+        if oauth2_settings.DCR_ENABLED:
+            registration_url = self._get_endpoint_url(request, "dcr-register")
+            if registration_url:
+                data["registration_endpoint"] = registration_url
         if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
             data["authorization_response_iss_parameter_supported"] = True
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:

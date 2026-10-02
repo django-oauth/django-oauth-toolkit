@@ -69,3 +69,8 @@ venv/
 /.rp-server-*.log
 /tests/e2e/reports/
 /.venv/
+
+# OpenID conformance suite harness local artifacts (tests/openid-conformance-suite/run.py)
+/tests/openid-conformance-suite/.certs/
+/tests/openid-conformance-suite/.runner/
+/tests/openid-conformance-suite/reports/

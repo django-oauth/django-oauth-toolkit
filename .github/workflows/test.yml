@@ -651,6 +651,84 @@ jobs:
             tests/e2e/reports/junit-e2e.xml
           if-no-files-found: warn
 
+  openid-conformance-suite:
+    # The OpenID Foundation conformance suite (the OpenID Provider certification
+    # test modules) against tests/app/idp, in Docker: one job per certification
+    # plan the toolkit's features map to, each with its own stack. The pinned
+    # suite version, the plan table and the accepted deviations live in
+    # tests/openid-conformance-suite/.
+    #
+    # Every plan gates the merge (through `success`) except those marked
+    # `optional`. A plan's known toolkit gaps are recorded in its expected/
+    # baseline, so any new failure or warning fails the job, and so does a fixed
+    # one until its baseline entry is removed (see the README there). A plan is
+    # optional only while its modules cannot run to completion, which leaves
+    # nothing to baseline; it still runs and reports its totals in the summary.
+    name: openid-conformance-suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keys of PLANS in tests/openid-conformance-suite/run.py (--list-plans).
+        plan:
+          - config
+          - basic
+          - implicit
+          - hybrid
+          - basic-dcr
+          - implicit-dcr
+          - hybrid-dcr
+          - dynamic
+          - rp-initiated-logout
+          - rp-initiated-logout-dcr
+        include:
+          # Registration rejects the hybrid client, so no module completes.
+          - plan: hybrid-dcr
+            optional: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: python -m pip install --upgrade tox
+
+      - name: Run the ${{ matrix.plan }} plan
+        # An optional plan must not fail the job; its result is still in the
+        # step status, the summary below and the artifact.
+        continue-on-error: ${{ matrix.optional == true }}
+        run: |
+          mkdir -p tests/openid-conformance-suite/reports
+          tox -e openid-conformance-suite -- --plan ${{ matrix.plan }} 2>&1 \
+            | tee tests/openid-conformance-suite/reports/runner.log
+
+      - name: Summarize the ${{ matrix.plan }} plan
+        if: always()
+        env:
+          PLAN: ${{ matrix.plan }}
+          GATE: ${{ matrix.optional && 'optional' || 'required' }}
+        run: |
+          {
+            echo "### openid-conformance-suite: ${PLAN} (${GATE})"
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' tests/openid-conformance-suite/reports/runner.log 2>/dev/null \
+              | grep -E 'Overall totals|unexpectedly skipped|Aborting run|finished with exit status' \
+              || echo "no totals found; see the job log and the uploaded artifact"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload conformance results and container logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openid-conformance-suite-${{ matrix.plan }}
+          path: tests/openid-conformance-suite/reports/
+          if-no-files-found: warn
+
   codecov-notify:
     needs:
       - test-package
@@ -688,6 +766,8 @@ jobs:
       - mysql-pr
       - oracle-standalone
       - e2e-compliance
+      # Every plan but the `optional` ones can fail this job; see its comment.
+      - openid-conformance-suite
     runs-on: ubuntu-latest
     name: Test successful
     steps:
