@@ -15,6 +15,7 @@ from oauth2_provider.models import get_access_token_model, get_application_model
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .utils import post_form
 
 
 UserModel = get_user_model()
@@ -1111,7 +1112,8 @@ class TestDynamicClientRegistrationOpenID(TestCase):
         assert response.status_code == 302, response.content
         code = parse_qs(urlparse(response["Location"]).query)["code"][0]
 
-        response = self.client.post(
+        response = post_form(
+            self.client,
             reverse("oauth2_provider:token"),
             data={
                 "grant_type": "authorization_code",

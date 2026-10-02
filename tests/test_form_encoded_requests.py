@@ -64,7 +64,11 @@ class BaseTest(TestCase):
 
 
 class TestFormEncodingNotEnforced(BaseTest):
-    """With the gate at its default the previously accepted bodies still work."""
+    """With the gate off (its deprecated default) the previously accepted bodies still work."""
+
+    def setUp(self):
+        super().setUp()
+        self.oauth2_settings.REQUIRE_FORM_ENCODED_REQUEST_BODY = False
 
     def test_json_body_keeps_legacy_error(self):
         """
@@ -72,16 +76,18 @@ class TestFormEncodingNotEnforced(BaseTest):
         so the grant type the client did send is reported as unsupported. Preserved
         while the gate is off.
         """
-        response = self.token_request(
-            data=json.dumps({"grant_type": "client_credentials"}), content_type="application/json"
-        )
+        with self.assertWarns(DeprecationWarning):
+            response = self.token_request(
+                data=json.dumps({"grant_type": "client_credentials"}), content_type="application/json"
+            )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "unsupported_grant_type")
 
     def test_multipart_body_is_accepted(self):
         """Django parses multipart into request.POST, so it works even though no spec allows it."""
-        response = self.token_request(data={"grant_type": "client_credentials"})
+        with self.assertWarns(DeprecationWarning):
+            response = self.token_request(data={"grant_type": "client_credentials"})
 
         self.assertEqual(response.status_code, 200)
 
@@ -118,7 +124,7 @@ class TestFormEncodingNotEnforced(BaseTest):
 
     def test_no_endpoint_answers_415(self):
         for url_name, data in FORM_ENCODED_ENDPOINTS:
-            with self.subTest(url_name=url_name):
+            with self.subTest(url_name=url_name), self.assertWarns(DeprecationWarning):
                 response = self.client.post(
                     reverse(url_name), data=json.dumps(data), content_type="application/json"
                 )
@@ -257,6 +263,7 @@ class TestRequestBodyConfigurationCheck(TestCase):
         self.assertEqual(validate_request_body_configuration(None), [])
 
     def test_no_error_when_only_the_json_backend_is_set(self):
+        self.oauth2_settings.REQUIRE_FORM_ENCODED_REQUEST_BODY = False
         self.oauth2_settings.OAUTH2_BACKEND_CLASS = JSONOAuthLibCore
 
         self.assertEqual(validate_request_body_configuration(None), [])

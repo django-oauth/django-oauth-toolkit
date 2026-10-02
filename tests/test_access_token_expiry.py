@@ -21,7 +21,7 @@ from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
@@ -68,7 +68,7 @@ class BaseTest(TestCase):
 
     def post_token(self, application, **data):
         auth_headers = get_basic_auth_header(application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(reverse("oauth2_provider:token"), data=data, **auth_headers)
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=data, **auth_headers)
         self.assertEqual(response.status_code, 200, response.content)
         return json.loads(response.content.decode("utf-8"))
 

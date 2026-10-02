@@ -11,7 +11,7 @@ from oauth2_provider.models import get_access_token_model, get_application_model
 from oauth2_provider.views import ReadWriteScopedResourceView, ScopedProtectedResourceView
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
@@ -128,7 +128,9 @@ class TestScopesSave(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         access_token = content["access_token"]
 
@@ -165,7 +167,9 @@ class TestScopesProtection(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         access_token = content["access_token"]
 
@@ -208,7 +212,9 @@ class TestScopesProtection(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         access_token = content["access_token"]
 
@@ -251,7 +257,9 @@ class TestScopesProtection(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         access_token = content["access_token"]
 
@@ -294,7 +302,9 @@ class TestScopesProtection(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         access_token = content["access_token"]
 
@@ -336,7 +346,9 @@ class TestReadWriteScope(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         return content["access_token"]
 

@@ -11,7 +11,7 @@ from oauth2_provider.models import get_access_token_model, get_application_model
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
@@ -217,8 +217,11 @@ class TestTokenIntrospectionViews(TestCase):
         auth_headers = {
             "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
         }
-        response = self.client.post(
-            reverse("oauth2_provider:introspect"), {"token": self.valid_token.token}, **auth_headers
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": self.valid_token.token},
+            **auth_headers,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -243,8 +246,11 @@ class TestTokenIntrospectionViews(TestCase):
         auth_headers = {
             "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
         }
-        response = self.client.post(
-            reverse("oauth2_provider:introspect"), {"token": self.invalid_token.token}, **auth_headers
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": self.invalid_token.token},
+            **auth_headers,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -265,8 +271,8 @@ class TestTokenIntrospectionViews(TestCase):
         auth_headers = {
             "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
         }
-        response = self.client.post(
-            reverse("oauth2_provider:introspect"), {"token": "kaudawelsch"}, **auth_headers
+        response = post_form(
+            self.client, reverse("oauth2_provider:introspect"), {"token": "kaudawelsch"}, **auth_headers
         )
 
         self.assertEqual(response.status_code, 200)
@@ -286,7 +292,7 @@ class TestTokenIntrospectionViews(TestCase):
         auth_headers = {
             "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
         }
-        response = self.client.post(reverse("oauth2_provider:introspect"), **auth_headers)
+        response = post_form(self.client, reverse("oauth2_provider:introspect"), **auth_headers)
 
         self.assertEqual(response.status_code, 400)
         content = response.json()
@@ -296,8 +302,11 @@ class TestTokenIntrospectionViews(TestCase):
     def test_view_post_valid_client_creds_basic_auth(self):
         """Test HTTP basic auth working"""
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(
-            reverse("oauth2_provider:introspect"), {"token": self.valid_token.token}, **auth_headers
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": self.valid_token.token},
+            **auth_headers,
         )
         self.assertEqual(response.status_code, 200)
         content = response.json()
@@ -316,14 +325,18 @@ class TestTokenIntrospectionViews(TestCase):
     def test_view_post_invalid_client_creds_basic_auth(self):
         """Must fail for invalid client credentials"""
         auth_headers = get_basic_auth_header(self.application.client_id, f"{CLEARTEXT_SECRET}_so_wrong")
-        response = self.client.post(
-            reverse("oauth2_provider:introspect"), {"token": self.valid_token.token}, **auth_headers
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": self.valid_token.token},
+            **auth_headers,
         )
         self.assertEqual(response.status_code, 403)
 
     def test_view_post_valid_client_creds_plaintext(self):
         """Test introspecting with credentials in request body"""
-        response = self.client.post(
+        response = post_form(
+            self.client,
             reverse("oauth2_provider:introspect"),
             {
                 "token": self.valid_token.token,
@@ -347,7 +360,8 @@ class TestTokenIntrospectionViews(TestCase):
 
     def test_view_post_invalid_client_creds_plaintext(self):
         """Must fail for invalid creds in request body."""
-        response = self.client.post(
+        response = post_form(
+            self.client,
             reverse("oauth2_provider:introspect"),
             {
                 "token": self.valid_token.token,
@@ -360,7 +374,7 @@ class TestTokenIntrospectionViews(TestCase):
     def test_select_related_in_view_for_less_db_queries(self):
         token_database = router.db_for_write(AccessToken)
         with self.assertNumQueries(1, using=token_database):
-            self.client.post(reverse("oauth2_provider:introspect"))
+            post_form(self.client, reverse("oauth2_provider:introspect"))
 
     def test_introspect_returns_aud_for_token_with_resource(self):
         """
@@ -379,8 +393,11 @@ class TestTokenIntrospectionViews(TestCase):
         auth_headers = {
             "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
         }
-        response = self.client.post(
-            reverse("oauth2_provider:introspect"), {"token": token_with_resource.token}, **auth_headers
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": token_with_resource.token},
+            **auth_headers,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -395,8 +412,11 @@ class TestTokenIntrospectionViews(TestCase):
         auth_headers = {
             "HTTP_AUTHORIZATION": "Bearer " + self.resource_server_token.token,
         }
-        response = self.client.post(
-            reverse("oauth2_provider:introspect"), {"token": self.valid_token.token}, **auth_headers
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": self.valid_token.token},
+            **auth_headers,
         )
 
         self.assertEqual(response.status_code, 200)

@@ -23,7 +23,7 @@ from oauth2_provider.views import ProtectedResourceView
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
@@ -57,7 +57,7 @@ class TestPasswordGrantGate(TestCase):
     def _request_token(self):
         data = {"grant_type": "password", "username": "po", "password": "123456"}
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        return self.client.post(reverse("oauth2_provider:token"), data=data, **headers)
+        return post_form(self.client, reverse("oauth2_provider:token"), data=data, **headers)
 
     def test_allowed_by_default(self):
         # Insecure default is preserved but warns when exercised.
@@ -531,7 +531,7 @@ class TestTokenStorageGate(TestCase):
     def _get_token(self):
         data = {"grant_type": "client_credentials"}
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(reverse("oauth2_provider:token"), data=data, **headers)
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=data, **headers)
         return json.loads(response.content)["access_token"]
 
     def test_plaintext_by_default(self):
@@ -600,7 +600,8 @@ class TestHashedRefreshTokenRotation(TestCase):
     def test_rotation_with_hashed_storage(self):
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE = True
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        first = self.client.post(
+        first = post_form(
+            self.client,
             reverse("oauth2_provider:token"),
             data={"grant_type": "password", "username": "ro", "password": "123456"},
             **headers,
@@ -608,7 +609,8 @@ class TestHashedRefreshTokenRotation(TestCase):
         refresh = json.loads(first.content)["refresh_token"]
         # Using the refresh token rotates it and revokes the old one (a re-save that
         # previously corrupted the checksum). The refresh must succeed.
-        second = self.client.post(
+        second = post_form(
+            self.client,
             reverse("oauth2_provider:token"),
             data={"grant_type": "refresh_token", "refresh_token": refresh},
             **headers,
@@ -637,13 +639,15 @@ class TestHashedNonRotatingRefreshToken(TestCase):
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE = True
         self.oauth2_settings.ROTATE_REFRESH_TOKEN = False
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        first = self.client.post(
+        first = post_form(
+            self.client,
             reverse("oauth2_provider:token"),
             data={"grant_type": "password", "username": "nr", "password": "123456"},
             **headers,
         )
         refresh = json.loads(first.content)["refresh_token"]
-        second = self.client.post(
+        second = post_form(
+            self.client,
             reverse("oauth2_provider:token"),
             data={"grant_type": "refresh_token", "refresh_token": refresh},
             **headers,

@@ -37,6 +37,7 @@ from oauth2_provider.authorization_server.cimd import (
 from oauth2_provider.models import get_application_model
 
 from . import presets
+from .utils import post_form
 
 
 Application = get_application_model()
@@ -749,7 +750,8 @@ def test_openid_code_flow_issues_id_token_to_cimd_client(cimd_enabled, client, d
     assert response.status_code == 302, response.content
     code = parse_qs(urlparse(response["Location"]).query)["code"][0]
 
-    response = client.post(
+    response = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "authorization_code",

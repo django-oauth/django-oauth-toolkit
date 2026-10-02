@@ -10,7 +10,7 @@ from oauth2_provider.models import get_application_model
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
@@ -68,7 +68,9 @@ class TestTokenEndpointCors(TestCase):
 
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
         auth_headers["HTTP_ORIGIN"] = CLIENT_URI
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
 
         content = json.loads(response.content.decode("utf-8"))
 
@@ -80,7 +82,9 @@ class TestTokenEndpointCors(TestCase):
             "refresh_token": content["refresh_token"],
             "scope": content["scope"],
         }
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Access-Control-Allow-Origin"], CLIENT_URI)
 
@@ -99,7 +103,9 @@ class TestTokenEndpointCors(TestCase):
 
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
         auth_headers["HTTP_ORIGIN"] = CLIENT_URI_HTTP
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.has_header("Access-Control-Allow-Origin"))
@@ -120,7 +126,9 @@ class TestTokenEndpointCors(TestCase):
 
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
         auth_headers["HTTP_ORIGIN"] = "https://another_example.org"
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.has_header("Access-Control-Allow-Origin"))
 
@@ -139,7 +147,9 @@ class TestTokenEndpointCors(TestCase):
 
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
         # No CORS headers, because request did not have Origin
         self.assertFalse(response.has_header("Access-Control-Allow-Origin"))

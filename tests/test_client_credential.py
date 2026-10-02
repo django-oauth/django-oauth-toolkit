@@ -17,7 +17,7 @@ from oauth2_provider.views import ProtectedResourceView
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
@@ -64,12 +64,16 @@ class TestClientCredential(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         # secret mismatch should return a 401
         auth_headers = get_basic_auth_header(self.application.client_id, "not-the-secret")
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 401)
 
     def test_client_credential_does_not_issue_refresh_token(self):
@@ -78,7 +82,9 @@ class TestClientCredential(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -88,7 +94,9 @@ class TestClientCredential(BaseTest):
         token_request_data = {"grant_type": "client_credentials"}
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -116,7 +124,9 @@ class TestExtendedRequest(BaseTest):
             "grant_type": "client_credentials",
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -176,7 +186,9 @@ class TestClientResourcePasswordBased(BaseTest):
         token_request_data = {"grant_type": "password", "username": "test_user", "password": "123456"}
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))

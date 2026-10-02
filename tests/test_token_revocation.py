@@ -8,6 +8,7 @@ from django.utils import timezone
 from oauth2_provider.models import get_access_token_model, get_application_model, get_refresh_token_model
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .utils import post_form
 
 
 Application = get_application_model()
@@ -52,7 +53,7 @@ class TestRevocationView(BaseTest):
             "token": tok.token,
         }
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"")
         self.assertFalse(AccessToken.objects.filter(pk=tok.pk).exists())
@@ -81,7 +82,7 @@ class TestRevocationView(BaseTest):
         }
 
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
 
     def test_revoke_access_token_with_hint(self):
@@ -101,7 +102,7 @@ class TestRevocationView(BaseTest):
         }
 
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(AccessToken.objects.filter(pk=tok.pk).exists())
 
@@ -123,7 +124,7 @@ class TestRevocationView(BaseTest):
         }
 
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(AccessToken.objects.filter(pk=tok.pk).exists())
 
@@ -146,7 +147,7 @@ class TestRevocationView(BaseTest):
         }
 
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
         refresh_token = RefreshToken.objects.filter(pk=rtok.pk).first()
         self.assertIsNotNone(refresh_token.revoked)
@@ -176,7 +177,7 @@ class TestRevocationView(BaseTest):
         }
 
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
         refresh_token = RefreshToken.objects.filter(pk=rtok.pk).first()
         self.assertIsNotNone(refresh_token.revoked)
@@ -206,7 +207,7 @@ class TestRevocationView(BaseTest):
         }
 
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
         refresh_token = RefreshToken.objects.filter(pk=rtok.pk).first()
         self.assertIsNotNone(refresh_token.revoked)
@@ -231,7 +232,7 @@ class TestRevocationView(BaseTest):
             }
 
             url = reverse("oauth2_provider:revoke-token")
-            response = self.client.post(url, data=data)
+            response = post_form(self.client, url, data=data)
             self.assertEqual(response.status_code, 200)
 
         self.assertFalse(AccessToken.objects.filter(pk=tok.pk).exists())
@@ -267,7 +268,7 @@ class TestRevocationView(BaseTest):
             "token": victim_token.token,
         }
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
 
         # RFC 7009 §2.2: the endpoint still returns 200 (it does not disclose whether the
         # token exists), but the other client's token must remain untouched.
@@ -307,7 +308,7 @@ class TestRevocationView(BaseTest):
             "token_type_hint": "refresh_token",
         }
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
 
         self.assertEqual(response.status_code, 200)
         refresh_token = RefreshToken.objects.filter(pk=victim_refresh_token.pk).first()
@@ -361,7 +362,7 @@ class TestRevocationView(BaseTest):
             "token_type_hint": "access_token",
         }
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
 
         # The caller's own refresh token (in the non-hinted table) is revoked...
@@ -394,6 +395,6 @@ class TestRevocationView(BaseTest):
         }
 
         url = reverse("oauth2_provider:revoke-token")
-        response = self.client.post(url, data=data)
+        response = post_form(self.client, url, data=data)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(AccessToken.objects.filter(pk=tok.pk).exists())

@@ -27,6 +27,7 @@ from oauth2_provider.core.rfc7523 import JWT_BEARER_CLIENT_ASSERTION_TYPE
 from oauth2_provider.models import get_application_model
 
 from . import presets
+from .utils import post_form
 
 
 Application = get_application_model()
@@ -1184,7 +1185,7 @@ def test_token_endpoint_private_key_jwt(client, private_key_jwt_application, cli
     from django.urls import reverse
 
     data = _assertion_post_data(private_key_jwt_application, client_rsa_jwk, grant_type="client_credentials")
-    response = client.post(reverse("oauth2_provider:token"), data=data)
+    response = post_form(client, reverse("oauth2_provider:token"), data=data)
     assert response.status_code == 200, response.content
     payload = json.loads(response.content)
     assert payload["token_type"].lower() == "bearer"
@@ -1196,7 +1197,7 @@ def test_token_endpoint_private_key_jwt_es256(client, private_key_jwt_applicatio
     from django.urls import reverse
 
     data = _assertion_post_data(private_key_jwt_application, client_ec_jwk, grant_type="client_credentials")
-    response = client.post(reverse("oauth2_provider:token"), data=data)
+    response = post_form(client, reverse("oauth2_provider:token"), data=data)
     assert response.status_code == 200, response.content
 
 
@@ -1207,7 +1208,8 @@ def test_token_endpoint_client_secret_jwt(client, client_secret_jwt_application)
     assertion = make_client_assertion(
         client_secret_jwt_application.client_id, CLEARTEXT_SECRET, TOKEN_AUDIENCE, alg="HS256"
     )
-    response = client.post(
+    response = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "client_credentials",
@@ -1223,9 +1225,9 @@ def test_token_endpoint_replayed_assertion_rejected(client, private_key_jwt_appl
     from django.urls import reverse
 
     data = _assertion_post_data(private_key_jwt_application, client_rsa_jwk, grant_type="client_credentials")
-    first = client.post(reverse("oauth2_provider:token"), data=data)
+    first = post_form(client, reverse("oauth2_provider:token"), data=data)
     assert first.status_code == 200, first.content
-    replay = client.post(reverse("oauth2_provider:token"), data=data)
+    replay = post_form(client, reverse("oauth2_provider:token"), data=data)
     assert replay.status_code == 401
     assert json.loads(replay.content)["error"] == "invalid_client"
 
@@ -1234,7 +1236,8 @@ def test_token_endpoint_replayed_assertion_rejected(client, private_key_jwt_appl
 def test_token_endpoint_invalid_assertion_does_not_fall_back(client, private_key_jwt_application):
     from django.urls import reverse
 
-    response = client.post(
+    response = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "client_credentials",
@@ -1253,7 +1256,8 @@ def test_token_endpoint_invalid_assertion_does_not_fall_back(client, private_key
 def test_token_endpoint_secret_auth_rejected_for_jwt_client(client, private_key_jwt_application):
     from django.urls import reverse
 
-    response = client.post(
+    response = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "client_credentials",
@@ -1288,7 +1292,7 @@ def test_introspection_endpoint_accepts_client_assertion(
         audience="http://testserver" + reverse("oauth2_provider:introspect"),
         token=token.token,
     )
-    response = client.post(reverse("oauth2_provider:introspect"), data=data)
+    response = post_form(client, reverse("oauth2_provider:introspect"), data=data)
     assert response.status_code == 200, response.content
     assert json.loads(response.content)["active"] is True
 
@@ -1318,7 +1322,7 @@ def test_revocation_endpoint_accepts_client_assertion(
         audience="http://testserver" + reverse("oauth2_provider:revoke-token"),
         token=token.token,
     )
-    response = client.post(reverse("oauth2_provider:revoke-token"), data=data)
+    response = post_form(client, reverse("oauth2_provider:revoke-token"), data=data)
     assert response.status_code == 200, response.content
     assert not AccessToken.objects.filter(pk=token.pk).exists()
 
@@ -1553,7 +1557,8 @@ def test_token_endpoint_basic_auth_rejected_for_jwt_client(client, private_key_j
     from django.urls import reverse
 
     creds = f"{private_key_jwt_application.client_id}:{CLEARTEXT_SECRET}".encode()
-    response = client.post(
+    response = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={"grant_type": "client_credentials"},
         HTTP_AUTHORIZATION="Basic " + base64_mod.b64encode(creds).decode(),

@@ -7,6 +7,8 @@ from django.urls import reverse
 
 from oauth2_provider.models import AccessToken, Grant, RefreshToken, get_application_model
 
+from .utils import post_form
+
 
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings({"PKCE_REQUIRED": False})
@@ -77,7 +79,8 @@ def test_rfc8707_authorization_code_flow_with_resource(client, oauth2_settings):
 
     # Step 2: Token request with resource parameter
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -131,7 +134,8 @@ def test_rfc8707_client_credentials_flow_with_resource(client):
 
     # Token request with resource parameter
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "client_credentials",
@@ -180,7 +184,8 @@ def test_rfc8707_rejects_invalid_resource_uri(client):
     token_url = reverse("oauth2_provider:token")
 
     # Relative URI (not absolute)
-    response = client.post(
+    response = post_form(
+        client,
         token_url,
         {
             "grant_type": "client_credentials",
@@ -194,7 +199,8 @@ def test_rfc8707_rejects_invalid_resource_uri(client):
     assert error_data["error"] == "invalid_target"
 
     # URI with userinfo
-    response = client.post(
+    response = post_form(
+        client,
         token_url,
         {
             "grant_type": "client_credentials",
@@ -289,7 +295,8 @@ def test_rfc8707_token_issuance_validates_inherited_grant_resource(client, oauth
     )
 
     token_url = reverse("oauth2_provider:token")
-    response = client.post(
+    response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -410,7 +417,8 @@ def test_rfc8707_token_request_cannot_escalate_resources(client, oauth2_settings
 
     # Step 2: Token request trying to escalate to unauthorized resource
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -478,7 +486,8 @@ def test_rfc8707_token_request_without_resource_gets_all(client, oauth2_settings
 
     # Step 2: Token request WITHOUT resource parameter
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -552,7 +561,8 @@ def test_rfc8707_token_request_with_repeated_resource_params(client, oauth2_sett
 
     # Step 2: Token request repeating the resource parameter to narrow to two
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -619,7 +629,8 @@ def test_rfc8707_token_request_repeated_resource_params_reject_escalation(client
 
     # Step 2: Token request repeating resource params, one outside the grant
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -684,7 +695,8 @@ def test_rfc8707_refresh_token_preserves_resource(client, oauth2_settings):
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -710,7 +722,8 @@ def test_rfc8707_refresh_token_preserves_resource(client, oauth2_settings):
     assert Grant.objects.filter(code=code).count() == 0
 
     # Step 3: Use refresh token to get new access token
-    refresh_response = client.post(
+    refresh_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "refresh_token",
@@ -781,7 +794,8 @@ def test_rfc8707_refresh_token_rejects_unauthorized_resource(client, oauth2_sett
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -803,7 +817,8 @@ def test_rfc8707_refresh_token_rejects_unauthorized_resource(client, oauth2_sett
     }
 
     # Step 3: Attempt refresh with unauthorized resource - should fail
-    refresh_response_invalid = client.post(
+    refresh_response_invalid = post_form(
+        client,
         token_url,
         {
             "grant_type": "refresh_token",
@@ -824,7 +839,8 @@ def test_rfc8707_refresh_token_rejects_unauthorized_resource(client, oauth2_sett
     assert auth_response2.status_code == 302
     code2 = parse_qs(urlparse(auth_response2.url).query)["code"][0]
 
-    token_response2 = client.post(
+    token_response2 = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -838,7 +854,8 @@ def test_rfc8707_refresh_token_rejects_unauthorized_resource(client, oauth2_sett
     token_data2 = token_response2.json()
 
     # Step 5: Refresh with subset (resource1 only) - should succeed
-    refresh_response_subset = client.post(
+    refresh_response_subset = post_form(
+        client,
         token_url,
         {
             "grant_type": "refresh_token",
@@ -902,7 +919,8 @@ def test_rfc8707_refresh_token_rotation_preserves_resource(client, oauth2_settin
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -922,7 +940,8 @@ def test_rfc8707_refresh_token_rotation_preserves_resource(client, oauth2_settin
     assert refresh_token_1.resource == ["https://api.example.com/protected"]
 
     # Step 3: Use refresh token (should rotate and create new refresh token)
-    refresh_response = client.post(
+    refresh_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "refresh_token",
@@ -990,7 +1009,8 @@ def test_rfc8707_non_rotating_refresh_preserves_resource(client, oauth2_settings
 
     # Step 2: Exchange code for tokens
     token_url = reverse("oauth2_provider:token")
-    token_response = client.post(
+    token_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "authorization_code",
@@ -1006,7 +1026,8 @@ def test_rfc8707_non_rotating_refresh_preserves_resource(client, oauth2_settings
     original_refresh_token = token_data["refresh_token"]
 
     # Step 3: Refresh (non-rotating — same refresh token reused, access token updated in place)
-    refresh_response = client.post(
+    refresh_response = post_form(
+        client,
         token_url,
         {
             "grant_type": "refresh_token",
