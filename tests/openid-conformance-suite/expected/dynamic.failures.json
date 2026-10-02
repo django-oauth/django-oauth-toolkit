@@ -27,36 +27,6 @@
         "comment": "The suite registers the client with a jwks_uri on its own host. Inside the compose network that host resolves to a private address and serves a self-signed certificate, and oauth2_provider.core.safe_fetch refuses both (SSRF guard, default TLS trust), so the private_key_jwt assertion cannot be verified and the token endpoint returns an error. Clients registering with an inline jwks pass the same flow; a public, trusted jwks_uri is an environment limitation of CI, not an OP gap."
     },
     {
-        "test-name": "oidcc-refresh-token",
-        "variant": {
-            "client_auth_type": "private_key_jwt",
-            "client_registration": "dynamic_client",
-            "response_mode": "default",
-            "server_metadata": "discovery"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Second client: Verify authorization endpoint response",
-        "condition": "EnsureServerConfigurationSupportsRefreshToken",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-refresh-token",
-        "variant": {
-            "client_auth_type": "private_key_jwt",
-            "client_registration": "dynamic_client",
-            "response_mode": "default",
-            "server_metadata": "discovery"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Verify authorization endpoint response",
-        "condition": "EnsureServerConfigurationSupportsRefreshToken",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
         "test-name": "oidcc-request-uri-signed-rs256",
         "variant": {
             "client_auth_type": "private_key_jwt",

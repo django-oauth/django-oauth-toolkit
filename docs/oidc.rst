@@ -582,7 +582,9 @@ location of the JWKs to verify JWTs with, the token and userinfo endpoints to
 query, and other details. When ``DCR_ENABLED`` is on it also advertises the
 :doc:`Dynamic Client Registration <views/dynamic_client_registration>` endpoint
 as ``registration_endpoint``, like the :doc:`RFC 8414 metadata document
-<oauth2_server_metadata>` does.
+<oauth2_server_metadata>` does. It also lists ``grant_types_supported``, taken from the
+:doc:`OAUTH2_GRANT_TYPES_SUPPORTED <settings>` setting, so relying
+parties can see that ``refresh_token`` is supported.
 
 
 JwksInfoView

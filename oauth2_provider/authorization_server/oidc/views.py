@@ -19,6 +19,7 @@ from oauth2_provider.authorization_server.oidc.mixins import OIDCLogoutOnlyMixin
 from oauth2_provider.authorization_server.views.metadata import (
     ServerMetadataViewMixin,
     bcp_filter_code_challenge_methods,
+    bcp_filter_grant_types,
     bcp_filter_response_types,
 )
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
@@ -71,6 +72,8 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
         scopes = scopes_class()
         scopes_supported = [scope for scope in scopes.get_available_scopes()]
 
+        response_types = bcp_filter_response_types(oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED)
+
         data = {
             "issuer": issuer_url,
             "authorization_endpoint": self._get_endpoint_url(request, "authorize", required=True),
@@ -80,8 +83,11 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             "scopes_supported": scopes_supported,
             # RFC 9700: mirror the RFC 8414 metadata gating so both discovery documents
             # agree with what the server actually accepts.
-            "response_types_supported": bcp_filter_response_types(
-                oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED
+            "response_types_supported": response_types,
+            # OpenID Connect Discovery 1.0 section 3 defaults this to
+            # ["authorization_code", "implicit"] when omitted, which hides refresh_token.
+            "grant_types_supported": bcp_filter_grant_types(
+                oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED, response_types
             ),
             "subject_types_supported": oauth2_settings.OIDC_SUBJECT_TYPES_SUPPORTED,
             "id_token_signing_alg_values_supported": signing_algorithms,

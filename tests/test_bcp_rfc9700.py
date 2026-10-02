@@ -484,6 +484,17 @@ class TestMetadataGating(TestCase):
         self.assertNotIn("plain", data["code_challenge_methods_supported"])
         self.assertTrue(data["authorization_response_iss_parameter_supported"])
 
+    def test_keeps_implicit_grant_while_hybrid_response_type_is_advertised(self):
+        """Hybrid response types need the implicit grant type (RFC 7591 §2.1), and the
+        implicit gate leaves them enabled, so ``implicit`` stays advertised for them."""
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT = True
+        self.oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED = ["code", "token", "code token"]
+        data = self._metadata()
+        self.assertEqual(data["response_types_supported"], ["code", "code token"])
+        self.assertIn("implicit", data["grant_types_supported"])
+        self.assertNotIn("password", data["grant_types_supported"])
+
 
 @pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)

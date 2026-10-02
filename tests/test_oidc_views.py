@@ -55,6 +55,14 @@ class TestConnectDiscoveryInfoView(TestCase):
                 "code id_token",
                 "code id_token token",
             ],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
@@ -68,6 +76,40 @@ class TestConnectDiscoveryInfoView(TestCase):
         response = self.client.get("/o/.well-known/openid-configuration")
         self.assertEqual(response.status_code, 200)
         assert response.json() == expected_response
+
+    def test_get_connect_discovery_info_matches_rfc8414_grant_types(self):
+        oidc = self.client.get("/o/.well-known/openid-configuration").json()
+        rfc8414 = self.client.get("/o/.well-known/oauth-authorization-server").json()
+        assert "refresh_token" in oidc["grant_types_supported"]
+        assert oidc["grant_types_supported"] == rfc8414["grant_types_supported"]
+
+    def test_get_connect_discovery_info_drops_bcp_gated_grant_types(self):
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code"]
+        response = self.client.get("/o/.well-known/openid-configuration")
+        assert response.json()["grant_types_supported"] == [
+            "authorization_code",
+            "client_credentials",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:device_code",
+        ]
+
+    def test_get_connect_discovery_info_keeps_implicit_while_hybrid_is_advertised(self):
+        """Hybrid response types need the implicit grant type (OIDC DCR 1.0 §2) and the
+        implicit gate leaves them enabled, so the document must not contradict itself."""
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "code id_token", "id_token"]
+        body = self.client.get("/o/.well-known/openid-configuration").json()
+        assert body["response_types_supported"] == ["code", "code id_token"]
+        assert body["grant_types_supported"] == [
+            "authorization_code",
+            "implicit",
+            "client_credentials",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:device_code",
+        ]
 
     def test_get_connect_discovery_info_advertises_registration_endpoint(self):
         self.oauth2_settings.DCR_ENABLED = True
@@ -103,6 +145,14 @@ class TestConnectDiscoveryInfoView(TestCase):
                 "code id_token",
                 "code id_token token",
             ],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
@@ -133,6 +183,14 @@ class TestConnectDiscoveryInfoView(TestCase):
                 "code token",
                 "code id_token",
                 "code id_token token",
+            ],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
@@ -171,6 +229,14 @@ class TestConnectDiscoveryInfoView(TestCase):
                 "code token",
                 "code id_token",
                 "code id_token token",
+            ],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
@@ -303,6 +369,14 @@ class TestRPInitiatedRegistration(TestCase):
                 "code token",
                 "code id_token",
                 "code id_token token",
+            ],
+            "grant_types_supported": [
+                "authorization_code",
+                "implicit",
+                "password",
+                "client_credentials",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code",
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
