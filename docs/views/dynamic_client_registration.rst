@@ -130,17 +130,26 @@ Field Mapping
     both ``authorization_code`` and ``implicit`` (`OpenID Connect Dynamic Client Registration 1.0
     section 2 <https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata>`_):
     that pair registers an application with the OpenID Connect hybrid grant, reported in responses
-    as ``["authorization_code", "implicit", "refresh_token"]``.
+    as ``["authorization_code", "implicit", "refresh_token"]``. The pair is refused when the server
+    serves none of the hybrid response types, as without OpenID Connect enabled.
 
     ``response_types`` is optional and not stored. When it is sent, every value must be one the
-    registered grant can use, or the request is refused with ``invalid_client_metadata``
-    (`RFC 7591 section 2.1 <https://datatracker.ietf.org/doc/html/rfc7591#section-2.1>`_):
+    registered grant can use on this server, or the request is refused with
+    ``invalid_client_metadata`` (`RFC 7591 section 2.1
+    <https://datatracker.ietf.org/doc/html/rfc7591#section-2.1>`_). A grant can use:
 
     - ``authorization_code``: ``code``;
     - ``implicit``: ``token``, ``id_token`` and ``id_token token``;
     - ``authorization_code`` with ``implicit``: ``code id_token``, ``code token`` and
       ``code id_token token``. A hybrid client cannot also use plain ``code``;
-    - any other grant type: none.
+    - any other grant type: none;
+
+    each only while the server advertises it: it must be listed in
+    ``OIDC_RESPONSE_TYPES_SUPPORTED`` when OpenID Connect is enabled, otherwise in
+    ``OAUTH2_RESPONSE_TYPES_SUPPORTED``, and the implicit ones are dropped while
+    ``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT`` is enabled, as in the discovery documents. The order
+    of the space-separated values in a response type does not matter, but a repeated value is
+    refused.
 
     Registration and management responses report those response types for the registered grant,
     in that canonical form, whether or not the request sent ``response_types``: the server

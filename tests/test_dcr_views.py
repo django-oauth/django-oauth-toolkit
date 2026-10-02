@@ -408,6 +408,7 @@ class TestDynamicClientRegistration(TestCase):
         Registration 1.0 section 2), which the toolkit's single hybrid grant
         serves. The response reports them in RFC 7591 terms.
         """
+        self.oauth2_settings.OIDC_ENABLED = True
         self.client.force_login(self.user)
         cases = (
             (["authorization_code", "implicit"], None),
@@ -436,6 +437,7 @@ class TestDynamicClientRegistration(TestCase):
 
     def test_register_hybrid_missing_redirect_uris_is_400_with_rfc_terms(self):
         """A hybrid client needs redirect_uris; the refusal names RFC 7591 grant types."""
+        self.oauth2_settings.OIDC_ENABLED = True
         self.client.force_login(self.user)
         response = _post_register(self.client, {"grant_types": ["authorization_code", "implicit"]})
         assert response.status_code == 400
@@ -443,6 +445,31 @@ class TestDynamicClientRegistration(TestCase):
         assert body["error"] == "invalid_client_metadata"
         assert "redirect_uris" in body["error_description"]
         assert "openid-hybrid" not in body["error_description"]
+
+    def test_register_hybrid_without_hybrid_response_types_is_400(self):
+        """The hybrid pair is refused when the server serves no hybrid response type.
+
+        Without OpenID Connect the server dispatches none of them, so the client
+        could not use the grants it registers (RFC 7591 section 2.1); the same
+        holds when they are left out of OIDC_RESPONSE_TYPES_SUPPORTED.
+        """
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code", "implicit"],
+        }
+        for oidc_enabled in (False, True):
+            with self.subTest(oidc_enabled=oidc_enabled):
+                self.oauth2_settings.OIDC_ENABLED = oidc_enabled
+                if oidc_enabled:
+                    self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "id_token"]
+                response = _post_register(self.client, data)
+                assert response.status_code == 400, response.content
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert "hybrid" in body["error_description"]
+                assert "openid-hybrid" not in body["error_description"]
+        assert not Application.objects.exists()
 
     def test_register_multiple_grant_types_is_400(self):
         """Multiple non-refresh_token grant types other than the hybrid pair → 400."""
@@ -458,22 +485,37 @@ class TestDynamicClientRegistration(TestCase):
                 assert response.json()["error"] == "invalid_client_metadata"
 
     def test_register_reports_response_types(self):
-        """Responses report the response types the registered grant serves.
+        """Responses report the response types the registered grant serves here.
 
         response_types is not stored, so the server provisions these whether or
         not the client sent the field, and the response says so (RFC 7591
-        sections 2 and 3.2.1). A grant with no authorization endpoint flow
-        reports an explicit empty list, since an omitted field means "code".
+        sections 2 and 3.2.1). They are the grant's own response types less
+        those the server does not advertise: without OpenID Connect none with
+        id_token, and none of the implicit ones once
+        COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT refuses them. A grant with no
+        authorization endpoint flow reports an explicit empty list, since an
+        omitted field means "code".
         """
         self.client.force_login(self.user)
+        hybrid = ["code id_token", "code token", "code id_token token"]
         cases = (
-            (["authorization_code"], ["code"]),
-            (["implicit"], ["id_token", "id_token token", "token"]),
-            (["client_credentials"], []),
-            (["password"], []),
+            # (OIDC_ENABLED, COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT, grant_types, expected)
+            (False, False, ["authorization_code"], ["code"]),
+            (False, False, ["implicit"], ["token"]),
+            (False, False, ["client_credentials"], []),
+            (False, False, ["password"], []),
+            (True, False, ["authorization_code"], ["code"]),
+            (True, False, ["implicit"], ["id_token", "id_token token", "token"]),
+            (True, False, ["authorization_code", "implicit"], hybrid),
+            (True, True, ["implicit"], []),
+            (True, True, ["authorization_code", "implicit"], hybrid),
         )
-        for grant_types, expected in cases:
-            with self.subTest(grant_types=grant_types):
+        for oidc_enabled, implicit_gate, grant_types, expected in cases:
+            with self.subTest(
+                oidc_enabled=oidc_enabled, implicit_gate=implicit_gate, grant_types=grant_types
+            ):
+                self.oauth2_settings.OIDC_ENABLED = oidc_enabled
+                self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = implicit_gate
                 data = {"redirect_uris": ["https://example.com/cb"], "grant_types": grant_types}
                 response = _post_register(self.client, data)
                 assert response.status_code == 201, response.content
@@ -487,6 +529,7 @@ class TestDynamicClientRegistration(TestCase):
 
     def test_register_consistent_response_types(self):
         """response_types the registered grant serves are accepted (RFC 7591 section 2.1)."""
+        self.oauth2_settings.OIDC_ENABLED = True
         self.client.force_login(self.user)
         cases = (
             (["authorization_code"], ["code"]),
@@ -510,8 +553,10 @@ class TestDynamicClientRegistration(TestCase):
 
         Each response type must be one the registered grant serves: OpenID
         Connect Registration 1.0 section 2 lists the grant types each needs,
-        and a hybrid client's grant does not serve the plain code flow.
+        and a hybrid client's grant does not serve the plain code flow. A
+        repeated value is never served either.
         """
+        self.oauth2_settings.OIDC_ENABLED = True
         self.client.force_login(self.user)
         cases = (
             (["authorization_code"], ["code id_token"]),
@@ -522,6 +567,8 @@ class TestDynamicClientRegistration(TestCase):
             (["client_credentials"], ["code"]),
             (["authorization_code"], ["code", "magic"]),
             (["authorization_code"], [""]),
+            (["authorization_code"], ["code code"]),
+            (["implicit"], ["token id_token token"]),
         )
         for grant_types, response_types in cases:
             with self.subTest(grant_types=grant_types, response_types=response_types):
@@ -538,6 +585,37 @@ class TestDynamicClientRegistration(TestCase):
                 # Refusals speak RFC 7591, never DOT's internal grant constants.
                 assert "openid-hybrid" not in body["error_description"]
                 assert "authorization-code" not in body["error_description"]
+
+    def test_register_response_types_the_server_does_not_serve_is_400(self):
+        """A response type the grant would serve but this server does not is refused.
+
+        Without OpenID Connect no response type with id_token is dispatched, and
+        COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT makes the authorization endpoint
+        refuse the implicit ones, as discovery reflects.
+        """
+        self.client.force_login(self.user)
+        cases = (
+            (False, False, ["id_token"]),
+            (False, False, ["id_token token"]),
+            (True, True, ["token"]),
+            (True, True, ["id_token"]),
+        )
+        for oidc_enabled, implicit_gate, response_types in cases:
+            with self.subTest(
+                oidc_enabled=oidc_enabled, implicit_gate=implicit_gate, response_types=response_types
+            ):
+                self.oauth2_settings.OIDC_ENABLED = oidc_enabled
+                self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = implicit_gate
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["implicit"],
+                    "response_types": response_types,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 400, response.content
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert "response_type" in body["error_description"]
 
     def test_register_malformed_response_types_is_400(self):
         """response_types must be an array of strings."""
@@ -1524,6 +1602,7 @@ class TestDynamicClientRegistrationManagement(TestCase):
 
     def test_put_to_hybrid_and_read_back(self):
         """#1895: a PUT can make the client hybrid, and GET reports it in RFC 7591 terms."""
+        self.oauth2_settings.OIDC_ENABLED = True
         update_data = {
             "redirect_uris": ["https://example.com/cb"],
             "grant_types": ["authorization_code", "implicit", "refresh_token"],
@@ -1575,6 +1654,7 @@ class TestDynamicClientRegistrationManagement(TestCase):
 
     def test_put_inconsistent_response_types_is_400(self):
         """A PUT is checked like a registration; the row is left unchanged."""
+        self.oauth2_settings.OIDC_ENABLED = True
         update_data = {
             "redirect_uris": ["https://example.com/cb"],
             "grant_types": ["authorization_code", "implicit"],

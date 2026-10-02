@@ -28,6 +28,7 @@ from oauth2_provider.authorization_server.oidc.client_metadata import (
     id_token_signed_response_alg,
     id_token_signing_algorithm,
 )
+from oauth2_provider.authorization_server.views.metadata import bcp_filter_response_types
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.utils import jwk_allows_verification, parse_bearer_token
 from oauth2_provider.models import (
@@ -68,8 +69,9 @@ REDIRECT_REQUIRED_GRANT_TYPES = {
 
 # The response types an application of each DOT grant type can use, in the
 # canonical form registration responses report them in. They mirror
-# OAuth2Validator.validate_response_type. A grant type absent here serves no
-# response type.
+# OAuth2Validator.validate_response_type; _served_response_types narrows them
+# to the ones this server serves. A grant type absent here serves no response
+# type.
 RESPONSE_TYPES_BY_GRANT = {
     AbstractApplication.GRANT_AUTHORIZATION_CODE: ("code",),
     AbstractApplication.GRANT_IMPLICIT: ("id_token", "id_token token", "token"),
@@ -77,10 +79,35 @@ RESPONSE_TYPES_BY_GRANT = {
 }
 
 
-def _response_type_values(response_type: str) -> frozenset[str]:
+def _response_type_values(response_type: str) -> frozenset[str] | None:
     """The values of a space-delimited response type, whose order is not
-    significant (RFC 6749 section 3.1.1)."""
-    return frozenset(response_type.split())
+    significant (RFC 6749 section 3.1.1), or None when a value repeats: the
+    authorization endpoint can never serve such a response type."""
+    values = response_type.split()
+    unique = frozenset(values)
+    return unique if len(unique) == len(values) else None
+
+
+def _served_response_types(dot_grant: str) -> list[str]:
+    """The response types an application of *dot_grant* can use on this server.
+
+    That is the grant's own response types, less any the server does not
+    advertise: the discovery documents' list (OIDC_RESPONSE_TYPES_SUPPORTED with
+    OpenID Connect enabled, OAUTH2_RESPONSE_TYPES_SUPPORTED otherwise), less
+    the implicit ones COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT makes the
+    authorization endpoint refuse. Without OpenID Connect, for instance, no
+    response type with ``id_token`` is served.
+    """
+    if oauth2_settings.OIDC_ENABLED:
+        supported = oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED
+    else:
+        supported = oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED
+    advertised = {
+        _response_type_values(rt) for rt in bcp_filter_response_types(supported) if isinstance(rt, str)
+    }
+    return [
+        rt for rt in RESPONSE_TYPES_BY_GRANT.get(dot_grant, ()) if _response_type_values(rt) in advertised
+    ]
 
 
 def _error_response(error, description, status=400):
@@ -168,6 +195,15 @@ def _resolve_grant_type(grant_types: list[str]) -> tuple[str | None, JsonRespons
         )
 
     if set(meaningful) == HYBRID_GRANT_TYPES:
+        if not _served_response_types(AbstractApplication.GRANT_OPENID_HYBRID):
+            # Without OpenID Connect (or with its hybrid response types not
+            # offered) the client could use none of the response types it
+            # registers both grants for (RFC 7591 section 2.1).
+            return None, _error_response(
+                "invalid_client_metadata",
+                "grant_types authorization_code with implicit registers an OpenID Connect hybrid "
+                "client, and this server serves none of the hybrid response types",
+            )
         return AbstractApplication.GRANT_OPENID_HYBRID, None
 
     if len(meaningful) > 1:
@@ -194,10 +230,11 @@ def _check_response_types(data: dict[str, Any], dot_grant: str) -> JsonResponse 
 
     RFC 7591 section 2.1 asks the server to keep a client from registering
     itself into an inconsistent state, so every response type must be one the
-    application will be able to use: OpenID Connect Dynamic Client
-    Registration 1.0 section 2 lists the grant types each response type needs,
-    and DOT serves one grant type per application, so a hybrid client cannot
-    use the plain ``code`` response type either.
+    application will be able to use (see _served_response_types): OpenID
+    Connect Dynamic Client Registration 1.0 section 2 lists the grant types
+    each response type needs, DOT serves one grant type per application, so a
+    hybrid client cannot use the plain ``code`` response type either, and the
+    server's own configuration can rule response types out.
 
     response_types is not stored. Whether or not the client sent it, the
     server provisions every response type the grant serves and the response
@@ -214,9 +251,10 @@ def _check_response_types(data: dict[str, Any], dot_grant: str) -> JsonResponse 
     if not all(isinstance(rt, str) for rt in response_types):
         return _error_response("invalid_client_metadata", "Each response_type must be a string")
 
-    served = {_response_type_values(rt) for rt in RESPONSE_TYPES_BY_GRANT.get(dot_grant, ())}
+    served = {_response_type_values(rt) for rt in _served_response_types(dot_grant)}
     for response_type in response_types:
-        if _response_type_values(response_type) not in served:
+        values = _response_type_values(response_type)
+        if values is None or values not in served:
             grant_types = ", ".join(_dot_grant_to_rfc_grant_types(dot_grant))
             return _error_response(
                 "invalid_client_metadata",
@@ -457,7 +495,7 @@ def _application_to_response(
         "grant_types": _dot_grant_to_rfc_grant_types(application.authorization_grant_type),
         # Derived from the grant, see _check_response_types. Always present: an
         # omitted response_types means "code" (RFC 7591 section 2).
-        "response_types": list(RESPONSE_TYPES_BY_GRANT.get(application.authorization_grant_type, ())),
+        "response_types": _served_response_types(application.authorization_grant_type),
         "token_endpoint_auth_method": auth_method,
         "registration_access_token": registration_access_token,
         "registration_client_uri": request.build_absolute_uri(
