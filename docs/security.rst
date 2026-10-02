@@ -134,7 +134,9 @@ Implicit grant (§2.1.2)
 The implicit grant MUST NOT be used. Set
 ``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True`` to reject the ``token`` /
 ``id_token`` response types and stop advertising ``implicit`` in the
-authorization-server metadata.
+authorization-server metadata and the OpenID Connect discovery document. ``implicit``
+stays advertised while a hybrid response type (for example ``code token``) is still
+advertised, because hybrid response types need it and this setting does not reject them.
 
 Resource owner password credentials grant (§2.4)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

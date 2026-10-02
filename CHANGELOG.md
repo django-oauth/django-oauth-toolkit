@@ -287,9 +287,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   header), and any other unsafe method. It does so itself, so consent is now CSRF-protected even
   without `CsrfViewMiddleware`. `AuthorizationView.is_consent_submission` tells the two kinds of
   POST apart.
-* #1900 The OpenID Connect discovery document now publishes `grant_types_supported`, built from the same
-  list and `COMPLIANT_BCP_RFC9700_*` filtering as the RFC 8414 metadata. Omitting it made relying
-  parties assume the default `["authorization_code", "implicit"]` and hide `refresh_token`.
+* #1900 The OpenID Connect discovery document now publishes `grant_types_supported`, built from
+  `OAUTH2_GRANT_TYPES_SUPPORTED` with the same `COMPLIANT_BCP_RFC9700_*` filtering as the RFC 8414
+  metadata. Omitting it made relying parties assume the default `["authorization_code", "implicit"]`
+  and hide `refresh_token`. With `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` on, `implicit` now stays in
+  `grant_types_supported` of both documents while a hybrid response type (for example `code token`)
+  is still advertised, because hybrid response types need it. Previously the RFC 8414 metadata
+  dropped it in that case.
 * #1880 The Dynamic Client Registration (RFC 7591) response now includes `client_secret_expires_at`
   (`0`, since the toolkit's client secrets do not expire) whenever it returns a `client_secret`, as
   RFC 7591 section 3.2.1 requires, and reports `client_id_issued_at` in registration and RFC 7592

@@ -643,7 +643,9 @@ for the full mapping and a copy/paste compliant settings block.
 
 ``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT``
     Default: ``False``. When ``True``, the implicit grant (``token`` / ``id_token``
-    response types) is rejected and no longer advertised (RFC 9700 §2.1.2).
+    response types) is rejected and no longer advertised (RFC 9700 §2.1.2). ``implicit``
+    stays in ``grant_types_supported`` while a hybrid response type is still advertised,
+    since hybrid response types need it and are not rejected by this setting.
 
 ``COMPLIANT_BCP_RFC9700_PASSWORD_GRANT``
     Default: ``False``. When ``True``, the resource owner password credentials grant
