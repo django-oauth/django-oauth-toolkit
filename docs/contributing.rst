@@ -492,7 +492,10 @@ and RP-Initiated Logout, with static and dynamically registered clients). CI run
   tox -e openid-conformance-suite -- --plan basic  # one plan; --list-plans shows them
 
 Accepted deviations are recorded per plan under ``tests/openid-conformance-suite/expected/``;
-any other failure or warning fails the run. ``tests/openid-conformance-suite/README.md`` describes
+any other failure or warning fails the run. Only the plans that pass today (Config and
+RP-Initiated Logout with static clients) are required for a merge; the others still run on every
+push and report their totals in the job summary without failing the job. Once a change makes
+another plan pass, mark it ``required`` in the workflow matrix so it cannot regress. ``tests/openid-conformance-suite/README.md`` describes
 the plans, how to run a single one, and how to update the waivers or the pinned suite version.
 These runs are not a certification: that still means running the hosted suite at
 certification.openid.net and submitting the results.

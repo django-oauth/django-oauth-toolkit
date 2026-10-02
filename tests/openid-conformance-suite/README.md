@@ -49,6 +49,12 @@ that did not run to completion.
 runs with. CI runs one matrix job per name, each with its own stack, so a plan's failure is
 visible on its own and the jobs run in parallel.
 
+Only the plans that pass are required: `config` and `rp-initiated-logout`, marked `required` in
+the workflow matrix and gating the merge through the `Test successful` check. The others run on
+every push but do not fail their job; each job writes the runner's totals to its summary and
+uploads the full report, so progress on the open gaps shows up run over run. When a plan passes,
+add it to the matrix's `include` list with `required: true` so it cannot regress.
+
 | Name | Plan | Clients |
 |---|---|---|
 | `config` | `oidcc-config-certification-test-plan` | static |
