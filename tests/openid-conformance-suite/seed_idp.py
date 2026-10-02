@@ -70,6 +70,7 @@ def main() -> None:
     django.setup()
 
     from django.contrib.auth import get_user_model
+    from idp.models import UserProfile
 
     from oauth2_provider.models import get_application_model
 
@@ -81,6 +82,20 @@ def main() -> None:
     user.email = "conformance@example.com"
     user.set_password(PASSWORD)
     user.save()
+    # Sources for the email_verified, phone and address claims (see idp.models.UserProfile).
+    UserProfile.objects.update_or_create(
+        user=user,
+        defaults={
+            "email_verified": True,
+            "phone_number": "+1 (555) 555-0100",
+            "phone_number_verified": True,
+            "street_address": "1 Conformance Way",
+            "locality": "Testville",
+            "region": "CA",
+            "postal_code": "90210",
+            "country": "US",
+        },
+    )
 
     application_model = get_application_model()
     count = 0

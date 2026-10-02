@@ -30,6 +30,10 @@ env = environ.FileAwareEnv(
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED=(bool, True),
     OAUTH2_PROVIDER_DCR_ENABLED=(bool, True),
     OAUTH2_PROVIDER_CIMD_ENABLED=(bool, False),
+    # Return the profile/email/address/phone scope claims from UserInfo rather than the
+    # ID Token when an access token is issued (OIDC Core §5.4). On by default in the demo;
+    # set to false to exercise the library's legacy default.
+    OAUTH2_PROVIDER_OIDC_COMPLIANT_SCOPE_CLAIMS=(bool, True),
     OAUTH2_PROVIDER_CIMD_METADATA_FETCHER=(
         str,
         "oauth2_provider.authorization_server.cimd.SafeMetadataFetcher",
@@ -272,6 +276,7 @@ OAUTH2_PROVIDER = {
     "OAUTH_DEVICE_VERIFICATION_URI_COMPLETE": lambda x: f"http://127.0.0.1:8000/o/device?user_code={x}",
     "OIDC_ENABLED": env("OAUTH2_PROVIDER_OIDC_ENABLED"),
     "OIDC_RP_INITIATED_LOGOUT_ENABLED": env("OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED"),
+    "OIDC_COMPLIANT_SCOPE_CLAIMS": env("OAUTH2_PROVIDER_OIDC_COMPLIANT_SCOPE_CLAIMS"),
     # this key is just for out test app, you should never store a key like this in a production environment.
     "OIDC_RSA_PRIVATE_KEY": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY"),
     # A callable (given here as an import string) lets the access token lifetime vary

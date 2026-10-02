@@ -54,22 +54,34 @@ class CustomOAuth2Validator(OAuth2Validator):
         return True
 
     def get_additional_claims(self, request):
-        # Standard OIDC claims sourced from the Django user. django-oauth-toolkit
-        # filters each claim by the granted scope via ``oidc_claim_scope`` (e.g.
-        # ``email`` is only emitted when the ``email`` scope was granted, the
-        # ``profile`` claims only with the ``profile`` scope), so returning them
-        # unconditionally here is safe. These feed both the ID Token and the
-        # UserInfo response, giving the compliance suite real claims to assert.
-        # NB: email_verified is intentionally omitted. OIDC defines it as whether
-        # the address has actually been verified, which the stock Django user
-        # model does not track; emitting bool(email) would misrepresent it.
-        return {
-            "name": request.user.get_full_name() or request.user.get_username(),
-            "given_name": request.user.first_name,
-            "family_name": request.user.last_name,
-            "preferred_username": request.user.get_username(),
-            "email": request.user.email,
+        # Standard OIDC claims sourced from the Django user and its idp.models.UserProfile.
+        # django-oauth-toolkit filters each claim by the granted scope via
+        # ``oidc_claim_scope`` (e.g. ``email`` is only emitted when the ``email`` scope was
+        # granted, the ``profile`` claims only with the ``profile`` scope), so returning
+        # them unconditionally here is safe. With OIDC_COMPLIANT_SCOPE_CLAIMS enabled they
+        # are returned from UserInfo, and in the ID Token only for response_type=id_token
+        # (OIDC Core §5.4), giving the compliance suite real claims to assert.
+        user = request.user
+        claims = {
+            "name": user.get_full_name() or user.get_username(),
+            "given_name": user.first_name,
+            "family_name": user.last_name,
+            "preferred_username": user.get_username(),
+            "email": user.email,
         }
+        # email_verified etc. come from the profile only: the stock Django user model
+        # does not track whether the address was verified, and emitting bool(email)
+        # would misrepresent it.
+        profile = getattr(user, "oidc_profile", None)
+        if profile is not None:
+            claims["email_verified"] = profile.email_verified
+            if profile.phone_number:
+                claims["phone_number"] = profile.phone_number
+                claims["phone_number_verified"] = profile.phone_number_verified
+            address = profile.address_claim()
+            if address:
+                claims["address"] = address
+        return claims
 
 
 def access_token_expires_in(request):
