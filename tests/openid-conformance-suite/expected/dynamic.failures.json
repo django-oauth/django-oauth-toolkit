@@ -111,7 +111,7 @@
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
         "current-block": "",
-        "condition": "WebRunner",
+        "condition": "CheckDiscEndpointRequestUriParameterSupported",
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
@@ -125,8 +125,8 @@
             "server_metadata": "discovery"
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "oidcc-request-uri-signed-rs256",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckIfAuthorizationEndpointError",
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
@@ -141,7 +141,7 @@
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
         "current-block": "",
-        "condition": "WebRunner",
+        "condition": "CheckDiscEndpointRequestUriParameterSupported",
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
@@ -155,8 +155,8 @@
             "server_metadata": "discovery"
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "oidcc-request-uri-unsigned",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckIfAuthorizationEndpointError",
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true

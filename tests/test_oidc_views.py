@@ -61,6 +61,8 @@ class TestConnectDiscoveryInfoView(TestCase):
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
             "client_id_metadata_document_supported": False,
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
             "prompt_values_supported": ["none", "login"],
         }
         response = self.client.get("/o/.well-known/openid-configuration")
@@ -107,6 +109,8 @@ class TestConnectDiscoveryInfoView(TestCase):
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
             "client_id_metadata_document_supported": False,
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
             "prompt_values_supported": ["none", "login"],
         }
         response = self.client.get("/o/.well-known/openid-configuration/")
@@ -136,6 +140,8 @@ class TestConnectDiscoveryInfoView(TestCase):
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
             "client_id_metadata_document_supported": False,
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
             "prompt_values_supported": ["none", "login"],
             "end_session_endpoint": f"{base}/logout/",
         }
@@ -172,6 +178,8 @@ class TestConnectDiscoveryInfoView(TestCase):
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
             "client_id_metadata_document_supported": False,
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
             "prompt_values_supported": ["none", "login"],
         }
         response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
@@ -302,6 +310,8 @@ class TestRPInitiatedRegistration(TestCase):
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
             "client_id_metadata_document_supported": False,
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
             "prompt_values_supported": ["none", "login", "create"],
         }
         response = self.client.get("/o/.well-known/openid-configuration")
@@ -1438,6 +1448,8 @@ class TestOAuthServerMetadataView(TestCase):
             ],
             "scopes_supported": ["openid", "read", "write"],
             "client_id_metadata_document_supported": False,
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "revocation_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "introspection_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
@@ -1468,6 +1480,8 @@ class TestOAuthServerMetadataView(TestCase):
             ],
             "scopes_supported": ["openid", "read", "write"],
             "client_id_metadata_document_supported": False,
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "revocation_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "introspection_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],

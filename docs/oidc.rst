@@ -251,6 +251,27 @@ To setup an OIDC Hybrid Flow application, create an ``Application`` with a
 grant type of ``OpenID connect hybrid`` and select your desired signing
 algorithm.
 
+.. _oidc-request-objects:
+
+Request objects
+---------------
+
+Request objects (OpenID Connect Core 1.0 section 6), passed by value in the
+``request`` parameter or by reference in a ``request_uri``, are not supported.
+Once the client and redirect URI have been validated, the authorization endpoint
+redirects such a request back to the client with the section 3.1.2.6 error
+``request_not_supported`` or ``request_uri_not_supported``. If the client or
+redirect URI is invalid, the error is shown to the user instead. The request is
+checked before the user is asked to log in, so a client gets this error even when the
+user is not logged in, including for a ``prompt=none`` request. Parameters inside a
+request object are never read, so a ``state`` sent only inside it is not echoed.
+
+The discovery document publishes ``request_parameter_supported`` and
+``request_uri_parameter_supported`` as ``false``. A ``request_uri`` issued by the
+:doc:`pushed authorization request <pushed_authorization_requests>` endpoint
+(``urn:ietf:params:oauth:request_uri:...``) is still accepted: PAR is advertised
+separately through ``pushed_authorization_request_endpoint``.
+
 
 Customizing the OIDC responses
 ==============================
