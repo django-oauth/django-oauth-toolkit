@@ -4,6 +4,8 @@ Tests for OAuth Client ID Metadata Document (CIMD) support.
 draft-ietf-oauth-client-id-metadata-document
 """
 
+import base64
+import hashlib
 import json
 import logging
 import socket
@@ -115,6 +117,13 @@ class _SharedSecretWithPluralFetcher:
             token_endpoint_auth_methods_supported=["client_secret_basic", "none"],
         )
         return document, 3600
+
+
+class _ExtraGrantFetcher:
+    def fetch(self, client_id):
+        # The grant_types Claude publishes at https://claude.ai/oauth/mcp-oauth-client-metadata.
+        grant_types = ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+        return _document(grant_types=grant_types), 3600
 
 
 class _FailingFetcher:
@@ -362,7 +371,7 @@ def test_build_application_kwargs_private_key_jwt(
         {k: v for k, v in _document().items() if k != "redirect_uris"},
         _document(grant_types="authorization_code"),  # not a list
         _document(grant_types=[123]),
-        _document(grant_types=["client_credentials"]),  # not a public/known grant
+        _document(grant_types=["client_credentials"]),  # no supported grant remains
         _document(grant_types=[]),  # nothing left to register
         _document(grant_types=["refresh_token"]),  # refresh alone registers no flow
         _document(client_name=123),
@@ -1454,6 +1463,58 @@ def test_openid_code_flow_issues_id_token_to_cimd_client(cimd_enabled, client, d
     claims = json.loads(verified.claims)
     assert claims["aud"] == CLIENT_URL
     assert claims["nonce"] == "random_nonce"
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_code_flow_completes_for_a_document_declaring_an_unsupported_grant(
+    cimd_enabled, client, django_user_model
+):
+    """Regression test for #1855.
+
+    A document naming ``jwt-bearer`` next to ``authorization_code`` used to be
+    refused as a whole, so the client could not start an authorization request
+    at all. It now registers for the authorization code grant and completes the
+    flow, refresh token included.
+    """
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ExtraGrantFetcher)
+    user = django_user_model.objects.create_user("cimd_extra_grant_user", password="123456")
+    client.force_login(user)
+    redirect_uri = "https://client.example.com/callback"
+    code_verifier = "cimd-extra-grant-verifier-" + "x" * 43
+    code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=")
+    authorize_data = {
+        "client_id": CLIENT_URL,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": "read",
+        "state": "random_state_string",
+        "code_challenge": code_challenge.decode(),
+        "code_challenge_method": "S256",
+    }
+
+    response = client.get(reverse("oauth2_provider:authorize"), data=authorize_data)
+    assert response.status_code == 200, response.content
+    response = client.post(reverse("oauth2_provider:authorize"), data={**authorize_data, "allow": True})
+    assert response.status_code == 302, response.content
+    code = parse_qs(urlparse(response["Location"]).query)["code"][0]
+    app = Application.objects.get(client_id=CLIENT_URL)
+    assert app.authorization_grant_type == Application.GRANT_AUTHORIZATION_CODE
+
+    response = post_form(
+        client,
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": CLIENT_URL,
+            "code_verifier": code_verifier,
+        },
+    )
+    assert response.status_code == 200, response.content
+    content = response.json()
+    assert content["access_token"]
+    assert content["refresh_token"]
 
 
 # ---------------------------------------------------------------------------
