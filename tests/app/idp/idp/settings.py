@@ -94,6 +94,11 @@ ipUMvb4Se0LDJnmFuv8v6gM6V4vyXkP855mNOiRHUOHOSKdQ3SeKrLlnR6I=
 -----END RSA PRIVATE KEY-----
 """,
     ),
+    # Retired signing keys still published in the JWKS, so tokens they signed keep
+    # verifying after a rotation (see "Rotating the signing key" in
+    # tests/openid-conformance-suite/README.md). Comma-separated PEMs with no trailing
+    # comma, or a file via OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEYS_INACTIVE_FILE.
+    OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEYS_INACTIVE=(list, []),
     OAUTH2_PROVIDER_SCOPES=(dict, {"openid": "OpenID Connect scope"}),
     # DEFAULT_SCOPES and PKCE_REQUIRED are env-driven so the end-to-end
     # compliance suite can exercise flows that need extra scopes or need PKCE
@@ -279,6 +284,7 @@ OAUTH2_PROVIDER = {
     "OIDC_COMPLIANT_SCOPE_CLAIMS": env("OAUTH2_PROVIDER_OIDC_COMPLIANT_SCOPE_CLAIMS"),
     # this key is just for out test app, you should never store a key like this in a production environment.
     "OIDC_RSA_PRIVATE_KEY": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY"),
+    "OIDC_RSA_PRIVATE_KEYS_INACTIVE": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEYS_INACTIVE"),
     # A callable (given here as an import string) lets the access token lifetime vary
     # per request -- see "Varying the access token lifetime per request" in the docs.
     "ACCESS_TOKEN_EXPIRE_SECONDS": "idp.oauth.access_token_expires_in",
