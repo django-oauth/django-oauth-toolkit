@@ -45,6 +45,7 @@ Creates a new OAuth2 application (RFC 7591).  Authentication is controlled by
      "client_secret_expires_at": 0,
      "redirect_uris": ["https://example.com/callback"],
      "grant_types": ["authorization_code", "refresh_token"],
+     "response_types": ["code"],
      "token_endpoint_auth_method": "client_secret_basic",
      "client_name": "My Application",
      "registration_access_token": "...",
@@ -103,7 +104,15 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``grant_types`` (array)             | ``authorization_grant_type``      | ``refresh_token`` is ignored;    |
 |                                     |                                   | only one non-refresh grant type  |
-|                                     |                                   | is supported per application     |
+|                                     |                                   | is supported per application,    |
+|                                     |                                   | except ``authorization_code``    |
+|                                     |                                   | with ``implicit``, which maps to |
+|                                     |                                   | ``openid-hybrid``; see the note  |
+|                                     |                                   | below                            |
++-------------------------------------+-----------------------------------+----------------------------------+
+| ``response_types`` (array)          | (not stored)                      | Checked against ``grant_types``  |
+|                                     |                                   | and derived from them in         |
+|                                     |                                   | responses; see the note below    |
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``token_endpoint_auth_method: none``| ``client_type = "public"``        |                                  |
 +-------------------------------------+-----------------------------------+----------------------------------+
@@ -114,6 +123,39 @@ Field Mapping
 |                                     |                                   | ``OIDC_RSA_PRIVATE_KEY``; see    |
 |                                     |                                   | the note below                   |
 +-------------------------------------+-----------------------------------+----------------------------------+
+
+.. note::
+    An application serves one grant type, so ``grant_types`` may name only one besides
+    ``refresh_token``. The exception is an OpenID Connect hybrid client, whose response types need
+    both ``authorization_code`` and ``implicit`` (`OpenID Connect Dynamic Client Registration 1.0
+    section 2 <https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata>`_):
+    that pair registers an application with the OpenID Connect hybrid grant, reported in responses
+    as ``["authorization_code", "implicit", "refresh_token"]``. The pair is refused when the server
+    serves none of the hybrid response types, as without OpenID Connect enabled.
+
+    ``response_types`` is optional and not stored. When it is sent, every value must be one the
+    registered grant can use on this server, or the request is refused with
+    ``invalid_client_metadata`` (`RFC 7591 section 2.1
+    <https://datatracker.ietf.org/doc/html/rfc7591#section-2.1>`_). A grant can use:
+
+    - ``authorization_code``: ``code``;
+    - ``implicit``: ``token``, ``id_token`` and ``id_token token``;
+    - ``authorization_code`` with ``implicit``: ``code id_token``, ``code token`` and
+      ``code id_token token``. A hybrid client cannot also use plain ``code``;
+    - any other grant type: none;
+
+    each only while the server advertises it: it must be listed in
+    ``OIDC_RESPONSE_TYPES_SUPPORTED`` when OpenID Connect is enabled, otherwise in
+    ``OAUTH2_RESPONSE_TYPES_SUPPORTED``, and the implicit ones are dropped while
+    ``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT`` is enabled, as in the discovery documents. The order
+    of the space-separated values in a response type does not matter, but a repeated value is
+    refused.
+
+    Registration and management responses report those response types for the registered grant,
+    in that canonical form, whether or not the request sent ``response_types``: the server
+    provisions every response type the grant serves (RFC 7591 sections 2 and 3.2.1). A grant with
+    none reports an empty list, because an omitted ``response_types`` would mean ``code``. Sending
+    the reported list back in a ``PUT`` passes the check.
 
 .. note::
     ``id_token_signed_response_alg`` (`OpenID Connect Dynamic Client Registration 1.0 section 2
