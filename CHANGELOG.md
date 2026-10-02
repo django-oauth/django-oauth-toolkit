@@ -195,6 +195,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which returns the oauthlib request (and so the authenticated client) alongside the result of
   `authenticate_client()`, and records the authenticated client on the Django request; its
   `authenticate_client()` delegates to it. See "Who may introspect" in `docs/resource_server.rst`.
+* #1904 Dynamic client registration stores the `client_uri`, `logo_uri`, `policy_uri` and `tos_uri`
+  client metadata (RFC 7591 §2, OpenID Connect Dynamic Client Registration 1.0 §2), which were
+  previously dropped, reports them in registration and RFC 7592 management responses, and the
+  consent page (`oauth2_provider/authorize.html`) shows the logo and links to the other three
+  through a new `oauth2_provider/client_branding.html` partial. Each must be an absolute `https`
+  URL, enforced at registration (`invalid_client_metadata`) and by `Application.clean()`. Under a
+  Content Security Policy, `img-src` has to allow a client's logo host for the logo to load.
+  Migration `0028_application_client_display_metadata` adds the four Application fields; it skips a
+  swapped Application model, so run `makemigrations` for your app (no data step is needed). The
+  demo IdP's login page (`tests/app/idp`) shows them too, for the OpenID certification
+  `oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` review modules.
 ### Changed
 * #1896 `Application.clean()` now validates each entry in `post_logout_redirect_uris` with the
   `REDIRECT_URI_VALIDATOR` (by default against `ALLOWED_REDIRECT_URI_SCHEMES`), reporting problems on

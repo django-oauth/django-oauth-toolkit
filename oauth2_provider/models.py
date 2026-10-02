@@ -330,6 +330,38 @@ class AbstractApplication(models.Model):
         ),
         verbose_name=_("client JWKS URI"),
     )
+    # Client metadata the authorization server SHOULD display to the End-User
+    # during approval (RFC 7591 section 2, OpenID Connect Dynamic Client
+    # Registration 1.0 section 2). clean() requires https, so a value can be
+    # placed in an href or src without admitting another scheme.
+    client_uri = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_("HTTPS URL of a web page with information about the client, shown on the consent page."),
+        verbose_name=_("client URI"),
+    )
+    logo_uri = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_("HTTPS URL of the client's logo image, shown on the consent page."),
+        verbose_name=_("logo URI"),
+    )
+    policy_uri = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_("HTTPS URL of the client's privacy policy, linked from the consent page."),
+        verbose_name=_("policy URI"),
+    )
+    tos_uri = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_("HTTPS URL of the client's terms of service, linked from the consent page."),
+        verbose_name=_("terms of service URI"),
+    )
     allowed_origins = models.TextField(
         blank=True,
         help_text=_("Allowed origins list to enable CORS, space separated"),
@@ -547,6 +579,13 @@ class AbstractApplication(models.Model):
                             params={"value": uri},
                         )
                     )
+
+        for field in ("client_uri", "logo_uri", "policy_uri", "tos_uri"):
+            value = getattr(self, field)
+            if value and not value.lower().startswith("https://"):
+                field_errors[field].append(
+                    ValidationError(_("{field} must use the https scheme.").format(field=field))
+                )
 
         if self.algorithm == AbstractApplication.RS256_ALGORITHM:
             if not oauth2_settings.OIDC_RSA_PRIVATE_KEY:

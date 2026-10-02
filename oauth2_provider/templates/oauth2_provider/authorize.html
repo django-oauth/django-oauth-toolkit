@@ -6,6 +6,7 @@
         {% if not error %}
             <form id="authorizationForm" method="post">
                 <h3 class="block-center-heading">{% trans "Authorize" %} {{ application.name }}?</h3>
+                {% include "oauth2_provider/client_branding.html" %}
                 {% csrf_token %}
 
                 {% for field in form %}

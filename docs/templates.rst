@@ -18,6 +18,7 @@ The templates available are:
 
 - `base.html`_
 - `authorize.html`_
+- `client_branding.html`_
 - `Management`_:
     - `Application`_:
         - `application_list.html`_
@@ -63,7 +64,8 @@ It is served like any other static file, so run ``collectstatic`` (or serve the 
 static files some other way) for the built-in pages to be styled. Because nothing is
 fetched from a third-party host and no inline ``<style>`` is used, the shipped pages
 render offline and under a strict Content Security Policy such as
-``default-src 'self'`` (see :ref:`csp-authorization-form`).
+``default-src 'self'`` (see :ref:`csp-authorization-form`). The one remote resource is a
+client's registered logo on the consent page (see `client_branding.html`_).
 
 To use your own styles — a CSS framework, or your site's stylesheet — override the
 ``css`` block::
@@ -129,6 +131,7 @@ Example (this is the default page you may find on ``templates/oauth2_provider/au
             {% if not error %}
                 <form id="authorizationForm" method="post">
                     <h3 class="block-center-heading">{% trans "Authorize" %} {{ application.name }}?</h3>
+                    {% include "oauth2_provider/client_branding.html" %}
                     {% csrf_token %}
 
                     {% for field in form %}
@@ -162,6 +165,28 @@ Example (this is the default page you may find on ``templates/oauth2_provider/au
         </div>
     {% endblock %}
 
+
+client_branding.html
+--------------------
+
+A partial included by `authorize.html`_ that shows the End-User the client metadata the
+authorization server SHOULD display during approval (`RFC 7591 section 2
+<https://datatracker.ietf.org/doc/html/rfc7591#section-2>`_): the application's ``logo_uri`` as an
+image and links to its ``client_uri``, ``policy_uri`` and ``tos_uri``. It renders nothing when none
+of them is set. They are set by dynamic client registration (see :doc:`views/dynamic_client_registration`)
+or in the admin, and ``Application.clean()`` accepts only ``https`` URLs for them.
+
+It expects ``application`` in the context, so a login page can include it too, for example to show
+the client the End-User is signing in for::
+
+    {% if application %}
+        {% include "oauth2_provider/client_branding.html" %}
+    {% endif %}
+
+The logo is loaded by the End-User's browser from the client's host. Under a Content Security Policy
+such as ``default-src 'self'`` it is blocked unless ``img-src`` allows that host (see
+:ref:`csp-authorization-form`). Its rendered size is bounded by the ``client-logo`` class of the
+default stylesheet.
 
 Management
 ----------

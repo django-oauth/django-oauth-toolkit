@@ -147,3 +147,52 @@ def test_registered_public_client_receives_id_token(oauth, user_session, issuer)
     assert decode_header(id_token)["alg"] == "RS256"
     claims = validate_id_token(id_token, issuer=issuer, audience=created["client_id"])
     assert claims["nonce"] == "n-dcr"
+
+
+@pytest.mark.compliance("RFC 7591", "2", "logo_uri, policy_uri and tos_uri are displayed to the End-User")
+def test_registered_display_metadata_is_shown_to_the_end_user(oauth, user_session):
+    """#1904: the login and consent pages show the client's logo and links.
+
+    These are what the OpenID certification review modules
+    oidcc-registration-logo-uri / -policy-uri / -tos-uri screenshot.
+    """
+    metadata = {
+        "logo_uri": "https://client.example.com/logo.png",
+        "policy_uri": "https://client.example.com/policy",
+        "tos_uri": "https://client.example.com/tos",
+    }
+    created = _register_ok(
+        oauth,
+        {
+            "client_name": "Branded Client",
+            "redirect_uris": [c.REDIRECT_URI],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+            **metadata,
+        },
+    )
+    for name, value in metadata.items():
+        assert created[name] == value
+
+    params = {
+        "client_id": created["client_id"],
+        "response_type": "code",
+        "redirect_uri": c.REDIRECT_URI,
+        "scope": "read",
+        "state": "s",
+        "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGkSstw-cM",
+        "code_challenge_method": "S256",
+    }
+    # Anonymous: the authorization endpoint sends the End-User to the login page.
+    login_page = requests.get(oauth.url("/o/authorize/"), params=params, timeout=10)
+    assert login_page.status_code == 200
+    assert "/accounts/login/" in login_page.url
+    # Authenticated: the consent page.
+    consent_page = user_session.get(oauth.url("/o/authorize/"), params=params, timeout=10)
+    assert consent_page.status_code == 200
+    assert 'name="allow"' in consent_page.text
+
+    for page in (login_page, consent_page):
+        assert f'src="{metadata["logo_uri"]}"' in page.text
+        assert f'href="{metadata["policy_uri"]}"' in page.text
+        assert f'href="{metadata["tos_uri"]}"' in page.text

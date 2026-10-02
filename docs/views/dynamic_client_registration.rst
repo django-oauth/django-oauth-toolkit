@@ -131,6 +131,11 @@ Field Mapping
 |                                     |                                   | signs UserInfo; see the note     |
 |                                     |                                   | below                            |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``client_uri``, ``logo_uri``,       | ``client_uri``, ``logo_uri``,     | Absolute ``https`` URLs of at    |
+| ``policy_uri``, ``tos_uri``         | ``policy_uri``, ``tos_uri``       | most 500 characters, shown on    |
+|                                     |                                   | the consent page; see the note   |
+|                                     |                                   | below                            |
++-------------------------------------+-----------------------------------+----------------------------------+
 
 .. note::
     An application serves one grant type, so ``grant_types`` may name only one besides
@@ -234,6 +239,29 @@ Field Mapping
     every other field, a ``PUT`` that omits it resets the UserInfo response to JSON. Registration
     and management responses report it only while the server signs UserInfo responses, so a client
     is never told to expect a JWT it would receive as JSON.
+
+.. note::
+    ``client_uri``, ``logo_uri``, ``policy_uri`` and ``tos_uri`` (`RFC 7591 section 2
+    <https://datatracker.ietf.org/doc/html/rfc7591#section-2>`_, `OpenID Connect Dynamic Client
+    Registration 1.0 section 2
+    <https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata>`_) are the
+    client metadata the authorization server SHOULD show the End-User during approval. The shipped
+    consent template, ``oauth2_provider/authorize.html``, shows the logo and links to the other
+    three through the ``oauth2_provider/client_branding.html`` partial (see :doc:`../templates`).
+    Each must be an absolute ``https`` URL; any other value, including ``http``, is refused with
+    ``invalid_client_metadata``, and so is it by ``Application.clean()`` for an application edited
+    in the admin. An omitted, ``null`` or empty value stores nothing, and like every other field a
+    ``PUT`` that omits one clears it. Language-tagged variants such as ``logo_uri#fr`` are ignored.
+
+    The values are under the client's control. `RFC 7591 section 5
+    <https://datatracker.ietf.org/doc/html/rfc7591#section-5>`_ and `OpenID Connect Dynamic Client
+    Registration 1.0 section 9.1
+    <https://openid.net/specs/openid-connect-registration-1_0.html#ImpersonationAttack>`_ say a
+    server SHOULD check that they share the host of the client's ``redirect_uris``. DOT does not
+    apply that check, so a logo hosted on a CDN can still be registered; a server open to anonymous
+    registration that wants it can enforce it in a custom ``Application.clean()`` of a swapped
+    application model. The logo is loaded by the End-User's browser from the client's host, so a
+    Content Security Policy has to allow it in ``img-src`` (see :ref:`csp-authorization-form`).
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since

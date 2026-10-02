@@ -177,8 +177,9 @@ def overrides():
         ]
     }
     # These modules redirect to the authorization endpoint only to look at the
-    # login page (it should show the registered logo / policy / terms link) and
-    # end once the screenshot placeholder is filled; without it they sit WAITING.
+    # login page and end once the screenshot placeholder is filled; without it
+    # they sit WAITING. The demo IdP's login page (idp.views.ClientBrandedLoginView)
+    # shows the registered logo / policy / terms link for the reviewer to check.
     for module, expectation in (
         ("oidcc-registration-logo-uri", "logo"),
         ("oidcc-registration-policy-uri", "policy document link"),

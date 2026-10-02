@@ -1,5 +1,10 @@
 <!-- templates/registration/login.html -->
+{% load static %}
+<link href="{% static 'oauth2_provider/css/oauth2_provider.css' %}" rel="stylesheet">
 <h2>Log In</h2>
+{% if application %}
+  {% include "oauth2_provider/client_branding.html" %}
+{% endif %}
 <form method="post">
   {% csrf_token %}
   {{ form.as_p }}

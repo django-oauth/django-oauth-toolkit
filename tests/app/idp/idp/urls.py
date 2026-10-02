@@ -23,6 +23,8 @@ from django.views.generic import TemplateView
 from oauth2_provider.resource_server.views.generic import ProtectedResourceMetadataView
 from oauth2_provider.urls import metadata_urlpatterns
 
+from .views import ClientBrandedLoginView
+
 
 class DemoProtectedResourceView(ProtectedResourceMetadataView):
     """A minimal RFC 9728 protected resource.
@@ -42,6 +44,8 @@ urlpatterns = [
     ),  # Maps the root URL to your home_view
     path("admin/", admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
+    # Ahead of django.contrib.auth.urls so it replaces the stock login view.
+    path("accounts/login/", ClientBrandedLoginView.as_view(), name="login"),
     path("accounts/", include("django.contrib.auth.urls")),
     # A demo RFC 9728 protected resource for the end-to-end suite.
     path("resource/", DemoProtectedResourceView.as_view(), name="e2e-protected-resource"),
