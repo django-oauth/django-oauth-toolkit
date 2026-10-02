@@ -96,6 +96,13 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             # draft-ietf-oauth-client-id-metadata-document: kept in sync with the
             # RFC 8414 metadata endpoint so the two discovery documents agree.
             "client_id_metadata_document_supported": oauth2_settings.CIMD_ENABLED,
+            # Request objects (OpenID Connect Core 1.0 section 6) are not supported.
+            # OpenID Connect Discovery 1.0 section 3 defaults request_uri_parameter_supported
+            # to true, so both are published explicitly. The flag covers request objects
+            # passed by reference, not PAR request URIs: PAR is advertised separately
+            # through pushed_authorization_request_endpoint (RFC 9126 section 5).
+            "request_parameter_supported": False,
+            "request_uri_parameter_supported": False,
         }
         # OIDC Discovery: required whenever a JWT client authentication method
         # (RFC 7523 private_key_jwt / client_secret_jwt) is advertised above.

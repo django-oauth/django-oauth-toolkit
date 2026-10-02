@@ -15,8 +15,9 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
-from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
+from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, OAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
+from oauthlib.openid.connect.core.exceptions import RequestNotSupported, RequestURINotSupported
 
 from oauth2_provider.authorization_server import par
 from oauth2_provider.authorization_server.forms import AllowForm
@@ -206,10 +207,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         # reads from the query string, proceeds unchanged. Any parameters supplied
         # alongside request_uri are intentionally ignored: the pushed request is
         # authoritative (RFC 9126), which prevents parameter injection.
+        self._replace_query(request, parameters)
+        return None
+
+    @staticmethod
+    def _replace_query(request: http.HttpRequest, parameters: dict) -> None:
+        """Replace the request's query string, which the authorization flow reads from."""
         query_string = urlencode(parameters, doseq=True)
         request.GET = QueryDict(query_string, mutable=False)
         request.META["QUERY_STRING"] = query_string
-        return None
 
     def _handle_pushed_authorization_request(self, request: http.HttpRequest) -> http.HttpResponse | None:
         """Resolve a pushed ``request_uri`` or enforce mandatory PAR (RFC 9126).
@@ -218,7 +224,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         with the (possibly rewritten) request.
         """
         request_uri = request.GET.get("request_uri")
-        if request_uri:
+        # Only PAR request URIs are resolved here; any other request_uri (OpenID
+        # Connect Core 1.0 section 6.2) is rejected by _reject_request_objects.
+        if request_uri and request_uri.startswith(par.REQUEST_URI_PREFIX):
             return self._resolve_pushed_request_uri(request, request_uri)
         if par.pushed_authorization_required(request.GET.get("client_id")):
             if oauth2_settings.REQUIRE_PUSHED_AUTHORIZATION_REQUESTS:
@@ -228,10 +236,69 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             return self._fatal_par_error(message)
         return None
 
+    def _reject_request_objects(self, request: http.HttpRequest) -> http.HttpResponse | None:
+        """Reject the ``request`` and non-PAR ``request_uri`` parameters.
+
+        Request objects (OpenID Connect Core 1.0 section 6) are not supported, so
+        such a request is answered with ``request_not_supported`` or
+        ``request_uri_not_supported`` (section 3.1.2.6). The error is redirected
+        only once the client and redirect URI have been validated; otherwise it is
+        rendered like any other fatal authorization error.
+
+        Returns ``None`` when the request carries neither parameter. A PAR
+        ``request_uri`` has already been resolved by this point, and the PAR
+        endpoint refuses to store either parameter, so whatever remains is
+        unsupported.
+        """
+        if request.GET.get("request"):
+            error_class = RequestNotSupported
+        elif request.GET.get("request_uri"):
+            error_class = RequestURINotSupported
+        else:
+            return None
+
+        # Validate what remains of the request so the error only goes to a
+        # registered redirect URI, with the client's state echoed.
+        self._replace_query(
+            request,
+            {key: values for key, values in request.GET.lists() if key not in ("request", "request_uri")},
+        )
+        try:
+            _scopes, credentials = self.validate_authorization_request(request)
+            client_id = credentials["client_id"]
+            redirect_uri = credentials["redirect_uri"]
+            state = credentials.get("state")
+        except FatalClientError as error:
+            return self.error_response(error, application=None)
+        except OAuthToolkitError as error:
+            # Any other error may be down to parameters that were only sent inside
+            # the unsupported request object (a nonce, say), so report the
+            # unsupported parameter rather than the symptom.
+            oauthlib_error: OAuth2Error = error.oauthlib_error
+            client_id = oauthlib_error.client_id
+            redirect_uri = oauthlib_error.redirect_uri
+            state = oauthlib_error.state
+
+        unsupported = error_class(state=state)
+        # Carry what oauthlib records from a request, so the error is encoded with
+        # the response mode the client's response type calls for.
+        unsupported.client_id = client_id
+        unsupported.response_type = request.GET.get("response_type")
+        unsupported.response_mode = request.GET.get("response_mode")
+        if not redirect_uri:
+            return self.error_response(FatalClientError(error=unsupported), application=None)
+        application = get_application_model().objects.filter(client_id=client_id).first()
+        error = OAuthToolkitError(error=unsupported, redirect_uri=redirect_uri)
+        return self.error_response(error, application)
+
     def get(self, request, *args, **kwargs):
         par_response = self._handle_pushed_authorization_request(request)
         if par_response is not None:
             return par_response
+
+        unsupported_response = self._reject_request_objects(request)
+        if unsupported_response is not None:
+            return unsupported_response
 
         try:
             scopes, credentials = self.validate_authorization_request(request)

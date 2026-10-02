@@ -156,6 +156,11 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             data["code_challenge_methods_supported"] = bcp_filter_code_challenge_methods(
                 [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS]
             )
+            # Request objects are not supported. RFC 8414 adopts these OpenID Connect
+            # Discovery fields, including request_uri_parameter_supported's default of
+            # true, so publish both as the OpenID discovery document does.
+            data["request_parameter_supported"] = False
+            data["request_uri_parameter_supported"] = False
         # RFC 8414: when a JWT client authentication method (RFC 7523) is
         # advertised, also advertise the JWS algs assertions may be signed with.
         auth_signing_algs = client_assertions.token_endpoint_auth_signing_algs(auth_methods)

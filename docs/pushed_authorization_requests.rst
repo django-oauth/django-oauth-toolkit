@@ -65,6 +65,10 @@ Behavior and limitations
   **not** supported — redirect URIs must be pre-registered and match exactly.
 * **Request objects.** JWT-Secured Authorization Requests (the ``request`` parameter, RFC 9126 §3 /
   RFC 9101) are **not** supported yet; such requests are rejected.
+* **Only PAR request URIs.** The authorization endpoint resolves only ``request_uri`` values in the
+  ``urn:ietf:params:oauth:request_uri:`` namespace issued by this endpoint. Any other
+  ``request_uri`` (a request object passed by reference) is answered with
+  ``request_uri_not_supported``; see :ref:`oidc-request-objects`.
 
 Requiring PAR
 -------------
