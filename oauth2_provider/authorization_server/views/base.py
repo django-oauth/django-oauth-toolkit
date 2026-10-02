@@ -21,6 +21,7 @@ from oauthlib.openid.connect.core.exceptions import RequestNotSupported, Request
 
 from oauth2_provider.authorization_server import par
 from oauth2_provider.authorization_server.forms import AllowForm
+from oauth2_provider.authorization_server.response_modes import add_params_to_authorization_redirect
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
@@ -117,6 +118,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             "client_id": self.oauth2_data.get("client_id", None),
             "state": self.oauth2_data.get("state", None),
             "response_type": self.oauth2_data.get("response_type", None),
+            "response_mode": self.oauth2_data.get("response_mode", None),
             "code_challenge": self.oauth2_data.get("code_challenge", None),
             "code_challenge_method": self.oauth2_data.get("code_challenge_method", None),
             "claims": self.oauth2_data.get("claims", None),
@@ -133,6 +135,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             "response_type": form.cleaned_data.get("response_type", None),
             "state": form.cleaned_data.get("state", None),
         }
+        # A custom authorize.html may not render the response_mode field; the URL the
+        # form posts back to still carries it, except after a pushed request.
+        response_mode = form.cleaned_data.get("response_mode") or self.request.GET.get("response_mode")
+        if response_mode:
+            credentials["response_mode"] = response_mode
         if form.cleaned_data.get("code_challenge", False):
             credentials["code_challenge"] = form.cleaned_data.get("code_challenge")
         if form.cleaned_data.get("code_challenge_method", False):
@@ -164,6 +171,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                         ),
                         redirect_uri=credentials["redirect_uri"],
                     )
+                    # Lets error_response encode it like the successful response.
+                    error.oauthlib_error.response_type = credentials["response_type"]
+                    error.oauthlib_error.response_mode = credentials.get("response_mode")
                     return self.error_response(error, application)
             credentials["resource"] = resource_list
 
@@ -353,6 +363,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         kwargs["client_id"] = credentials["client_id"]
         kwargs["redirect_uri"] = credentials["redirect_uri"]
         kwargs["response_type"] = credentials["response_type"]
+        kwargs["response_mode"] = request.GET.get("response_mode")
         kwargs["state"] = credentials["state"]
         if "code_challenge" in credentials:
             kwargs["code_challenge"] = credentials["code_challenge"]
@@ -382,6 +393,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                         ),
                         redirect_uri=credentials["redirect_uri"],
                     )
+                    # Lets error_response encode it like the successful response.
+                    error.oauthlib_error.response_type = credentials["response_type"]
+                    error.oauthlib_error.response_mode = self.request.GET.get("response_mode")
                     return self.error_response(error, application)
             # For form display: store as space-separated string
             # Multiple resources are rare, but we need to preserve them
@@ -603,8 +617,14 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             if state:
                 response_parameters["state"] = state
 
-            separator = "&" if "?" in redirect_uri else "?"
-            redirect_to = redirect_uri + separator + urlencode(response_parameters)
+            # Implicit and hybrid errors go in the fragment, like their successful
+            # responses (OpenID Connect Core 3.2.2.6 and 3.3.2.6).
+            redirect_to = add_params_to_authorization_redirect(
+                redirect_uri,
+                urlencode(response_parameters),
+                credentials.get("response_type"),
+                self.request.GET.get("response_mode"),
+            )
             # RFC 9207 §2 requires `iss` on every authorization response returned
             # to the client, error responses included; the redirect URI used here
             # was validated against the registered client above.

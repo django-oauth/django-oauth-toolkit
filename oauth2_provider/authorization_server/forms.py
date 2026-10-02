@@ -25,6 +25,9 @@ class AllowForm(forms.Form):
     client_id = forms.CharField(widget=forms.HiddenInput())
     state = forms.CharField(required=False, widget=forms.HiddenInput())
     response_type = forms.CharField(widget=forms.HiddenInput())
+    # Kept so the response honours it after the GET: with PAR, the URL the form
+    # posts back to carries only request_uri.
+    response_mode = forms.CharField(required=False, widget=forms.HiddenInput())
     code_challenge = forms.CharField(required=False, widget=forms.HiddenInput())
     code_challenge_method = forms.CharField(required=False, widget=forms.HiddenInput())
     claims = forms.CharField(required=False, widget=forms.HiddenInput())

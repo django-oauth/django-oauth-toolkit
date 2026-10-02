@@ -8,6 +8,10 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.common import quote, urlencode, urlencoded
 from oauthlib.oauth2 import OAuth2Error
 
+from oauth2_provider.authorization_server.response_modes import (
+    response_mode_permitted,
+    response_type_requires_fragment,
+)
 from oauth2_provider.core.bcp import bcp_compliant
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
 from oauth2_provider.core.utils import add_iss_to_redirect
@@ -148,11 +152,30 @@ class OAuthLibCore:
         :param allow: True if the user authorize the client, otherwise False
         """
         try:
+            # OpenID Connect Core 1.0 §3.1.2.6: a response mode that cannot be honoured
+            # gets an HTTP 400 without Error Response parameters. Check it before
+            # oauthlib runs, since its grants build some error redirects themselves
+            # (e.g. unsupported_response_type) without consulting the validator.
+            response_mode = credentials.get("response_mode")
+            if response_mode and not response_mode_permitted(credentials.get("response_type"), response_mode):
+                raise oauth2.InvalidRequestFatalError(
+                    description="The requested response_mode is not supported for this response_type."
+                )
             if not allow:
                 raise oauth2.AccessDeniedError(state=credentials.get("state", None))
 
             # add current user to credentials. this will be used by OAUTH2_VALIDATOR_CLASS
             credentials["user"] = request.user
+            # oauthlib's authorization code grant (used for hybrid) builds its own error
+            # redirects here, in the fragment only if response_mode is "fragment", while
+            # its successful responses fall back to the fragment when the mode is
+            # omitted. Make that default explicit for response types that must use the
+            # fragment, so errors and successes are encoded alike. (A mode that cannot
+            # be honoured is rejected in OAuth2Validator.validate_response_type.)
+            if not credentials.get("response_mode") and response_type_requires_fragment(
+                credentials.get("response_type")
+            ):
+                credentials["response_mode"] = "fragment"
             request_uri, http_method, _, request_headers = self._extract_params(request)
 
             headers, body, status = self.server.create_authorization_response(
@@ -179,6 +202,12 @@ class OAuthLibCore:
         except oauth2.FatalClientError as error:
             raise FatalClientError(error=error, redirect_uri=credentials["redirect_uri"])
         except oauth2.OAuth2Error as error:
+            # Errors raised without an oauthlib request (e.g. access_denied above)
+            # carry no response_type or response_mode; error_response needs them
+            # to encode the error the same way as a successful response.
+            if error.response_type is None:
+                error.response_type = credentials.get("response_type")
+                error.response_mode = credentials.get("response_mode")
             raise OAuthToolkitError(error=error, redirect_uri=credentials["redirect_uri"])
 
     def create_device_authorization_response(self, request: HttpRequest):

@@ -111,6 +111,7 @@ This template gets passed the following context variables:
     If it wasn't provided on the request, the default one has been set (see :meth:`~oauth2_provider.models.AbstractApplication.default_redirect_uri`).
 
 - ``response_type`` - Passed in the URI, already validated.
+- ``response_mode`` - Passed in the URI (optional).
 - ``state`` - Passed in the URI (optional).
 - ``form`` - An :class:`~oauth2_provider.forms.AllowForm` with all the hidden fields already filled with the values above.
 

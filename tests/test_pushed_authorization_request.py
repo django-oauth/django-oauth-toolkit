@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -280,6 +281,37 @@ class TestPAREndpoint(PARBaseTestCase):
         )
 
 
+class TestPARResponseMode(PARBaseTestCase):
+    def test_query_response_mode_rejected_for_token_response_type(self):
+        """
+        response_mode=query is invalid for a response type that returns tokens in
+        the front channel (OAuth 2.0 Multiple Response Type Encoding Practices),
+        including when it arrives in the PAR request body.
+        """
+        implicit_application = Application.objects.create(
+            name="Implicit Application",
+            redirect_uris="http://example.org",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_IMPLICIT,
+            client_secret=CLEARTEXT_SECRET,
+        )
+        data = {
+            "client_id": implicit_application.client_id,
+            "response_type": "token",
+            "response_mode": "query",
+            "redirect_uri": "http://example.org",
+            "scope": "read write",
+            "state": "some_state",
+        }
+        headers = get_basic_auth_header(implicit_application.client_id, CLEARTEXT_SECRET)
+
+        response = post_form(self.client, self.par_url, data=data, **headers)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content)["error"], "invalid_request")
+
+
 class TestAuthorizeWithRequestURI(PARBaseTestCase):
     def _make_par(self, client_id=None, expires_in=60, parameters=None):
         request_uri = f"{REQUEST_URI_PREFIX}test-reference-value"
@@ -310,6 +342,35 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
         # The pushed scopes drive the consent screen.
         self.assertIn("read", response.context_data["scopes"])
         self.assertIn("write", response.context_data["scopes"])
+
+    def _consent_after_push(self, allow):
+        """Push with response_mode=fragment, open consent, then post the form back."""
+        push = self.push(extra={"response_mode": "fragment"})
+        request_uri = json.loads(push.content)["request_uri"]
+        self.client.login(username="test_user", password="123456")
+        query = {"client_id": self.application.client_id, "request_uri": request_uri}
+        consent = self.client.get(self.authorize_url, query)
+        self.assertEqual(consent.status_code, 200)
+        form_data = {k: v for k, v in consent.context_data["form"].initial.items() if v is not None}
+        form_data["allow"] = allow
+        # The browser posts back to the URL it loaded, which carries only request_uri.
+        return self.client.post(f"{self.authorize_url}?{urlencode(query)}", data=form_data)
+
+    def test_pushed_response_mode_kept_on_denial(self):
+        response = self._consent_after_push(allow=False)
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        self.assertEqual(parse_qs(location.fragment)["error"], ["access_denied"])
+
+    def test_pushed_response_mode_kept_on_approval(self):
+        response = self._consent_after_push(allow=True)
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        self.assertIn("code", parse_qs(location.fragment))
 
     def test_skip_authorization_issues_code(self):
         self.application.skip_authorization = True

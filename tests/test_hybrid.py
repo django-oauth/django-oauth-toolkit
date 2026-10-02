@@ -1,6 +1,7 @@
 import base64
 import datetime
 import json
+from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
@@ -1463,3 +1464,154 @@ def test_claims_passed_to_code_generation(
     assert OAuth2Validator.finalize_id_token.spy.call_count == 1
     oauthlib_request = OAuth2Validator.finalize_id_token.spy.call_args[0][4]
     assert oauthlib_request.claims == claims
+
+
+@pytest.mark.usefixtures("oidc_key")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestHybridErrorResponseMode(BaseTest):
+    """
+    Hybrid errors are returned in the fragment, like successful responses
+    (OAuth 2.0 Multiple Response Type Encoding Practices §5, OpenID Connect
+    Core 1.0 section 3.3.2.6).
+    """
+
+    def assert_error_in_fragment(self, response, error):
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        params = parse_qs(location.fragment)
+        self.assertEqual(params["error"], [error])
+        self.assertEqual(params["state"], ["random_state_string"])
+        return params
+
+    def test_missing_nonce_error_in_fragment(self):
+        self.client.login(username="hy_test_user", password="123456")
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code id_token",
+            "state": "random_state_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assert_error_in_fragment(response, "invalid_request")
+
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_login_required_in_fragment(self, *_mocks):
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code id_token token",
+            "state": "random_state_string",
+            "nonce": "random_nonce_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        params = self.assert_error_in_fragment(response, "login_required")
+        self.assertIn("iss", params)
+
+    def test_access_denied_in_fragment(self):
+        self.client.login(username="hy_test_user", password="123456")
+        form_data = {
+            "client_id": self.application.client_id,
+            "state": "random_state_string",
+            "nonce": "random_nonce_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+            "response_type": "code token",
+            "allow": False,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
+
+        self.assert_error_in_fragment(response, "access_denied")
+
+    def assert_rejected_without_redirect(self, response):
+        """
+        OpenID Connect Core 1.0 §3.1.2.6: an unsupported Response Mode gets an HTTP 400
+        without Error Response parameters, since they cannot be returned in that mode.
+        """
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
+    def test_query_response_mode_rejected(self):
+        self.client.login(username="hy_test_user", password="123456")
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code id_token",
+            "response_mode": "query",
+            "state": "random_state_string",
+            "nonce": "random_nonce_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assert_rejected_without_redirect(response)
+
+    def test_missing_nonce_on_consent_post_error_in_fragment(self):
+        """oauthlib builds this error redirect itself on the consent POST."""
+        self.client.login(username="hy_test_user", password="123456")
+        form_data = {
+            "client_id": self.application.client_id,
+            "state": "random_state_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+            "response_type": "code id_token",
+            "allow": True,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
+
+        self.assert_error_in_fragment(response, "invalid_request")
+
+    def test_invalid_scope_on_consent_post_error_in_fragment(self):
+        self.client.login(username="hy_test_user", password="123456")
+        form_data = {
+            "client_id": self.application.client_id,
+            "state": "random_state_string",
+            "nonce": "random_nonce_string",
+            "scope": "openid not-a-scope",
+            "redirect_uri": "http://example.org",
+            "response_type": "code id_token",
+            "allow": True,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
+
+        self.assert_error_in_fragment(response, "invalid_scope")
+
+    def test_unsupported_response_mode_rejected(self):
+        """
+        An unsupported response_mode is refused with a 400 rather than silently
+        replaced, on the authorization request and on the consent POST, whether or
+        not the request carries another error.
+        """
+        self.client.login(username="hy_test_user", password="123456")
+        for response_mode in ("form_post", "not-a-mode"):
+            for scope in ("openid", "openid not-a-scope"):
+                data = {
+                    "client_id": self.application.client_id,
+                    "state": "random_state_string",
+                    "nonce": "random_nonce_string",
+                    "scope": scope,
+                    "redirect_uri": "http://example.org",
+                    "response_type": "code id_token",
+                    "response_mode": response_mode,
+                }
+                with self.subTest(response_mode=response_mode, scope=scope, method="GET"):
+                    response = self.client.get(reverse("oauth2_provider:authorize"), data=data)
+                    self.assert_rejected_without_redirect(response)
+                with self.subTest(response_mode=response_mode, scope=scope, method="POST"):
+                    response = self.client.post(
+                        reverse("oauth2_provider:authorize"), data={**data, "allow": True}
+                    )
+                    self.assert_rejected_without_redirect(response)
