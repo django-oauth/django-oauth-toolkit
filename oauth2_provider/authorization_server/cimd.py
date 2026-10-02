@@ -270,18 +270,21 @@ class SafeMetadataFetcher:
         return data, _effective_max_age(response.headers.get("Cache-Control"))
 
 
-def _resolve_grant_type(grant_types):
+def _resolve_grant_type(grant_types: list[str]) -> str:
     """Resolve an RFC 7591 grant_types list to a single DOT grant constant.
 
-    RFC 7591 section 2 lets the authorization server reject a requested metadata value "by
-    replacing requested values with suitable defaults as described in Section 3.2.1", so an
-    unsupported entry alongside a supported one is dropped instead of failing the whole
-    document. Published clients rely on this: Claude's client metadata declares
-    ``jwt-bearer`` next to the ``authorization_code`` its connector actually uses.
+    Entries this server does not register for CIMD clients are dropped instead of
+    failing the whole document, and the document is refused only when nothing
+    supported remains. This is server policy: the CIMD draft defines no exchange
+    through which the server could report the metadata it applied. It follows the
+    precedent of RFC 7591 section 2, which lets a registration server replace
+    requested values "with suitable defaults as described in Section 3.2.1".
+    Published clients rely on it: Claude's client metadata declares ``jwt-bearer``
+    next to the ``authorization_code`` its connector actually uses.
 
     ``Application`` stores a single grant, so one of the supported entries has to win.
-    ``authorization_code`` does, because it is the grant a CIMD client is registered to
-    run and the only one whose flow this resolver's redirect handling covers.
+    ``authorization_code`` does: it is the only grant a ``private_key_jwt`` client may
+    use, and RFC 9700 section 2.1.2 advises clients against the implicit grant.
     """
     supported = [g for g in grant_types if g in GRANT_TYPE_MAP]
     if not supported:

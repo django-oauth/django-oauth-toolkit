@@ -63,6 +63,18 @@ document when it chose ``none``, ignoring both fields; a client stored from one 
 registration but no longer picks up document changes until one of the two fields is removed.
 The method is recorded in the application's ``token_endpoint_auth_method`` field.
 
+The document's ``grant_types`` (``authorization_code`` when omitted) may name grants this server
+does not register for CIMD clients, such as ``urn:ietf:params:oauth:grant-type:jwt-bearer``. As a
+matter of server policy, those entries are dropped rather than fatal: a document is refused only
+when it names neither ``authorization_code`` nor ``implicit``. ``refresh_token`` is implied by
+``authorization_code`` and never registered on its own. Because an application stores a single
+grant, ``authorization_code`` is chosen when the document names both: it is the only grant a
+``private_key_jwt`` client may use, and RFC 9700 section 2.1.2 advises clients against the implicit
+grant. The draft defines no exchange through which the server could report the metadata it applied,
+so this is not a negotiation the draft specifies; it follows the precedent of RFC 7591 section 2,
+which lets a registration server replace requested values with suitable defaults (section 3.2.1).
+Each dropped grant is logged at ``INFO`` once the document has been accepted.
+
 A document choosing ``none`` is always accepted, although the default advertised lists do not name
 that method. One choosing ``private_key_jwt`` is accepted only when the server advertises the method
 in ``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` and, with OpenID Connect enabled, in
@@ -142,12 +154,6 @@ returns or the document changes. The same applies to a document that names any o
 was accepted before this behaviour existed, with the parameter ignored, and is now refused on every
 re-fetch, so such a client keeps its last good registration but no longer picks up document changes
 until the parameter is removed or set to ``RS256``.
-
-Grant types the server does not support are dropped rather than fatal, which RFC 7591 section 2
-permits by replacing requested metadata values with suitable defaults (section 3.2.1): a document
-is rejected only when none of its ``grant_types`` is one this library registers. Because an
-application stores a single grant, ``authorization_code`` is chosen when the document declares
-more than one supported grant.
 
 Settings
 --------
