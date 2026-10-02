@@ -1230,15 +1230,21 @@ The import string of the class (model) representing your refresh tokens.
 Overwrite this value if you wrote your own implementation (subclass of
 ``oauth2_provider.models.RefreshToken``).
 
-OAUTH2_PROVIDER_PAR_REQUEST_MODEL
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The import string of the class (model) representing your RFC 9126 pushed authorization requests.
+OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The import string of the class (model) representing your stored authorization requests: validated
+authorization requests the server keeps behind a single-use ``request_uri``, such as RFC 9126 pushed
+authorization requests (see :ref:`stored-authorization-requests`).
 Overwrite this value if you wrote your own implementation (subclass of
-``oauth2_provider.models.AbstractPushedAuthorizationRequest``).
+``oauth2_provider.models.AbstractStoredAuthorizationRequest``).
+
+This setting was named ``OAUTH2_PROVIDER_PAR_REQUEST_MODEL`` before it was released; the old name is
+not read, and while it is set without the new one ``manage.py check`` reports it as
+``oauth2_provider.E008``.
 
 .. note:: ``request_uri`` uniqueness is enforced by the named ``UniqueConstraint``
     ``<app_label>_<class>_unique_request_uri`` inherited from
-    ``AbstractPushedAuthorizationRequest.Meta.constraints``. Do not add ``unique=True`` to the field
+    ``AbstractStoredAuthorizationRequest.Meta.constraints``. Do not add ``unique=True`` to the field
     in your swapped model, for the same reason described under
     ``OAUTH2_PROVIDER_DEVICE_GRANT_MODEL``.
 

@@ -12,9 +12,9 @@ from oauth2_provider.models import (
     get_grant_model,
     get_id_token_admin_class,
     get_id_token_model,
-    get_par_request_model,
     get_refresh_token_admin_class,
     get_refresh_token_model,
+    get_stored_authorization_request_model,
     revoke_access_token,
 )
 
@@ -246,14 +246,14 @@ class RefreshTokenAdmin(admin.ModelAdmin):
         return mask_credential(obj.token) if obj is not None else ""
 
 
-class PushedAuthorizationRequestAdmin(admin.ModelAdmin):
+class StoredAuthorizationRequestAdmin(admin.ModelAdmin):
     list_display = ("pk", "masked_request_uri", "client_id", "expires")
     # Search by the client identifier only; never by the request_uri, which is a
     # single-use bearer reference (see mask_credential / the credential admins).
     search_fields = ("client_id",)
 
     def has_add_permission(self, request):
-        # Request URIs are issued by the PAR endpoint, not hand-created in the admin.
+        # Request URIs are issued by the authorization server, not hand-created in the admin.
         return False
 
     def get_exclude(self, request, obj=None):
@@ -278,7 +278,7 @@ access_token_model = get_access_token_model()
 grant_model = get_grant_model()
 id_token_model = get_id_token_model()
 refresh_token_model = get_refresh_token_model()
-par_request_model = get_par_request_model()
+stored_authorization_request_model = get_stored_authorization_request_model()
 
 application_admin_class = get_application_admin_class()
 access_token_admin_class = get_access_token_admin_class()
@@ -291,4 +291,4 @@ admin.site.register(access_token_model, access_token_admin_class)
 admin.site.register(grant_model, grant_admin_class)
 admin.site.register(id_token_model, id_token_admin_class)
 admin.site.register(refresh_token_model, refresh_token_admin_class)
-admin.site.register(par_request_model, PushedAuthorizationRequestAdmin)
+admin.site.register(stored_authorization_request_model, StoredAuthorizationRequestAdmin)

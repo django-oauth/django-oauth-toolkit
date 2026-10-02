@@ -9,6 +9,7 @@ from oauth2_provider.models import (
     AbstractGrant,
     AbstractIDToken,
     AbstractRefreshToken,
+    AbstractStoredAuthorizationRequest,
 )
 from oauth2_provider.settings import oauth2_settings
 
@@ -65,6 +66,10 @@ class SampleDeviceGrant(AbstractDeviceGrant):
 
     class Meta(AbstractDeviceGrant.Meta):
         swappable = "OAUTH2_PROVIDER_DEVICE_GRANT_MODEL"
+
+
+class SampleStoredAuthorizationRequest(AbstractStoredAuthorizationRequest):
+    custom_field = models.CharField(blank=True, default="", max_length=255)
 
 
 class LocalIDToken(AbstractIDToken):

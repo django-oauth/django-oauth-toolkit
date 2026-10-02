@@ -4,7 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import View
 
-from oauth2_provider.authorization_server import par
+from oauth2_provider.authorization_server import par, stored_requests
 from oauth2_provider.authorization_server.oidc.max_age import INVALID_MAX_AGE_DESCRIPTION, is_valid_max_age
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
 from oauth2_provider.core.compat import login_not_required
@@ -26,7 +26,8 @@ class PushedAuthorizationRequestView(FormEncodedRequestMixin, AuthorizationServe
     endpoint in place of the individual parameters.
 
     This view is a thin HTTP adapter; the request handling lives in
-    :mod:`oauth2_provider.par`.
+    :mod:`oauth2_provider.authorization_server.par`, and the validated request is
+    kept by :mod:`oauth2_provider.authorization_server.stored_requests`.
     """
 
     # POST-only: the base View returns 405 for any other method (RFC 9126 §2.3).
@@ -109,8 +110,12 @@ class PushedAuthorizationRequestView(FormEncodedRequestMixin, AuthorizationServe
         if max_age and oidc_request and not is_valid_max_age(max_age):
             return self._error_response("invalid_request", INVALID_MAX_AGE_DESCRIPTION, status=400)
 
+        # The request has now been validated in full, as the store requires.
         parameters = par.collect_pushed_parameters(request)
-        request_uri, expires_in = par.store_pushed_request(client.client_id, parameters)
+        expires_in = oauth2_settings.PAR_REQUEST_URI_LIFETIME_SECONDS
+        request_uri = stored_requests.store_authorization_request(
+            client.client_id, parameters, expires_in=expires_in
+        )
         return self._json_response({"request_uri": request_uri, "expires_in": expires_in}, status=201)
 
     def _error_from_oauthlib(self, error):

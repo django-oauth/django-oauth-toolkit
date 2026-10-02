@@ -20,8 +20,8 @@ from oauth2_provider.authorization_server.admin import (
     ApplicationAdmin,
     GrantAdmin,
     IDTokenAdmin,
-    PushedAuthorizationRequestAdmin,
     RefreshTokenAdmin,
+    StoredAuthorizationRequestAdmin,
     mask_credential,
 )
 from oauth2_provider.models import (
@@ -29,8 +29,8 @@ from oauth2_provider.models import (
     get_application_model,
     get_grant_model,
     get_id_token_model,
-    get_par_request_model,
     get_refresh_token_model,
+    get_stored_authorization_request_model,
 )
 
 
@@ -155,12 +155,15 @@ def test_grant_admin_does_not_expose_code():
     _assert_hidden_on_change_form(GrantAdmin, get_grant_model(), "code", "masked_code")
 
 
-def test_par_admin_does_not_expose_request_uri():
+def test_stored_request_admin_does_not_expose_request_uri():
     # request_uri is a single-use bearer reference; it must not be searchable or rendered verbatim.
-    assert "request_uri" not in PushedAuthorizationRequestAdmin.list_display
-    assert "request_uri" not in PushedAuthorizationRequestAdmin.search_fields
+    assert "request_uri" not in StoredAuthorizationRequestAdmin.list_display
+    assert "request_uri" not in StoredAuthorizationRequestAdmin.search_fields
     _assert_hidden_on_change_form(
-        PushedAuthorizationRequestAdmin, get_par_request_model(), "request_uri", "masked_request_uri"
+        StoredAuthorizationRequestAdmin,
+        get_stored_authorization_request_model(),
+        "request_uri",
+        "masked_request_uri",
     )
 
 

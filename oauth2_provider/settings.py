@@ -38,8 +38,10 @@ ACCESS_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL", "oa
 ID_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_ID_TOKEN_MODEL", "oauth2_provider.IDToken")
 GRANT_MODEL = getattr(settings, "OAUTH2_PROVIDER_GRANT_MODEL", "oauth2_provider.Grant")
 REFRESH_TOKEN_MODEL = getattr(settings, "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL", "oauth2_provider.RefreshToken")
-PAR_REQUEST_MODEL = getattr(
-    settings, "OAUTH2_PROVIDER_PAR_REQUEST_MODEL", "oauth2_provider.PushedAuthorizationRequest"
+STORED_AUTHORIZATION_REQUEST_MODEL = getattr(
+    settings,
+    "OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL",
+    "oauth2_provider.StoredAuthorizationRequest",
 )
 
 # Settings are grouped by the OAuth2/OIDC role they configure so related knobs
@@ -87,7 +89,7 @@ DEFAULTS = {
     "DEVICE_GRANT_MODEL": DEVICE_GRANT_MODEL,
     "GRANT_MODEL": GRANT_MODEL,
     "REFRESH_TOKEN_MODEL": REFRESH_TOKEN_MODEL,
-    "PAR_REQUEST_MODEL": PAR_REQUEST_MODEL,
+    "STORED_AUTHORIZATION_REQUEST_MODEL": STORED_AUTHORIZATION_REQUEST_MODEL,
     # Forms
     "APPLICATION_FORM_CLASS": "oauth2_provider.authorization_server.forms.ApplicationForm",
     # Admin classes

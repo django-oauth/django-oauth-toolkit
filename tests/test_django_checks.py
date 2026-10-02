@@ -12,6 +12,7 @@ from oauth2_provider.core.checks import (
     validate_access_token_expiry_configuration,
     validate_refresh_token_configuration,
     validate_response_types_supported,
+    validate_stored_authorization_request_model_setting,
     validate_swapped_model_consistency,
     validate_token_configuration,
     validate_userinfo_jwt_expiry_configuration,
@@ -338,3 +339,35 @@ class UserInfoJWTExpiryCheckTestCase(TestCase):
                 (message,) = self._messages()
                 self.assertIsInstance(message, checks.Error)
                 self.assertIn("OIDC_USERINFO_JWT_EXPIRE_SECONDS", message.msg)
+
+
+class StoredAuthorizationRequestModelSettingCheckTestCase(TestCase):
+    def test_check_is_registered(self):
+        from django.core.checks.registry import registry as checks_registry
+
+        self.assertIn(validate_stored_authorization_request_model_setting, checks_registry.get_checks())
+
+    def test_passes_without_the_old_setting(self):
+        self.assertEqual(validate_stored_authorization_request_model_setting(None), [])
+
+    def test_old_setting_is_an_error(self):
+        for value in ("myapp.PushedAuthorizationRequest", "oauth2_provider.PushedAuthorizationRequest"):
+            with self.subTest(value=value), override_settings(OAUTH2_PROVIDER_PAR_REQUEST_MODEL=value):
+                (message,) = validate_stored_authorization_request_model_setting(None)
+                self.assertIsInstance(message, checks.Error)
+                self.assertEqual(message.id, "oauth2_provider.E008")
+                self.assertIn("OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL", message.msg)
+
+    @override_settings(
+        OAUTH2_PROVIDER_PAR_REQUEST_MODEL="myapp.PushedAuthorizationRequest",
+        OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL="myapp.StoredAuthorizationRequest",
+    )
+    def test_passes_once_the_new_setting_is_set(self):
+        # The swap is honored under the new name, so migration 0029 is safe.
+        self.assertEqual(validate_stored_authorization_request_model_setting(None), [])
+
+    @override_settings(OAUTH2_PROVIDER_PAR_REQUEST_MODEL="myapp.PushedAuthorizationRequest")
+    def test_old_setting_stops_migrate(self):
+        # call_command skips system checks by default; manage.py migrate does not.
+        with self.assertRaisesMessage(SystemCheckError, "oauth2_provider.E008"):
+            call_command("migrate", "--check", verbosity=0, skip_checks=False)

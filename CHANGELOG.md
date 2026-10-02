@@ -164,7 +164,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Support for OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126). A new `par/` endpoint
   (`PushedAuthorizationRequestView`) lets clients push authorization request parameters over an
   authenticated back channel in exchange for a single-use `request_uri`, stored on the swappable
-  `PushedAuthorizationRequest` model. Enforcement can be required server-wide via
+  `StoredAuthorizationRequest` model (`OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL`).
+  Enforcement can be required server-wide via
   `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` or per client via the application's
   `require_pushed_authorization_requests` field, and the endpoint is advertised in the RFC 8414
   metadata document. See `docs/pushed_authorization_requests.rst`.
@@ -299,6 +300,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now refused, and an existing client whose document carries both keeps its last good registration
   but no longer picks up document changes until one of the two fields is removed. See
   `docs/cimd.rst`.
+* The unreleased RFC 9126 PAR store is renamed for what it holds: a validated authorization request
+  behind a single-use `request_uri`, which the authorization endpoint also uses to carry a request
+  across a login. `PushedAuthorizationRequest` / `AbstractPushedAuthorizationRequest` are now
+  `StoredAuthorizationRequest` / `AbstractStoredAuthorizationRequest`, the
+  `OAUTH2_PROVIDER_PAR_REQUEST_MODEL` setting is now
+  `OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL`, `get_par_request_model()` is now
+  `get_stored_authorization_request_model()`, and `create_pushed_authorization_request()` is now
+  `create_stored_authorization_request()`. The store functions moved from
+  `oauth2_provider.authorization_server.par` to the new
+  `oauth2_provider.authorization_server.stored_requests` as `store_authorization_request()` (which
+  now takes `expires_in`), `consume_authorization_request()`, `StoredAuthorizationRequestError` and
+  `REQUEST_URI_PREFIX`. As these names were never released, there are no shims. Migration `0029`
+  renames the table in place, so outstanding `request_uri` values stay usable. A project tracking
+  master that swapped the model must rename the setting first: `manage.py check` and `migrate` report
+  the old one as `oauth2_provider.E008`. A fresh install that swaps the model still gets an empty,
+  unused default table from migration `0025`, and admin permissions granted on the old model's
+  codenames must be granted again. PAR behavior is unchanged.
 
 ### Deprecated
 * `oauth2_provider.core.backends_oauthlib._add_iss_to_redirect` was promoted to the public
@@ -354,7 +372,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * #1013 `prompt=login` now works with pushed authorization requests (RFC 9126). The pushed
   `request_uri` is used up when the authorization request is read, yet the login page's return URL
   carried the expanded parameters instead, which a client required to use PAR could not complete.
-  The parameters are now pushed again for the same client, and the return URL carries only the new
+  The parameters are now stored again for the same client, and the return URL carries only the new
   `request_uri`, which expires after `PAR_REQUEST_URI_LIFETIME_SECONDS`. Repeated `resource`
   parameters are no longer reduced to the last one in the `prompt=login` return URL.
 * #1013 `prompt=login` can no longer be skipped by following the login page's return URL without

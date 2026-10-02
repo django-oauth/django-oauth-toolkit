@@ -9,13 +9,13 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
-from oauth2_provider.authorization_server.par import REQUEST_URI_PREFIX
 from oauth2_provider.authorization_server.sessions import AUTH_EVENT_SESSION_KEY, AUTH_TIME_SESSION_KEY
+from oauth2_provider.authorization_server.stored_requests import REQUEST_URI_PREFIX
 from oauth2_provider.models import (
-    create_pushed_authorization_request,
+    create_stored_authorization_request,
     get_application_model,
     get_grant_model,
-    get_par_request_model,
+    get_stored_authorization_request_model,
 )
 
 from . import presets
@@ -25,7 +25,7 @@ from .utils import get_basic_auth_header, post_form
 
 Application = get_application_model()
 Grant = get_grant_model()
-PushedAuthorizationRequest = get_par_request_model()
+StoredAuthorizationRequest = get_stored_authorization_request_model()
 UserModel = get_user_model()
 
 CLEARTEXT_SECRET = "1234567890abcdefghijklmnopqrstuvwxyz"
@@ -98,7 +98,7 @@ class TestPAREndpoint(PARBaseTestCase):
         self.assertTrue(body["request_uri"].startswith(REQUEST_URI_PREFIX))
         self.assertEqual(body["expires_in"], self.oauth2_settings.PAR_REQUEST_URI_LIFETIME_SECONDS)
 
-        par = PushedAuthorizationRequest.objects.get(request_uri=body["request_uri"])
+        par = StoredAuthorizationRequest.objects.get(request_uri=body["request_uri"])
         self.assertEqual(par.client_id, self.application.client_id)
         self.assertEqual(par.parameters["scope"], "read write")
         # Client-authentication parameters are never stored on the pushed request.
@@ -190,7 +190,7 @@ class TestPAREndpoint(PARBaseTestCase):
         )
         self.assertEqual(response.status_code, 201)
         body = json.loads(response.content)
-        par = PushedAuthorizationRequest.objects.get(request_uri=body["request_uri"])
+        par = StoredAuthorizationRequest.objects.get(request_uri=body["request_uri"])
         self.assertEqual(par.client_id, self.public_application.client_id)
 
     def test_invalid_redirect_uri_rejected(self):
@@ -248,7 +248,7 @@ class TestPAREndpoint(PARBaseTestCase):
             **headers,
         )
         self.assertEqual(response.status_code, 201)
-        par = PushedAuthorizationRequest.objects.get(request_uri=json.loads(response.content)["request_uri"])
+        par = StoredAuthorizationRequest.objects.get(request_uri=json.loads(response.content)["request_uri"])
         self.assertEqual(par.parameters["scope"], "read write")
 
     def test_client_secret_post_excluded_from_stored_parameters(self):
@@ -266,7 +266,7 @@ class TestPAREndpoint(PARBaseTestCase):
             },
         )
         self.assertEqual(response.status_code, 201)
-        par = PushedAuthorizationRequest.objects.get(request_uri=json.loads(response.content)["request_uri"])
+        par = StoredAuthorizationRequest.objects.get(request_uri=json.loads(response.content)["request_uri"])
         self.assertNotIn("client_secret", par.parameters)
         self.assertEqual(par.parameters["client_id"], self.application.client_id)
 
@@ -277,7 +277,7 @@ class TestPAREndpoint(PARBaseTestCase):
             extra={"resource": ["https://api.example.org", "https://files.example.org"]},
         )
         self.assertEqual(response.status_code, 201)
-        par = PushedAuthorizationRequest.objects.get(request_uri=json.loads(response.content)["request_uri"])
+        par = StoredAuthorizationRequest.objects.get(request_uri=json.loads(response.content)["request_uri"])
         self.assertEqual(
             par.parameters["resource"],
             ["https://api.example.org", "https://files.example.org"],
@@ -325,7 +325,7 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
             "scope": "read write",
             "state": "some_state",
         }
-        return create_pushed_authorization_request(
+        return create_stored_authorization_request(
             request_uri=request_uri,
             client_id=client_id or self.application.client_id,
             parameters=params,
@@ -397,7 +397,7 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
         )
         self.assertEqual(first.status_code, 200)
         # The record is consumed on first use.
-        self.assertFalse(PushedAuthorizationRequest.objects.filter(pk=par.pk).exists())
+        self.assertFalse(StoredAuthorizationRequest.objects.filter(pk=par.pk).exists())
         second = self.client.get(
             self.authorize_url,
             {"client_id": self.application.client_id, "request_uri": par.request_uri},
@@ -434,7 +434,7 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
         self.assertEqual(response.status_code, 400)
         # A non-bound client must NOT be able to consume/invalidate the request_uri
         # (RFC 9126 §2.2): the record survives, so the bound client can still use it.
-        self.assertTrue(PushedAuthorizationRequest.objects.filter(pk=par.pk).exists())
+        self.assertTrue(StoredAuthorizationRequest.objects.filter(pk=par.pk).exists())
         legit = self.client.get(
             self.authorize_url,
             {"client_id": self.application.client_id, "request_uri": par.request_uri},
@@ -481,7 +481,7 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
         response = self.client.get(self.authorize_url, {"request_uri": par.request_uri})
         self.assertEqual(response.status_code, 400)
         # Omitting client_id must not consume the record either.
-        self.assertTrue(PushedAuthorizationRequest.objects.filter(pk=par.pk).exists())
+        self.assertTrue(StoredAuthorizationRequest.objects.filter(pk=par.pk).exists())
 
 
 class TestPAREnforcement(PARBaseTestCase):
@@ -573,7 +573,7 @@ class TestPARReauthentication(PARBaseTestCase):
         new_request_uri = next_query["request_uri"][0]
         self.assertTrue(new_request_uri.startswith(REQUEST_URI_PREFIX))
         self.assertNotEqual(new_request_uri, request_uri)
-        pushed = PushedAuthorizationRequest.objects.get(request_uri=new_request_uri)
+        pushed = StoredAuthorizationRequest.objects.get(request_uri=new_request_uri)
         self.assertEqual(pushed.client_id, self.application.client_id)
         # The prompt stays on the server until the login has been verified.
         self.assertEqual(pushed.parameters["prompt"], "login")
@@ -601,7 +601,7 @@ class TestPARReauthentication(PARBaseTestCase):
 
         next_query = parse_qs(next_url.query)
         self.assertEqual(set(next_query), {"client_id", "request_uri"})
-        pushed = PushedAuthorizationRequest.objects.get(request_uri=next_query["request_uri"][0])
+        pushed = StoredAuthorizationRequest.objects.get(request_uri=next_query["request_uri"][0])
         self.assertEqual(pushed.parameters["max_age"], "60")
 
         self.client.login(username="test_user", password="123456")
@@ -722,7 +722,7 @@ class TestPARModel(PARBaseTestCase):
         self.assertTrue(expired.is_expired())
 
     def test_is_expired_without_expiry(self):
-        par = PushedAuthorizationRequest(request_uri=f"{REQUEST_URI_PREFIX}x", client_id="c", expires=None)
+        par = StoredAuthorizationRequest(request_uri=f"{REQUEST_URI_PREFIX}x", client_id="c", expires=None)
         self.assertTrue(par.is_expired())
 
     def test_str_does_not_leak_request_uri(self):
@@ -732,7 +732,7 @@ class TestPARModel(PARBaseTestCase):
         self.assertIn(str(par.pk), rendered)
 
     def _create(self, expires_in, reference="active"):
-        return create_pushed_authorization_request(
+        return create_stored_authorization_request(
             request_uri=f"{REQUEST_URI_PREFIX}{reference}",
             client_id=self.application.client_id,
             parameters={"client_id": self.application.client_id},

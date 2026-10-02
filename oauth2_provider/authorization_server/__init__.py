@@ -3,7 +3,8 @@ authorization and tokens, client registration, and the OpenID Connect Provider
 identity layer.
 
 Provider-side modules live in this package (``dcr``, ``cimd``, ``par``,
-``client_assertions``, ``forms``, ``admin``) and can be imported directly. The
+``stored_requests``, ``client_assertions``, ``forms``, ``admin``) and can be
+imported directly. The
 primary public classes are also re-exported here so callers can import them by
 role, e.g.::
 
