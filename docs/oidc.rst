@@ -264,6 +264,36 @@ with an HTTP 400 and no redirect, as `OpenID Connect Core 1.0 §3.1.2.6
 <https://openid.net/specs/openid-connect-core-1_0.html#AuthError>`_ requires,
 because the error cannot be returned in a mode the server does not support.
 
+.. _oidc-authorization-request-post:
+
+Authorization requests sent by POST
+-----------------------------------
+
+As `OpenID Connect Core 1.0 §3.1.2.1
+<https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest>`_ requires,
+the authorization endpoint accepts the authorization request by HTTP ``POST`` as
+well as ``GET``, with the parameters form-serialized
+(``application/x-www-form-urlencoded``) in the request body. The parameters are
+added to the query string and the request is then handled exactly like the same
+request sent by ``GET``, ``prompt``, ``resource``, pushed authorization requests
+and the rejection of request objects included. A parameter sent in both the query
+string and the body counts as repeated, as it would in a ``GET``.
+
+If the user is not logged in, the endpoint answers with a ``303 See Other``
+redirect to the ``GET`` form of the same request, which then sends the user to log
+in and back as usual. A ``POST`` from the client's site does not carry a session
+cookie set with ``SameSite=Lax`` (Django's default), but the browser sends it with
+the ``GET``, so a user who is logged in is not asked to log in again.
+
+The consent form posts to the same endpoint. A ``POST`` that carries the form's
+``allow`` field or a CSRF token, in the ``csrfmiddlewaretoken`` field or the CSRF
+header, is taken to be a consent submission and is CSRF-protected; any other
+``POST`` is an authorization request, which carries no CSRF token since it comes
+from the client's site. A custom ``authorize.html`` template must therefore keep
+``{% csrf_token %}`` in its form, as Django requires anyway. If a custom consent
+form submits neither the ``allow`` field nor a CSRF token, override
+``AuthorizationView.is_consent_submission``.
+
 .. _oidc-request-objects:
 
 Request objects

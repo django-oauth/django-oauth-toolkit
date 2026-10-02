@@ -4,6 +4,7 @@ import logging
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from django import http
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ImproperlyConfigured
@@ -12,7 +13,7 @@ from django.shortcuts import resolve_url
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, OAuth2Error
@@ -81,6 +82,10 @@ class BaseAuthorizationView(LoginRequiredMixin, AuthorizationServerViewMixin, Vi
 RFC3339 = "%Y-%m-%dT%H:%M:%SZ"
 
 
+# CSRF is enforced on the consent form only (see AuthorizationView.dispatch): an
+# authorization request sent by POST (OpenID Connect Core 1.0 section 3.1.2.1)
+# comes from the client's site and carries no CSRF token.
+@method_decorator(csrf_exempt, name="dispatch")
 @method_decorator(login_not_required, name="dispatch")
 class AuthorizationView(BaseAuthorizationView, FormView):
     """
@@ -92,6 +97,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
     *authorize/do not authorize*.
 
     * then receive a ``POST`` request possibly after user authorized the access
+
+    The authorization request itself may also be sent by ``POST``, with its parameters
+    form-serialized in the body (OpenID Connect Core 1.0 section 3.1.2.1). Such a request
+    is told apart from a consent submission by :meth:`is_consent_submission` and then
+    handled exactly like the same request sent by ``GET``.
 
     Some information contained in the ``GET`` request and needed to create a Grant token during
     the ``POST`` request would be lost between the two steps above, so they are temporarily stored in
@@ -314,15 +324,88 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         error = OAuthToolkitError(error=unsupported, redirect_uri=redirect_uri)
         return self.error_response(error, application)
 
+    def is_consent_submission(self, request: http.HttpRequest) -> bool:
+        """Whether a ``POST`` submits the consent form rather than an authorization request.
+
+        OpenID Connect Core 1.0 section 3.1.2.1 requires the authorization endpoint to
+        accept the authorization request by ``POST`` as well as ``GET``, and the consent
+        form posts back to the same endpoint. A consent submission is recognized by what
+        only it carries: the form's ``allow`` field or a CSRF token, in the
+        ``csrfmiddlewaretoken`` field or the CSRF header. Every other ``POST`` is an
+        authorization request. Override this if a custom consent form submits neither.
+
+        A consent submission has its CSRF token checked; an authorization request has
+        none to check. That is safe because nothing in an authorization request records
+        consent: it does no more than a cross-site ``GET`` of the same request.
+        """
+        return (
+            "allow" in request.POST
+            or "csrfmiddlewaretoken" in request.POST
+            or settings.CSRF_HEADER_NAME in request.META
+        )
+
+    @method_decorator(csrf_protect)
+    def _dispatch_csrf_protected(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        """Dispatch a consent submission, or any other unsafe request, with CSRF protection.
+
+        The view itself is exempt so an authorization request can be sent by ``POST``.
+        """
+        return super().dispatch(request, *args, **kwargs)
+
+    def _move_body_to_query(self, request: http.HttpRequest) -> None:
+        """Turn an authorization request sent by ``POST`` into its ``GET`` form.
+
+        The form-serialized parameters join the query string, which the rest of the
+        flow (and oauthlib, through the request URI) reads them from, so the request is
+        handled exactly like the same request sent by ``GET``. The body is emptied so
+        nothing is read twice, or taken for a consent submission.
+        """
+        parameters = {key: request.GET.getlist(key) for key in request.GET}
+        for key, values in request.POST.lists():
+            parameters.setdefault(key, []).extend(values)
+        self._replace_query(request, parameters)
+        request.POST = QueryDict()
+
     def dispatch(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        self.authorization_request_by_post = False
+        if request.method == "POST" and not self.is_consent_submission(request):
+            # An authorization request sent by POST (OpenID Connect Core 1.0
+            # section 3.1.2.1).
+            self.authorization_request_by_post = True
+            self._move_body_to_query(request)
+            if not request.user.is_authenticated:
+                # Send the user to the GET form of the same request, which then
+                # handles login (keeping the request in the "next" URL) and the
+                # prompt values. A cross-site POST also arrives without a
+                # SameSite=Lax session cookie, which the browser does send with
+                # the GET, so a signed-in user is not taken for an anonymous one.
+                return HttpResponseRedirect(request.get_full_path(), status=303)
+        elif request.method not in ("GET", "HEAD", "OPTIONS", "TRACE"):
+            # The consent submission, and any other method that could submit the
+            # form (FormView handles PUT like POST), keep their CSRF protection.
+            return self._dispatch_csrf_protected(request, *args, **kwargs)
         # Request objects are rejected before LoginRequiredMixin can send the
         # user to log in (or answer prompt=none with login_required). HEAD is
-        # included because Django's View routes it to get().
-        if request.method in ("GET", "HEAD"):
+        # included because Django's View routes it to get(), as post() does an
+        # authorization request sent by POST.
+        if request.method in ("GET", "HEAD") or self.authorization_request_by_post:
             unsupported_response = self._reject_request_objects(request)
             if unsupported_response is not None:
                 return unsupported_response
         return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self) -> dict:
+        kwargs = super().get_form_kwargs()
+        if self.authorization_request_by_post:
+            # The consent form is being shown, not submitted: leave it unbound.
+            kwargs.pop("data", None)
+            kwargs.pop("files", None)
+        return kwargs
+
+    def post(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
+        if self.authorization_request_by_post:
+            return self.get(request, *args, **kwargs)
+        return super().post(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         par_response = self._handle_pushed_authorization_request(request)
