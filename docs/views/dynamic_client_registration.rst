@@ -102,6 +102,9 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``client_name``                     | ``name``                          |                                  |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``post_logout_redirect_uris``       | ``post_logout_redirect_uris``     | array, stored space-joined; see  |
+| (array)                             | (space-joined)                    | the note below                   |
++-------------------------------------+-----------------------------------+----------------------------------+
 | ``grant_types`` (array)             | ``authorization_grant_type``      | ``refresh_token`` is ignored;    |
 |                                     |                                   | only one non-refresh grant type  |
 |                                     |                                   | is supported per application,    |
@@ -156,6 +159,22 @@ Field Mapping
     provisions every response type the grant serves (RFC 7591 sections 2 and 3.2.1). A grant with
     none reports an empty list, because an omitted ``response_types`` would mean ``code``. Sending
     the reported list back in a ``PUT`` passes the check.
+
+.. note::
+    ``post_logout_redirect_uris`` (`OpenID Connect RP-Initiated Logout 1.0 section 3.1
+    <https://openid.net/specs/openid-connect-rpinitiated-1_0.html#ClientMetadata>`_) are the URIs the
+    client may name as ``post_logout_redirect_uri`` when it sends the End-User to the
+    :doc:`RP-Initiated Logout <../oidc>` endpoint. Each entry must be a single URI, neither empty
+    nor containing whitespace, and is validated like a ``redirect_uri``: by the
+    ``REDIRECT_URI_VALIDATOR`` setting (by default, against ``ALLOWED_REDIRECT_URI_SCHEMES``) or the
+    application's ``get_redirect_uri_validator()``. While RP-Initiated Logout is enabled with
+    ``OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS`` on, an ``http`` entry is also refused for a
+    public client (``token_endpoint_auth_method`` ``none``), since logout would never redirect to it.
+    An entry that breaks any of these rules is refused with ``invalid_client_metadata``.
+
+    Like every other field, the list is replaced on ``PUT``: a ``PUT`` that omits it clears the
+    client's post-logout redirect URIs, after which RP-Initiated Logout no longer redirects back to
+    the client.
 
 .. note::
     ``id_token_signed_response_alg`` (`OpenID Connect Dynamic Client Registration 1.0 section 2

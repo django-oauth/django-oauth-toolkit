@@ -191,7 +191,8 @@ class AllowedURIValidator(URIValidator):
 
 
 def default_redirect_uri_validator(application: "AbstractApplication") -> AllowedURIValidator:
-    """Build the validator applied to each entry in ``Application.redirect_uris``.
+    """Build the validator applied to each entry in ``Application.redirect_uris`` and
+    ``Application.post_logout_redirect_uris``.
 
     This is the default for the ``REDIRECT_URI_VALIDATOR`` setting, which names a
     *factory*: a callable taking the application and returning a callable that takes a

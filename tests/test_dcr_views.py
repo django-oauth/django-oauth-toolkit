@@ -694,6 +694,159 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
+    def test_register_post_logout_redirect_uris_are_stored_and_echoed(self):
+        """post_logout_redirect_uris (RP-Initiated Logout 1.0 §3.1) are stored and returned."""
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["https://example.com/logged-out", "https://example.com/bye"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["post_logout_redirect_uris"] == data["post_logout_redirect_uris"]
+        app = Application.objects.get(client_id=response.json()["client_id"])
+        assert app.post_logout_redirect_uris == "https://example.com/logged-out https://example.com/bye"
+        assert app.post_logout_redirect_uri_allowed("https://example.com/bye")
+
+    def test_register_without_post_logout_redirect_uris_echoes_empty_list(self):
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["post_logout_redirect_uris"] == []
+
+    def test_register_post_logout_redirect_uris_not_array_is_400(self):
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": "https://example.com/logged-out",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert "post_logout_redirect_uris" in response.json()["error_description"]
+
+    def test_register_non_string_post_logout_redirect_uri_is_400(self):
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": [1],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_invalid_post_logout_redirect_uri_is_400(self):
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["not-a-valid-uri!"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert Application.objects.count() == 0
+        assert response.json()["error_description"].startswith("post_logout_redirect_uris: ")
+
+    def test_register_post_logout_redirect_uri_must_be_a_single_uri(self):
+        """The list is stored space-joined and read back split, so an entry must be exactly one URI.
+
+        Otherwise an entry such as "https://example.com/bye javascript:alert(1)" would register a
+        second URI the client never listed on its own.
+        """
+        self.client.force_login(self.user)
+        for entry in (
+            "https://example.com/bye javascript:alert(1)",
+            "https://example.com/bye\thttps://evil.example/x",
+            "https://example.com/bye\nhttps://evil.example/x",
+            " https://example.com/bye",
+            "",
+            "   ",
+        ):
+            data = {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "post_logout_redirect_uris": [entry],
+            }
+            response = _post_register(self.client, data)
+            assert response.status_code == 400, entry
+            assert response.json()["error"] == "invalid_client_metadata"
+            assert "post_logout_redirect_uri" in response.json()["error_description"]
+        assert Application.objects.count() == 0
+
+    def test_register_public_client_http_post_logout_redirect_uri_strict_is_400(self):
+        """Strict RP-Initiated Logout refuses http for a public client, so registration does too."""
+        self.oauth2_settings.OIDC_ENABLED = True
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = True
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS = True
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+            "post_logout_redirect_uris": ["https://example.com/bye", "http://example.com/bye"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert response.json()["error_description"] == (
+            "post_logout_redirect_uris: http is only allowed with confidential clients: http://example.com/bye"
+        )
+        assert Application.objects.count() == 0
+
+    def test_register_malformed_post_logout_redirect_uri_strict_is_400(self):
+        """A URI urlsplit() cannot parse is refused as invalid metadata (by the validator), not a 500."""
+        self.oauth2_settings.OIDC_ENABLED = True
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = True
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS = True
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+            "post_logout_redirect_uris": ["http://[bad/bye"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_http_post_logout_redirect_uri_strict_allowed_when_usable(self):
+        """Strict mode still accepts https for a public client and http for a confidential one."""
+        self.oauth2_settings.OIDC_ENABLED = True
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED = True
+        self.oauth2_settings.OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS = True
+        self.client.force_login(self.user)
+        for auth_method, uri in (
+            ("none", "https://example.com/bye"),
+            ("client_secret_basic", "http://example.com/bye"),
+        ):
+            data = {
+                "redirect_uris": ["https://example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": auth_method,
+                "post_logout_redirect_uris": [uri],
+            }
+            response = _post_register(self.client, data)
+            assert response.status_code == 201, auth_method
+            assert response.json()["post_logout_redirect_uris"] == [uri]
+
+    def test_register_public_client_http_post_logout_redirect_uri_not_strict(self):
+        """Without strict mode, logout and registration both accept http for a public client."""
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none",
+            "post_logout_redirect_uris": ["http://example.com/bye"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        assert response.json()["post_logout_redirect_uris"] == ["http://example.com/bye"]
+
     def test_register_invalid_json_is_400(self):
         """Non-JSON body → 400."""
         self.client.force_login(self.user)
@@ -795,6 +948,46 @@ class TestDynamicClientRegistration(TestCase):
 # ---------------------------------------------------------------------------
 # Open registration (AllowAllDCRPermission)
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings({**presets.OIDC_SETTINGS_RP_LOGOUT, **presets.DCR_SETTINGS})
+class TestDCRRegisteredClientRPInitiatedLogout(TestCase):
+    """A client registered through DCR can use its post_logout_redirect_uris (#1896)."""
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("dcr_logout_user", "dcr-logout@example.com", "pass")
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://rp.example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["https://rp.example.com/logged-out"],
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        self.client_id = response.json()["client_id"]
+
+    def _logout(self, post_logout_redirect_uri):
+        return self.client.post(
+            reverse("oauth2_provider:rp-initiated-logout"),
+            {
+                "client_id": self.client_id,
+                "post_logout_redirect_uri": post_logout_redirect_uri,
+                "state": "xyz",
+                "allow": True,
+            },
+        )
+
+    def test_logout_redirects_to_registered_post_logout_redirect_uri(self):
+        response = self._logout("https://rp.example.com/logged-out")
+        assert response.status_code == 302
+        assert response["Location"] == "https://rp.example.com/logged-out?state=xyz"
+        assert "_auth_user_id" not in self.client.session
+
+    def test_logout_refuses_unregistered_post_logout_redirect_uri(self):
+        response = self._logout("https://rp.example.com/elsewhere")
+        assert response.status_code == 400
+        assert "_auth_user_id" in self.client.session
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -1136,6 +1329,40 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert "client_name" not in body
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == ""
+
+    def test_put_updates_and_clears_post_logout_redirect_uris(self):
+        """PUT replaces post_logout_redirect_uris, and omitting it clears them (RFC 7592 §2.2)."""
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["https://example.com/logged-out"],
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        assert response.json()["post_logout_redirect_uris"] == ["https://example.com/logged-out"]
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.post_logout_redirect_uris == "https://example.com/logged-out"
+        get_response = self.client.get(
+            self.management_url, **_bearer(response.json()["registration_access_token"])
+        )
+        assert get_response.json()["post_logout_redirect_uris"] == ["https://example.com/logged-out"]
+
+        del update_data["post_logout_redirect_uris"]
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(response.json()["registration_access_token"]),
+        )
+        assert response.status_code == 200
+        assert response.json()["post_logout_redirect_uris"] == []
+        app.refresh_from_db()
+        assert app.post_logout_redirect_uris == ""
 
     def test_put_leaves_can_introspect_to_the_administrator(self):
         """#1451: can_introspect is not client metadata. A PUT can neither turn on a

@@ -174,7 +174,8 @@ run::
 Custom redirect URI and origin validators
 =========================================
 
-The rules ``clean()`` applies to ``redirect_uris`` and ``allowed_origins`` are not hard-coded.
+The rules ``clean()`` applies to ``redirect_uris``, ``post_logout_redirect_uris`` and ``allowed_origins``
+are not hard-coded.
 ``ALLOWED_REDIRECT_URI_SCHEMES`` and ``ALLOWED_SCHEMES`` cover the common case -- a fixed list of
 schemes for the whole server -- but some policies cannot be written as a list: allowed schemes held
 in the database and administered per tenant, a blacklist, or a scheme accepted only after the client
@@ -192,7 +193,9 @@ For those, replace the validator. There are two layers, and they compose exactly
 Each setting names a *factory*: a callable that receives the application and returns a callable
 taking one URI string, which raises :class:`~django.core.exceptions.ValidationError` when the URI is
 not acceptable. ``clean()`` calls the factory once per validation pass and then applies the result to
-each URI, so a factory that queries the database does so once per save rather than once per URI.
+each URI, so a factory that queries the database does so once per save rather than once per URI. The
+redirect uri validator is applied to ``post_logout_redirect_uris`` as well as ``redirect_uris``, so a
+policy meant only for authorization callbacks must not reject the application's post-logout URIs.
 
 A class is a callable, so the simplest custom validator is a subclass of
 ``oauth2_provider.validators.AllowedURIValidator`` that takes the application in ``__init__``. It
@@ -224,8 +227,10 @@ list -- for instance holding a client's custom scheme back until it has been rev
         return AllowedURIValidator(schemes, name="redirect uri", allow_path=True, allow_query=True)
 
 Errors raised from a custom validator follow the same convention as the rest of ``clean()``: they are
-collected and keyed to ``redirect_uris`` or ``allowed_origins``, so the admin and the built-in
-application views render each message next to the offending input.
+collected and keyed to ``redirect_uris``, ``post_logout_redirect_uris`` or ``allowed_origins``, so the
+admin and the built-in application views render each message next to the offending input. An error the
+redirect uri validator keys to ``redirect_uris`` itself is reported on ``post_logout_redirect_uris``
+when it was raised for a post-logout URI.
 
 Two constraints are worth knowing before you write one.
 

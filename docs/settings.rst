@@ -368,7 +368,8 @@ ALLOWED_REDIRECT_URI_SCHEMES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``["http", "https"]``
 
-A list of schemes that the ``redirect_uri`` field will be validated against.
+A list of schemes that the ``redirect_uris`` and ``post_logout_redirect_uris`` fields will be
+validated against.
 Setting this to ``["https"]`` only in production is strongly recommended.
 
 For Native Apps the ``http`` scheme can be safely used with loopback addresses in the
@@ -442,9 +443,9 @@ REDIRECT_URI_VALIDATOR
 Default: ``"oauth2_provider.validators.default_redirect_uri_validator"``
 
 A callable that builds the validator applied to each entry in an application's ``redirect_uris``
-when the application is validated. Use it for redirect-uri policy that a static scheme list cannot
-express -- schemes stored in the database, a blacklist, or a scheme accepted only once the client
-has been reviewed.
+and ``post_logout_redirect_uris`` when the application is validated. Use it for redirect-uri policy
+that a static scheme list cannot express -- schemes stored in the database, a blacklist, or a scheme
+accepted only once the client has been reviewed.
 
 The setting names a *factory*, not the validator itself. It is called with the application and
 returns a callable that takes one URI string and raises
@@ -952,6 +953,11 @@ OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS
 Default: ``False``
 
 Enable this setting to require `https` in post logout redirect URIs. `http` is only allowed when a :term:`Client` is `confidential`.
+While RP-Initiated Logout is enabled (``OIDC_ENABLED`` and ``OIDC_RP_INITIATED_LOGOUT_ENABLED``),
+the rule is applied both when a logout is requested and by ``Application.clean()``, so the admin, the
+application management views, ``createapplication`` and
+:doc:`Dynamic Client Registration <views/dynamic_client_registration>` refuse an `http` entry in a
+non-confidential application's ``post_logout_redirect_uris``.
 
 OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

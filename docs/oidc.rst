@@ -190,6 +190,16 @@ a ``post_logout_redirect_uri`` is still validated against it. An ``id_token_hint
 verified is still rejected, and a ``client_id`` given alongside it is still required to match the RP
 the ID Token was issued for.
 
+``Application.clean()`` validates an application's ``post_logout_redirect_uris`` like its
+``redirect_uris``: by ``REDIRECT_URI_VALIDATOR`` (by default, against ``ALLOWED_REDIRECT_URI_SCHEMES``)
+and, with ``OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS`` on, by refusing an ``http`` URI for a
+client that is not confidential, since logout would never redirect to it. The admin, the application
+management views, ``createapplication`` and Dynamic Client Registration all run it, so an existing
+application whose post-logout redirect URIs break either rule is refused there until they are
+corrected. Like any Django model validation, it is not run by ``Model.save()`` or ``loaddata``.
+Clients registered through :doc:`Dynamic Client Registration <views/dynamic_client_registration>`
+send them as the ``post_logout_redirect_uris`` metadata.
+
 
 Setting up OIDC enabled clients
 ===============================

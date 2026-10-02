@@ -143,6 +143,15 @@ class TestApplicationFormFieldErrors(BaseTest):
         self.assertIn("redirect_uris cannot be empty", form.errors["redirect_uris"][0])
         self.assertEqual(form.non_field_errors(), [])
 
+    def test_invalid_post_logout_redirect_uri_error_is_on_post_logout_redirect_uris(self):
+        response = self._register(post_logout_redirect_uris="https://example.com/bye javascript:alert(1)")
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(list(form.errors), ["post_logout_redirect_uris"])
+        self.assertIn("javascript:alert(1)", form.errors["post_logout_redirect_uris"][0])
+        self.assertEqual(form.non_field_errors(), [])
+        self.assertFalse(Application.objects.filter(name="Foo app").exists())
+
     def test_invalid_allowed_origin_error_is_on_allowed_origins(self):
         response = self._register(allowed_origins="http://example.com")
         self.assertEqual(response.status_code, 200)
