@@ -4,6 +4,8 @@ Tests for OAuth Client ID Metadata Document (CIMD) support.
 draft-ietf-oauth-client-id-metadata-document
 """
 
+import base64
+import hashlib
 import json
 import logging
 import socket
@@ -115,6 +117,13 @@ class _SharedSecretWithPluralFetcher:
             token_endpoint_auth_methods_supported=["client_secret_basic", "none"],
         )
         return document, 3600
+
+
+class _ExtraGrantFetcher:
+    def fetch(self, client_id):
+        # The grant_types Claude publishes at https://claude.ai/oauth/mcp-oauth-client-metadata.
+        grant_types = ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+        return _document(grant_types=grant_types), 3600
 
 
 class _FailingFetcher:
@@ -362,8 +371,9 @@ def test_build_application_kwargs_private_key_jwt(
         {k: v for k, v in _document().items() if k != "redirect_uris"},
         _document(grant_types="authorization_code"),  # not a list
         _document(grant_types=[123]),
-        _document(grant_types=["client_credentials"]),  # not a public/known grant
-        _document(grant_types=["authorization_code", "implicit"]),  # more than one
+        _document(grant_types=["client_credentials"]),  # no supported grant remains
+        _document(grant_types=[]),  # nothing left to register
+        _document(grant_types=["refresh_token"]),  # refresh alone registers no flow
         _document(client_name=123),
         # A method this server cannot register, with no usable alternative offered.
         _document(
@@ -688,6 +698,109 @@ def test_build_application_kwargs_registers_the_chatgpt_transition_document():
 
 def test_resolve_grant_type_ignores_refresh_token():
     assert _resolve_grant_type(["authorization_code", "refresh_token"]) == "authorization-code"
+
+
+def test_resolve_grant_type_ignores_an_unsupported_grant():
+    """RFC 7591 sections 2 and 3.2.1: replace what this server does not support, keep what it does.
+
+    The list is the one Claude publishes at
+    https://claude.ai/oauth/mcp-oauth-client-metadata.
+    """
+    grant_types = ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+
+    assert _resolve_grant_type(grant_types) == "authorization-code"
+
+
+def test_resolve_grant_type_prefers_authorization_code():
+    assert _resolve_grant_type(["implicit", "authorization_code"]) == "authorization-code"
+
+
+def test_resolve_grant_type_keeps_a_lone_supported_grant():
+    assert _resolve_grant_type(["implicit", "client_credentials"]) == "implicit"
+
+
+def test_build_application_kwargs_registers_a_document_with_an_extra_grant():
+    document = _document(
+        grant_types=["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+    )
+
+    assert _build_application_kwargs(document)["authorization_grant_type"] == "authorization-code"
+
+
+def _grant_types_fetcher(**overrides):
+    class Fetcher:
+        def fetch(self, client_id):
+            return _document(**overrides), 3600
+
+    return Fetcher
+
+
+@pytest.mark.parametrize(
+    "grant_types,dropped",
+    [
+        (
+            ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+            ["urn:ietf:params:oauth:grant-type:jwt-bearer"],
+        ),
+        (["implicit", "authorization_code"], ["implicit"]),
+        (["implicit", "client_credentials", "client_credentials"], ["client_credentials"]),
+    ],
+)
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_logs_dropped_grants(cimd_enabled, caplog, grant_types, dropped):
+    cimd_enabled.CIMD_METADATA_FETCHER = _grant_types_fetcher(grant_types=grant_types)
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is not None
+    assert f"declares grant_types {dropped!r}, which this server does not register" in caplog.text
+
+
+@pytest.mark.parametrize("grant_types", [["authorization_code", "refresh_token"], ["authorization_code"]])
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_does_not_log_grants_it_registers(cimd_enabled, caplog, grant_types):
+    """``refresh_token`` rides along with ``authorization_code``, so it is not reported as dropped."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _grant_types_fetcher(grant_types=grant_types)
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is not None
+    assert "declares grant_types" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "redirect_uris",
+    [[], ["not-a-uri"]],
+    ids=["refused-by-metadata-checks", "refused-by-model-validation"],
+)
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_does_not_log_dropped_grants_for_a_refused_document(cimd_enabled, caplog, redirect_uris):
+    """A document refused at any stage never leaves a notice saying it was registered."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _grant_types_fetcher(
+        grant_types=["authorization_code", "client_credentials"], redirect_uris=redirect_uris
+    )
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert not Application.objects.filter(client_id=CLIENT_URL).exists()
+    assert "CIMD resolution failed" in caplog.text
+    assert "declares grant_types" not in caplog.text
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_does_not_log_dropped_grants_when_refusing_a_hijack(cimd_enabled, caplog):
+    Application.objects.create(
+        client_id=CLIENT_URL,
+        name="Manually provisioned",
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        redirect_uris="https://manual.example.com/callback",
+    )
+    cimd_enabled.CIMD_METADATA_FETCHER = _grant_types_fetcher(
+        grant_types=["authorization_code", "client_credentials"]
+    )
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert "declares grant_types" not in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -1391,6 +1504,58 @@ def test_openid_code_flow_issues_id_token_to_cimd_client(cimd_enabled, client, d
     claims = json.loads(verified.claims)
     assert claims["aud"] == CLIENT_URL
     assert claims["nonce"] == "random_nonce"
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_code_flow_completes_for_a_document_declaring_an_unsupported_grant(
+    cimd_enabled, client, django_user_model
+):
+    """Regression test for #1855.
+
+    A document naming ``jwt-bearer`` next to ``authorization_code`` used to be
+    refused as a whole, so the client could not start an authorization request
+    at all. It now registers for the authorization code grant and completes the
+    flow, refresh token included.
+    """
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ExtraGrantFetcher)
+    user = django_user_model.objects.create_user("cimd_extra_grant_user", password="123456")
+    client.force_login(user)
+    redirect_uri = "https://client.example.com/callback"
+    code_verifier = "cimd-extra-grant-verifier-" + "x" * 43
+    code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=")
+    authorize_data = {
+        "client_id": CLIENT_URL,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": "read",
+        "state": "random_state_string",
+        "code_challenge": code_challenge.decode(),
+        "code_challenge_method": "S256",
+    }
+
+    response = client.get(reverse("oauth2_provider:authorize"), data=authorize_data)
+    assert response.status_code == 200, response.content
+    response = client.post(reverse("oauth2_provider:authorize"), data={**authorize_data, "allow": True})
+    assert response.status_code == 302, response.content
+    code = parse_qs(urlparse(response["Location"]).query)["code"][0]
+    app = Application.objects.get(client_id=CLIENT_URL)
+    assert app.authorization_grant_type == Application.GRANT_AUTHORIZATION_CODE
+
+    response = post_form(
+        client,
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": CLIENT_URL,
+            "code_verifier": code_verifier,
+        },
+    )
+    assert response.status_code == 200, response.content
+    content = response.json()
+    assert content["access_token"]
+    assert content["refresh_token"]
 
 
 # ---------------------------------------------------------------------------

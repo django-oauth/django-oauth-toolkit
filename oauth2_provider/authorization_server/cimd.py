@@ -58,7 +58,8 @@ GRANT_TYPE_MAP = {
     "authorization_code": "authorization-code",
     "implicit": "implicit",
 }
-# Handled automatically by DOT alongside authorization_code, so not a standalone choice.
+# Implied by authorization_code (DOT issues refresh tokens alongside it), so it is
+# never registered on its own and never reported as a dropped grant.
 IGNORED_GRANT_TYPES = {"refresh_token"}
 
 # Every method a CIMD registration can be stored with. Shared-secret methods
@@ -269,15 +270,39 @@ class SafeMetadataFetcher:
         return data, _effective_max_age(response.headers.get("Cache-Control"))
 
 
-def _resolve_grant_type(grant_types):
-    """Resolve an RFC 7591 grant_types list to a single DOT grant constant."""
-    meaningful = [g for g in grant_types if g not in IGNORED_GRANT_TYPES]
-    if len(meaningful) != 1:
-        raise CIMDError("client metadata must declare exactly one non-refresh grant type")
-    grant = GRANT_TYPE_MAP.get(meaningful[0])
-    if grant is None:
-        raise CIMDError(f"unsupported grant_type: {meaningful[0]!r}")
-    return grant
+def _resolve_grant_type(grant_types: list[str]) -> str:
+    """Resolve an RFC 7591 grant_types list to a single DOT grant constant.
+
+    Entries this server does not register for CIMD clients are dropped instead of
+    failing the whole document, and the document is refused only when nothing
+    supported remains. This is server policy: the CIMD draft defines no exchange
+    through which the server could report the metadata it applied. It follows the
+    precedent of RFC 7591 section 2, which lets a registration server replace
+    requested values "with suitable defaults as described in Section 3.2.1".
+    Published clients rely on it: Claude's client metadata declares ``jwt-bearer``
+    next to the ``authorization_code`` its connector actually uses.
+
+    ``Application`` stores a single grant, so one of the supported entries has to win.
+    ``authorization_code`` does: it is the only grant a ``private_key_jwt`` client may
+    use, and RFC 9700 section 2.1.2 advises clients against the implicit grant.
+    """
+    supported = [g for g in grant_types if g in GRANT_TYPE_MAP]
+    if not supported:
+        raise CIMDError("client metadata declares no grant_type this server supports")
+    preferred = "authorization_code" if "authorization_code" in supported else supported[0]
+    return GRANT_TYPE_MAP[preferred]
+
+
+def _dropped_grant_types(grant_types: list[str], registered: str) -> list[str]:
+    """Return the declared grant types a registration for *registered* leaves out.
+
+    ``refresh_token`` is implied by ``authorization_code``, so it is never reported.
+    """
+    return [
+        g
+        for g in dict.fromkeys(grant_types)
+        if g not in IGNORED_GRANT_TYPES and GRANT_TYPE_MAP.get(g) != registered
+    ]
 
 
 def _supported_auth_methods() -> tuple[str, ...]:
@@ -595,6 +620,20 @@ def _fetch_validate_upsert(client_id: str) -> AbstractApplication:
         if application.registration_source != Application.RegistrationSource.CIMD:
             raise CIMDError("client_id URL collides with a non-CIMD application")
     else:
+        # Logged only once the row is saved, so a document refused by the
+        # collision guard or by model validation never leaves a notice saying
+        # it was registered.
+        dropped = _dropped_grant_types(
+            metadata.get("grant_types", ["authorization_code"]), application.authorization_grant_type
+        )
+        if dropped:
+            log.info(
+                "CIMD client %r declares grant_types %r, which this server does not "
+                "register; registering %r only",
+                client_id,
+                dropped,
+                application.authorization_grant_type,
+            )
         if previous_algorithm is not None and application.algorithm != previous_algorithm:
             log.info(
                 "CIMD application %r ID Token signing algorithm changed from %r to %r on re-fetch",
