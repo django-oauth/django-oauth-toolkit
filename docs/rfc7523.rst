@@ -49,13 +49,16 @@ For ``private_key_jwt``, register the client's public keys on the application:
 
 ``client_jwks``
     An inline JWK Set (RFC 7517), e.g. ``{"keys": [{"kty": "EC", "crv": "P-256", ...}]}``.
-    Public keys only — the server never needs (and refuses to store) private key material.
+    Public keys only — the server never needs (and refuses to store) private key material. Symmetric
+    (``oct``) keys are refused as well: a shared secret has no place in a key set meant for
+    ``private_key_jwt``.
 
 ``client_jwks_uri``
     An ``https`` URL serving the client's JWK Set. The server fetches it with the same SSRF
     hardening used for :doc:`CIMD <cimd>` (public-IP validation and pinning, no redirects, size and
     timeout caps) and caches it for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` seconds. Fetch failures
-    back off for ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS``.
+    back off for ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS``. Symmetric (``oct``) keys and
+    keys carrying private material in the fetched set are skipped.
 
     When an assertion names a ``kid`` that matches no key in the *cached* set, the set is
     re-fetched bypassing the cache, so key rotation works without manual intervention, but at most
@@ -86,15 +89,18 @@ For ``private_key_jwt``, register the client's public keys on the application:
 
     The limit is tracked per exact ``client_jwks_uri`` string, in the default Django cache. See
     the ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` setting below for what it does and does
-    not bound, and :doc:`views/dynamic_client_registration` for its effect under open
-    registration.
+    not bound, and :doc:`views/dynamic_client_registration` and :ref:`cimd-security` for its effect
+    under open registration.
 
 The two fields are mutually exclusive. Both are validated by ``Application.clean()``.
 
 Dynamic Client Registration accepts ``token_endpoint_auth_method`` values ``private_key_jwt`` (with
 ``jwks`` or ``jwks_uri`` metadata) and ``client_secret_jwt``; a ``client_secret_jwt`` registration
 stores its secret unhashed and returns it in the response, while a ``private_key_jwt`` registration
-receives no ``client_secret`` at all.
+receives no ``client_secret`` at all. A :doc:`Client ID Metadata Document <cimd>` may likewise
+declare ``private_key_jwt`` with ``jwks`` or ``jwks_uri``, on a server that advertises the method in
+``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` and, with OpenID Connect enabled, in
+``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` too.
 
 What the server validates
 -------------------------

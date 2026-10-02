@@ -4,14 +4,19 @@ OAuth Client ID Metadata Documents
 
 A client presents an ``https`` URL as its ``client_id``; the authorization
 server fetches the metadata document from that URL, validates it, and treats
-the result as a public client registration. The package conftest launches a
+the result as a client registration, public or authenticating with
+``private_key_jwt``. The package conftest launches a
 CIMD-enabled IdP whose (test-only) loopback fetcher retrieves documents from
 a local server, so every check here exercises the real authorize/token
 endpoints over HTTP.
 """
 
-import pytest
+import json
 
+import pytest
+from jwcrypto import jwk
+
+from oauth2_provider.client import make_client_assertion
 from tests.e2e import constants as c
 from tests.e2e.helpers.jwt_tools import decode_header, validate_id_token
 from tests.e2e.helpers.oauth_client import token_data
@@ -105,6 +110,43 @@ def test_document_with_unsupported_id_token_alg_is_rejected(cimd_oauth, cimd_use
         scope="read",
     )
     assert result.status_code == 400
+
+
+@pytest.mark.compliance(SPEC, "6.2", "A private_key_jwt document authenticates with a client assertion")
+def test_private_key_jwt_document_authorization_code_flow(cimd_oauth, cimd_user_session, doc_server):
+    """A document choosing private_key_jwt (#1845) on a server that advertises it.
+
+    The document publishes the public half of a signing key inline; the code
+    exchange carries an RFC 7523 assertion signed with the private half and no
+    other credential, and the same exchange without the assertion is refused.
+    """
+    key = jwk.JWK.generate(kty="EC", crv="P-256", kid="e2e-cimd-pkj")
+    client_id = doc_server.add_client(
+        "/clients/private-key-jwt.json",
+        token_endpoint_auth_method="private_key_jwt",
+        jwks={"keys": [json.loads(key.export_public())]},
+    )
+
+    result = cimd_oauth.authorize(
+        cimd_user_session,
+        client_id=client_id,
+        response_type="code",
+        redirect_uri=c.REDIRECT_URI,
+        scope="read",
+    )
+    code = result.query_params["code"]
+    unauthenticated = cimd_oauth.exchange_code(client_id=client_id, code=code, redirect_uri=c.REDIRECT_URI)
+    assert unauthenticated.status_code == 401
+
+    token = token_data(
+        cimd_oauth.exchange_code(
+            client_id=client_id,
+            code=code,
+            redirect_uri=c.REDIRECT_URI,
+            client_assertion=make_client_assertion(client_id, key, cimd_oauth.url("/o/token/")),
+        )
+    )
+    assert token["access_token"]
 
 
 @pytest.mark.compliance(SPEC, "4.4", "The stored registration serves subsequent requests until it expires")

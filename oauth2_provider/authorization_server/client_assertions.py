@@ -411,7 +411,17 @@ def _signing_keys(key_set, kid):
         keys = [key] if key is not None else []
     else:
         keys = list(key_set["keys"])
-    return [key for key in keys if _key_allows_verification(key) and not key.has_private]
+    # jwcrypto reports has_private False for an oct key, so exclude symmetric
+    # keys explicitly: private_key_jwt never signs with a shared secret, and a
+    # row saved without Application.clean() may still hold one in client_jwks.
+    # Kept here rather than in jwk_allows_verification, whose other callers
+    # (Application.clean(), DCR) reject oct keys separately with their own
+    # message. client_secret_jwt does not come through here.
+    return [
+        key
+        for key in keys
+        if _key_allows_verification(key) and not key.has_private and key.get("kty") != "oct"
+    ]
 
 
 # Shared with Application.clean(), which fails fast on key sets that could
@@ -622,6 +632,11 @@ def _build_public_jwks(data):
             # A client publishing private material is a client-side incident;
             # never store or use it.
             log.warning("Client JWKS contains private key material; skipping that key")
+            continue
+        if key.get("kty") == "oct":
+            # A symmetric key in a published key set is a shared secret in the
+            # open; private_key_jwt never signs with one.
+            log.warning("Client JWKS contains a symmetric key; skipping that key")
             continue
         if not _key_allows_verification(key):
             # Keep the cached set to what the docstring promises: keys usable

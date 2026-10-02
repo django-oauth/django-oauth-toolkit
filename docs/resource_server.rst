@@ -142,10 +142,10 @@ case when :doc:`Dynamic Client Registration <views/dynamic_client_registration>`
 ``AllowAllDCRPermission`` (anyone) or with the default ``IsAuthenticatedDCRPermission`` (anyone who
 can log in); when the self-service registration view (``oauth2_provider:register``) is mounted;
 and when :doc:`CIMD <cimd>` is enabled. A confidential client registered through DCR or the
-self-service view introspects with its own credentials. Any of these clients can also introspect
-with an access token issued to it that carries the ``introspection`` scope, which its registrant
-can obtain by authorizing it for that scope; a CIMD client is always public, so that is its only
-way.
+self-service view, or a CIMD client that uses ``private_key_jwt``, introspects with its own
+credentials. Any of these clients can also introspect with an access token issued to it that
+carries the ``introspection`` scope, which its registrant can obtain by authorizing it for that
+scope; for a public CIMD client, one that uses ``none``, that is its only way.
 
 Registration cannot set ``can_introspect``, so to keep these clients out, turn the flag off on the
 rows they create. DCR and CIMD rows carry ``registration_source`` ``"dcr"`` and ``"cimd"``, so a

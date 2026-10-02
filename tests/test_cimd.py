@@ -7,8 +7,10 @@ draft-ietf-oauth-client-id-metadata-document
 import json
 import logging
 import socket
+import time
 from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 import pytest
 import urllib3
@@ -16,7 +18,7 @@ from django.core.cache import cache
 from django.db import IntegrityError
 from django.urls import reverse
 from django.utils import timezone
-from jwcrypto import jwt
+from jwcrypto import jwk, jwt
 from oauthlib.common import Request as OAuthlibRequest
 
 from oauth2_provider.authorization_server import cimd
@@ -43,6 +45,21 @@ from .utils import post_form
 Application = get_application_model()
 
 CLIENT_URL = "https://client.example.com/oauth/metadata.json"
+PUBLIC_JWKS = {
+    "keys": [
+        {
+            "crv": "P-256",
+            "kid": "cimd-ec-1",
+            "kty": "EC",
+            "x": "tS3tFvO_rzqp4FW4XU0M8agahChhDCxvfwkAOUf0r1w",
+            "y": "RXB1hhJu-vYd1Go5VyQ5gcQcxnNmCaCmE05mBrJ1qM4",
+        }
+    ]
+}
+# Signing keys for the private_key_jwt flows below; a document publishes the public half.
+SIGNING_KEY = jwk.JWK.generate(kty="EC", crv="P-256", kid="cimd-signer-1")
+ROTATED_KEY = jwk.JWK.generate(kty="EC", crv="P-256", kid="cimd-signer-2")
+TOKEN_ENDPOINT = "http://testserver/o/token/"
 
 
 def _oauthlib_request():
@@ -79,6 +96,14 @@ class _MismatchFetcher:
 class _ConfidentialFetcher:
     def fetch(self, client_id):
         return _document(token_endpoint_auth_method="client_secret_basic"), 3600
+
+
+class _PrivateKeyJWTFetcher:
+    def fetch(self, client_id):
+        return _document(
+            token_endpoint_auth_method="private_key_jwt",
+            jwks_uri="https://client.example.com/oauth/jwks.json",
+        ), 3600
 
 
 class _FailingFetcher:
@@ -119,6 +144,16 @@ def _clear_cimd_cache():
 def cimd_enabled(oauth2_settings):
     oauth2_settings.CIMD_ENABLED = True
     oauth2_settings.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
+    return oauth2_settings
+
+
+@pytest.fixture
+def private_key_jwt_advertised(oauth2_settings):
+    """A server that advertises private_key_jwt, so CIMD registers it (see _supported_auth_methods)."""
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
+        *oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
+        "private_key_jwt",
+    ]
     return oauth2_settings
 
 
@@ -267,13 +302,46 @@ def test_build_application_kwargs_public():
         "redirect_uris": "https://client.example.com/callback",
         "authorization_grant_type": "authorization-code",
         "algorithm": Application.NO_ALGORITHM,
+        "token_endpoint_auth_method": "none",
+        "client_type": Application.CLIENT_PUBLIC,
+        "client_jwks": "",
+        "client_jwks_uri": "",
     }
+
+
+@pytest.mark.parametrize(
+    "key_metadata, expected_key_field",
+    [
+        ({"jwks": PUBLIC_JWKS}, "client_jwks"),
+        ({"jwks_uri": "https://client.example.com/jwks.json"}, "client_jwks_uri"),
+        # An empty or whitespace-only jwks_uri counts as absent, as for DCR.
+        ({"jwks": PUBLIC_JWKS, "jwks_uri": ""}, "client_jwks"),
+        ({"jwks": PUBLIC_JWKS, "jwks_uri": "  "}, "client_jwks"),
+    ],
+)
+def test_build_application_kwargs_private_key_jwt(
+    private_key_jwt_advertised, key_metadata, expected_key_field
+):
+    kwargs = _build_application_kwargs(
+        _document(token_endpoint_auth_method="private_key_jwt", **key_metadata)
+    )
+
+    assert kwargs["client_type"] == Application.CLIENT_CONFIDENTIAL
+    assert kwargs["token_endpoint_auth_method"] == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+    assert kwargs[expected_key_field]
+    other_key_field = "client_jwks_uri" if expected_key_field == "client_jwks" else "client_jwks"
+    assert kwargs[other_key_field] == ""
 
 
 @pytest.mark.parametrize(
     "document",
     [
         _document(token_endpoint_auth_method="client_secret_basic"),
+        # Not advertised by this server (see _supported_auth_methods), so refused.
+        _document(token_endpoint_auth_method="private_key_jwt"),
+        _document(token_endpoint_auth_method=["none"]),  # not a string
+        # RFC 7591 section 2: never both, whatever the method.
+        _document(jwks=PUBLIC_JWKS, jwks_uri="https://client.example.com/jwks.json"),
         _document(client_secret="shhh"),
         _document(client_secret=None),  # forbidden by presence, not value
         _document(client_secret_expires_at=0),  # spec: MUST NOT be present
@@ -291,6 +359,151 @@ def test_build_application_kwargs_public():
 def test_build_application_kwargs_rejects(document):
     with pytest.raises(CIMDError):
         _build_application_kwargs(document)
+
+
+def test_build_application_kwargs_refuses_private_key_jwt_for_the_implicit_grant(private_key_jwt_advertised):
+    """Implicit issues tokens with no client authentication, contradicting draft section 6.2."""
+    document = _document(
+        token_endpoint_auth_method="private_key_jwt", jwks=PUBLIC_JWKS, grant_types=["implicit"]
+    )
+
+    with pytest.raises(CIMDError, match="authorization_code grant"):
+        _build_application_kwargs(document)
+    # A public implicit client is unaffected.
+    public = _build_application_kwargs(_document(grant_types=["implicit"]))
+    assert public["authorization_grant_type"] == Application.GRANT_IMPLICIT
+
+
+@pytest.mark.parametrize("jwks_uri", ["https://client.example.com/jwks.json", " https://x.example/k "])
+def test_build_application_kwargs_rejects_jwks_with_jwks_uri_for_a_public_client(jwks_uri):
+    """RFC 7591 section 2: jwks and jwks_uri MUST NOT both be present, whatever the method."""
+    with pytest.raises(CIMDError, match="mutually exclusive"):
+        _build_application_kwargs(_document(jwks=PUBLIC_JWKS, jwks_uri=jwks_uri))
+
+
+@pytest.mark.parametrize("jwks_uri", ["", "   "])
+def test_build_application_kwargs_public_client_with_blank_jwks_uri(jwks_uri):
+    """A blank jwks_uri counts as absent, so it does not conflict with jwks."""
+    kwargs = _build_application_kwargs(_document(jwks=PUBLIC_JWKS, jwks_uri=jwks_uri))
+
+    assert kwargs["client_type"] == Application.CLIENT_PUBLIC
+    assert kwargs["client_jwks"] == ""
+    assert kwargs["client_jwks_uri"] == ""
+
+
+@pytest.mark.parametrize(
+    "oauth2_advertises, oidc_enabled, oidc_advertises, registered",
+    [
+        # Without OpenID Connect only the RFC 8414 document is served, so its list decides.
+        (True, False, True, True),
+        (True, False, False, True),
+        # With OpenID Connect both documents are served, and a client may read either.
+        (True, True, True, True),
+        (True, True, False, False),
+        # MCP clients read the RFC 8414 document first: advertising only in the OIDC
+        # one would store a confidential client that authenticates as public.
+        (False, True, True, False),
+    ],
+)
+def test_build_application_kwargs_requires_private_key_jwt_in_every_served_discovery_document(
+    oauth2_settings, oauth2_advertises, oidc_enabled, oidc_advertises, registered
+):
+    secret_methods = ["client_secret_basic", "client_secret_post"]
+    pkj = ["private_key_jwt"]
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = secret_methods + (
+        pkj if oauth2_advertises else []
+    )
+    oauth2_settings.OIDC_ENABLED = oidc_enabled
+    oauth2_settings.OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = secret_methods + (
+        pkj if oidc_advertises else []
+    )
+    document = _document(
+        token_endpoint_auth_method="private_key_jwt",
+        jwks_uri="https://client.example.com/jwks.json",
+    )
+
+    if registered:
+        assert _build_application_kwargs(document)["client_type"] == Application.CLIENT_CONFIDENTIAL
+    else:
+        with pytest.raises(CIMDError, match="private_key_jwt"):
+            _build_application_kwargs(document)
+
+
+def _stored_inline_jwks(jwks):
+    document = _document(token_endpoint_auth_method="private_key_jwt", jwks=jwks)
+    return _build_application_kwargs(document)["client_jwks"]
+
+
+def test_build_application_kwargs_stores_inline_jwks_in_canonical_member_and_array_order(
+    private_key_jwt_advertised,
+):
+    """A document that only reorders the members of its keys must not read as publishing new keys."""
+    key = PUBLIC_JWKS["keys"][0]
+    reordered = {"keys": [dict(reversed(list(key.items())))]}
+    assert json.dumps(reordered) != json.dumps(PUBLIC_JWKS)
+
+    assert _stored_inline_jwks(reordered) == _stored_inline_jwks(PUBLIC_JWKS)
+    assert json.loads(_stored_inline_jwks(reordered)) == PUBLIC_JWKS
+
+
+def test_build_application_kwargs_stores_inline_jwks_in_canonical_array_order(private_key_jwt_advertised):
+    """A document that only reorders its keys array must not read as publishing new keys."""
+    first, second = (json.loads(key.export_public()) for key in (SIGNING_KEY, ROTATED_KEY))
+
+    stored = _stored_inline_jwks({"keys": [first, second]})
+
+    assert stored == _stored_inline_jwks({"keys": [second, first]})
+    # Still a valid JWK Set holding both keys.
+    assert sorted(key["kid"] for key in json.loads(stored)["keys"]) == sorted(
+        [SIGNING_KEY.kid, ROTATED_KEY.kid]
+    )
+
+
+@pytest.mark.parametrize(
+    "key_metadata",
+    [
+        {},
+        {"jwks_uri": ""},  # blank counts as absent, so no key source is published
+        {"jwks_uri": "   "},
+        {"jwks": PUBLIC_JWKS, "jwks_uri": "https://client.example.com/jwks.json"},
+        {"jwks_uri": "http://client.example.com/jwks.json"},
+        {"jwks_uri": ["https://client.example.com/jwks.json"]},
+        {"jwks": ["not", "an", "object"]},
+        {"jwks": {"keys": "not-a-list"}},
+        {"jwks": {"keys": []}},
+        {"jwks": {"keys": [["not", "an", "object"]]}},
+        # The implicit grant never authenticates the client (draft section 6.2).
+        {"jwks": PUBLIC_JWKS, "grant_types": ["implicit"]},
+    ],
+)
+def test_build_application_kwargs_rejects_invalid_private_key_jwt(private_key_jwt_advertised, key_metadata):
+    document = _document(token_endpoint_auth_method="private_key_jwt", **key_metadata)
+
+    with pytest.raises(CIMDError):
+        _build_application_kwargs(document)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        {**PUBLIC_JWKS["keys"][0], "d": "AQ"},  # private key material
+        {**PUBLIC_JWKS["keys"][0], "use": "enc"},  # not usable for signature verification
+        {"kty": "oct", "k": "c2VjcmV0", "kid": "shared"},  # a symmetric key is a shared secret
+    ],
+    ids=["private-key", "encryption-only", "symmetric"],
+)
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_rejects_unusable_inline_jwks(cimd_enabled, private_key_jwt_advertised, key):
+    """Key material is validated by Application.clean(), so an unusable set never persists a row."""
+
+    class Fetcher:
+        def fetch(self, client_id):
+            return _document(token_endpoint_auth_method="private_key_jwt", jwks={"keys": [key]}), 3600
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(Fetcher)
+
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert not Application.objects.filter(client_id=CLIENT_URL).exists()
 
 
 def test_resolve_grant_type_ignores_refresh_token():
@@ -408,6 +621,78 @@ def test_resolve_creates_public_application(cimd_enabled):
 
 
 @pytest.mark.django_db(databases="__all__")
+def test_resolve_creates_private_key_jwt_application(cimd_enabled, private_key_jwt_advertised):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_PrivateKeyJWTFetcher)
+
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    assert app is not None
+    assert app.registration_source == Application.RegistrationSource.CIMD
+    assert app.client_type == Application.CLIENT_CONFIDENTIAL
+    assert app.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+    assert app.client_jwks_uri == "https://client.example.com/oauth/jwks.json"
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_refresh_can_change_private_key_jwt_to_public(
+    cimd_enabled, private_key_jwt_advertised, caplog
+):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_PrivateKeyJWTFetcher)
+    first = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        second = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    assert "token_endpoint_auth_method changed from 'private_key_jwt' to 'none'" in caplog.text
+
+    assert second.pk == first.pk
+    assert second.client_type == Application.CLIENT_PUBLIC
+    assert second.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_NONE
+    assert second.client_jwks == ""
+    assert second.client_jwks_uri == ""
+
+
+def _key_source_fetcher(key_metadata):
+    class Fetcher:
+        def fetch(self, client_id):
+            return _document(token_endpoint_auth_method="private_key_jwt", **key_metadata), 3600
+
+    return Fetcher
+
+
+@pytest.mark.parametrize(
+    "before, after",
+    [
+        (
+            {"jwks_uri": "https://client.example.com/jwks-a.json"},
+            {"jwks_uri": "https://client.example.com/jwks-b.json"},
+        ),
+        ({"jwks": PUBLIC_JWKS}, {"jwks_uri": "https://client.example.com/jwks.json"}),
+        ({"jwks_uri": "https://client.example.com/jwks.json"}, {"jwks": PUBLIC_JWKS}),
+    ],
+    ids=["jwks_uri-changed", "inline-to-jwks_uri", "jwks_uri-to-inline"],
+)
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_refresh_logs_a_changed_key_source(
+    cimd_enabled, private_key_jwt_advertised, caplog, before, after
+):
+    """Draft section 6.3.1: a new key source is logged, like a rotated inline set."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_key_source_fetcher(before))
+    first = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_key_source_fetcher(after))
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        second = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    assert second.pk == first.pk
+    assert "published new client keys on re-fetch" in caplog.text
+    assert "changed from" not in caplog.text
+    assert second.client_jwks_uri == after.get("jwks_uri", "")
+    assert bool(second.client_jwks) == ("jwks" in after)
+
+
+@pytest.mark.django_db(databases="__all__")
 def test_resolve_client_id_mismatch_rejected_and_backed_off(cimd_enabled, mocker):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_MismatchFetcher)
     fetch = mocker.spy(_MismatchFetcher, "fetch")
@@ -422,6 +707,61 @@ def test_resolve_client_id_mismatch_rejected_and_backed_off(cimd_enabled, mocker
 def test_resolve_confidential_document_rejected(cimd_enabled):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ConfidentialFetcher)
     assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_unadvertised_private_key_jwt_backs_off_per_policy(cimd_enabled, mocker, caplog):
+    """The method gate arms a backoff scoped to this node's policy, never the shared one."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_PrivateKeyJWTFetcher)
+    cimd_enabled.CIMD_FAILURE_BACKOFF_SECONDS = 17
+    fetch = mocker.spy(_PrivateKeyJWTFetcher, "fetch")
+    cache_set = mocker.spy(cimd.cache, "set")
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert "refused by server policy" in caplog.text
+    assert not Application.objects.filter(client_id=CLIENT_URL).exists()
+    # The shared failure backoff would block nodes whose policy accepts the document.
+    assert cache.get(cimd._backoff_cache_key(CLIENT_URL)) is None
+    assert cache.get(cimd._policy_backoff_cache_key(CLIENT_URL))
+    # The policy backoff lapses after CIMD_FAILURE_BACKOFF_SECONDS, like the shared one.
+    cache_set.assert_called_once_with(cimd._policy_backoff_cache_key(CLIENT_URL), True, 17)
+
+    # Within the window, the same policy does not fetch the document again.
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert fetch.call_count == 1
+
+    # A policy that advertises the method is keyed apart, so it fetches and
+    # registers the client on the very next request.
+    cimd_enabled.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
+        *cimd_enabled.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
+        "private_key_jwt",
+    ]
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is not None
+    assert fetch.call_count == 2
+
+
+def test_policy_backoff_cache_key_is_bounded_and_policy_scoped(oauth2_settings):
+    """The key fits memcached's 250-byte limit and differs per client_id and per policy."""
+    long_url = "https://client.example.com/" + "a" * 228
+    key = cimd._policy_backoff_cache_key(long_url)
+    assert len(key) <= 250
+    assert key != cimd._backoff_cache_key(long_url)
+    assert key != cimd._policy_backoff_cache_key(CLIENT_URL)
+
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
+        *oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
+        "private_key_jwt",
+    ]
+    assert cimd._policy_backoff_cache_key(long_url) != key
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_shared_secret_method_backs_off(cimd_enabled):
+    """A method the spec forbids is invalid metadata, not policy, so it is backed off."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_ConfidentialFetcher)
+    assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert cache.get(cimd._backoff_cache_key(CLIENT_URL))
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -650,11 +990,12 @@ def test_refresh_if_stale_keeps_an_admin_introspection_opt_out(cimd_enabled):
     assert Application.objects.get(pk=app.pk).can_introspect is False
 
 
-@pytest.mark.django_db(databases="__all__")
-def test_first_sight_is_detected_when_the_pk_has_a_default(cimd_enabled, mocker, caplog):
-    # A swapped model whose primary key has a default (e.g. a UUIDField with
-    # default=uuid4) has a pk before its first save. Simulate one by giving the
-    # unsaved CIMD instance a pk: first sight must still be recognised.
+def _preassign_pk_on_first_sight(mocker):
+    """Give the unsaved CIMD instance a pk, as a primary key with a default would.
+
+    A swapped model whose primary key has a default (e.g. a UUIDField with
+    default=uuid4) has a pk before its first save. Returns the pk assigned.
+    """
     original_init = Application.__init__
     preassigned_pk = 987654321
 
@@ -664,6 +1005,13 @@ def test_first_sight_is_detected_when_the_pk_has_a_default(cimd_enabled, mocker,
             self.pk = preassigned_pk
 
     mocker.patch.object(Application, "__init__", init_with_preassigned_pk)
+    return preassigned_pk
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_first_sight_is_detected_when_the_pk_has_a_default(cimd_enabled, mocker, caplog):
+    # First sight must still be recognised when the unsaved instance has a pk.
+    preassigned_pk = _preassign_pk_on_first_sight(mocker)
     # Derive a signing algorithm so a first sight mistaken for a re-fetch would
     # also log an algorithm "change".
     cimd_enabled.OIDC_ENABLED = True
@@ -674,6 +1022,44 @@ def test_first_sight_is_detected_when_the_pk_has_a_default(cimd_enabled, mocker,
 
     assert app.pk == preassigned_pk
     assert "signing algorithm changed" not in caplog.text
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_private_key_jwt_first_sight_is_detected_when_the_pk_has_a_default(
+    cimd_enabled, private_key_jwt_advertised, mocker, caplog
+):
+    """A first sight with keys logs no credential change, even when the unsaved instance has a pk."""
+    preassigned_pk = _preassign_pk_on_first_sight(mocker)
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    assert app.pk == preassigned_pk
+    assert app.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+    assert app.client_jwks
+    # Mistaken for a re-fetch, the blank method would read as a change from
+    # "none", and the empty key fields as a change of keys.
+    assert "token_endpoint_auth_method changed" not in caplog.text
+    assert "published new client keys" not in caplog.text
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_if_stale_logs_no_method_change_for_a_legacy_public_row(cimd_enabled, caplog):
+    """Every legacy row was public, so its blank method reads as ``none``, not as a change."""
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    Application.objects.filter(pk=app.pk).update(
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_DEFAULT,
+        cimd_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    app.refresh_from_db()
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        refreshed = refresh_if_stale(app, _oauthlib_request())
+
+    assert refreshed.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_NONE
+    assert "changed from" not in caplog.text
+    assert "published new client keys" not in caplog.text
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -1026,6 +1412,476 @@ def test_fetcher_includes_port_and_query(oauth2_settings, mocker):
 # ---------------------------------------------------------------------------
 # Validator integration + metadata advertisement
 # ---------------------------------------------------------------------------
+
+
+def _public_jwks(key):
+    return {"keys": [json.loads(key.export_public())]}
+
+
+def _private_key_jwt_fetcher(key):
+    class Fetcher:
+        def fetch(self, client_id):
+            return _document(token_endpoint_auth_method="private_key_jwt", jwks=_public_jwks(key)), 3600
+
+    return Fetcher
+
+
+def _client_assertion(key, audience=TOKEN_ENDPOINT):
+    now = int(time.time())
+    claims = {
+        "iss": CLIENT_URL,
+        "sub": CLIENT_URL,
+        "aud": audience,
+        "exp": now + 60,
+        "iat": now,
+        "jti": uuid4().hex,
+    }
+    token = jwt.JWT(header={"alg": "ES256", "kid": key.kid}, claims=claims)
+    token.make_signed_token(key)
+    return token.serialize()
+
+
+def _token_request(**params):
+    """An oauthlib token request from the host the assertion audience names."""
+    request = OAuthlibRequest(TOKEN_ENDPOINT, http_method="POST", headers={"HTTP_HOST": "testserver"})
+    request.client = None
+    request.grant_type = "authorization_code"
+    for name, value in params.items():
+        setattr(request, name, value)
+    return request
+
+
+def _authenticate_with(key):
+    from oauth2_provider.core.rfc7523 import JWT_BEARER_CLIENT_ASSERTION_TYPE
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    request = _token_request(
+        client_assertion=_client_assertion(key),
+        client_assertion_type=JWT_BEARER_CLIENT_ASSERTION_TYPE,
+    )
+    return OAuth2Validator().authenticate_client(request), request
+
+
+def _expire_stored_document():
+    Application.objects.filter(client_id=CLIENT_URL).update(
+        cimd_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_token_endpoint_resolves_private_key_jwt_client_from_its_assertion(
+    cimd_enabled, private_key_jwt_advertised, caplog
+):
+    """First sight at the token endpoint: the client_id is the assertion's ``sub``."""
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        ok, request = _authenticate_with(SIGNING_KEY)
+
+    assert ok is True
+    # A first sight registers the client; there is no earlier credential to have changed.
+    assert "changed from" not in caplog.text
+    assert "published new client keys" not in caplog.text
+    assert request.client.client_id == CLIENT_URL
+    assert request.client.client_type == Application.CLIENT_CONFIDENTIAL
+    assert request.client.registration_source == Application.RegistrationSource.CIMD
+
+    # A key the document did not publish is refused.
+    assert _authenticate_with(ROTATED_KEY)[0] is False
+    # RFC 9700 section 2.5: a client registered for private_key_jwt cannot fall
+    # back to a secret or to the public-client path.
+    secret_request = _token_request(client_id=CLIENT_URL, client_secret="guess")
+    assert OAuth2Validator().authenticate_client(secret_request) is False
+    assert OAuth2Validator().authenticate_client_id(CLIENT_URL, _token_request()) is False
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_token_endpoint_verifies_a_private_key_jwt_client_against_its_jwks_uri(
+    cimd_enabled, private_key_jwt_advertised, mocker
+):
+    """A document publishing a jwks_uri is verified against the key set fetched from it."""
+    from oauth2_provider.authorization_server import client_assertions
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_PrivateKeyJWTFetcher)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_public_jwks(SIGNING_KEY), {}),
+    )
+
+    ok, request = _authenticate_with(SIGNING_KEY)
+
+    assert ok is True
+    assert request.client.client_jwks_uri == "https://client.example.com/oauth/jwks.json"
+    assert fetch.call_count == 1
+    assert fetch.call_args.args[0] == "https://client.example.com/oauth/jwks.json"
+
+    # A key the URL does not publish is refused, after the one unknown-kid refetch.
+    assert _authenticate_with(ROTATED_KEY)[0] is False
+    assert fetch.call_count == 2
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_rotates_private_key_jwt_keys(cimd_enabled, private_key_jwt_advertised, caplog):
+    """Draft section 6.3.1: a refetched document's keys replace the stored set."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+
+    _expire_stored_document()
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(ROTATED_KEY))
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert _authenticate_with(ROTATED_KEY)[0] is True
+    assert "published new client keys on re-fetch" in caplog.text
+    assert _authenticate_with(SIGNING_KEY)[0] is False
+    stored = json.loads(Application.objects.get(client_id=CLIENT_URL).client_jwks)
+    assert [key["kid"] for key in stored["keys"]] == [ROTATED_KEY.kid]
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_with_reordered_keys_logs_no_key_change(cimd_enabled, private_key_jwt_advertised, caplog):
+    """A refetched document that only reorders its keys array stores the same set, silently."""
+    keys = [json.loads(key.export_public()) for key in (SIGNING_KEY, ROTATED_KEY)]
+
+    def fetcher(order):
+        class Fetcher:
+            def fetch(self, client_id):
+                return _document(token_endpoint_auth_method="private_key_jwt", jwks={"keys": order}), 3600
+
+        return Fetcher
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(fetcher(keys))
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+    stored = Application.objects.get(client_id=CLIENT_URL).client_jwks
+
+    _expire_stored_document()
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(fetcher(list(reversed(keys))))
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert _authenticate_with(ROTATED_KEY)[0] is True
+
+    assert Application.objects.get(client_id=CLIENT_URL).client_jwks == stored
+    assert "published new client keys" not in caplog.text
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_moves_public_client_to_private_key_jwt(cimd_enabled, private_key_jwt_advertised, caplog):
+    """The reverse of test_resolve_refresh_can_change_private_key_jwt_to_public."""
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    assert OAuth2Validator().authenticate_client_id(CLIENT_URL, _token_request()) is True
+
+    _expire_stored_document()
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert _authenticate_with(SIGNING_KEY)[0] is True
+    assert "token_endpoint_auth_method changed from 'none' to 'private_key_jwt'" in caplog.text
+    app = Application.objects.get(client_id=CLIENT_URL)
+    assert app.client_type == Application.CLIENT_CONFIDENTIAL
+    assert app.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+    assert OAuth2Validator().authenticate_client_id(CLIENT_URL, _token_request()) is False
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_private_key_jwt_client_refreshes_its_tokens(
+    cimd_enabled, private_key_jwt_advertised, django_user_model
+):
+    """The refresh-token grant authenticates the CIMD client with its assertion, then binds the token."""
+    from oauth2_provider.core.rfc7523 import JWT_BEARER_CLIENT_ASSERTION_TYPE
+    from oauth2_provider.models import get_access_token_model, get_refresh_token_model
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+    application = Application.objects.get(client_id=CLIENT_URL)
+    user = django_user_model.objects.create_user("cimd_refresh_user")
+    access_token = get_access_token_model().objects.create(
+        user=user,
+        token="cimd-access-token",
+        application=application,
+        expires=timezone.now() + timedelta(hours=1),
+        scope="read",
+    )
+    get_refresh_token_model().objects.create(
+        user=user, token="cimd-refresh-token", application=application, access_token=access_token
+    )
+
+    validator = OAuth2Validator()
+    request = _token_request(
+        grant_type="refresh_token",
+        client_assertion=_client_assertion(SIGNING_KEY),
+        client_assertion_type=JWT_BEARER_CLIENT_ASSERTION_TYPE,
+    )
+    assert validator.client_authentication_required(request) is True
+    assert validator.authenticate_client(request) is True
+    assert validator.validate_refresh_token("cimd-refresh-token", request.client, request) is True
+    assert request.user == user
+
+    # Without an assertion the confidential client cannot refresh as a public one.
+    assert validator.authenticate_client_id(CLIENT_URL, _token_request(grant_type="refresh_token")) is False
+
+
+def _introspectable_token(django_user_model):
+    from oauth2_provider.models import get_access_token_model
+
+    return get_access_token_model().objects.create(
+        user=django_user_model.objects.create_user("cimd_introspect_user"),
+        token="cimd-introspectable-token",
+        application=Application.objects.get(client_id=CLIENT_URL),
+        expires=timezone.now() + timedelta(days=1),
+        scope="read",
+    )
+
+
+def _introspect_with_assertion(client, key, token):
+    """POST to the introspection endpoint, authenticating with a client assertion signed by *key*."""
+    from oauth2_provider.core.rfc7523 import JWT_BEARER_CLIENT_ASSERTION_TYPE
+
+    introspect = reverse("oauth2_provider:introspect")
+    return post_form(
+        client,
+        introspect,
+        data={
+            "client_assertion_type": JWT_BEARER_CLIENT_ASSERTION_TYPE,
+            "client_assertion": _client_assertion(key, audience="http://testserver" + introspect),
+            "token": token.token,
+        },
+    )
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_private_key_jwt_client_can_introspect(
+    client, cimd_enabled, private_key_jwt_advertised, django_user_model
+):
+    """A confidential CIMD client authenticates to the introspection endpoint with an assertion."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+    token = _introspectable_token(django_user_model)
+
+    response = _introspect_with_assertion(client, SIGNING_KEY, token)
+
+    assert response.status_code == 200, response.content
+    assert json.loads(response.content)["active"] is True
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_private_key_jwt_client_introspection_opt_out_survives_a_refetch(
+    client, cimd_enabled, private_key_jwt_advertised, django_user_model
+):
+    """#1451: an operator's ``can_introspect=False`` refuses the assertion, before and after a re-fetch."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+    token = _introspectable_token(django_user_model)
+    Application.objects.filter(client_id=CLIENT_URL).update(can_introspect=False)
+
+    assert _introspect_with_assertion(client, SIGNING_KEY, token).status_code == 403
+
+    # The stale document is re-fetched while the introspection request
+    # authenticates the client; the re-fetch must not restore the flag.
+    _expire_stored_document()
+    assert _introspect_with_assertion(client, SIGNING_KEY, token).status_code == 403
+    stored = Application.objects.get(client_id=CLIENT_URL)
+    assert stored.cimd_expires_at > timezone.now()
+    assert stored.can_introspect is False
+
+
+@pytest.mark.parametrize(
+    "key_metadata",
+    [{"jwks": PUBLIC_JWKS}, {"jwks_uri": "https://client.example.com/oauth/jwks.json"}],
+    ids=["jwks", "jwks_uri"],
+)
+@pytest.mark.django_db(databases="__all__")
+def test_introspection_opt_out_survives_method_changes(
+    cimd_enabled, private_key_jwt_advertised, key_metadata
+):
+    """``none`` → ``private_key_jwt`` → ``none`` re-fetches never change ``can_introspect``."""
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    Application.objects.filter(pk=app.pk).update(can_introspect=False)
+
+    _expire_stored_document()
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_key_source_fetcher(key_metadata))
+    refresh_if_stale(Application.objects.get(pk=app.pk), _oauthlib_request())
+    stored = Application.objects.get(pk=app.pk)
+    assert stored.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+    assert stored.client_type == Application.CLIENT_CONFIDENTIAL
+    assert (stored.client_jwks or stored.client_jwks_uri) != ""
+    assert stored.can_introspect is False
+
+    _expire_stored_document()
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
+    refresh_if_stale(Application.objects.get(pk=app.pk), _oauthlib_request())
+    stored = Application.objects.get(pk=app.pk)
+    assert stored.token_endpoint_auth_method == Application.TOKEN_AUTH_METHOD_NONE
+    assert stored.client_type == Application.CLIENT_PUBLIC
+    assert stored.client_jwks == ""
+    assert stored.client_jwks_uri == ""
+    assert stored.can_introspect is False
+
+
+@pytest.mark.parametrize("operator_value", [True, False])
+@pytest.mark.django_db(databases="__all__")
+def test_documented_pre_save_receiver_covers_private_key_jwt_clients(
+    cimd_enabled, private_key_jwt_advertised, operator_value
+):
+    """The receiver in docs/resource_server.rst ("Introspection when registration is open")."""
+    from django.db.models.signals import pre_save
+
+    # Verbatim from the docs.
+    def no_introspection_for_registered_clients(sender, instance, raw, **kwargs):
+        """Turn can_introspect off for clients that registered through DCR or CIMD."""
+        if raw or not instance._state.adding:
+            return
+        if instance.registration_source in (
+            sender.RegistrationSource.DCR,
+            sender.RegistrationSource.CIMD,
+        ):
+            instance.can_introspect = False
+
+    pre_save.connect(
+        no_introspection_for_registered_clients,
+        sender=Application,
+        dispatch_uid="test_no_introspection_for_registered_clients",
+    )
+    try:
+        cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(SIGNING_KEY))
+        assert _authenticate_with(SIGNING_KEY)[0] is True
+        stored = Application.objects.get(client_id=CLIENT_URL)
+        assert stored.client_type == Application.CLIENT_CONFIDENTIAL
+        assert stored.can_introspect is False
+
+        # An operator then sets the flag (as the admin does, with save()).
+        stored.can_introspect = operator_value
+        stored.save()
+
+        # A re-fetch that rotates the keys keeps the operator's value.
+        _expire_stored_document()
+        cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_private_key_jwt_fetcher(ROTATED_KEY))
+        assert _authenticate_with(ROTATED_KEY)[0] is True
+        stored = Application.objects.get(client_id=CLIENT_URL)
+        assert [key["kid"] for key in json.loads(stored.client_jwks)["keys"]] == [ROTATED_KEY.kid]
+        assert stored.can_introspect is operator_value
+    finally:
+        pre_save.disconnect(sender=Application, dispatch_uid="test_no_introspection_for_registered_clients")
+
+
+def _deadvertise_private_key_jwt(oauth2_settings):
+    oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
+        method
+        for method in oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
+        if method != "private_key_jwt"
+    ]
+
+
+def _stored_row():
+    return Application.objects.filter(client_id=CLIENT_URL).values().get()
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_first_sight_refuses_a_resolved_row_with_an_unadvertised_method(cimd_enabled, mocker, caplog):
+    """The method gate also applies to a row the resolver hands back on first sight.
+
+    This node does not advertise private_key_jwt, yet the resolver can return a
+    row registered with it: after losing a concurrent first-sight race it
+    reloads the winner's row, which a node that advertises the method may have
+    stored, and a lookup against a lagging replica can miss a row that exists.
+    """
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    def resolve_to_a_row_stored_elsewhere(client_id, request):
+        # Stored after this node's lookup missed it, by a node whose policy
+        # registers private_key_jwt.
+        return Application.objects.create(
+            client_id=client_id,
+            name="Example CIMD Client",
+            user=None,
+            redirect_uris="https://client.example.com/callback",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+            client_jwks=json.dumps(_public_jwks(SIGNING_KEY)),
+            registration_source=Application.RegistrationSource.CIMD,
+            cimd_expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+    resolve = mocker.patch.object(
+        cimd, "resolve_cimd_application", side_effect=resolve_to_a_row_stored_elsewhere
+    )
+    request = _token_request()
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert OAuth2Validator()._load_application(CLIENT_URL, request) is None
+
+    resolve.assert_called_once()
+    assert request.client is None
+    assert "which this server does not register" in caplog.text
+    # Refused, not removed: the row another node stored is left as it is.
+    assert _stored_row()["token_endpoint_auth_method"] == Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_deadvertising_private_key_jwt_refuses_the_stored_client(
+    cimd_enabled, private_key_jwt_advertised, mocker, caplog
+):
+    """The method gate also applies to a stored row, which is left untouched."""
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    fetcher = _private_key_jwt_fetcher(SIGNING_KEY)
+    fetch = mocker.spy(fetcher, "fetch")
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(fetcher)
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+    stored = _stored_row()
+
+    _deadvertise_private_key_jwt(private_key_jwt_advertised)
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert _authenticate_with(SIGNING_KEY)[0] is False
+    assert "which this server does not register" in caplog.text
+    # Confidential, so the public path refuses it too; nor is it a known client.
+    assert OAuth2Validator().authenticate_client_id(CLIENT_URL, _token_request()) is False
+    assert OAuth2Validator().validate_client_id(CLIENT_URL, _token_request()) is False
+    assert _stored_row() == stored
+
+    # Advertising the method again restores the client from the stored row.
+    private_key_jwt_advertised.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED = [
+        *private_key_jwt_advertised.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED,
+        "private_key_jwt",
+    ]
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+    assert fetch.call_count == 1
+    assert _stored_row() == stored
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_deadvertised_stale_private_key_jwt_row_refetch_is_backed_off_per_policy(
+    cimd_enabled, private_key_jwt_advertised, mocker
+):
+    """A refetch refused by the method policy keeps the row, refuses it, and is not repeated."""
+    from oauth2_provider.oauth2_validators import OAuth2Validator
+
+    fetcher = _private_key_jwt_fetcher(SIGNING_KEY)
+    fetch = mocker.spy(fetcher, "fetch")
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(fetcher)
+    assert _authenticate_with(SIGNING_KEY)[0] is True
+    _expire_stored_document()
+    stored = _stored_row()
+
+    _deadvertise_private_key_jwt(private_key_jwt_advertised)
+    for _ in range(3):
+        assert _authenticate_with(SIGNING_KEY)[0] is False
+        assert OAuth2Validator()._load_application(CLIENT_URL, _token_request()) is None
+    # One refetch for the window: the stored row is returned while backed off
+    # and still refused by is_usable_registration.
+    assert fetch.call_count == 2
+    assert _stored_row() == stored
+    assert cache.get(cimd._backoff_cache_key(CLIENT_URL)) is None
+
+    # Once the window lapses, a document that has since moved to "none" is
+    # picked up on the next use.
+    cache.delete(cimd._policy_backoff_cache_key(CLIENT_URL))
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_GoodFetcher)
+    assert OAuth2Validator().authenticate_client_id(CLIENT_URL, _token_request()) is True
+    assert _stored_row()["token_endpoint_auth_method"] == Application.TOKEN_AUTH_METHOD_NONE
 
 
 @pytest.mark.django_db(databases="__all__")

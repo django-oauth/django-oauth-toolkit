@@ -30,6 +30,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.http.request import validate_host
 from django.utils import timezone
+from oauthlib.common import Request
 
 from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
@@ -49,15 +50,22 @@ log = logging.getLogger(__name__)
 
 # RFC 7591 grant_type name → DOT AbstractApplication.authorization_grant_type.
 # Mirrors GRANT_TYPE_MAP in views/dynamic_client_registration.py; kept as a
-# separate subset here because CIMD clients are public (confidential-only grants
-# are intentionally absent) and device_code is out of scope for CIMD (its grant
-# would also need DeviceGrant.client_id widened to hold a URL).
+# separate subset here because only redirect-based grants are offered to CIMD
+# clients (client_credentials is intentionally absent, even for a client that
+# authenticates with private_key_jwt) and device_code is out of scope for CIMD
+# (its grant would also need DeviceGrant.client_id widened to hold a URL).
 GRANT_TYPE_MAP = {
     "authorization_code": "authorization-code",
     "implicit": "implicit",
 }
 # Handled automatically by DOT alongside authorization_code, so not a standalone choice.
 IGNORED_GRANT_TYPES = {"refresh_token"}
+
+# Every method a CIMD registration can be stored with. Shared-secret methods
+# are forbidden by the spec (section 4.1); ``private_key_jwt`` is the one
+# asymmetric method RFC 7523 client authentication implements. Which of these a
+# given server registers is decided by :func:`_supported_auth_methods`.
+REGISTRABLE_AUTH_METHODS = ("none", "private_key_jwt")
 
 # Cache-freshness lives on the model (cimd_expires_at, durable and authoritative
 # per row); the failure backoff is ephemeral/best-effort, so it lives in the
@@ -78,6 +86,22 @@ class CIMDError(Exception):
 
     The message is safe to log but is never returned to the client: a failed
     resolution simply looks like an unknown client to the OAuth flow.
+    """
+
+
+class CIMDPolicyError(CIMDError):
+    """This server's policy refuses a document that is otherwise acceptable.
+
+    Raised when a document chooses an authentication method this server could
+    register but does not (see :func:`_supported_auth_methods`). It is not a
+    fetch or validation failure, so the resolver does not arm the shared failure
+    backoff for it: that backoff is shared by every node using the cache, and a
+    refusal by one node must not block the nodes whose policy accepts the
+    document. It arms a policy backoff instead (see
+    :func:`_policy_backoff_cache_key`), whose key includes a digest of this
+    node's policy: refetches are bounded, nodes with the same policy share the
+    backoff, nodes with a different policy never see it, and a policy change
+    takes effect at once.
     """
 
 
@@ -252,21 +276,62 @@ def _resolve_grant_type(grant_types):
     return grant
 
 
-def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Convert a CIMD metadata document to public-Application field kwargs.
+def _supported_auth_methods() -> tuple[str, ...]:
+    """Return the methods this server registers CIMD clients with.
 
-    Requires ``token_endpoint_auth_method`` ``"none"`` — the spec forbids
-    shared-secret methods, and asymmetric ones such as ``private_key_jwt``
-    (implemented in :mod:`oauth2_provider.authorization_server.client_assertions`) are not yet
-    wired to CIMD — rejects any ``client_secret`` property, and requires
-    at least one redirect URI. The ID Token signing algorithm follows
+    ``none`` is always registrable, although the default advertised lists do
+    not name it. ``private_key_jwt`` is registrable only when it is advertised
+    in the RFC 8414 document (``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED``)
+    and, with OpenID Connect enabled, in the OpenID Connect Discovery document
+    (``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED``) as well: a document
+    declares a single method, which its client may have picked from either
+    discovery document.
+    """
+    advertised = set(oauth2_settings.OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED)
+    if oauth2_settings.OIDC_ENABLED:
+        advertised.intersection_update(oauth2_settings.OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED)
+    return tuple(m for m in REGISTRABLE_AUTH_METHODS if m == "none" or m in advertised)
+
+
+def _jwks_uri(metadata: dict[str, Any]) -> Any:
+    """Return the document's ``jwks_uri``, or None when it is absent.
+
+    An empty or whitespace-only string counts as absent, as for Dynamic Client
+    Registration; any other value is returned (stripped, if a string) for the
+    caller to validate.
+    """
+    jwks_uri = metadata.get("jwks_uri")
+    if isinstance(jwks_uri, str):
+        return jwks_uri.strip() or None
+    return jwks_uri
+
+
+def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Convert a CIMD metadata document to Application field kwargs.
+
+    Requires a ``token_endpoint_auth_method`` this server registers (see
+    :func:`_supported_auth_methods`): ``"none"``, or ``"private_key_jwt"`` when
+    advertised. The spec forbids shared-secret methods, so they are never
+    registered. A document may not carry both ``jwks`` and ``jwks_uri``,
+    whatever its method. A ``private_key_jwt`` client must use the
+    authorization code grant and publish one of ``jwks`` or an HTTPS
+    ``jwks_uri`` so its assertion can be verified at the token endpoint, and is
+    stored as a confidential client with that key source. Rejects any
+    ``client_secret`` property, and requires at least one redirect URI. The ID Token signing algorithm follows
     ``id_token_signed_response_alg`` (OpenID Connect Dynamic Client
     Registration 1.0 section 2). Returns kwargs; raises :class:`CIMDError` on
     invalid metadata.
     """
     auth_method = metadata.get("token_endpoint_auth_method", "none")
-    if auth_method != "none":
-        raise CIMDError(f"CIMD clients must be public; got token_endpoint_auth_method {auth_method!r}")
+    if not isinstance(auth_method, str):
+        raise CIMDError("token_endpoint_auth_method must be a string")
+    supported = _supported_auth_methods()
+    if auth_method not in supported:
+        error_class = CIMDPolicyError if auth_method in REGISTRABLE_AUTH_METHODS else CIMDError
+        raise error_class(
+            f"client metadata declares token_endpoint_auth_method {auth_method!r}; "
+            f"this server registers CIMD clients with {list(supported)}"
+        )
     # Spec: neither property may appear in a CIMD document (presence, not value).
     if "client_secret" in metadata or "client_secret_expires_at" in metadata:
         raise CIMDError("CIMD client metadata must not include client_secret or client_secret_expires_at")
@@ -301,12 +366,57 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     except UnsupportedClientMetadataError as exc:
         raise CIMDError(str(exc)) from exc
 
-    return {
+    kwargs = {
         "name": client_name,
         "redirect_uris": " ".join(redirect_uris),
         "authorization_grant_type": _resolve_grant_type(grant_types),
         "algorithm": algorithm,
+        "token_endpoint_auth_method": auth_method,
+        # Always emitted, so a re-fetch whose document changed method clears
+        # the key source the previous document registered.
+        "client_type": AbstractApplication.CLIENT_PUBLIC,
+        "client_jwks": "",
+        "client_jwks_uri": "",
     }
+    # RFC 7591 section 2: the two MUST NOT both be present, whatever the method
+    # (a blank jwks_uri counts as absent, as for Dynamic Client Registration).
+    jwks = metadata.get("jwks")
+    jwks_uri = _jwks_uri(metadata)
+    if jwks is not None and jwks_uri is not None:
+        raise CIMDError("jwks and jwks_uri are mutually exclusive")
+    if auth_method == AbstractApplication.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT:
+        # Draft section 6.2: a client registered this way is confidential and
+        # "any communication with the authorization server MUST include
+        # client authentication of the registered type". The implicit grant
+        # issues tokens at the authorization endpoint with no client
+        # authentication at all, so the keys would only unlock introspection
+        # and client-protected resources.
+        if kwargs["authorization_grant_type"] != AbstractApplication.GRANT_AUTHORIZATION_CODE:
+            raise CIMDError("private_key_jwt requires the authorization_code grant")
+        # Shape checks only, so a malformed document is refused with a precise
+        # message before the database is touched. The key material itself
+        # (public keys only, at least one usable for signature verification)
+        # is validated by Application.clean() when the row is saved, exactly
+        # as for a manually registered client.
+        if jwks is None and jwks_uri is None:
+            raise CIMDError("private_key_jwt requires one of jwks or jwks_uri")
+        if jwks_uri is not None:
+            if not isinstance(jwks_uri, str) or not jwks_uri.lower().startswith("https://"):
+                raise CIMDError("jwks_uri must use the https scheme")
+            kwargs["client_jwks_uri"] = jwks_uri
+        else:
+            if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
+                raise CIMDError('jwks must be a JWK Set object with a "keys" array')
+            if not jwks["keys"] or not all(isinstance(key, dict) for key in jwks["keys"]):
+                raise CIMDError("jwks must contain at least one key, each a JSON object")
+            # Canonical member and array order, so a re-fetch whose document
+            # merely reordered the set (or the keys within it) is not logged as
+            # publishing new keys. The order of a JWK Set's keys carries no
+            # meaning (RFC 7517 section 5.1), so the stored set is equivalent.
+            keys = sorted(jwks["keys"], key=lambda key: json.dumps(key, sort_keys=True))
+            kwargs["client_jwks"] = json.dumps({**jwks, "keys": keys}, sort_keys=True)
+        kwargs["client_type"] = AbstractApplication.CLIENT_CONFIDENTIAL
+    return kwargs
 
 
 def _get_fetch_semaphore():
@@ -370,9 +480,17 @@ def _fetch_validate_upsert(client_id: str) -> AbstractApplication:
     # fetch, so a change is logged (it is derived from this process's settings
     # and persisted for every node sharing the database).
     previous_algorithm = None if created else application.algorithm
+    # Likewise for the client's credentials, so a method change or a key
+    # rotation (draft section 6.3.1) is visible to an operator. Rows stored
+    # before the method was recorded carry the blank default; every one of them
+    # was public, so read it as ``none`` rather than log a change on the first
+    # re-fetch of every such client.
+    previous_auth_method = (
+        None if created else (application.token_endpoint_auth_method or Application.TOKEN_AUTH_METHOD_NONE)
+    )
+    previous_keys = None if created else (application.client_jwks, application.client_jwks_uri)
 
     application.user = None
-    application.client_type = Application.CLIENT_PUBLIC
     application.registration_source = Application.RegistrationSource.CIMD
     application.cimd_expires_at = timezone.now() + timedelta(seconds=max_age)
     for field, value in kwargs.items():
@@ -408,6 +526,21 @@ def _fetch_validate_upsert(client_id: str) -> AbstractApplication:
                 previous_algorithm,
                 application.algorithm,
             )
+        if (
+            previous_auth_method is not None
+            and application.token_endpoint_auth_method != previous_auth_method
+        ):
+            log.info(
+                "CIMD application %r token_endpoint_auth_method changed from %r to %r on re-fetch",
+                client_id,
+                previous_auth_method,
+                application.token_endpoint_auth_method,
+            )
+        elif (
+            previous_keys is not None
+            and (application.client_jwks, application.client_jwks_uri) != previous_keys
+        ):
+            log.info("CIMD application %r published new client keys on re-fetch", client_id)
     return application
 
 
@@ -422,15 +555,30 @@ def _backoff_cache_key(client_id):
     return BACKOFF_CACHE_PREFIX + digest
 
 
-def resolve_cimd_application(client_id, request):
+def _policy_backoff_cache_key(client_id: str) -> str:
+    """Return the policy-refusal backoff cache key for *client_id*.
+
+    Distinct from :func:`_backoff_cache_key`: the key also carries a digest of
+    this node's authentication-method policy (:func:`_supported_auth_methods`),
+    so only nodes with the same policy share it, and a policy change yields a
+    new key and takes effect on the next request. Both parts are hashed so the
+    key stays within a cache backend's key-length limit.
+    """
+    client_digest = hashlib.sha256(client_id.encode("utf-8")).hexdigest()
+    policy = ",".join(sorted(_supported_auth_methods()))
+    policy_digest = hashlib.sha256(policy.encode("utf-8")).hexdigest()
+    return f"{BACKOFF_CACHE_PREFIX}policy:{client_digest}:{policy_digest}"
+
+
+def resolve_cimd_application(client_id: str, request: Request) -> AbstractApplication | None:
     """Resolve a CIMD *client_id* URL to a persisted Application, or None.
 
     Returns None (the caller then treats the client as unknown) when CIMD is
     disabled, the id is not a CIMD URL, registration is refused by the
-    permission classes, the URL is in failure backoff, the in-flight cap is
-    reached, or the document is missing or invalid. *request* is the oauthlib
-    request the client_id arrived on; it is forwarded to the permission
-    classes.
+    permission classes or by this server's authentication-method policy, the
+    URL is in failure or policy-refusal backoff, the in-flight cap is reached,
+    or the document is missing or invalid. *request* is the oauthlib request
+    the client_id arrived on; it is forwarded to the permission classes.
     """
     if not oauth2_settings.CIMD_ENABLED or not is_cimd_client_id(client_id):
         return None
@@ -445,6 +593,9 @@ def resolve_cimd_application(client_id, request):
     backoff_key = _backoff_cache_key(client_id)
     if cache.get(backoff_key):
         return None
+    policy_backoff_key = _policy_backoff_cache_key(client_id)
+    if cache.get(policy_backoff_key):
+        return None
 
     with _fetch_slot() as acquired:
         if not acquired:
@@ -453,6 +604,14 @@ def resolve_cimd_application(client_id, request):
             return None
         try:
             return _fetch_validate_upsert(client_id)
+        except CIMDPolicyError as exc:
+            # A policy refusal arms only the policy-scoped backoff, never the
+            # shared one: refetches are bounded, yet it neither blocks nodes
+            # whose policy accepts the document nor outlives a change to this
+            # node's policy (which yields a different key).
+            log.info("CIMD registration refused by server policy for %r: %r", client_id, exc)
+            cache.set(policy_backoff_key, True, oauth2_settings.CIMD_FAILURE_BACKOFF_SECONDS)
+            return None
         except CIMDError as exc:
             log.info("CIMD resolution failed for %r: %r", client_id, exc)
             cache.set(backoff_key, True, oauth2_settings.CIMD_FAILURE_BACKOFF_SECONDS)
@@ -483,3 +642,31 @@ def refresh_if_stale(application, request):
         return application
     refreshed = resolve_cimd_application(application.client_id, request)
     return refreshed if refreshed is not None else application
+
+
+def is_usable_registration(application: AbstractApplication) -> bool:
+    """Return False for a CIMD Application this server would no longer register.
+
+    The authentication-method policy (:func:`_supported_auth_methods`) is
+    checked when a document is fetched, but a row stored earlier, or by another
+    node, outlives it: a server that stops advertising ``private_key_jwt`` must
+    not keep authenticating a client registered with it, and refetching cannot
+    help, because the refetched document is refused by the same policy. This
+    check refuses such a row at load time instead. The row itself is left
+    untouched, so advertising the method again restores the client without a
+    refetch. Non-CIMD applications are always usable here.
+    """
+    if application.registration_source != application.RegistrationSource.CIMD:
+        return True
+    # Rows stored before the method was recorded carry the blank default; every
+    # one of them was public.
+    method = application.token_endpoint_auth_method or application.TOKEN_AUTH_METHOD_NONE
+    if method in _supported_auth_methods():
+        return True
+    log.info(
+        "CIMD application %r is registered with token_endpoint_auth_method %r, "
+        "which this server does not register; refusing it",
+        application.client_id,
+        method,
+    )
+    return False

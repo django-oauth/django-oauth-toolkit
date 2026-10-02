@@ -323,6 +323,32 @@ def test_hs256_assertion_rejected_for_private_key_jwt_client():
     assert ok is False
 
 
+@pytest.mark.django_db(databases="__all__")
+def test_inline_symmetric_key_is_never_a_private_key_jwt_candidate(oauth2_settings):
+    """A row saved without clean() may hold an oct key; it must not verify assertions,
+    even on a server that lists HS256 among its private_key_jwt algorithms."""
+    oauth2_settings.CLIENT_ASSERTION_PRIVATE_KEY_JWT_ALGS = [
+        *oauth2_settings.CLIENT_ASSERTION_PRIVATE_KEY_JWT_ALGS,
+        "HS256",
+    ]
+    secret_key = jwk.JWK(kty="oct", k=base64url_encode(CLEARTEXT_SECRET), kid="shared")
+    app = Application.objects.create(
+        client_id="pkj-oct-client",
+        name="Legacy oct key",
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+        token_endpoint_auth_method=Application.TOKEN_AUTH_METHOD_PRIVATE_KEY_JWT,
+        client_jwks=json.dumps({"keys": [json.loads(secret_key.export())]}),
+    )
+    assertion = build_assertion(
+        secret_key, default_claims(client_id="pkj-oct-client"), alg="HS256", kid="shared"
+    )
+
+    ok, _ = authenticate(assertion, app)
+
+    assert ok is False
+
+
 def test_rs256_assertion_rejected_for_client_secret_jwt_client():
     app = csj_app()
     assertion = build_assertion(RSA_KEY, default_claims(client_id="csj-client"), kid="unit-rsa")
@@ -441,6 +467,20 @@ def test_jti_replay_rejected():
 
 def _jwks_document(*keys):
     return {"keys": [json.loads(key.export_public()) for key in keys]}
+
+
+def test_jwks_uri_symmetric_keys_are_skipped(mocker):
+    app = pkj_app(client_jwks_uri="https://client.example.com/jwks.json")
+    mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(
+            {"keys": [{"kty": "oct", "k": base64url_encode(CLEARTEXT_SECRET), "kid": "shared"}]},
+            {},
+        ),
+    )
+    with pytest.raises(client_assertions.ClientAssertionError, match="no usable public keys"):
+        client_assertions.fetch_remote_jwks(app)
 
 
 def test_jwks_uri_fetch_verifies(mocker):

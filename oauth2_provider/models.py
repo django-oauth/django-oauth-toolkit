@@ -562,6 +562,17 @@ class AbstractApplication(models.Model):
                     field_errors["client_jwks"].append(
                         ValidationError(_("client_jwks must contain public keys only, never private keys."))
                     )
+                # An oct key is a shared symmetric secret: private_key_jwt never
+                # uses one, and anyone who can read the key set could sign with it.
+                elif any(key.get("kty") == "oct" for key in key_set["keys"]):
+                    field_errors["client_jwks"].append(
+                        ValidationError(
+                            _(
+                                "client_jwks must contain asymmetric public keys only; "
+                                "an oct key is a shared secret."
+                            )
+                        )
+                    )
                 # A key set that permits no signature verification (e.g. use=enc
                 # everywhere, or key_ops without "verify") can never authenticate
                 # this client; fail at registration instead of at the first login.

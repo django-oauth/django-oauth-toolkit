@@ -308,7 +308,9 @@ OAUTH2_PROVIDER = {
         "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
     ),
     # Advertise RFC 7523 JWT client authentication (the seed data ships a
-    # private_key_jwt demo application; see tests/app/README.md).
+    # private_key_jwt demo application; see tests/app/README.md). Listing
+    # private_key_jwt in both also lets a CIMD document choose it when
+    # CIMD_ENABLED is on.
     "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
         "client_secret_post",
         "client_secret_basic",

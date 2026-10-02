@@ -249,7 +249,16 @@ class OAuthClient:
         """Raw POST to the token endpoint (RFC 6749 §3.2)."""
         return requests.post(self.url("/o/token/"), data=data, timeout=DEFAULT_TIMEOUT)
 
-    def exchange_code(self, *, client_id, code, redirect_uri, code_verifier=None, client_secret=None):
+    def exchange_code(
+        self,
+        *,
+        client_id: str,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str | None = None,
+        client_secret: str | None = None,
+        client_assertion: str | None = None,
+    ) -> requests.Response:
         data = {
             "grant_type": "authorization_code",
             "code": code,
@@ -260,6 +269,10 @@ class OAuthClient:
             data["code_verifier"] = code_verifier
         if client_secret is not None:
             data["client_secret"] = client_secret
+        if client_assertion is not None:
+            # RFC 7523 section 2.2 client authentication (private_key_jwt / client_secret_jwt).
+            data["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            data["client_assertion"] = client_assertion
         return self.token(data)
 
     def client_credentials(self, *, client_id, client_secret, scope=None):

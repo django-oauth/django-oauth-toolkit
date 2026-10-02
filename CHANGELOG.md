@@ -23,6 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in per-plan expected-failures files. Each plan's known gaps are recorded as a baseline
   (`tests/openid-conformance-suite/baseline.py` regenerates it), so any conformance regression
   fails CI.
+* #1845 CIMD clients can use `private_key_jwt` client authentication (RFC 7523) by publishing an
+  inline `jwks` or an HTTPS `jwks_uri` in their Client ID Metadata Document; they are stored as
+  confidential applications with that key source, and must use the authorization code grant.
+  `none` is still always accepted; `private_key_jwt` is accepted only on a server that advertises
+  it in `OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED` and, with OpenID Connect enabled, in
+  `OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED` too, since a client may pick its method from either
+  discovery document. Any other server refuses a `private_key_jwt` document, as it did before, and
+  will not load a client already stored with that method, so the client can obtain no new tokens
+  there, by refreshing or otherwise; access tokens already issued to it stay valid until they expire
+  or are revoked. A fetch refused this way arms a backoff scoped to the node's policy rather than
+  the CIMD failure backoff the nodes share, so refetches are bounded without blocking nodes with a
+  different policy or outliving a policy change. The method is recorded in the application's
+  `token_endpoint_auth_method` field. A refetched document replaces the stored method and key
+  source, so keys rotate and a client can move between `none` and `private_key_jwt` without leaving
+  stale key material behind; each such change is logged at `INFO`.
+  Being confidential, a `private_key_jwt` CIMD client keeps the default `can_introspect=True` and so
+  can introspect by authenticating with a client assertion, which a public client cannot (see #1451
+  under Security). Where anyone can host a metadata document (CIMD with no host allowlist), anyone
+  can therefore get a client that introspects; see "Introspection when registration is open" in
+  `docs/resource_server.rst` for turning the flag off as such clients are first seen. See
+  `docs/cimd.rst`.
 * #1730 A `cleardcrapplications` management command that deletes DCR-registered applications
   (`registration_source="dcr"`) which hold no live tokens or grants and were last registered or
   modified at least `--min-unmodified-days` days ago (default 7). DCR clients that re-register
@@ -76,7 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Note that `client_secret_jwt` requires the client secret to be stored unhashed (it is the HMAC key), like HS256.
   An assertion whose `kid` matches no cached key triggers a cache-bypassing refetch of the `jwks_uri` at most once per
   `CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS` (default 60; `0` or `None` disables it), so clients must publish a
-  new key at least that long before signing with it.
+  new key at least that long before signing with it. `client_jwks` refuses symmetric (`oct`) keys, and a fetched
+  `client_jwks_uri` set skips them along with private keys, so `private_key_jwt` never verifies an assertion with a
+  shared secret, even on a server that lists `HS256` in `CLIENT_ASSERTION_PRIVATE_KEY_JWT_ALGS`.
 * #657 `REQUIRE_FORM_ENCODED_REQUEST_BODY`, an opt-in setting that makes the endpoints that take the
   parameters comprising the request in an `application/x-www-form-urlencoded` body -- token
   (RFC 6749 §4.1.3, §4.3.2, §4.4.2 and §6), revocation (RFC 7009 §2.1), introspection
@@ -197,6 +220,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Tokens and OpenID Connect Discovery requires in `id_token_signing_alg_values_supported`. A newly
   requested `HS256` is still refused, now with a message saying so. #1871, which proposed offering
   it, is closed as not planned.
+* #1845 A Client ID Metadata Document carrying both `jwks` and a non-empty `jwks_uri` is now refused
+  whatever its `token_endpoint_auth_method`, as RFC 7591 section 2 requires. Such a document was
+  previously accepted when it chose `none`, with both fields ignored. A client first seen with one is
+  now refused, and an existing client whose document carries both keeps its last good registration
+  but no longer picks up document changes until one of the two fields is removed. See
+  `docs/cimd.rst`.
 
 ### Deprecated
 * `oauth2_provider.core.backends_oauthlib._add_iss_to_redirect` was promoted to the public
