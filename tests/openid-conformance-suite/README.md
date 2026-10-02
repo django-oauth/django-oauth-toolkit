@@ -80,12 +80,11 @@ open (`AllowAllDCRPermission`). That is why the Basic, Implicit and Hybrid plans
 second run exercises registration as well as the flow.
 
 Some modules are expected to expose gaps in the toolkit rather than in the harness, and are
-in the matrix for exactly that reason. Known from the first runs: the authorization endpoint
-does not accept the request by HTTP POST (`oidcc-ensure-post-request-succeeds`, OpenID Connect
-Core 1.0 section 3.1.2.1), an elapsed `max_age` does not force re-authentication
-(`oidcc-max-age-1`), and the registration endpoint rejects a `grant_types` list with both
-`authorization_code` and `implicit`, which is what a hybrid client registers, and ignores
-`post_logout_redirect_uris` (the `hybrid-dcr` and `rp-initiated-logout-dcr` plans).
+in the matrix for exactly that reason. Known from the first runs: an elapsed `max_age` does not
+force re-authentication (`oidcc-max-age-1`), and the registration endpoint rejects a
+`grant_types` list with both `authorization_code` and `implicit`, which is what a hybrid client
+registers, and ignores `post_logout_redirect_uris` (the `hybrid-dcr` and `rp-initiated-logout-dcr`
+plans).
 
 A module that does not run to completion counts toward the runner's circuit breaker
 (`CONFORMANCE_MAX_CONSECUTIVE_FAILURES`, set to 25 by `run.py` so one gap does not hide the
