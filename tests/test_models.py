@@ -1285,6 +1285,48 @@ def test_application_clean_errors_are_associated_with_their_field(oauth2_setting
 
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_userinfo_signing_requires_rsa_key(oauth2_settings, application):
+    """RS256-signed UserInfo responses (OIDC Core 5.3.2) need the server's RSA key."""
+    application.userinfo_signed_response_alg = Application.RS256_ALGORITHM
+    application.clean()
+
+    oauth2_settings.OIDC_RSA_PRIVATE_KEY = None
+    application.algorithm = Application.NO_ALGORITHM
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["userinfo_signed_response_alg"]
+    assert "sign UserInfo responses" in exc.value.message_dict["userinfo_signed_response_alg"][0]
+
+    # Unsigned (plain JSON) UserInfo needs no key.
+    application.userinfo_signed_response_alg = Application.NO_ALGORITHM
+    application.clean()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_application_clean_userinfo_signing_requires_oidc_support(oauth2_settings, application):
+    """An application without OIDC support (no algorithm) gets no signed UserInfo."""
+    application.algorithm = Application.NO_ALGORITHM
+    application.userinfo_signed_response_alg = Application.RS256_ALGORITHM
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["userinfo_signed_response_alg"]
+    assert "without OIDC support" in exc.value.message_dict["userinfo_signed_response_alg"][0]
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_application_clean_userinfo_signing_requires_a_signing_server(oauth2_settings, application):
+    """With the key but a server class that does not sign, RS256 would silently be JSON."""
+    oauth2_settings.update({**presets.OIDC_SETTINGS_RW, "OIDC_SERVER_CLASS": "oauthlib.openid.Server"})
+    application.userinfo_signed_response_alg = Application.RS256_ALGORITHM
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert list(exc.value.message_dict) == ["userinfo_signed_response_alg"]
+    assert "cannot sign UserInfo responses" in exc.value.message_dict["userinfo_signed_response_alg"][0]
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_application_clean_reports_every_error_at_once(oauth2_settings, application):
     """Unrelated problems are collected, not reported one save at a time."""
     application.redirect_uris = "invalid"

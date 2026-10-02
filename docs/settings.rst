@@ -44,7 +44,8 @@ OAUTH2_SERVER_CLASS
 The import string for the ``server_class`` (or ``oauthlib.oauth2.Server`` subclass)
 used in the ``OAuthLibMixin`` that implements OAuth2 grant types. It defaults
 to ``oauthlib.oauth2.Server``, except when :doc:`oidc` is enabled, when the
-default is ``oauthlib.openid.Server``.
+default is ``oauth2_provider.authorization_server.oidc.server.Server`` (see
+``OIDC_SERVER_CLASS``).
 
 When ``OIDC_ENABLED`` is ``True`` and ``OAUTH2_SERVER_CLASS`` is not explicitly
 configured, ``OIDC_SERVER_CLASS`` is used as the fallback.
@@ -755,10 +756,18 @@ Whether or not :doc:`oidc` support is enabled.
 
 OIDC_SERVER_CLASS
 ~~~~~~~~~~~~~~~~~
-Default: ``"oauthlib.openid.Server"``
+Default: ``"oauth2_provider.authorization_server.oidc.server.Server"``
 
 The import string for the OIDC ``server_class`` used when ``OIDC_ENABLED`` is
 ``True`` and ``OAUTH2_SERVER_CLASS`` is not explicitly configured.
+
+The default derives from ``oauthlib.openid.Server`` and adds a UserInfo endpoint that
+can sign its response (see :ref:`signed-userinfo`). A custom class should derive from
+it. With
+one that derives from ``oauthlib.openid.Server`` directly, UserInfo is always plain
+JSON: signing is not advertised, registration refuses ``userinfo_signed_response_alg``,
+and, when an ``OIDC_RSA_PRIVATE_KEY`` is configured, the ``oauth2_provider.I001`` system
+check reports it.
 
 OIDC_RSA_PRIVATE_KEY
 ~~~~~~~~~~~~~~~~~~~~
@@ -819,6 +828,18 @@ you prefer to control them with CORS middleware such as `django-cors-headers
 <https://github.com/adamchainz/django-cors-headers>`_. Note that when that middleware is
 installed it answers every CORS preflight before any view runs, so the userinfo path has to be
 allowed there too even when this setting is left on.
+
+OIDC_USERINFO_JWT_EXPIRE_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``None``
+
+The lifetime of a signed UserInfo response (see :ref:`signed-userinfo`), as a positive number
+of seconds or a ``datetime.timedelta``. When set, the JWT carries an ``exp`` claim that many
+seconds after its ``iat``. Any other value is reported by ``manage.py check`` as
+``oauth2_provider.E007``. ``None`` leaves
+``exp`` out: `OpenID Connect Core 1.0 section 5.3.2
+<https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse>`_ does not require it,
+and the response is only ever returned directly to the client that asked for it.
 
 OIDC_COMPLIANT_SCOPE_CLAIMS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

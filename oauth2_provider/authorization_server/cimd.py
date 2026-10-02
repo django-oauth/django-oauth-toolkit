@@ -35,6 +35,7 @@ from oauthlib.common import Request
 from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
     id_token_signing_algorithm,
+    userinfo_signing_algorithm,
 )
 from oauth2_provider.core import safe_fetch
 
@@ -453,6 +454,7 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     # server cannot honour, and the last good row stays in service.
     try:
         algorithm = id_token_signing_algorithm(metadata)
+        userinfo_algorithm = userinfo_signing_algorithm(metadata)
     except UnsupportedClientMetadataError as exc:
         raise CIMDError(str(exc)) from exc
 
@@ -461,6 +463,7 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
         "redirect_uris": " ".join(redirect_uris),
         "authorization_grant_type": _resolve_grant_type(grant_types),
         "algorithm": algorithm,
+        "userinfo_signed_response_alg": userinfo_algorithm,
         "token_endpoint_auth_method": auth_method,
         # Always emitted, so a re-fetch whose document changed method clears
         # the key source the previous document registered.

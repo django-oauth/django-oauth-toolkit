@@ -322,6 +322,7 @@ def test_build_application_kwargs_public():
         "redirect_uris": "https://client.example.com/callback",
         "authorization_grant_type": "authorization-code",
         "algorithm": Application.NO_ALGORITHM,
+        "userinfo_signed_response_alg": Application.NO_ALGORITHM,
         "token_endpoint_auth_method": "none",
         "client_type": Application.CLIENT_PUBLIC,
         "client_jwks": "",
@@ -689,6 +690,7 @@ def test_build_application_kwargs_registers_the_chatgpt_transition_document():
         "redirect_uris": "https://chatgpt.com/connector_platform_oauth_redirect",
         "authorization_grant_type": "authorization-code",
         "algorithm": Application.NO_ALGORITHM,
+        "userinfo_signed_response_alg": Application.NO_ALGORITHM,
         "token_endpoint_auth_method": "none",
         "client_type": Application.CLIENT_PUBLIC,
         "client_jwks": "",
@@ -860,6 +862,47 @@ def test_build_application_kwargs_rejects_unsupported_id_token_alg(oauth2_settin
     # replaced with an algorithm the client did not ask for.
     with pytest.raises(CIMDError, match="id_token_signed_response_alg"):
         _build_application_kwargs(_document(id_token_signed_response_alg=alg))
+
+
+# ---------------------------------------------------------------------------
+# UserInfo signing algorithm
+# (OpenID Connect Dynamic Client Registration 1.0 section 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_build_application_kwargs_userinfo_defaults_to_json(oauth2_settings):
+    # userinfo_signed_response_alg is OPTIONAL; without it UserInfo is plain JSON.
+    assert _build_application_kwargs(_document())["userinfo_signed_response_alg"] == ""
+    null = _document(userinfo_signed_response_alg=None)
+    assert _build_application_kwargs(null)["userinfo_signed_response_alg"] == ""
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_build_application_kwargs_userinfo_rs256(oauth2_settings):
+    kwargs = _build_application_kwargs(_document(userinfo_signed_response_alg="RS256"))
+    assert kwargs["userinfo_signed_response_alg"] == Application.RS256_ALGORITHM
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_HS256_ONLY)
+def test_build_application_kwargs_rejects_userinfo_rs256_without_server_key(oauth2_settings):
+    assert not oauth2_settings.OIDC_RSA_PRIVATE_KEY
+    with pytest.raises(CIMDError, match="userinfo_signed_response_alg"):
+        _build_application_kwargs(_document(userinfo_signed_response_alg="RS256"))
+
+
+def test_build_application_kwargs_ignores_userinfo_alg_without_oidc(oauth2_settings):
+    # No OpenID Connect, no UserInfo endpoint: the parameter is not used, so it is ignored.
+    assert not oauth2_settings.OIDC_ENABLED
+    kwargs = _build_application_kwargs(_document(userinfo_signed_response_alg="RS256"))
+    assert kwargs["userinfo_signed_response_alg"] == Application.NO_ALGORITHM
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+@pytest.mark.parametrize("alg", ["HS256", "ES256", "none", "", 256])
+def test_build_application_kwargs_rejects_unsupported_userinfo_alg(oauth2_settings, alg):
+    with pytest.raises(CIMDError, match="userinfo_signed_response_alg"):
+        _build_application_kwargs(_document(userinfo_signed_response_alg=alg))
 
 
 # ---------------------------------------------------------------------------

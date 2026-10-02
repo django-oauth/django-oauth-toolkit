@@ -126,6 +126,11 @@ Field Mapping
 |                                     |                                   | ``OIDC_RSA_PRIVATE_KEY``; see    |
 |                                     |                                   | the note below                   |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``userinfo_signed_response_alg``    | ``userinfo_signed_response_alg``  | Plain JSON UserInfo by default;  |
+|                                     |                                   | ``RS256`` only, when the server  |
+|                                     |                                   | signs UserInfo; see the note     |
+|                                     |                                   | below                            |
++-------------------------------------+-----------------------------------+----------------------------------+
 
 .. note::
     An application serves one grant type, so ``grant_types`` may name only one besides
@@ -215,6 +220,20 @@ Field Mapping
       ``client_secret_jwt`` with a grant other than the implicit or hybrid one;
     - an echoed ``RS256`` is kept only while the server can still sign with it, that is with OpenID
       Connect enabled and an ``OIDC_RSA_PRIVATE_KEY``.
+
+.. note::
+    ``userinfo_signed_response_alg`` (`OpenID Connect Dynamic Client Registration 1.0 section 2
+    <https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata>`_) asks for the
+    UserInfo response as a signed JWT instead of JSON (see :ref:`signed-userinfo`). When omitted
+    the response stays JSON and the parameter is not reported; with OpenID Connect disabled there is
+    no UserInfo endpoint and the parameter is ignored (RFC 7591 section 2). ``RS256`` is the only value
+    accepted, and only when the server signs UserInfo responses (OpenID Connect enabled, an
+    ``OIDC_RSA_PRIVATE_KEY``, a server class that signs and a validator with
+    a callable ``finalize_userinfo_response``; see :ref:`signed-userinfo`); any other value is rejected with ``invalid_client_metadata`` rather
+    than ignored, since a client that asked for a signed response could not read a JSON one. Like
+    every other field, a ``PUT`` that omits it resets the UserInfo response to JSON. Registration
+    and management responses report it only while the server signs UserInfo responses, so a client
+    is never told to expect a JWT it would receive as JSON.
 
 .. note::
     ``client_secret_basic`` and ``client_secret_post`` are both accepted at registration, since

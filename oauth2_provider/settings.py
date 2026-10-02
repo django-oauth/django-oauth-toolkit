@@ -235,12 +235,14 @@ DEFAULTS = {
         "urn:ietf:params:oauth:grant-type:device_code",
     ],
     # --- OpenID Connect Provider (identity layer on the Authorization Server) ---
-    "OIDC_SERVER_CLASS": "oauthlib.openid.Server",
+    "OIDC_SERVER_CLASS": "oauth2_provider.authorization_server.oidc.server.Server",
     "ID_TOKEN_EXPIRE_SECONDS": 36000,
     "OIDC_ENABLED": False,
     "OIDC_ISS_ENDPOINT": "",
     "OIDC_USERINFO_ENDPOINT": "",
     "OIDC_USERINFO_CORS_ENABLED": True,
+    # Lifetime of a signed UserInfo response (OIDC Core §5.3.2); ``None`` omits ``exp``.
+    "OIDC_USERINFO_JWT_EXPIRE_SECONDS": None,
     # OIDC Core §5.4: when an access token is issued, the profile/email/address/phone
     # scope claims are returned from UserInfo rather than the ID Token. ``False`` keeps
     # the legacy behavior (claims in both); scheduled to default to ``True`` in 4.0.

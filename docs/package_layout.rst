@@ -83,6 +83,7 @@ Package map
                                 metadata (RFC 8414), mixins (AuthorizationServerViewMixin)
         oidc/                   OpenID Connect Provider facet
           views.py, mixins.py (OIDC gating), urls.py,
+          server.py (default OIDC_SERVER_CLASS: oauthlib server with signed UserInfo),
           client_metadata.py (OIDC client metadata shared by the dcr/cimd registration paths)
       resource_server/          resource server side
         www_authenticate, backends, decorators, middleware,

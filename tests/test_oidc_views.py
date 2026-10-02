@@ -65,6 +65,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+            "userinfo_signing_alg_values_supported": ["RS256"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
@@ -155,6 +156,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+            "userinfo_signing_alg_values_supported": ["RS256"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
@@ -194,6 +196,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+            "userinfo_signing_alg_values_supported": ["RS256"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
@@ -240,6 +243,7 @@ class TestConnectDiscoveryInfoView(TestCase):
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+            "userinfo_signing_alg_values_supported": ["RS256"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],
@@ -263,6 +267,8 @@ class TestConnectDiscoveryInfoView(TestCase):
         response = self.client.get(reverse("oauth2_provider:oidc-connect-discovery-info"))
         self.assertEqual(response.status_code, 200)
         assert response.json()["id_token_signing_alg_values_supported"] == ["HS256"]
+        # UserInfo is only signed with RS256 (OIDC Core 5.3.2), so nothing is advertised.
+        assert "userinfo_signing_alg_values_supported" not in response.json()
 
     @override_settings(ROOT_URLCONF="tests.urls_oidc_discovery_only")
     def test_get_connect_discovery_info_fails_fast_on_unregistered_endpoint(self):
@@ -380,6 +386,7 @@ class TestRPInitiatedRegistration(TestCase):
             ],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+            "userinfo_signing_alg_values_supported": ["RS256"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
             "code_challenge_methods_supported": ["plain", "S256"],
             "claims_supported": ["sub"],

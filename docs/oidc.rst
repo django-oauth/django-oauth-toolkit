@@ -96,8 +96,11 @@ be used. Assuming we have set an environment variable called
 
 If you are adding OIDC support to an existing OAuth 2.0 provider site, and you
 are currently using a custom class for ``OAUTH2_SERVER_CLASS``, you must
-change this class to derive from ``oauthlib.openid.Server`` instead of
-``oauthlib.oauth2.Server``.
+change this class to derive from
+``oauth2_provider.authorization_server.oidc.server.Server`` (a subclass of
+``oauthlib.openid.Server``) instead of ``oauthlib.oauth2.Server``. Deriving from
+``oauthlib.openid.Server`` directly also works, but the UserInfo response is then
+never signed (see :ref:`signed-userinfo`).
 
 With ``RSA`` key-pairs, the public key can be generated from the private key,
 so there is no need to add a setting for the public key.
@@ -519,6 +522,11 @@ probably want to reuse that::
             claims["color_scheme"] = get_color_scheme(request.user)
             return claims
 
+``get_userinfo_claims`` always returns the claims as a ``dict``. Whether they are
+sent as JSON or as a signed JWT is decided afterwards by
+``finalize_userinfo_response(claims, request)``, which you can also override, for
+instance to add claims to the signed JWT only (see :ref:`signed-userinfo`).
+
 
 Adding more information to the request object passed to the authentication backends
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -670,6 +678,49 @@ the box, so browser-based (JavaScript) clients can call it cross-origin: it answ
 responses such as ``401``. Claims are still only released to a caller presenting a valid access
 token, and ``Access-Control-Allow-Credentials`` is never sent. Set
 ``OIDC_USERINFO_CORS_ENABLED`` to ``False`` to turn this off.
+
+.. _signed-userinfo:
+
+Signed UserInfo responses
+-------------------------
+
+By default the UserInfo response is a JSON object. A client whose application has
+``userinfo_signed_response_alg`` set to ``RS256`` receives it as a signed JWT
+instead, with ``Content-Type: application/jwt``, per `OpenID Connect Core 1.0
+section 5.3.2 <https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse>`_.
+The field is set in the admin or the application views, or registered by the client
+itself through :doc:`Dynamic Client Registration <views/dynamic_client_registration>`
+or a :doc:`Client ID Metadata Document <cimd>`.
+
+The JWT is signed with the active ``OIDC_RSA_PRIVATE_KEY``, whatever algorithm the
+client's ID Tokens use, and its header names the key with the same ``kid`` as the
+``jwks_uri`` document. Besides the user's claims it carries ``iss`` (the issuer),
+``aud`` (the client's ``client_id``) and ``iat``, plus ``exp`` when
+``OIDC_USERINFO_JWT_EXPIRE_SECONDS`` is set. ``exp``, ``nbf`` and ``jti`` among
+the user's claims are left out: the OP alone sets the JWT's validity window, and
+``jti`` is what tells an ID Token apart from this JWT, which is signed with the
+same key. ``RS256`` is the only algorithm offered, and encrypted UserInfo
+responses (``userinfo_encrypted_response_alg``) are not supported.
+
+Signing needs OpenID Connect enabled, an ``OIDC_RSA_PRIVATE_KEY``, the default
+``OIDC_SERVER_CLASS`` or a class derived from it, and a validator with a
+callable ``finalize_userinfo_response``, such as one derived from ``OAuth2Validator``: the
+server's UserInfo endpoint passes the claims from ``get_userinfo_claims`` to that
+hook, which returns the claims (sent as JSON) or the signed JWT (sent as
+``application/jwt``). Only then does discovery advertise
+``userinfo_signing_alg_values_supported: ["RS256"]`` and registration accept
+``userinfo_signed_response_alg``, so a client is never promised a signed response
+it would receive as JSON. Otherwise the admin and application forms refuse
+``RS256``, and they always refuse it for an application without OIDC support (no
+``algorithm``). When an RSA key is configured but the server or validator class
+cannot sign, the ``oauth2_provider.I001`` system check reports that signing is
+switched off. While OpenID Connect stays enabled, an application left with
+``RS256`` after signing became unavailable receives JSON, and its registration
+responses say so. With the default server class, ``finalize_userinfo_response``
+also logs a warning for each such response. A server or validator class that
+cannot sign never calls it, so nothing is logged per response; the
+``oauth2_provider.I001`` system check reports that case once, when an
+``OIDC_RSA_PRIVATE_KEY`` is configured.
 
 .. note::
     If your project also installs `django-cors-headers

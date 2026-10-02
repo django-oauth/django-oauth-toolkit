@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from urllib.parse import urlparse
 
 from django.contrib.auth import logout
@@ -16,6 +17,7 @@ from oauthlib.common import add_params_to_uri
 from oauth2_provider.authorization_server import client_assertions
 from oauth2_provider.authorization_server.forms import ConfirmLogoutForm
 from oauth2_provider.authorization_server.oidc.mixins import OIDCLogoutOnlyMixin, OIDCOnlyMixin
+from oauth2_provider.authorization_server.oidc.server import userinfo_signing_available
 from oauth2_provider.authorization_server.views.metadata import (
     ServerMetadataViewMixin,
     bcp_filter_code_challenge_methods,
@@ -55,7 +57,7 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
     `OpenID Provider Metadata <https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata>`_
     """
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> JsonResponse:
         issuer_url = oauth2_settings.oidc_issuer(request)
         userinfo_endpoint = oauth2_settings.OIDC_USERINFO_ENDPOINT or self._get_endpoint_url(
             request, "user-info", required=True
@@ -117,6 +119,11 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
         )
         if auth_signing_algs:
             data["token_endpoint_auth_signing_alg_values_supported"] = auth_signing_algs
+        # OpenID Connect Discovery 1.0 section 3 (OPTIONAL): UserInfo responses are signed
+        # (OpenID Connect Core 1.0 section 5.3.2) only with RS256 and the server's RSA key,
+        # and only by a server class that can.
+        if userinfo_signing_available():
+            data["userinfo_signing_alg_values_supported"] = [Application.RS256_ALGORITHM]
         # OpenID Connect Discovery 1.0 section 3: registration_endpoint is RECOMMENDED.
         # Advertise it exactly as the RFC 8414 metadata does: gated on the setting,
         # because the route stays registered while the view 404s with DCR off.
@@ -224,7 +231,8 @@ def _load_id_token(token: str) -> tuple[AbstractIDToken | None, dict | None]:
     - `(IDToken, claims)` when the token verified and its IDToken is still stored.
     - `(None, claims)` when the token verified but its IDToken is no longer stored, which means the
       End-User is not logged in with the OP at the requesting RP.
-    - `(None, None)` when the token could not be verified at all.
+    - `(None, None)` when the token could not be verified at all, or is not an ID Token: a JWT that
+      verifies with the OP key but has no `jti`, such as a signed UserInfo response.
 
     Callers must distinguish the last two: the second is not an error, because RP-Initiated Logout
     requests are idempotent, while the third must be rejected.
@@ -256,6 +264,11 @@ def _load_id_token(token: str) -> tuple[AbstractIDToken | None, dict | None]:
         claims = json.loads(jwt_token.claims)
     except (JWException, JWTExpired):
         # The token could not be verified.
+        return None, None
+
+    if "jti" not in claims:
+        # Every ID Token this OP issues has a jti. A verified JWT without one is another JWT
+        # signed with the OP key, such as a signed UserInfo response, and not an ID Token.
         return None, None
 
     # Assumption: the `sub` claim and `user` property of the corresponding IDToken Object point to the

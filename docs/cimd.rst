@@ -155,6 +155,18 @@ was accepted before this behaviour existed, with the parameter ignored, and is n
 re-fetch, so such a client keeps its last good registration but no longer picks up document changes
 until the parameter is removed or set to ``RS256``.
 
+A document may also name ``userinfo_signed_response_alg`` to receive the UserInfo response as a
+signed JWT instead of JSON (see :ref:`signed-userinfo`). The only value accepted is ``RS256``, and
+only when the server signs UserInfo responses (OpenID Connect enabled, an ``OIDC_RSA_PRIVATE_KEY``,
+a server class that signs and a validator with a callable ``finalize_userinfo_response``; see
+:ref:`signed-userinfo`); any other value, or ``RS256`` when the server does not sign, makes
+the document invalid, for the same reasons as above. Without the
+parameter the UserInfo response is JSON, and with OpenID Connect disabled the parameter is ignored,
+since there is no UserInfo endpoint. Like the ID Token algorithm it is re-derived on every
+re-fetch, and a document that names an unsupported value, which was accepted with the parameter
+ignored before signed UserInfo responses existed, is now refused on re-fetch and keeps its last
+good registration.
+
 Settings
 --------
 

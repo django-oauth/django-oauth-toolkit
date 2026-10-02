@@ -15,6 +15,7 @@ from oauth2_provider.authorization_server.views.application import (
 )
 from oauth2_provider.models import get_access_token_model, get_application_model
 
+from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
 from .forms import SampleApplicationForm
 from .models import SampleApplication
@@ -74,6 +75,26 @@ class TestApplicationRegistrationView(BaseTest):
         self.assertEqual(app.client_type, form_data["client_type"])
         self.assertEqual(app.authorization_grant_type, form_data["authorization_grant_type"])
         self.assertEqual(app.algorithm, form_data["algorithm"])
+
+    @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+    def test_application_registration_userinfo_signing(self):
+        # OIDC Core 5.3.2: the registration form offers signed UserInfo responses.
+        self.assertIn("userinfo_signed_response_alg", APPLICATION_FIELDS)
+        self.client.login(username="foo_user", password="123456")
+        form_data = {
+            "name": "Signed userinfo app",
+            "client_id": "signed_userinfo_client",
+            "client_secret": "client_secret",
+            "client_type": Application.CLIENT_CONFIDENTIAL,
+            "redirect_uris": "http://example.com",
+            "authorization_grant_type": Application.GRANT_AUTHORIZATION_CODE,
+            "algorithm": Application.RS256_ALGORITHM,
+            "userinfo_signed_response_alg": Application.RS256_ALGORITHM,
+        }
+        response = self.client.post(reverse("oauth2_provider:register"), form_data)
+        self.assertEqual(response.status_code, 302)
+        app = Application.objects.get(client_id="signed_userinfo_client")
+        self.assertEqual(app.userinfo_signed_response_alg, Application.RS256_ALGORITHM)
 
     def test_application_registration_can_introspect(self):
         # #1451: can_introspect is an opt-out capability, so a confidential client

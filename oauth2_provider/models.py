@@ -167,6 +167,9 @@ class AbstractApplication(models.Model):
                              introspection endpoint (:rfc:`7662`), with an access
                              token issued to it or, if it is confidential, by
                              authenticating as itself.
+    * :attr:`userinfo_signed_response_alg` The JWS ``alg`` the UserInfo response is
+                                           signed with (OpenID Connect Core 1.0
+                                           section 5.3.2). Blank returns plain JSON.
     """
 
     class RegistrationSource(models.TextChoices):
@@ -204,6 +207,13 @@ class AbstractApplication(models.Model):
         (NO_ALGORITHM, _("No OIDC support")),
         (RS256_ALGORITHM, _("RSA with SHA-2 256")),
         (HS256_ALGORITHM, _("HMAC with SHA-2 256")),
+    )
+    # OpenID Connect Core 1.0 section 5.3.2: UserInfo is plain JSON unless the client
+    # registered a signing algorithm. Only RS256 with the server's OIDC_RSA_PRIVATE_KEY
+    # is offered; HS256 would need the client secret in plaintext.
+    USERINFO_ALGORITHM_TYPES = (
+        (NO_ALGORITHM, _("No signing (JSON)")),
+        (RS256_ALGORITHM, _("RSA with SHA-2 256")),
     )
 
     # RFC 7591 / OIDC token_endpoint_auth_method values. The blank default
@@ -275,6 +285,17 @@ class AbstractApplication(models.Model):
     updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
     algorithm = models.CharField(
         max_length=5, choices=ALGORITHM_TYPES, default=NO_ALGORITHM, blank=True, verbose_name=_("algorithm")
+    )
+    userinfo_signed_response_alg = models.CharField(
+        max_length=5,
+        choices=USERINFO_ALGORITHM_TYPES,
+        default=NO_ALGORITHM,
+        blank=True,
+        help_text=_(
+            "Sign UserInfo responses for this client as a JWT (OpenID Connect Core 1.0 "
+            "section 5.3.2). Leave blank to return plain JSON."
+        ),
+        verbose_name=_("UserInfo signing algorithm"),
     )
     token_endpoint_auth_method = models.CharField(
         max_length=32,
@@ -531,6 +552,38 @@ class AbstractApplication(models.Model):
             if not oauth2_settings.OIDC_RSA_PRIVATE_KEY:
                 field_errors["algorithm"].append(
                     ValidationError(_("You must set OIDC_RSA_PRIVATE_KEY to use RSA algorithm"))
+                )
+
+        if self.userinfo_signed_response_alg == AbstractApplication.RS256_ALGORITHM:
+            # Imported here so that loading the models does not import the authorization
+            # server package.
+            from oauth2_provider.authorization_server.oidc.server import userinfo_signing_available
+
+            if not oauth2_settings.OIDC_RSA_PRIVATE_KEY:
+                field_errors["userinfo_signed_response_alg"].append(
+                    ValidationError(
+                        _("You must set OIDC_RSA_PRIVATE_KEY to sign UserInfo responses with RSA")
+                    )
+                )
+            elif not userinfo_signing_available():
+                field_errors["userinfo_signed_response_alg"].append(
+                    ValidationError(
+                        _(
+                            "This server cannot sign UserInfo responses: it needs OIDC_ENABLED, an "
+                            "importable OIDC_SERVER_CLASS (or OAUTH2_SERVER_CLASS) derived from "
+                            "oauth2_provider.authorization_server.oidc.server.Server, and an "
+                            "importable OAUTH2_VALIDATOR_CLASS with a callable finalize_userinfo_response, "
+                            "as OAuth2Validator has."
+                        )
+                    )
+                )
+            elif self.algorithm == AbstractApplication.NO_ALGORITHM:
+                # The signed response is an OpenID Connect artefact like the ID Token, and an
+                # application without OIDC support has no key to verify tokens naming it.
+                field_errors["userinfo_signed_response_alg"].append(
+                    ValidationError(
+                        _("You cannot sign UserInfo responses for an application without OIDC support")
+                    )
                 )
 
         if self.algorithm == AbstractApplication.HS256_ALGORITHM:

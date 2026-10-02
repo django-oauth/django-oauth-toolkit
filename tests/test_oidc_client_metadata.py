@@ -5,6 +5,8 @@ import pytest
 from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
     id_token_signing_algorithm,
+    userinfo_signed_response_alg,
+    userinfo_signing_algorithm,
 )
 from oauth2_provider.models import get_application_model
 
@@ -208,3 +210,100 @@ def test_unechoed_administrator_set_algorithm_is_refused(oauth2_settings):
             current=Application.HS256_ALGORITHM,
             **ELIGIBLE_CLIENT,
         )
+
+
+# -- userinfo_signed_response_alg (OIDC Dynamic Client Registration 1.0 §2)
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+@pytest.mark.parametrize("metadata", [{}, {"userinfo_signed_response_alg": None}], ids=["absent", "null"])
+def test_userinfo_signing_defaults_to_json(oauth2_settings, metadata):
+    assert userinfo_signing_algorithm(metadata) == Application.NO_ALGORITHM
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_HS256_ONLY)
+def test_userinfo_signing_defaults_to_json_without_an_rsa_key(oauth2_settings):
+    # Unlike the ID Token default, the JSON default needs no key, so it never fails.
+    assert userinfo_signing_algorithm({}) == Application.NO_ALGORITHM
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_userinfo_signing_rs256_is_honoured(oauth2_settings):
+    assert userinfo_signing_algorithm({"userinfo_signed_response_alg": "RS256"}) == "RS256"
+
+
+@pytest.mark.parametrize(
+    "server_settings",
+    [
+        pytest.param(presets.OIDC_SETTINGS_HS256_ONLY, id="no-rsa-key"),
+        pytest.param(
+            {**presets.OIDC_SETTINGS_RW, "OIDC_SERVER_CLASS": "oauthlib.openid.Server"},
+            id="no-signing-server",
+        ),
+    ],
+)
+def test_userinfo_signing_rs256_is_refused_when_the_server_cannot_sign(oauth2_settings, server_settings):
+    oauth2_settings.update(server_settings)
+    with pytest.raises(UnsupportedClientMetadataError) as excinfo:
+        userinfo_signing_algorithm({"userinfo_signed_response_alg": "RS256"})
+    assert str(excinfo.value) == (
+        "userinfo_signed_response_alg 'RS256' is not available: this server does not sign UserInfo responses"
+    )
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+@pytest.mark.parametrize("value", ["HS256", "none", "ES256", "", 256, ["RS256"]])
+def test_userinfo_signing_unsupported_value_lists_rs256(oauth2_settings, value):
+    with pytest.raises(UnsupportedClientMetadataError) as excinfo:
+        userinfo_signing_algorithm({"userinfo_signed_response_alg": value})
+    message = str(excinfo.value)
+    assert message.startswith("Unsupported userinfo_signed_response_alg: ")
+    assert message.endswith("Supported values: RS256")
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [(Application.NO_ALGORITHM, None), (Application.RS256_ALGORITHM, "RS256")],
+)
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_userinfo_signed_response_alg_describes_the_application(oauth2_settings, stored, expected):
+    application = Application(algorithm=Application.RS256_ALGORITHM, userinfo_signed_response_alg=stored)
+    assert userinfo_signed_response_alg(application) == expected
+
+
+@pytest.mark.oauth2_settings({**presets.OIDC_SETTINGS_RW, "OIDC_ENABLED": False})
+@pytest.mark.parametrize("value", ["RS256", "HS256", 256])
+def test_userinfo_signing_is_ignored_without_openid_connect(oauth2_settings, value):
+    # No UserInfo endpoint: the parameter is metadata this server does not use (RFC 7591 section 2).
+    assert userinfo_signing_algorithm({"userinfo_signed_response_alg": value}) == Application.NO_ALGORITHM
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"OIDC_ENABLED": False}, id="oidc-disabled"),
+        pytest.param({"OIDC_SERVER_CLASS": "oauthlib.openid.Server"}, id="no-signing-server"),
+    ],
+)
+def test_userinfo_signed_response_alg_is_not_reported_when_the_server_cannot_sign(oauth2_settings, overrides):
+    # The client is told what it will receive: plain JSON.
+    oauth2_settings.update({**presets.OIDC_SETTINGS_RW, **overrides})
+    application = Application(
+        algorithm=Application.RS256_ALGORITHM, userinfo_signed_response_alg=Application.RS256_ALGORITHM
+    )
+    assert userinfo_signed_response_alg(application) is None
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+@pytest.mark.parametrize(
+    "algorithm, stored",
+    [
+        pytest.param(Application.NO_ALGORITHM, Application.RS256_ALGORITHM, id="no-oidc-support"),
+        pytest.param(Application.RS256_ALGORITHM, "HS256", id="unsupported-stored-value"),
+    ],
+)
+def test_userinfo_signed_response_alg_is_not_reported_when_the_endpoint_would_not_sign(
+    oauth2_settings, algorithm, stored
+):
+    application = Application(algorithm=algorithm, userinfo_signed_response_alg=stored)
+    assert userinfo_signed_response_alg(application) is None
