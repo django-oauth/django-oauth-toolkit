@@ -329,6 +329,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   oauthlib, so the audience check could never match an absolute resource URI and every
   resource-bound token got a 401 at UserInfo while the same token was accepted by protected views.
   The URI is now made absolute, as `verify_request` already does.
+* #1857 CIMD now reads `token_endpoint_auth_methods_supported` when the `token_endpoint_auth_method`
+  a document chooses is one this server does not register, and registers the client with the first
+  offered method it does support. A client that chooses `private_key_jwt` but says, in the same
+  document, that it can also be a public client was rejected outright; ChatGPT's published document
+  has exactly that shape. A method this server supports is still honoured as chosen and never
+  downgraded, and a document that declares a shared-secret method is still rejected however the plural
+  field offers to negotiate. Both fields are type-checked, and a declared method must appear in the
+  plural list when both are present. Because the plural field was previously ignored, a document that
+  declares `none` (or declares nothing) but publishes a list without `none`, an empty list, or a
+  malformed one resolved before and is now refused; a client already registered from such a document
+  keeps its stored registration, as for any refetch that fails, until the document is fixed. A
+  refusal whose methods are registrable but not advertised by this server is a policy refusal with
+  the policy backoff described under #1845, not a failed fetch. See `docs/cimd.rst`.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such

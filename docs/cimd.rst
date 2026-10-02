@@ -82,6 +82,32 @@ of a refused document are bounded, but the refusal neither blocks nodes with a d
 outlives a policy change. Any other method is refused, including every shared-secret one, which the
 draft forbids (section 4.1) because CIMD provides no way to establish a shared secret.
 
+A document may also publish ``token_endpoint_auth_methods_supported``, listing every method the client
+can use. The parameter is defined by `OpenID Connect RP Metadata Choices 1.0
+<https://openid.net/specs/openid-connect-rp-metadata-choices-1_0.html>`_ and registered in the IANA
+OAuth client metadata registry, which the draft uses for client metadata. When the method it chose in
+``token_endpoint_auth_method`` is not one this server registers,
+the first offered method this server does register is used instead; when the chosen method is
+registrable here, it is honoured as chosen and never downgraded, because the spec (section 6.2) has the
+authorization server require client authentication of the registered type. Shared-secret methods are
+never registered, whatever a document offers. ChatGPT's published document has this shape: it chooses
+``private_key_jwt`` and offers ``["none", "private_key_jwt"]``, so a server that advertises
+``private_key_jwt`` registers it as a confidential client authenticating with a client assertion, while
+one that does not registers it as the public client it can also be. A document refused because the
+methods it names are registrable but not advertised here is a policy refusal, with the backoff described
+above. Both fields are validated like the rest of the document: the single value must be a string and
+the plural one an array of strings, a document that declares a shared-secret method is rejected whatever
+the plural field offers (the draft forbids the declaration itself), and a declared method must appear in
+the plural list when both are present, as RP Metadata Choices requires. A document that omits the single
+value is read as choosing ``none`` unless it carries a plural list, in which case the list alone decides.
+
+A client negotiated to ``none`` is a public client in every respect: it must call the token endpoint
+with no client authentication, and any ``jwks`` or ``jwks_uri`` in its document is not stored. A client
+that picks its method from the server's advertised ``token_endpoint_auth_methods_supported`` will only
+find ``none`` if the server advertises it, so add ``"none"`` to
+``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` (and ``OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED`` when
+OpenID Connect is enabled; see :doc:`settings`) on a server that expects such clients.
+
 The same policy applies when the document of a client stored with ``none`` switches to
 ``private_key_jwt``. A node that does not advertise the method refuses the re-fetched document, and
 a refused re-fetch keeps the last good registration, so that node goes on serving the client as

@@ -66,6 +66,10 @@ IGNORED_GRANT_TYPES = {"refresh_token"}
 # asymmetric method RFC 7523 client authentication implements. Which of these a
 # given server registers is decided by :func:`_supported_auth_methods`.
 REGISTRABLE_AUTH_METHODS = ("none", "private_key_jwt")
+# Section 4.1: a document MUST NOT declare any method built on a shared symmetric
+# secret, because there is no way to establish one. Rejected on sight, before any
+# negotiation, so a forbidden declaration cannot be rescued by the plural field.
+SHARED_SECRET_AUTH_METHODS = frozenset({"client_secret_basic", "client_secret_post", "client_secret_jwt"})
 
 # Cache-freshness lives on the model (cimd_expires_at, durable and authoritative
 # per row); the failure backoff is ephemeral/best-effort, so it lives in the
@@ -306,13 +310,83 @@ def _jwks_uri(metadata: dict[str, Any]) -> Any:
     return jwks_uri
 
 
+def _resolve_auth_method(metadata: dict[str, Any]) -> str:
+    """Resolve the token_endpoint_auth_method a CIMD registration is stored with.
+
+    The method a document chooses wins whenever this server registers it (see
+    :func:`_supported_auth_methods`): the spec (section 6.2) has the authorization
+    server require client authentication of the registered type, so a client that
+    asked for an asymmetric method is never downgraded to a public one.
+
+    A document may also list every method it can use in
+    ``token_endpoint_auth_methods_supported``. Section 4.1 takes client metadata from
+    the IANA OAuth client metadata registry, where OpenID Connect RP Metadata Choices
+    1.0 registers it; its section 4 has the server use one of the listed values it
+    supports rather than fail on an unsupported single value. When the chosen method
+    is not one this server registers, the first offered method it does register is
+    used instead. Published clients rely on it: ChatGPT's document chooses
+    ``private_key_jwt`` and offers ``["none", "private_key_jwt"]``, so a server that
+    does not advertise ``private_key_jwt`` registers it as the public client it can
+    also be, while one that does advertise it honours the choice.
+
+    Both fields are validated as the rest of the document is: the single value must
+    be a string and the plural one an array of strings, a declared shared-secret
+    method is rejected outright (section 4.1) before any negotiation, and a declared
+    method must appear in the plural list when both are present (RP Metadata Choices
+    section 2). A document that omits the single value is read as choosing ``none``
+    unless it carries a plural list, in which case the list alone decides.
+
+    A document refused because the methods it names are registrable but not
+    advertised here raises :class:`CIMDPolicyError`, as the single-valued check does,
+    so the refusal arms the policy backoff rather than the shared failure backoff.
+    """
+    supported = _supported_auth_methods()
+    declared_present = "token_endpoint_auth_method" in metadata
+    declared = metadata["token_endpoint_auth_method"] if declared_present else "none"
+    if not isinstance(declared, str):
+        raise CIMDError("token_endpoint_auth_method must be a string")
+    if declared in SHARED_SECRET_AUTH_METHODS:
+        raise CIMDError(f"CIMD clients must not use shared-secret token_endpoint_auth_method {declared!r}")
+
+    if "token_endpoint_auth_methods_supported" not in metadata:
+        if declared in supported:
+            return declared
+        error_class = CIMDPolicyError if declared in REGISTRABLE_AUTH_METHODS else CIMDError
+        raise error_class(
+            f"client metadata declares token_endpoint_auth_method {declared!r}; "
+            f"this server registers CIMD clients with {list(supported)}"
+        )
+
+    offered = metadata["token_endpoint_auth_methods_supported"]
+    if not isinstance(offered, list) or not all(isinstance(m, str) for m in offered):
+        raise CIMDError("token_endpoint_auth_methods_supported must be an array of strings")
+    if declared_present and declared not in offered:
+        raise CIMDError(
+            f"token_endpoint_auth_method {declared!r} is not in token_endpoint_auth_methods_supported"
+        )
+    if declared_present and declared in supported:
+        return declared
+
+    for method in offered:
+        if method in supported:
+            return method
+
+    registrable = declared in REGISTRABLE_AUTH_METHODS or any(m in REGISTRABLE_AUTH_METHODS for m in offered)
+    error_class = CIMDPolicyError if registrable else CIMDError
+    raise error_class(
+        f"client metadata offers token_endpoint_auth_methods_supported {offered!r}; "
+        f"this server registers CIMD clients with {list(supported)}"
+    )
+
+
 def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     """Convert a CIMD metadata document to Application field kwargs.
 
-    Requires a ``token_endpoint_auth_method`` this server registers (see
-    :func:`_supported_auth_methods`): ``"none"``, or ``"private_key_jwt"`` when
-    advertised. The spec forbids shared-secret methods, so they are never
-    registered. A document may not carry both ``jwks`` and ``jwks_uri``,
+    Resolves the client authentication method with :func:`_resolve_auth_method`:
+    ``"none"``, or ``"private_key_jwt"`` when advertised, negotiated from the
+    document's ``token_endpoint_auth_methods_supported`` when the method it chose
+    is not registrable here. The spec forbids shared-secret methods, so they are
+    never registered. A document may not carry both ``jwks`` and ``jwks_uri``,
     whatever its method. A ``private_key_jwt`` client must use the
     authorization code grant and publish one of ``jwks`` or an HTTPS
     ``jwks_uri`` so its assertion can be verified at the token endpoint, and is
@@ -322,16 +396,7 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     Registration 1.0 section 2). Returns kwargs; raises :class:`CIMDError` on
     invalid metadata.
     """
-    auth_method = metadata.get("token_endpoint_auth_method", "none")
-    if not isinstance(auth_method, str):
-        raise CIMDError("token_endpoint_auth_method must be a string")
-    supported = _supported_auth_methods()
-    if auth_method not in supported:
-        error_class = CIMDPolicyError if auth_method in REGISTRABLE_AUTH_METHODS else CIMDError
-        raise error_class(
-            f"client metadata declares token_endpoint_auth_method {auth_method!r}; "
-            f"this server registers CIMD clients with {list(supported)}"
-        )
+    auth_method = _resolve_auth_method(metadata)
     # Spec: neither property may appear in a CIMD document (presence, not value).
     if "client_secret" in metadata or "client_secret_expires_at" in metadata:
         raise CIMDError("CIMD client metadata must not include client_secret or client_secret_expires_at")
@@ -416,6 +481,17 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
             keys = sorted(jwks["keys"], key=lambda key: json.dumps(key, sort_keys=True))
             kwargs["client_jwks"] = json.dumps({**jwks, "keys": keys}, sort_keys=True)
         kwargs["client_type"] = AbstractApplication.CLIENT_CONFIDENTIAL
+    # Logged only once the whole document has passed, so a document refused on a
+    # later field never leaves a notice saying it was registered.
+    declared = metadata.get("token_endpoint_auth_method")
+    if declared is not None and declared != auth_method:
+        log.info(
+            "CIMD client %r chose token_endpoint_auth_method %r, which this server "
+            "does not register; using the offered %r instead",
+            metadata.get("client_id"),
+            declared,
+            auth_method,
+        )
     return kwargs
 
 
