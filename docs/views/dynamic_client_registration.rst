@@ -40,7 +40,9 @@ Creates a new OAuth2 application (RFC 7591).  Authentication is controlled by
 
    {
      "client_id": "abc123",
+     "client_id_issued_at": 1767225600,
      "client_secret": "...",
+     "client_secret_expires_at": 0,
      "redirect_uris": ["https://example.com/callback"],
      "grant_types": ["authorization_code", "refresh_token"],
      "token_endpoint_auth_method": "client_secret_basic",
@@ -48,6 +50,11 @@ Creates a new OAuth2 application (RFC 7591).  Authentication is controlled by
      "registration_access_token": "...",
      "registration_client_uri": "https://example.com/o/register/abc123/"
    }
+
+``client_secret`` is returned only for clients that authenticate with it, and always together with
+``client_secret_expires_at``, which is ``0`` because the toolkit's client secrets do not expire
+(`RFC 7591 section 3.2.1 <https://datatracker.ietf.org/doc/html/rfc7591#section-3.2.1>`_).
+``client_id_issued_at`` is the time the application was created, in seconds since the epoch.
 
 Applications created through this endpoint are flagged with ``registration_source="dcr"`` on
 the ``Application`` model, so dynamically registered clients can be distinguished from manually
@@ -67,7 +74,8 @@ Read, update, or delete the client configuration (RFC 7592).  Requires a
 ``Bearer {registration_access_token}`` header issued during registration.
 
 - **GET** — returns current client metadata (same format as the registration response, except
-  ``client_secret``, which is only returned once on the initial ``POST`` since it is hashed at rest
+  ``client_secret`` and ``client_secret_expires_at``, which are only returned once on the initial
+  ``POST`` since the secret is hashed at rest
   and cannot be recovered afterward)
 - **PUT** — full replacement of the client metadata
   (`RFC 7592 section 2.2 <https://datatracker.ietf.org/doc/html/rfc7592#section-2.2>`_): accepts the

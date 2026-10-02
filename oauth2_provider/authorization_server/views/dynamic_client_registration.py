@@ -359,6 +359,9 @@ def _application_to_response(
     )
     data = {
         "client_id": application.client_id,
+        # RFC 7591 section 3.2.1: seconds since the epoch at which the client_id
+        # was issued. It never changes, so management responses repeat it.
+        "client_id_issued_at": int(application.created.timestamp()),
         "redirect_uris": application.redirect_uris.split() if application.redirect_uris else [],
         "grant_types": _dot_grant_to_rfc_grant_types(application.authorization_grant_type),
         "token_endpoint_auth_method": auth_method,
@@ -504,6 +507,10 @@ class DynamicClientRegistrationView(View):
         response_data = _application_to_response(application, raw_registration_token, request)
         if raw_secret:
             response_data["client_secret"] = raw_secret
+            # RFC 7591 section 3.2.1 makes client_secret_expires_at REQUIRED
+            # whenever client_secret is issued; 0 means it never expires, which
+            # holds for every secret the toolkit issues.
+            response_data["client_secret_expires_at"] = 0
 
         return JsonResponse(response_data, status=201)
 

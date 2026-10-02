@@ -229,6 +229,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1880 The Dynamic Client Registration (RFC 7591) response now includes `client_secret_expires_at`
+  (`0`, since the toolkit's client secrets do not expire) whenever it returns a `client_secret`, as
+  RFC 7591 section 3.2.1 requires, and reports `client_id_issued_at` in registration and RFC 7592
+  management responses.
 * #1853 Applications registered from a Client ID Metadata Document or through Dynamic Client
   Registration (RFC 7591) now get an ID Token signing algorithm. Neither path set
   `Application.algorithm`, so an `openid` request from such a client failed at the token endpoint
