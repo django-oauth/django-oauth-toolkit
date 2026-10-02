@@ -2630,6 +2630,154 @@ def _public_jwks():
 
 
 @pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(
+    {**presets.DCR_SETTINGS, "OIDC_ENABLED": True, "OIDC_REQUEST_OBJECTS_ENABLED": True}
+)
+class TestDCRRequestObjectMetadata(TestCase):
+    """OpenID Connect Dynamic Client Registration 1.0 section 2 request object metadata."""
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("dcr_ro_user", "dcr_ro@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def _data(self, **overrides):
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "jwks": _public_jwks(),
+        }
+        data.update(overrides)
+        return data
+
+    def test_register_request_uris_and_signing_alg(self):
+        request_uris = ["https://client.example.com/req/1", "https://client.example.com/req/2#hash"]
+        response = _post_register(
+            self.client, self._data(request_uris=request_uris, request_object_signing_alg="ES256")
+        )
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["request_uris"] == request_uris
+        assert body["request_object_signing_alg"] == "ES256"
+        application = Application.objects.get(client_id=body["client_id"])
+        assert application.request_uris == " ".join(request_uris)
+        assert application.request_object_signing_alg == "ES256"
+
+    def test_register_without_request_object_metadata_omits_it(self):
+        response = _post_register(self.client, self._data())
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert "request_uris" not in body
+        assert "request_object_signing_alg" not in body
+
+    def test_signing_alg_with_jwks_uri(self):
+        data = self._data(jwks_uri="https://client.example.com/jwks.json", request_object_signing_alg="RS256")
+        del data["jwks"]
+        response = _post_register(self.client, data)
+        assert response.status_code == 201, response.content
+        assert response.json()["request_object_signing_alg"] == "RS256"
+
+    def test_unsigned_request_objects_need_no_keys(self):
+        data = self._data(token_endpoint_auth_method="client_secret_basic", request_object_signing_alg="none")
+        del data["jwks"]
+        response = _post_register(self.client, data)
+        assert response.status_code == 201, response.content
+        assert response.json()["request_object_signing_alg"] == "none"
+
+    def test_invalid_request_object_metadata_is_400(self):
+        no_keys = self._data(
+            token_endpoint_auth_method="client_secret_basic", request_object_signing_alg="RS256"
+        )
+        del no_keys["jwks"]
+        for data, message in [
+            (self._data(request_uris="https://client.example.com/req"), "request_uris must be an array"),
+            (self._data(request_uris=["http://client.example.com/req"]), "must be an https URL"),
+            (self._data(request_uris=["https://client.example.com/a b"]), "must be an https URL"),
+            (self._data(request_object_signing_alg="HS256"), "Unsupported request_object_signing_alg"),
+            (self._data(request_object_signing_alg=["RS256"]), "Unsupported request_object_signing_alg"),
+            (no_keys, "requires jwks or jwks_uri"),
+        ]:
+            with self.subTest(data=data):
+                response = _post_register(self.client, data)
+                assert response.status_code == 400, response.content
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert message in body["error_description"]
+
+    def test_request_object_metadata_is_ignored_when_disabled(self):
+        self.oauth2_settings.OIDC_REQUEST_OBJECTS_ENABLED = False
+        response = _post_register(
+            self.client,
+            self._data(request_uris=["http://client.example.com/req"], request_object_signing_alg="EdDSA"),
+        )
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert "request_uris" not in body
+        assert "request_object_signing_alg" not in body
+
+    def test_stored_request_object_metadata_survives_an_update_while_disabled(self):
+        # Registered while enabled, then the feature is turned off: a client
+        # updating without the fields must not lose the restrictions they set.
+        restrictions = {
+            "request_uris": ["https://client.example.com/req"],
+            "request_object_signing_alg": "ES256",
+        }
+        body = _post_register(self.client, self._data(**restrictions)).json()
+        self.oauth2_settings.OIDC_REQUEST_OBJECTS_ENABLED = False
+        response = self.client.put(
+            _management_url(body["client_id"]),
+            data=json.dumps({**self._data(), "client_id": body["client_id"]}),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200, response.content
+        application = Application.objects.get(client_id=body["client_id"])
+        assert application.request_uris == "https://client.example.com/req"
+        assert application.request_object_signing_alg == "ES256"
+        assert response.json()["request_object_signing_alg"] == "ES256"
+
+    def test_dropping_keys_while_disabled(self):
+        # The stored signing alg would need keys, but is unused while disabled.
+        body = _post_register(self.client, self._data(request_object_signing_alg="ES256")).json()
+        self.oauth2_settings.OIDC_REQUEST_OBJECTS_ENABLED = False
+        data = {
+            **self._data(token_endpoint_auth_method="client_secret_basic"),
+            "client_id": body["client_id"],
+        }
+        del data["jwks"]
+        response = self.client.put(
+            _management_url(body["client_id"]),
+            data=json.dumps(data),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200, response.content
+
+    def test_error_description_does_not_echo_the_value(self):
+        response = _post_register(self.client, self._data(request_object_signing_alg='x"\\é'))
+        assert response.status_code == 400
+        description = response.json()["error_description"]
+        assert '"' not in description and "\\" not in description and "é" not in description
+
+    def test_update_without_request_object_metadata_resets_it(self):
+        response = _post_register(
+            self.client,
+            self._data(request_uris=["https://client.example.com/req"], request_object_signing_alg="ES256"),
+        )
+        body = response.json()
+        response = self.client.put(
+            _management_url(body["client_id"]),
+            data=json.dumps({**self._data(), "client_id": body["client_id"]}),
+            content_type="application/json",
+            **_bearer(body["registration_access_token"]),
+        )
+        assert response.status_code == 200, response.content
+        application = Application.objects.get(client_id=body["client_id"])
+        assert application.request_uris == ""
+        assert application.request_object_signing_alg == ""
+
+
+@pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings(presets.DCR_SETTINGS)
 class TestDCRJwtAuthMethods(TestCase):
     def setUp(self):

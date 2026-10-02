@@ -142,6 +142,11 @@ The failures files hold two kinds of entry:
   OP's signing key; see [What CI cannot satisfy](#what-ci-cannot-satisfy)). `baseline.py` keeps
   them.
 
+The `request_uri` modules are the exception to that last limit: the IdP runs with request objects
+enabled and fetches `request_uri` documents from the suite's host (`CONFORMANCE_REQUEST_URI_HOSTS`
+in `docker-compose.yml`) with `tests/app/idp/idp/request_uri.py`, which skips the SSRF and
+certificate checks for that host only. Never use it outside this stack.
+
 To update a plan's baseline after a change that moves it, take the runner output (in CI, the
 job's `runner.log` artifact or its log; locally, the terminal output), regenerate, and commit the
 diff with the change:

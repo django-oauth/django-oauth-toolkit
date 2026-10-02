@@ -1,9 +1,9 @@
-"""Request objects (OpenID Connect Core 1.0 section 6) are not supported.
+"""Request objects (OpenID Connect Core 1.0 section 6) with OIDC_REQUEST_OBJECTS_ENABLED off.
 
-The authorization endpoint answers the ``request`` parameter and any ``request_uri``
-that is not a PAR request URI with the section 3.1.2.6 ``request_not_supported`` and
-``request_uri_not_supported`` errors, redirected once the client and redirect URI
-have been validated.
+With the setting off (the default), the authorization endpoint answers the ``request``
+parameter and any ``request_uri`` that is not a PAR request URI with the section 3.1.2.6
+``request_not_supported`` and ``request_uri_not_supported`` errors, redirected once the
+client and redirect URI have been validated.
 """
 
 from unittest import mock

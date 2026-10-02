@@ -64,11 +64,12 @@ Behavior and limitations
   by ``client_id`` and should use PKCE. New/unregistered ``redirect_uri`` values (RFC 9126 §2.4) are
   **not** supported — redirect URIs must be pre-registered and match exactly.
 * **Request objects.** JWT-Secured Authorization Requests (the ``request`` parameter, RFC 9126 §3 /
-  RFC 9101) are **not** supported yet; such requests are rejected.
+  RFC 9101) are **not** supported at this endpoint yet, even with ``OIDC_REQUEST_OBJECTS_ENABLED``;
+  such pushed requests are rejected.
 * **Only stored request URIs.** The authorization endpoint resolves only ``request_uri`` values in
   the ``urn:ietf:params:oauth:request_uri:`` namespace issued by this authorization server. Any other
   ``request_uri`` (a request object passed by reference) is answered with
-  ``request_uri_not_supported``; see :ref:`oidc-request-objects`.
+  ``request_uri_not_supported`` unless request objects are enabled; see :ref:`oidc-request-objects`.
 
 .. _stored-authorization-requests:
 
@@ -80,7 +81,9 @@ A pushed request is kept as a *stored authorization request*: a row of the swapp
 holding the validated parameters, the client the ``request_uri`` is bound to, and its expiry. The
 store is not specific to PAR. The authorization endpoint also uses it to carry a stored request
 across a login it asks for (``prompt=login`` or an elapsed ``max_age``), storing the same
-parameters again under a new ``request_uri`` so they never enter the browser URL.
+parameters again under a new ``request_uri`` so they never enter the browser URL, and to keep the
+request assembled from an OpenID Connect :ref:`request object <oidc-request-objects>`. A stored
+request that is never redeemed is removed once it expires by the ``cleartokens`` management command.
 
 Only requests that have already been validated in full are stored: they pass the same validation
 as at the authorization endpoint, including its ``prompt`` and ``max_age`` checks, and carry no

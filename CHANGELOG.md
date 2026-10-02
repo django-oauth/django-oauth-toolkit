@@ -22,6 +22,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backoff and the refetch limit still apply to whatever a replacement returns. The new "Custom outbound
   fetchers" section of the docs lists what a replacement must keep doing to stay SSRF-safe, and
   `oauth2_provider.core.safe_fetch.read_json_document()` exposes the default's response checks for reuse.
+* #1897 Request objects (OpenID Connect Core 1.0 section 6), behind the new
+  `OIDC_REQUEST_OBJECTS_ENABLED` setting (off by default). The authorization endpoint accepts a
+  request object by value in `request` or by reference in `request_uri`, unsigned or signed with an
+  algorithm in the new `OIDC_REQUEST_OBJECT_SIGNING_ALGS` (RS, PS and ES families) and verified
+  against the client's `client_jwks` or `client_jwks_uri`, and assembles the request from it and
+  the query parameters, the request object's values winning (section 6.3.3). The assembled request
+  is validated, kept on the server in the stored authorization request store, and the endpoint
+  redirects back to itself with only `client_id` and a single-use `request_uri` reference, so its
+  parameters never enter the browser URL and a request object is resolved once; the new
+  `OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` (default 60) bounds how long a user who is not
+  logged in has to log in. A `request_uri` is fetched SSRF-safely by the
+  fetcher configured as `OIDC_REQUEST_URI_FETCHER`, bounded by
+  `OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS`, `OIDC_REQUEST_URI_MAX_SIZE`,
+  `OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES` and `OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS`.
+  Invalid request objects are answered with `invalid_request_object`, or `invalid_request_uri` when
+  passed by reference (section 3.1.2.6). Applications gain the OpenID Connect Dynamic Client
+  Registration `request_uris` and `request_object_signing_alg` fields (migration `0030`; the
+  migration skips a swapped Application model: run `makemigrations` for your app to add the
+  fields), which Dynamic Client Registration and CIMD map while the setting is on; a client that
+  registers `request_uris` may only use those. With the setting on, both discovery documents
+  publish `request_parameter_supported` and `request_uri_parameter_supported` as `true`,
+  `request_object_signing_alg_values_supported` and `require_request_uri_registration`. Encrypted
+  request objects, and request objects at the PAR endpoint, are not supported.
 * #1896 Dynamic Client Registration (RFC 7591) and its RFC 7592 management endpoint now accept
   `post_logout_redirect_uris` (OpenID Connect RP-Initiated Logout 1.0 §3.1), store them on the
   application, and return them in registration, read and update responses. A PUT that omits the field
@@ -373,6 +396,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   oauthlib registers used to be refused, with `unauthorized_client` when it contained `code` and
   `unsupported_response_type` otherwise. `OAuthLibCore` now hands oauthlib the registered
   ordering. A value that names a response type twice is still refused.
+* #1897 A `private_key_jwt` client assertion whose `kid` several keys in the client's JWK Set
+  share no longer fails with a server error: jwcrypto refuses to pick between them, so each is
+  tried, and the assertion verifies if any of them signed it.
 * #1013 `prompt=login` now works with pushed authorization requests (RFC 9126). The pushed
   `request_uri` is used up when the authorization request is read, yet the login page's return URL
   carried the expanded parameters instead, which a client required to use PAR could not complete.

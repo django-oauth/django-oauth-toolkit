@@ -1892,6 +1892,60 @@ def test_application_clean_client_secret_jwt_rejects_already_hashed_secret():
     assert "plaintext client secret" in str(exc.value)
 
 
+@pytest.mark.oauth2_settings({"OIDC_ENABLED": True, "OIDC_REQUEST_OBJECTS_ENABLED": True})
+def test_application_clean_accepts_request_object_config(oauth2_settings):
+    app = _client_assertion_application(
+        request_uris="https://client.example.com/req/1 https://client.example.com/req/2#abc",
+        request_object_signing_alg="RS256",
+        client_jwks=_public_jwks_json(),
+    )
+    app.clean()
+
+    # Unsigned request objects need no key.
+    app.client_jwks = ""
+    app.request_object_signing_alg = "none"
+    app.clean()
+
+
+def test_application_clean_rejects_non_https_request_uris():
+    app = _client_assertion_application(
+        request_uris="https://client.example.com/req http://client.example.com/req"
+    )
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert list(exc.value.message_dict) == ["request_uris"]
+    assert "http://client.example.com/req" in str(exc.value)
+
+
+@pytest.mark.oauth2_settings({"OIDC_ENABLED": True, "OIDC_REQUEST_OBJECTS_ENABLED": True})
+@pytest.mark.parametrize("alg", ["HS256", "RS1", "nonsense"])
+def test_application_clean_rejects_unsupported_request_object_signing_alg(oauth2_settings, alg):
+    app = _client_assertion_application(request_object_signing_alg=alg, client_jwks=_public_jwks_json())
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert list(exc.value.message_dict) == ["request_object_signing_alg"]
+
+
+@pytest.mark.oauth2_settings({"OIDC_ENABLED": True, "OIDC_REQUEST_OBJECTS_ENABLED": True})
+def test_application_clean_signed_request_objects_require_a_key_source(oauth2_settings):
+    app = _client_assertion_application(request_object_signing_alg="ES256")
+    with pytest.raises(ValidationError) as exc:
+        app.clean()
+    assert list(exc.value.message_dict) == ["request_object_signing_alg"]
+    assert "client_jwks or client_jwks_uri" in str(exc.value)
+
+    app.client_jwks_uri = "https://client.example.com/jwks.json"
+    app.clean()
+
+
+def test_application_clean_ignores_request_object_signing_alg_while_disabled():
+    # The stored value is unused, and registration cannot change it while disabled.
+    app = _client_assertion_application(request_object_signing_alg="ES256")
+    app.clean()
+    app.request_object_signing_alg = "nonsense"
+    app.clean()
+
+
 def test_application_clean_client_assertion_errors_are_associated_with_their_field():
     """The RFC 7523 fields follow ``clean()``'s per-field error convention (see #1343)."""
     app = _client_assertion_application(

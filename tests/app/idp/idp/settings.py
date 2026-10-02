@@ -46,6 +46,15 @@ env = environ.FileAwareEnv(
     # jwks_uri from although they resolve to private addresses (the OpenID
     # conformance stack names the suite's host). Ignored by the default fetcher.
     JWKS_URI_PRIVATE_HOSTS=(list, []),
+    # OpenID Connect Core 1.0 section 6 request objects (request / request_uri).
+    OAUTH2_PROVIDER_OIDC_REQUEST_OBJECTS_ENABLED=(bool, True),
+    OAUTH2_PROVIDER_OIDC_REQUEST_URI_FETCHER=(
+        str,
+        "oauth2_provider.authorization_server.oidc.request_objects.SafeRequestURIFetcher",
+    ),
+    # host:port values idp.request_uri.ConformanceRequestURIFetcher fetches from
+    # without the SSRF and certificate checks (the conformance suite only).
+    CONFORMANCE_REQUEST_URI_HOSTS=(list, []),
     OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY=(
         str,
         """
@@ -352,8 +361,14 @@ OAUTH2_PROVIDER = {
     # the compose network can be fetched; production deployments must keep the
     # default SSRF-hardened fetcher.
     "CLIENT_ASSERTION_JWKS_FETCHER": env("OAUTH2_PROVIDER_CLIENT_ASSERTION_JWKS_FETCHER"),
+    "OIDC_REQUEST_OBJECTS_ENABLED": env("OAUTH2_PROVIDER_OIDC_REQUEST_OBJECTS_ENABLED"),
+    # The conformance suite points this at idp.request_uri.ConformanceRequestURIFetcher,
+    # which can fetch from the suite's private, self-signed host; production
+    # deployments must keep the default SSRF-hardened fetcher.
+    "OIDC_REQUEST_URI_FETCHER": env("OAUTH2_PROVIDER_OIDC_REQUEST_URI_FETCHER"),
 }
 JWKS_URI_PRIVATE_HOSTS = env("JWKS_URI_PRIVATE_HOSTS")
+CONFORMANCE_REQUEST_URI_HOSTS = env("CONFORMANCE_REQUEST_URI_HOSTS")
 # needs to be set to allow cors requests from the test app, along with ALLOWED_SCHEMES=["http"]
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = env("OAUTHLIB_INSECURE_TRANSPORT")
 

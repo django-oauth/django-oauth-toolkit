@@ -180,28 +180,38 @@ def _candidate_keys(application: "AbstractApplication", header: dict[str, Any]) 
     """Resolve the verification key candidates for *application*.
 
     For client_secret_jwt this is the oct key derived from the plaintext
-    secret. For private_key_jwt it is the registered JWKS (inline or fetched
-    from client_jwks_uri), narrowed by the assertion's ``kid`` when given; an
-    unknown ``kid`` against a remote JWKS triggers a cache-bypassing refetch
-    so freshly rotated keys are honored. That refetch runs before the
-    signature is verified, on a ``kid`` the caller chooses, so it is limited
-    to one per ``jwks_uri`` per ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS``
-    (see :func:`_claim_forced_refetch`); otherwise, or when the refetch
-    fails, the cached set is used.
-
-    ``kid`` is a hint (RFC 7515 section 4.1.4), not a filter: when it matches
-    nothing, every registered signing key is tried instead — the signature
-    still has to verify against a registered key, so the fallback costs
-    nothing security-wise and tolerates clients whose kid labels differ (e.g.
-    a thumbprint-derived kid against a set registered with human-named kids).
+    secret. For private_key_jwt it is the registered JWKS, resolved by
+    :func:`client_signing_keys`.
     """
     if application.token_endpoint_auth_method == application.TOKEN_AUTH_METHOD_CLIENT_SECRET_JWT:
         try:
             return [application.get_client_secret_hmac_jwk()]
         except ImproperlyConfigured as exc:
             raise ClientAssertionError(str(exc))
+    return client_signing_keys(application, header.get("kid"))
 
-    kid = header.get("kid")
+
+def client_signing_keys(application: "AbstractApplication", kid: str | None) -> list[jwk.JWK]:
+    """Return the public signing keys *application* registered for verifying its JWTs.
+
+    The keys come from the registered JWKS: inline ``client_jwks`` or fetched
+    from ``client_jwks_uri``, narrowed by *kid* when given. An unknown ``kid``
+    against a remote JWKS triggers a cache-bypassing refetch so freshly
+    rotated keys are honored. That refetch runs before any signature is
+    verified, on a ``kid`` the caller chooses, so it is limited to one per
+    ``jwks_uri`` per ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` (see
+    :func:`_claim_forced_refetch`); otherwise, or when the refetch fails, the
+    cached set is used.
+
+    ``kid`` is a hint (RFC 7515 section 4.1.4), not a filter: when it matches
+    nothing, every registered signing key is tried instead — the signature
+    still has to verify against a registered key, so the fallback costs
+    nothing security-wise and tolerates clients whose kid labels differ (e.g.
+    a thumbprint-derived kid against a set registered with human-named kids).
+
+    Shared by RFC 7523 client assertions and OpenID Connect request objects.
+    Raises :class:`ClientAssertionError` when no usable key is registered.
+    """
     if application.client_jwks:
         try:
             key_set = application.get_client_signing_jwks()
@@ -217,7 +227,7 @@ def _candidate_keys(application: "AbstractApplication", header: dict[str, Any]) 
             try:
                 key_set = fetch_remote_jwks(application, force=True)
             except ClientAssertionError as exc:
-                # A failed refetch must not reject an assertion a cached key
+                # A failed refetch must not reject a JWT a cached key
                 # verifies. The next forced refetch waits for the failure
                 # backoff or the interval, whichever is longer.
                 _release_forced_refetch(application.client_jwks_uri)
@@ -229,7 +239,7 @@ def _candidate_keys(application: "AbstractApplication", header: dict[str, Any]) 
     else:
         raise ClientAssertionError("application has no registered JWKS")
     if not keys:
-        raise ClientAssertionError("no registered key matches the client assertion")
+        raise ClientAssertionError("no registered signing key matches the JWT")
     return keys
 
 
@@ -407,8 +417,14 @@ def _release_forced_refetch(uri: str) -> None:
 
 def _signing_keys(key_set, kid):
     if kid is not None:
-        key = key_set.get_key(kid)
-        keys = [key] if key is not None else []
+        try:
+            key = key_set.get_key(kid)
+        except JWException:
+            # jwcrypto refuses a kid that several keys share; try each of them,
+            # since the signature still has to verify against one.
+            keys = [key for key in key_set["keys"] if key.get("kid") == kid]
+        else:
+            keys = [key] if key is not None else []
     else:
         keys = list(key_set["keys"])
     # jwcrypto reports has_private False for an oct key, so exclude symmetric

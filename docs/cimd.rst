@@ -167,6 +167,14 @@ re-fetch, and a document that names an unsupported value, which was accepted wit
 ignored before signed UserInfo responses existed, is now refused on re-fetch and keeps its last
 good registration.
 
+A document may also register ``request_uris`` and ``request_object_signing_alg`` (OpenID Connect
+Dynamic Client Registration 1.0 section 2) for :ref:`request objects <oidc-request-objects>`; they
+are validated as for Dynamic Client Registration. While request objects are disabled they are
+ignored, and a re-fetch leaves the stored values as they are. A signed
+``request_object_signing_alg`` is verified with the client's registered keys, which a CIMD document
+only registers for ``private_key_jwt``, so a public client can only use unsigned (``none``) request
+objects.
+
 Settings
 --------
 

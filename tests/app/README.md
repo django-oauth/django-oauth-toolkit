@@ -186,6 +186,41 @@ Then open the authorization endpoint in a browser with only the `client_id` and 
 http://127.0.0.1:8000/o/authorize/?client_id=2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm&request_uri=urn:ietf:params:oauth:request_uri:...
 ```
 
+### Request object example
+
+The IDP accepts OpenID Connect request objects (OpenID Connect Core 1.0 section 6), which carry the
+authorization request parameters in a JWT (set `OAUTH2_PROVIDER_OIDC_REQUEST_OBJECTS_ENABLED=False`
+to turn them off). Using the seeded public "OIDC - Authorization Code" application, build an
+unsigned request object (`alg` `none`) holding the parameters you would otherwise put in the query:
+
+```sh
+REQUEST=$(python -c '
+import base64, json
+def b64(value):
+    return base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
+claims = {
+    "client_id": "2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm",
+    "response_type": "code",
+    "redirect_uri": "http://localhost:5173",
+    "scope": "openid",
+    "state": "state_from_the_request_object",
+    "nonce": "nonce_from_the_request_object",
+    "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    "code_challenge_method": "S256",
+}
+print(b64({"alg": "none"}) + "." + b64(claims) + ".")
+')
+echo "http://127.0.0.1:8000/o/authorize/?client_id=2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm&response_type=code&scope=openid&request=$REQUEST"
+```
+
+Open the printed URL in a browser: after logging in, the redirect carries
+`state=state_from_the_request_object`, taken from the request object. `client_id`,
+`response_type` and `scope` are also sent the usual way, as OpenID Connect requires; a value
+inside the request object wins over the same parameter in the query. Instead of `request`, a
+client can publish the JWT at an `https` URL and send it as `request_uri`, and a client with a
+registered `jwks` or `jwks_uri` can sign it (for example with RS256) instead of using `alg`
+`none`. See `docs/oidc.rst` for the rules.
+
 ## /test/app/rp
 
 This is an example RP. It is a SPA built with Svelte.

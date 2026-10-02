@@ -28,9 +28,12 @@ from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
     id_token_signed_response_alg,
     id_token_signing_algorithm,
+    request_object_signing_alg,
+    request_uris,
     userinfo_signed_response_alg,
     userinfo_signing_algorithm,
 )
+from oauth2_provider.authorization_server.oidc.request_objects import request_objects_enabled
 from oauth2_provider.authorization_server.views.metadata import bcp_filter_response_types
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.core.utils import jwk_allows_verification, parse_bearer_token
@@ -513,6 +516,19 @@ def _build_application_kwargs(
     except UnsupportedClientMetadataError as exc:
         return None, _error_response("invalid_client_metadata", str(exc))
 
+    # request_uris / request_object_signing_alg (OpenID Connect Dynamic Client
+    # Registration 1.0 section 2), set so a PUT without them resets them. While
+    # request objects are disabled they are ignored and stored values are left
+    # as they are, so a client echoing them back on a PUT loses nothing.
+    if request_objects_enabled():
+        try:
+            kwargs["request_uris"] = request_uris(data)
+            kwargs["request_object_signing_alg"] = request_object_signing_alg(
+                data, has_keys=bool(kwargs["client_jwks"] or kwargs["client_jwks_uri"])
+            )
+        except UnsupportedClientMetadataError as exc:
+            return None, _error_response("invalid_client_metadata", str(exc))
+
     return kwargs, None
 
 
@@ -606,6 +622,10 @@ def _application_to_response(
     userinfo_alg = userinfo_signed_response_alg(application)
     if userinfo_alg is not None:
         data["userinfo_signed_response_alg"] = userinfo_alg
+    if application.request_uris:
+        data["request_uris"] = application.request_uris.split()
+    if application.request_object_signing_alg:
+        data["request_object_signing_alg"] = application.request_object_signing_alg
     return data
 
 

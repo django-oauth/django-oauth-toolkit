@@ -4,17 +4,5 @@
         "variant": "*",
         "configuration-filename": "*dot-oidcc-dcr.json",
         "comment": "The suite skips this module because id_token_signing_alg_values_supported does not include 'none'; OPs are not required to support unsigned ID Tokens, and the toolkit deliberately does not."
-    },
-    {
-        "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
-        "variant": "*",
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "comment": "The suite skips this module when the OP rejects a request_uri that is not a PAR request URI with request_uri_not_supported, which is the expected outcome: request objects passed by reference are not supported, and discovery publishes request_uri_parameter_supported false."
-    },
-    {
-        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
-        "variant": "*",
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "comment": "The suite skips this module when the OP rejects the request parameter with request_not_supported, which is the expected outcome: request objects (OpenID Connect Core 1.0 section 6) are not supported, and discovery publishes request_parameter_supported false."
     }
 ]

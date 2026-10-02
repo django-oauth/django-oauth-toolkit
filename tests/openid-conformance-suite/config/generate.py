@@ -198,9 +198,6 @@ def overrides():
         "oidcc-ensure-redirect-uri-in-authorization-request",
         "oidcc-redirect-uri-query-added",
         "oidcc-redirect-uri-query-mismatch",
-        # The unregistered redirect_uri parameter is fatal even though the request
-        # object carries the registered one; the module accepts the error page.
-        "oidcc-ensure-request-object-with-redirect-uri",
     ):
         result[module] = {
             "browser": [

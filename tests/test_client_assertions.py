@@ -192,6 +192,20 @@ def test_private_key_jwt_ps_family(alg):
     assert request.client is app
 
 
+def test_private_key_jwt_keys_sharing_the_kid():
+    # jwcrypto refuses to pick between keys sharing a kid; every one of them is
+    # tried, wherever the signing key sits in the set.
+    decoys = [jwk.JWK.generate(kty="RSA", size=2048, kid="unit-rsa") for _ in range(4)]
+    key_set = jwk.JWKSet()
+    for key in [*decoys, RSA_KEY]:
+        key_set.add(jwk.JWK.from_json(key.export_public()))
+    assert len(client_assertions._signing_keys(key_set, "unit-rsa")) == 5
+    app = pkj_app(client_jwks=key_set.export(private_keys=False))
+    assertion = build_assertion(RSA_KEY, default_claims(), alg="RS256", kid="unit-rsa")
+    ok, _ = authenticate(assertion, app)
+    assert ok is True
+
+
 def test_private_key_jwt_without_kid_tries_all_keys():
     app = pkj_app()
     assertion = build_assertion(EC_KEY, default_claims(), alg="ES256")

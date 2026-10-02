@@ -267,6 +267,30 @@ DEFAULTS = {
         "client_secret_post",
         "client_secret_basic",
     ],
+    # OIDC Core §6 request objects (request / request_uri); off by default
+    "OIDC_REQUEST_OBJECTS_ENABLED": False,
+    "OIDC_REQUEST_OBJECT_SIGNING_ALGS": [
+        "none",
+        "RS256",
+        "RS384",
+        "RS512",
+        "ES256",
+        "ES384",
+        "ES512",
+        "PS256",
+        "PS384",
+        "PS512",
+    ],
+    "OIDC_REQUEST_URI_FETCHER": (
+        "oauth2_provider.authorization_server.oidc.request_objects.SafeRequestURIFetcher"
+    ),
+    "OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS": 5,
+    "OIDC_REQUEST_URI_MAX_SIZE": 64 * 1024,
+    "OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES": 10,  # 0 or None disables the in-flight cap
+    "OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS": 60,  # 0 or None disables the backoff
+    # How long a resolved request object stays stored for the end-user to log in
+    # or register; the same default as PAR_REQUEST_URI_LIFETIME_SECONDS
+    "OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS": 60,
     # RP-Initiated Registration (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
     "OIDC_RP_INITIATED_REGISTRATION_URL": None,
@@ -357,6 +381,7 @@ IMPORT_STRINGS = (
     "CIMD_METADATA_FETCHER",
     "CIMD_REGISTRATION_PERMISSION_CLASSES",
     "CLIENT_ASSERTION_JWKS_FETCHER",
+    "OIDC_REQUEST_URI_FETCHER",
 )
 
 

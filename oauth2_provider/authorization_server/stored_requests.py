@@ -38,7 +38,10 @@ Current producers:
   :rfc:`9126`);
 * the authorization endpoint, when it sends the user to log in partway through a
   stored request: the parameters it re-stores were themselves resolved from this
-  store (:meth:`oauth2_provider.authorization_server.views.base.AuthorizationView._redirect_to_login`).
+  store (:meth:`oauth2_provider.authorization_server.views.base.AuthorizationView._redirect_to_login`);
+* the authorization endpoint, for an OpenID Connect request object once it has
+  assembled and validated the request
+  (:meth:`oauth2_provider.authorization_server.views.base.AuthorizationView._store_resolved_request`).
 """
 
 import secrets
