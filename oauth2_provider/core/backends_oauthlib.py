@@ -231,6 +231,9 @@ class OAuthLibCore:
         :param request: The current django.http.HttpRequest object
         """
         uri, http_method, body, headers = self._extract_params(request)
+        # RFC 8707: the bearer token's audience is checked against the request URI,
+        # so the URI must be absolute, as in verify_request.
+        uri = request.build_absolute_uri(uri)
         try:
             headers, body, status = self.server.create_userinfo_response(uri, http_method, body, headers)
             uri = headers.get("Location", None)

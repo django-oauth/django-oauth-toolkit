@@ -352,7 +352,8 @@ reconstructed by Django (``request.build_absolute_uri()``). If your resource ser
 behind a TLS-terminating reverse proxy or load balancer, Django must be configured so the
 reconstructed scheme and host match the externally visible URI that clients put in the
 ``resource`` parameter. Otherwise resource-restricted tokens will be rejected with a
-scheme (``http`` vs ``https``) or host mismatch.
+scheme (``http`` vs ``https``) or host mismatch. The same applies to the OpenID Connect
+UserInfo endpoint, which audience-checks the access token presented to it in the same way.
 
 Configure the standard Django settings for proxied deployments:
 

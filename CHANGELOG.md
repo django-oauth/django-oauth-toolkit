@@ -324,6 +324,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   imported, and the shim was not yet aliased to it at that point; it now forwards attribute
   lookups to the canonical module during initialization. The old path keeps working as the
   deprecation policy promises, still without a warning.
+* #1861 The OIDC UserInfo endpoint now accepts access tokens bound to this server with an
+  RFC 8707 `resource` indicator. `create_userinfo_response` passed the relative request path to
+  oauthlib, so the audience check could never match an absolute resource URI and every
+  resource-bound token got a 401 at UserInfo while the same token was accepted by protected views.
+  The URI is now made absolute, as `verify_request` already does.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
