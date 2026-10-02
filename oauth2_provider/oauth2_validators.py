@@ -27,13 +27,16 @@ from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
 from .authorization_server import cimd, client_assertions
+from .authorization_server.oidc.server import signs_userinfo_for
 from .authorization_server.response_modes import response_mode_permitted
 from .core.bcp import bcp_compliant
 from .core.exceptions import FatalClientError
 from .core.scopes import get_scopes_backend
+from .core.utils import jwk_from_pem
 from .models import (
     AbstractAccessToken,
     AbstractApplication,
+    AbstractIDToken,
     AbstractRefreshToken,
     get_access_token_model,
     get_application_model,
@@ -56,7 +59,7 @@ from .resource_server.validators import (
     is_valid_resource_uri,
     validate_resource_as_url_prefix,
 )
-from .settings import oauth2_settings
+from .settings import coerce_expires_in, oauth2_settings
 
 
 # Public API of this module. ``is_valid_resource_uri`` and
@@ -1332,15 +1335,17 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         request.access_token = id_token
         return True
 
-    def _load_id_token(self, token):
+    def _load_id_token(self, token: str) -> AbstractIDToken | None:
         key = self._get_key_for_token(token)
         if not key:
             return None
         try:
             jwt_token = jwt.JWT(key=key, jwt=token)
             claims = json.loads(jwt_token.claims)
+            # Every ID Token this OP issues has a jti. A verified JWT without one is
+            # another JWT signed with the OP key, such as a signed UserInfo response.
             return IDToken.objects.get(jti=claims["jti"])
-        except (JWException, JWTExpired, IDToken.DoesNotExist):
+        except (JWException, JWTExpired, KeyError, IDToken.DoesNotExist):
             return None
 
     def _get_key_for_token(self, token):
@@ -1401,6 +1406,74 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         the scopes granted to the access token.
         """
         return self.get_oidc_claims(request.access_token, None, request)
+
+    # Registered JWT claims of a signed UserInfo response that only the OP sets.
+    _USERINFO_JWT_OP_CLAIMS = frozenset({"exp", "nbf", "jti"})
+
+    def finalize_userinfo_response(self, claims: dict, request: OauthlibRequest) -> dict | str:
+        """
+        Return the UserInfo response for *claims*: the claims themselves, sent as
+        JSON, or a signed JWT, sent as ``application/jwt``.
+
+        OpenID Connect Core 1.0 section 5.3.2: a client that registered
+        ``userinfo_signed_response_alg`` receives the claims as a signed JWT,
+        which carries ``iss`` and ``aud`` (the client_id) as well. ``iat`` is
+        added too, and ``exp`` when ``OIDC_USERINFO_JWT_EXPIRE_SECONDS`` is set.
+        These claims take precedence over user claims of the same name. ``exp``,
+        ``nbf`` and ``jti`` user claims are left out: the OP alone decides the JWT's
+        validity window, and ``jti`` is what tells an ID Token apart. The JWT
+        is signed with the OpenID Provider's active ``OIDC_RSA_PRIVATE_KEY``,
+        published in the JWKS, whatever algorithm the client's ID Tokens use.
+
+        The claims are returned as JSON, with a warning in the log, when the client
+        asked for signing but
+        :func:`~oauth2_provider.authorization_server.oidc.server.signs_userinfo_for`
+        refuses it: a stored value other than RS256, an application without OIDC
+        support (no ID Token ``algorithm``), or signing unavailable on this server
+        (see :func:`~oauth2_provider.authorization_server.oidc.server.userinfo_signing_available`;
+        when this hook runs, that in practice means no ``OIDC_RSA_PRIVATE_KEY``).
+        ``Application.clean()`` refuses all of them, so this only happens when the
+        configuration changed afterwards or the row was saved without validation;
+        registration responses then report JSON as well.
+        """
+        client = request.client
+        if client is None or not client.userinfo_signed_response_alg:
+            return claims
+        if not signs_userinfo_for(client):
+            log.warning(
+                "UserInfo for client %r is returned unsigned: its userinfo_signed_response_alg %r "
+                "cannot be honoured (see signs_userinfo_for).",
+                client.client_id,
+                client.userinfo_signed_response_alg,
+            )
+            return claims
+
+        now = int(timezone.now().timestamp())
+        # The validity window (exp, nbf) is the OP's to set, and jti is what tells an ID
+        # Token apart from this JWT, which is signed with the same key and names the same
+        # client in aud (see _load_id_token), so none of them comes from the user claims.
+        payload = {
+            **{name: value for name, value in claims.items() if name not in self._USERINFO_JWT_OP_CLAIMS},
+            "iss": self.get_oidc_issuer_endpoint(request),
+            "aud": client.client_id,
+            "iat": now,
+        }
+        expire_seconds = oauth2_settings.OIDC_USERINFO_JWT_EXPIRE_SECONDS
+        if expire_seconds is not None:
+            payload["exp"] = now + coerce_expires_in(expire_seconds, "OIDC_USERINFO_JWT_EXPIRE_SECONDS")
+
+        key = jwk_from_pem(oauth2_settings.OIDC_RSA_PRIVATE_KEY)
+        header = {
+            "typ": "JWT",
+            "alg": AbstractApplication.RS256_ALGORITHM,
+            "kid": key.thumbprint(),
+        }
+        jwt_token = jwt.JWT(
+            header=json.dumps(header, default=str),
+            claims=json.dumps(payload, default=str),
+        )
+        jwt_token.make_signed_token(key)
+        return jwt_token.serialize()
 
     def get_additional_claims(self, request):
         return {}

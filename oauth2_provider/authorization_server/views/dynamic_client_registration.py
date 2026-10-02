@@ -27,6 +27,8 @@ from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
     id_token_signed_response_alg,
     id_token_signing_algorithm,
+    userinfo_signed_response_alg,
+    userinfo_signing_algorithm,
 )
 from oauth2_provider.authorization_server.views.metadata import bcp_filter_response_types
 from oauth2_provider.core.compat import login_not_required
@@ -463,6 +465,14 @@ def _build_application_kwargs(
     except UnsupportedClientMetadataError as exc:
         return None, _error_response("invalid_client_metadata", str(exc))
 
+    # userinfo_signed_response_alg (OpenID Connect Dynamic Client Registration
+    # 1.0 section 2). Always set, so a PUT without it returns UserInfo as plain
+    # JSON again (RFC 7592 section 2.2).
+    try:
+        kwargs["userinfo_signed_response_alg"] = userinfo_signing_algorithm(data)
+    except UnsupportedClientMetadataError as exc:
+        return None, _error_response("invalid_client_metadata", str(exc))
+
     return kwargs, None
 
 
@@ -549,6 +559,9 @@ def _application_to_response(
     signing_alg = id_token_signed_response_alg(application)
     if signing_alg is not None:
         data["id_token_signed_response_alg"] = signing_alg
+    userinfo_alg = userinfo_signed_response_alg(application)
+    if userinfo_alg is not None:
+        data["userinfo_signed_response_alg"] = userinfo_alg
     return data
 
 

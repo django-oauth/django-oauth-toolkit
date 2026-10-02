@@ -7,12 +7,15 @@ from django.core.management import call_command
 from django.core.management.base import SystemCheckError
 from django.test import override_settings
 
+from oauth2_provider.authorization_server.oidc.server import Server
 from oauth2_provider.core.checks import (
     validate_access_token_expiry_configuration,
     validate_refresh_token_configuration,
     validate_response_types_supported,
     validate_swapped_model_consistency,
     validate_token_configuration,
+    validate_userinfo_jwt_expiry_configuration,
+    validate_userinfo_signing_server,
 )
 
 from . import presets
@@ -274,3 +277,64 @@ class OIDCResponseTypesSupportedCheckTestCase(TestCase):
         (message,) = self._messages()
         self.assertIn("token code", message.msg)
         self.assertIn("'code token'", message.hint)
+
+
+class DerivedOIDCServer(Server):
+    """A custom OIDC_SERVER_CLASS that keeps signed UserInfo responses."""
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class UserInfoSigningServerCheckTestCase(TestCase):
+    def _messages(self, **overrides):
+        if overrides:
+            self.oauth2_settings.update({**presets.OIDC_SETTINGS_RW, **overrides})
+        return [m for m in validate_userinfo_signing_server(None) if m.id == "oauth2_provider.I001"]
+
+    def test_default_server_class_passes(self):
+        self.assertEqual(self._messages(), [])
+
+    def test_a_derived_server_class_passes(self):
+        self.assertEqual(self._messages(OIDC_SERVER_CLASS="tests.test_django_checks.DerivedOIDCServer"), [])
+
+    def test_a_plain_oauthlib_server_class_is_reported(self):
+        for setting in ("OIDC_SERVER_CLASS", "OAUTH2_SERVER_CLASS"):
+            with self.subTest(setting=setting):
+                (message,) = self._messages(**{setting: "oauthlib.openid.Server"})
+                # Informational: signing is opt-in, so it must not fail --fail-level WARNING.
+                self.assertIsInstance(message, checks.Info)
+                self.assertIn("userinfo_signed_response_alg", message.msg)
+                self.assertIn("oauth2_provider.authorization_server.oidc.server.Server", message.hint)
+
+    def test_a_validator_without_the_hook_is_reported(self):
+        (message,) = self._messages(OAUTH2_VALIDATOR_CLASS="oauthlib.openid.RequestValidator")
+        self.assertIn("OAUTH2_VALIDATOR_CLASS", message.hint)
+
+    def test_nothing_is_advertised_without_an_rsa_key(self):
+        # Discovery does not advertise userinfo signing, and clean() refuses RS256.
+        self.assertEqual(
+            self._messages(OIDC_RSA_PRIVATE_KEY="", OIDC_SERVER_CLASS="oauthlib.openid.Server"), []
+        )
+
+    def test_an_unimportable_server_class_does_not_fail_the_check(self):
+        self.assertEqual(self._messages(OIDC_SERVER_CLASS="tests.does_not_exist.Server"), [])
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+class UserInfoJWTExpiryCheckTestCase(TestCase):
+    def _messages(self):
+        return [m for m in validate_userinfo_jwt_expiry_configuration(None) if m.id == "oauth2_provider.E007"]
+
+    def test_valid_values_pass(self):
+        for value in (None, 300, 300.5, timedelta(minutes=5)):
+            with self.subTest(value=repr(value)):
+                self.oauth2_settings.OIDC_USERINFO_JWT_EXPIRE_SECONDS = value
+                self.assertEqual(self._messages(), [])
+
+    def test_invalid_values_are_errors(self):
+        for value in (0, -1, "300", True):
+            with self.subTest(value=repr(value)):
+                self.oauth2_settings.OIDC_USERINFO_JWT_EXPIRE_SECONDS = value
+                (message,) = self._messages()
+                self.assertIsInstance(message, checks.Error)
+                self.assertIn("OIDC_USERINFO_JWT_EXPIRE_SECONDS", message.msg)

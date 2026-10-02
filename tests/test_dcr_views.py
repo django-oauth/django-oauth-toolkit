@@ -944,6 +944,83 @@ class TestDynamicClientRegistration(TestCase):
 
         assert _validation_error_description(ValidationError("plain message")) == "plain message"
 
+    # -- userinfo_signed_response_alg (OIDC Dynamic Client Registration 1.0 §2)
+
+    def test_register_userinfo_rs256_is_stored_and_reported(self):
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "userinfo_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["userinfo_signed_response_alg"] == "RS256"
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.userinfo_signed_response_alg == Application.RS256_ALGORITHM
+
+    def test_register_without_userinfo_alg_keeps_json(self):
+        """Omitted → plain JSON UserInfo, and the parameter is not reported."""
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "userinfo_signed_response_alg" not in body
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.userinfo_signed_response_alg == Application.NO_ALGORITHM
+
+    def test_register_unsupported_userinfo_alg_is_400(self):
+        _enable_rs256(self.oauth2_settings)
+        self.client.force_login(self.user)
+        for requested in ("HS256", "ES256", "none", "", 256):
+            with self.subTest(requested=requested):
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "userinfo_signed_response_alg": requested,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 400
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert "userinfo_signed_response_alg" in body["error_description"]
+
+    def test_register_userinfo_rs256_without_server_key_is_400(self):
+        """A signed UserInfo response the server cannot produce is refused, not dropped."""
+        self.oauth2_settings.OIDC_ENABLED = True
+        assert not self.oauth2_settings.OIDC_RSA_PRIVATE_KEY
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "userinfo_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "userinfo_signed_response_alg" in body["error_description"]
+
+    def test_register_userinfo_alg_is_ignored_without_oidc(self):
+        """No OpenID Connect, no UserInfo endpoint: the parameter is ignored (RFC 7591 §2)."""
+        assert not self.oauth2_settings.OIDC_ENABLED
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "userinfo_signed_response_alg": "RS256",
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        body = response.json()
+        assert "userinfo_signed_response_alg" not in body
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.userinfo_signed_response_alg == Application.NO_ALGORITHM
+
 
 # ---------------------------------------------------------------------------
 # Open registration (AllowAllDCRPermission)
@@ -1363,6 +1440,56 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert response.json()["post_logout_redirect_uris"] == []
         app.refresh_from_db()
         assert app.post_logout_redirect_uris == ""
+
+    def test_put_without_userinfo_alg_resets_to_json(self):
+        """userinfo_signed_response_alg follows PUT full-replacement (RFC 7592 §2.2)."""
+        _enable_rs256(self.oauth2_settings)
+        Application.objects.filter(client_id=self.client_id).update(
+            algorithm=Application.RS256_ALGORITHM,
+            userinfo_signed_response_alg=Application.RS256_ALGORITHM,
+        )
+        response = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert response.json()["userinfo_signed_response_alg"] == "RS256"
+
+        update_data = {"redirect_uris": ["https://example.com/cb"], "grant_types": ["authorization_code"]}
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        assert "userinfo_signed_response_alg" not in response.json()
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.userinfo_signed_response_alg == Application.NO_ALGORITHM
+
+    def test_userinfo_alg_is_not_reported_while_the_server_cannot_sign(self):
+        """A stored RS256 the server no longer honours is not reported, and an echoing PUT resets it."""
+        Application.objects.filter(client_id=self.client_id).update(
+            algorithm=Application.RS256_ALGORITHM,
+            userinfo_signed_response_alg=Application.RS256_ALGORITHM,
+        )
+        assert not self.oauth2_settings.OIDC_ENABLED
+        response = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert response.status_code == 200
+        body = response.json()
+        assert "userinfo_signed_response_alg" not in body
+
+        echoed = {
+            key: body[key]
+            for key in ("redirect_uris", "grant_types", "client_name", "token_endpoint_auth_method")
+            if key in body
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(echoed),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200, response.content
+        assert "userinfo_signed_response_alg" not in response.json()
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.userinfo_signed_response_alg == Application.NO_ALGORITHM
 
     def test_put_leaves_can_introspect_to_the_administrator(self):
         """#1451: can_introspect is not client metadata. A PUT can neither turn on a
@@ -2067,6 +2194,61 @@ class TestDynamicClientRegistrationOpenID(TestCase):
         content = response.json()
         assert "id_token" in content
         assert "refresh_token" in content
+
+    def test_registered_client_receives_signed_userinfo(self):
+        """OIDC Core 5.3.2: a client registering userinfo_signed_response_alg=RS256
+        receives the UserInfo response as an RS256 JWT verifiable with the JWKS."""
+        redirect_uri = "https://example.com/cb"
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+                "userinfo_signed_response_alg": "RS256",
+            },
+        )
+        assert response.status_code == 201
+        client_id = response.json()["client_id"]
+
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": client_id,
+                "response_type": "code",
+                "redirect_uri": redirect_uri,
+                "scope": "openid",
+                "state": "random_state_string",
+                "allow": True,
+            },
+        )
+        assert response.status_code == 302, response.content
+        code = parse_qs(urlparse(response["Location"]).query)["code"][0]
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+            },
+        )
+        assert response.status_code == 200, response.content
+        access_token = response.json()["access_token"]
+
+        response = self.client.get(
+            reverse("oauth2_provider:user-info"), HTTP_AUTHORIZATION=f"Bearer {access_token}"
+        )
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/jwt"
+        jwks = jwk.JWKSet.from_json(self.client.get(reverse("oauth2_provider:jwks-info")).content)
+        verified = jwt.JWT(key=jwks, jwt=response.content.decode())
+        assert verified.token.jose_header["alg"] == "RS256"
+        claims = json.loads(verified.claims)
+        assert claims["sub"] == str(self.user.pk)
+        assert claims["aud"] == client_id
+        assert claims["iss"] == presets.OIDC_SETTINGS_RW["OIDC_ISS_ENDPOINT"]
 
 
 # ---------------------------------------------------------------------------

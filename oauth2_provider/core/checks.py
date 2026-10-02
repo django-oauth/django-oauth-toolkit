@@ -1,10 +1,13 @@
-from django.apps import apps
+from collections.abc import Sequence
+from typing import Any
+
+from django.apps import AppConfig, apps
 from django.core import checks
 from django.core.exceptions import ImproperlyConfigured
 from django.db import router
 
 from oauth2_provider.core.backends_oauthlib import JSONOAuthLibCore
-from oauth2_provider.settings import oauth2_settings
+from oauth2_provider.settings import coerce_expires_in, oauth2_settings
 
 
 # RFC 9700 (OAuth 2.0 Security Best Current Practice) behavior gates. Each tuple is
@@ -459,3 +462,80 @@ def validate_response_types_supported(app_configs, **kwargs):
             )
 
     return messages
+
+
+@checks.register(checks.Tags.compatibility)
+def validate_userinfo_signing_server(
+    app_configs: Sequence[AppConfig] | None, **kwargs: Any
+) -> list[checks.CheckMessage]:
+    """
+    Report when OpenID Connect has an RSA key but cannot sign UserInfo responses.
+
+    Signed UserInfo responses (OpenID Connect Core 1.0 section 5.3.2) are produced by
+    ``oauth2_provider.authorization_server.oidc.server.Server``, the default
+    ``OIDC_SERVER_CLASS``, with a validator that has a callable ``finalize_userinfo_response``. With
+    an RSA key but another server class (or such a validator), signing is switched off:
+    discovery does not advertise ``userinfo_signing_alg_values_supported``, registration
+    refuses ``userinfo_signed_response_alg``, and a client that already has it receives
+    plain JSON.
+
+    Signed UserInfo is opt-in per client and a server class that does not sign is a valid
+    choice, so this is informational: it must not fail ``check --fail-level WARNING`` for a
+    project that keeps a custom server class and no client that asks for signing.
+    """
+    from oauth2_provider.authorization_server.oidc.server import userinfo_signing_available
+
+    if not (oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_RSA_PRIVATE_KEY):
+        return []
+    try:
+        oauth2_settings.OAUTH2_SERVER_CLASS
+        oauth2_settings.OAUTH2_VALIDATOR_CLASS
+    except ImportError:
+        # An unimportable class fails loudly on the first request; there is nothing to
+        # compare here, and `manage.py check` must still complete.
+        return []
+    if userinfo_signing_available():
+        return []
+    return [
+        checks.Info(
+            "UserInfo responses cannot be signed with the configured OpenID Connect server "
+            "and validator classes: userinfo_signing_alg_values_supported is not advertised, "
+            "userinfo_signed_response_alg is refused at registration, and clients that "
+            "already have it receive plain JSON.",
+            hint=(
+                "Derive OAUTH2_PROVIDER['OIDC_SERVER_CLASS'] (or OAUTH2_SERVER_CLASS) from "
+                "oauth2_provider.authorization_server.oidc.server.Server, and "
+                "OAUTH2_VALIDATOR_CLASS from oauth2_provider.oauth2_validators.OAuth2Validator."
+            ),
+            id="oauth2_provider.I001",
+        )
+    ]
+
+
+@checks.register(checks.Tags.security)
+def validate_userinfo_jwt_expiry_configuration(
+    app_configs: Sequence[AppConfig] | None, **kwargs: Any
+) -> list[checks.CheckMessage]:
+    """
+    Report a misconfigured ``OIDC_USERINFO_JWT_EXPIRE_SECONDS`` at startup.
+
+    The lifetime is only read when a signed UserInfo response is minted, so without this
+    check a bad value would surface as a 500 for the first client that asked for one.
+    """
+    value = oauth2_settings.OIDC_USERINFO_JWT_EXPIRE_SECONDS
+    if value is None:
+        return []
+    try:
+        coerce_expires_in(value, "OIDC_USERINFO_JWT_EXPIRE_SECONDS")
+    except ImproperlyConfigured as exc:
+        return [
+            checks.Error(
+                str(exc),
+                hint=(
+                    "Set OAUTH2_PROVIDER['OIDC_USERINFO_JWT_EXPIRE_SECONDS'] to a positive "
+                    "number of seconds or a datetime.timedelta, or to None to leave exp out."
+                ),
+                id="oauth2_provider.E007",
+            )
+        ]
+    return []

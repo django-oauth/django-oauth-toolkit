@@ -4,15 +4,17 @@ OpenID Connect client metadata for clients that register from a document.
 RFC 7591 Dynamic Client Registration and OAuth Client ID Metadata Documents both
 describe a client with the IANA-registered client metadata parameters, which
 include the OpenID Connect Dynamic Client Registration 1.0 ones. This module
-maps the parameter that selects how the OpenID Provider signs a client's ID
-Tokens onto :class:`~oauth2_provider.models.AbstractApplication` so that every
-registration path provisions it the same way. See
+maps the parameters that select how the OpenID Provider signs a client's ID
+Tokens and UserInfo responses onto
+:class:`~oauth2_provider.models.AbstractApplication` so that every registration
+path provisions them the same way. See
 ``rfcs/openid-connect-registration-1_0.txt``.
 """
 
 from collections.abc import Mapping
 from typing import Any
 
+from oauth2_provider.authorization_server.oidc.server import signs_userinfo_for, userinfo_signing_available
 from oauth2_provider.models import AbstractApplication
 from oauth2_provider.settings import oauth2_settings
 
@@ -20,6 +22,11 @@ from oauth2_provider.settings import oauth2_settings
 #: OpenID Connect Dynamic Client Registration 1.0 section 2: the JWS ``alg``
 #: the client wants its ID Tokens signed with. OPTIONAL; the default is RS256.
 ID_TOKEN_SIGNED_RESPONSE_ALG = "id_token_signed_response_alg"
+
+#: OpenID Connect Dynamic Client Registration 1.0 section 2: the JWS ``alg``
+#: the client wants its UserInfo responses signed with. OPTIONAL; by default
+#: the response is plain JSON.
+USERINFO_SIGNED_RESPONSE_ALG = "userinfo_signed_response_alg"
 
 # ``AbstractApplication.algorithm`` stores the JWS ``alg`` name itself, so the
 # wire value and the model value are one and the same; this is the subset a
@@ -29,6 +36,11 @@ ID_TOKEN_SIGNED_RESPONSE_ALG = "id_token_signed_response_alg"
 # OpenID Provider that signs its ID Tokens. Only a value an administrator set
 # is kept when a PUT echoes it (see ``_echoed_algorithm_refusal_reason``).
 SUPPORTED_ID_TOKEN_ALGS = frozenset({AbstractApplication.RS256_ALGORITHM})
+
+# ``AbstractApplication.userinfo_signed_response_alg`` also stores the JWS
+# ``alg`` name itself. UserInfo is only signed with the server's RSA key, so
+# RS256 is the one value offered, to every client alike.
+SUPPORTED_USERINFO_ALGS = frozenset({AbstractApplication.RS256_ALGORITHM})
 
 # The grants ``AbstractApplication.clean()`` forbids HS256 with, and that an
 # echoed administrator-set algorithm may not be kept with.
@@ -225,3 +237,58 @@ def id_token_signed_response_alg(application: AbstractApplication) -> str | None
     HS256 for a confidential client) is reported as well.
     """
     return application.algorithm or None
+
+
+def userinfo_signing_algorithm(metadata: Mapping[str, Any]) -> str:
+    """Return the ``AbstractApplication.userinfo_signed_response_alg`` for *metadata*.
+
+    With no ``userinfo_signed_response_alg`` (absent or JSON ``null``) the
+    UserInfo response stays plain JSON, the OpenID Connect Dynamic Client
+    Registration 1.0 section 2 default, so the field is blank. With OpenID Connect
+    disabled the parameter is ignored the same way, as RFC 7591 section 2 has a
+    server do with metadata it does not use: there is no UserInfo endpoint whose
+    response it could describe. Otherwise RS256 is honoured
+    when the server signs UserInfo responses (see
+    :func:`~oauth2_provider.authorization_server.oidc.server.userinfo_signing_available`:
+    OpenID Connect enabled, an ``OIDC_RSA_PRIVATE_KEY``, a server class that signs
+    and a validator with a callable ``finalize_userinfo_response``). Every other value is refused rather than
+    substituted (section 3.1 lets the provider reject requested metadata): a
+    client that asked for a signed response would otherwise fail to parse the
+    one it gets.
+
+    Raises :class:`UnsupportedClientMetadataError` for a value the server
+    cannot honour.
+    """
+    requested = metadata.get(USERINFO_SIGNED_RESPONSE_ALG)
+    if requested is None or not oauth2_settings.OIDC_ENABLED:
+        # Without OpenID Connect there is no UserInfo endpoint, so the parameter is
+        # client metadata this server does not use and ignores (RFC 7591 section 2).
+        return AbstractApplication.NO_ALGORITHM
+    if not isinstance(requested, str) or requested not in SUPPORTED_USERINFO_ALGS:
+        raise UnsupportedClientMetadataError(
+            f"Unsupported {USERINFO_SIGNED_RESPONSE_ALG}: {requested!r}. "
+            f"Supported values: {', '.join(sorted(SUPPORTED_USERINFO_ALGS))}"
+        )
+    if not userinfo_signing_available():
+        raise UnsupportedClientMetadataError(
+            f"{USERINFO_SIGNED_RESPONSE_ALG} {requested!r} is not available: "
+            "this server does not sign UserInfo responses"
+        )
+    return requested
+
+
+def userinfo_signed_response_alg(application: AbstractApplication) -> str | None:
+    """Return the ``userinfo_signed_response_alg`` value describing *application*.
+
+    The inverse of :func:`userinfo_signing_algorithm`, for registration
+    responses. None when UserInfo is returned as plain JSON, so the parameter is
+    omitted, as OpenID Connect Dynamic Client Registration 1.0 section 2 has the
+    absence of the parameter mean. The value is reported only when
+    :func:`~oauth2_provider.authorization_server.oidc.server.signs_userinfo_for`
+    holds, the test the UserInfo endpoint signs under, so the client is told what
+    it will actually receive; a stored value the server cannot honour is left out,
+    and a ``PUT`` that echoes the response resets it to match.
+    """
+    if not signs_userinfo_for(application):
+        return None
+    return application.userinfo_signed_response_alg

@@ -220,8 +220,12 @@ def test_oidc_server_class_default_used_when_neither_overridden():
     """When OIDC is enabled and neither *_SERVER_CLASS is overridden, fall back to OIDC default."""
     from oauthlib.openid import Server as OIDCServer
 
+    from oauth2_provider.authorization_server.oidc.server import Server
+
     settings = OAuth2ProviderSettings(user_settings={"OIDC_ENABLED": True})
-    assert settings.OAUTH2_SERVER_CLASS is OIDCServer
+    assert settings.OAUTH2_SERVER_CLASS is Server
+    # The default stays an oauthlib OpenID Connect server; it only adds signed UserInfo.
+    assert issubclass(settings.OAUTH2_SERVER_CLASS, OIDCServer)
 
 
 class TestRefreshTokenAdminSelectRelated(TestCase):

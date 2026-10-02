@@ -18,6 +18,7 @@ APPLICATION_FIELDS = (
     "post_logout_redirect_uris",
     "allowed_origins",
     "algorithm",
+    "userinfo_signed_response_alg",
 )
 
 

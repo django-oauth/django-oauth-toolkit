@@ -33,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Token's `auth_time` is still taken from the user's `last_login`, which every session of the
   account shares, so it can report a login made in another browser. The `oidcc-max-age-1`
   conformance module now passes in the Basic, Implicit and Hybrid plans.
+* #1898 Signed UserInfo responses (OpenID Connect Core 1.0 §5.3.2). An application whose new
+  `userinfo_signed_response_alg` field is `RS256` receives the UserInfo response as a JWT
+  (`Content-Type: application/jwt`) signed with the active `OIDC_RSA_PRIVATE_KEY`, carrying `iss`,
+  `aud` (its `client_id`) and `iat` besides the user's claims, plus `exp` when the new
+  `OIDC_USERINFO_JWT_EXPIRE_SECONDS` setting is set. Clients can register the field through Dynamic
+  Client Registration and Client ID Metadata Documents, and discovery advertises
+  `userinfo_signing_alg_values_supported`, whenever the server can sign them. The response is shaped
+  by the new `OAuth2Validator.finalize_userinfo_response(claims, request)` hook, so
+  `get_userinfo_claims` overrides keep returning a dict. New system checks: `oauth2_provider.I001`
+  reports when an RSA key is configured but the server or validator class cannot sign UserInfo, and
+  `oauth2_provider.E007` reports an invalid `OIDC_USERINFO_JWT_EXPIRE_SECONDS`. Swapped application
+  models need a migration for the new field. Encrypted UserInfo responses are not supported.
 * #1882 New `OIDC_COMPLIANT_SCOPE_CLAIMS` setting. When `True`, the claims requested by the
   `profile`, `email`, `address` and `phone` scope values are returned from the UserInfo endpoint
   and left out of the ID Token whenever an access token is issued, and are put in the ID Token only
@@ -192,6 +204,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applies to the admin, the application management views, `manage.py createapplication` and Dynamic
   Client Registration alike, so an application whose stored post-logout redirect URIs break either
   rule is now refused there until they are corrected.
+* #1898 `OIDC_SERVER_CLASS` defaults to `oauth2_provider.authorization_server.oidc.server.Server`, an
+  `oauthlib.openid.Server` subclass whose UserInfo endpoint can sign its response. A custom server
+  class should derive from it; with one derived from `oauthlib.openid.Server`, UserInfo stays JSON
+  and signing is neither advertised nor accepted at registration.
+* #1898 Dynamic Client Registration and Client ID Metadata Documents no longer ignore
+  `userinfo_signed_response_alg` while OpenID Connect is enabled: `RS256` is honoured when the
+  server can sign UserInfo, and any other value (or `RS256` when it cannot) is refused with `invalid_client_metadata`, or makes a CIMD
+  document invalid, so a re-fetched document naming one keeps its last good registration.
+* #1898 A JWT signed with the OpenID Provider key but without a `jti`, such as a signed UserInfo
+  response, is not accepted where an ID Token is expected: as an RP-Initiated Logout
+  `id_token_hint` it is rejected, and as a bearer token it is refused.
 * #483 A non-positive or non-numeric `ACCESS_TOKEN_EXPIRE_SECONDS` is now rejected with
   `ImproperlyConfigured` (and reported by `manage.py check` as `oauth2_provider.E006`) instead of
   being applied inconsistently: `0` previously meant "expire immediately" for the stored token while
