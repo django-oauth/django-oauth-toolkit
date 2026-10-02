@@ -402,6 +402,9 @@ def test_resolve_creates_public_application(cimd_enabled):
     assert app.user is None
     assert app.cimd_expires_at is not None
     assert app.cimd_expires_at > timezone.now()
+    # #1451: a CIMD client keeps the can_introspect default (an opt-out capability).
+    app.refresh_from_db()
+    assert app.can_introspect is True
 
 
 @pytest.mark.django_db(databases="__all__")
@@ -628,6 +631,49 @@ def test_refresh_if_stale_refetches_when_expired(cimd_enabled):
     cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(_UpdatedFetcher)
     refreshed = refresh_if_stale(app, _oauthlib_request())
     assert refreshed.redirect_uris == "https://client.example.com/new-callback"
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_refresh_if_stale_keeps_an_admin_introspection_opt_out(cimd_enabled):
+    # #1451: can_introspect is not client metadata; a refresh keeps what an
+    # administrator set.
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    assert app.can_introspect is True
+    Application.objects.filter(pk=app.pk).update(
+        can_introspect=False, cimd_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    app.refresh_from_db()
+
+    refreshed = refresh_if_stale(app, _oauthlib_request())
+    assert refreshed.cimd_expires_at > timezone.now()
+    assert refreshed.can_introspect is False
+    assert Application.objects.get(pk=app.pk).can_introspect is False
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_first_sight_is_detected_when_the_pk_has_a_default(cimd_enabled, mocker, caplog):
+    # A swapped model whose primary key has a default (e.g. a UUIDField with
+    # default=uuid4) has a pk before its first save. Simulate one by giving the
+    # unsaved CIMD instance a pk: first sight must still be recognised.
+    original_init = Application.__init__
+    preassigned_pk = 987654321
+
+    def init_with_preassigned_pk(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        if self._state.adding and self.pk is None and kwargs.get("client_id") == CLIENT_URL:
+            self.pk = preassigned_pk
+
+    mocker.patch.object(Application, "__init__", init_with_preassigned_pk)
+    # Derive a signing algorithm so a first sight mistaken for a re-fetch would
+    # also log an algorithm "change".
+    cimd_enabled.OIDC_ENABLED = True
+    cimd_enabled.OIDC_RSA_PRIVATE_KEY = presets.OIDC_SETTINGS_RW["OIDC_RSA_PRIVATE_KEY"]
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+
+    assert app.pk == preassigned_pk
+    assert "signing algorithm changed" not in caplog.text
 
 
 @pytest.mark.django_db(databases="__all__")

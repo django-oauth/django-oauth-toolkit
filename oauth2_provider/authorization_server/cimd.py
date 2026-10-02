@@ -41,7 +41,7 @@ from oauth2_provider.core import safe_fetch
 # of oauth2_provider.cimd through 3.4.1. The NAT64 check moved into the shared
 # SSRF-hardened fetcher, so keep the old name importable from this module.
 from oauth2_provider.core.safe_fetch import NAT64_PREFIX  # noqa: F401
-from oauth2_provider.models import get_application_model
+from oauth2_provider.models import AbstractApplication, get_application_model
 from oauth2_provider.settings import oauth2_settings
 
 
@@ -340,7 +340,7 @@ def _fetch_slot():
             semaphore.release()
 
 
-def _fetch_validate_upsert(client_id):
+def _fetch_validate_upsert(client_id: str) -> AbstractApplication:
     """Fetch, validate and upsert the Application for a CIMD *client_id*."""
     fetcher = oauth2_settings.CIMD_METADATA_FETCHER()
     metadata, max_age = fetcher.fetch(client_id)
@@ -360,12 +360,16 @@ def _fetch_validate_upsert(client_id):
             # A manually provisioned client happens to own this id; never let a
             # fetched document take it over.
             raise CIMDError("client_id URL collides with a non-CIMD application")
+        created = False
     except Application.DoesNotExist:
         application = Application(client_id=client_id)
+        # Tracked explicitly: a swapped model whose primary key has a default
+        # (e.g. a UUIDField with default=uuid4) has a pk before it is saved.
+        created = True
     # None for a first sight; otherwise the algorithm the row had before this
     # fetch, so a change is logged (it is derived from this process's settings
     # and persisted for every node sharing the database).
-    previous_algorithm = application.algorithm if application.pk else None
+    previous_algorithm = None if created else application.algorithm
 
     application.user = None
     application.client_type = Application.CLIENT_PUBLIC

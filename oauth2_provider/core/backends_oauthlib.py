@@ -14,6 +14,14 @@ from oauth2_provider.core.utils import add_iss_to_redirect
 from oauth2_provider.settings import oauth2_settings
 
 
+#: Name of the attribute :meth:`OAuthLibCore.authenticate_client_request` sets on the
+#: Django ``HttpRequest`` to record the client it authenticated: the application when
+#: authentication succeeded, ``None`` otherwise. The token introspection endpoint reads
+#: it to authorize the client (RFC 7662 section 4). Private: a backend reports the client
+#: by calling ``authenticate_client_request()``, never by setting this attribute itself.
+_AUTHENTICATED_CLIENT_ATTRIBUTE = "_oauth2_provider_authenticated_client"
+
+
 class OAuthLibCore:
     """
     Wrapper for oauth Server providing django-specific interfaces.
@@ -256,14 +264,38 @@ class OAuthLibCore:
         valid, r = self.server.verify_request(uri, http_method, body, headers, scopes=scopes)
         return valid, r
 
-    def authenticate_client(self, request):
+    def authenticate_client(self, request: HttpRequest) -> bool:
         """Wrapper to call  `authenticate_client` on `server_class` instance.
+
+        Delegates to :meth:`authenticate_client_request`, so it records the
+        authenticated client on *request* as well.
 
         :param request: The current django.http.HttpRequest object
         """
+        valid, _oauthlib_request = self.authenticate_client_request(request)
+        return valid
+
+    def authenticate_client_request(self, request: HttpRequest) -> tuple[bool, OauthlibRequest]:
+        """Authenticate the client of *request* and return the oauthlib request too.
+
+        Like :meth:`authenticate_client`, but also returns the oauthlib request the
+        validator worked on, so the caller can inspect the authenticated client
+        (``oauthlib_request.client``) -- e.g. to authorize it for an endpoint. The
+        ``client`` attribute is only meaningful when the returned flag is ``True``.
+
+        It also records the outcome on *request*, under
+        :data:`_AUTHENTICATED_CLIENT_ATTRIBUTE`: the authenticated client when the
+        validator accepted it, ``None`` otherwise.
+
+        :param request: The current django.http.HttpRequest object
+        :return: ``(valid, oauthlib_request)``
+        """
         uri, http_method, body, headers = self._extract_params(request)
         oauth_request = OauthlibRequest(uri, http_method, body, headers)
-        return self.server.request_validator.authenticate_client(oauth_request)
+        valid = self.server.request_validator.authenticate_client(oauth_request)
+        client = getattr(oauth_request, "client", None) if valid else None
+        setattr(request, _AUTHENTICATED_CLIENT_ATTRIBUTE, client)
+        return valid, oauth_request
 
 
 class JSONOAuthLibCore(OAuthLibCore):

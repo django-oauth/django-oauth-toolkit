@@ -1,3 +1,5 @@
+import argparse
+
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand
 
@@ -64,6 +66,13 @@ class Command(BaseCommand):
             "--skip-authorization",
             action="store_true",
             help="If set, completely bypass the authorization form, even on the first use of the application",
+        )
+        parser.add_argument(
+            "--can-introspect",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Allow or refuse calls to the token introspection endpoint (RFC 7662) by this "
+            "application; if neither is given, the model default (allow) applies",
         )
         parser.add_argument(
             "--algorithm",

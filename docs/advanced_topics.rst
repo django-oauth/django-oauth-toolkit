@@ -120,6 +120,12 @@ there too.
 
     * ``skip_authorization`` -- suppresses the consent screen, letting an application
       collect authorizations without the end user being asked.
+    * ``can_introspect`` -- lets the application call the token introspection endpoint
+      (see :ref:`introspection-authorization`). It is on by default and operators turn it
+      off in the admin. The update view saves whatever the form submits, so a form must
+      not expose it, or an owner can turn back on a flag an operator turned off: neither
+      ``Meta.fields = "__all__"`` nor a field set picked with ``Meta.exclude`` that does
+      not exclude it.
     * ``registration_source`` -- selects which management code paths accept the
       application; the RFC 7592 endpoint only operates on DCR-registered clients and the
       CIMD resolver only refreshes CIMD ones.

@@ -32,6 +32,8 @@ CONFIDENTIAL_CODE_SECRET = "confidential-code-secret"
 
 PUBLIC_PKCE_CLIENT_ID = "e2e-public-pkce"
 
+# Also the suite's token introspection caller. The seed spells out can_introspect=true
+# to show the field; it is the model default, so the seed works without it.
 CLIENT_CREDENTIALS_CLIENT_ID = "e2e-client-credentials"
 CLIENT_CREDENTIALS_SECRET = "client-credentials-secret"
 

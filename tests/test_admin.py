@@ -17,6 +17,7 @@ from django.utils import timezone
 
 from oauth2_provider.authorization_server.admin import (
     AccessTokenAdmin,
+    ApplicationAdmin,
     GrantAdmin,
     IDTokenAdmin,
     PushedAuthorizationRequestAdmin,
@@ -273,3 +274,11 @@ def test_refresh_token_admin_revoke_action_revokes_token_family():
     assert not AccessToken.objects.filter(pk=access_token.pk).exists()
     refresh_token.refresh_from_db()
     assert refresh_token.revoked is not None
+
+
+def test_application_admin_exposes_can_introspect():
+    """#1451: an operator opts an application out of introspection in the admin."""
+    model = get_application_model()
+    assert "can_introspect" in _admin_form_fields(ApplicationAdmin, model, obj=None)
+    assert "can_introspect" in _admin_form_fields(ApplicationAdmin, model, obj=model())
+    assert "can_introspect" in ApplicationAdmin.list_filter

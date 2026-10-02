@@ -1,8 +1,11 @@
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.forms.models import modelform_factory
 from django.urls import reverse
+from django.utils import timezone
 
 from oauth2_provider.authorization_server.forms import ApplicationForm, _is_hashed
 from oauth2_provider.authorization_server.views.application import (
@@ -10,14 +13,16 @@ from oauth2_provider.authorization_server.views.application import (
     ApplicationRegistration,
     ApplicationUpdate,
 )
-from oauth2_provider.models import get_application_model
+from oauth2_provider.models import get_access_token_model, get_application_model
 
 from .common_testing import OAuth2ProviderTestCase as TestCase
 from .forms import SampleApplicationForm
 from .models import SampleApplication
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
+AccessToken = get_access_token_model()
 UserModel = get_user_model()
 
 
@@ -69,6 +74,40 @@ class TestApplicationRegistrationView(BaseTest):
         self.assertEqual(app.client_type, form_data["client_type"])
         self.assertEqual(app.authorization_grant_type, form_data["authorization_grant_type"])
         self.assertEqual(app.algorithm, form_data["algorithm"])
+
+    def test_application_registration_can_introspect(self):
+        # #1451: can_introspect is an opt-out capability, so a confidential client
+        # registered here keeps the default and can introspect with its credentials.
+        self.client.login(username="foo_user", password="123456")
+        form_data = {
+            "name": "Self-service app",
+            "client_id": "self_service_client",
+            "client_secret": "self_service_secret",
+            "client_type": Application.CLIENT_CONFIDENTIAL,
+            "redirect_uris": "http://example.com",
+            "authorization_grant_type": Application.GRANT_CLIENT_CREDENTIALS,
+            "algorithm": "",
+        }
+        response = self.client.post(reverse("oauth2_provider:register"), form_data)
+        self.assertEqual(response.status_code, 302)
+        self.client.logout()
+        app = Application.objects.get(client_id="self_service_client")
+        self.assertIs(app.can_introspect, True)
+
+        token = AccessToken.objects.create(
+            token="introspected-token",
+            application=app,
+            expires=timezone.now() + timedelta(hours=1),
+            scope="read",
+        )
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": token.token},
+            **get_basic_auth_header("self_service_client", "self_service_secret"),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(response.json()["active"], True)
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -397,6 +436,82 @@ class TestApplicationViews(BaseTest):
         self.assertEqual(self.app_foo_1.client_type, form_data["client_type"])
         self.assertEqual(self.app_foo_1.authorization_grant_type, form_data["authorization_grant_type"])
 
+    def test_application_update_cannot_grant_introspection(self):
+        # #1451: can_introspect is edited in the admin only; the owner cannot turn
+        # back on, through the self-service form, a flag an operator turned off.
+        Application.objects.filter(pk=self.app_foo_1.pk).update(can_introspect=False)
+        self.client.login(username="foo_user", password="123456")
+
+        response = self.client.get(reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)))
+        self.assertNotIn("can_introspect", response.context["form"].fields)
+        self.assertNotContains(response, 'name="can_introspect"')
+
+        form_data = {
+            "client_id": self.app_foo_1.client_id,
+            "redirect_uris": "http://example.com",
+            "client_type": Application.CLIENT_CONFIDENTIAL,
+            "authorization_grant_type": Application.GRANT_AUTHORIZATION_CODE,
+            "can_introspect": "on",
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)),
+            data=form_data,
+        )
+        self.assertRedirects(response, reverse("oauth2_provider:detail", args=(self.app_foo_1.pk,)))
+
+        self.app_foo_1.refresh_from_db()
+        self.assertIs(self.app_foo_1.can_introspect, False)
+
+    def test_application_update_changing_client_type_keeps_an_operator_opt_out(self):
+        """The update view never touches can_introspect, so switching the client type
+        does not undo an operator turning it off."""
+        Application.objects.filter(pk=self.app_foo_1.pk).update(
+            client_type=Application.CLIENT_PUBLIC, can_introspect=False
+        )
+        self.client.login(username="foo_user", password="123456")
+        form_data = {
+            "client_id": self.app_foo_1.client_id,
+            "client_secret": "owner-chosen-secret",
+            "redirect_uris": "http://example.com",
+            "client_type": Application.CLIENT_CONFIDENTIAL,
+            "authorization_grant_type": Application.GRANT_AUTHORIZATION_CODE,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)), data=form_data
+        )
+        self.assertRedirects(response, reverse("oauth2_provider:detail", args=(self.app_foo_1.pk,)))
+
+        self.app_foo_1.refresh_from_db()
+        self.assertEqual(self.app_foo_1.client_type, Application.CLIENT_CONFIDENTIAL)
+        self.assertIs(self.app_foo_1.can_introspect, False)
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:introspect"),
+            {"token": "anything"},
+            **get_basic_auth_header(self.app_foo_1.client_id, "owner-chosen-secret"),
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_application_update_does_not_clear_can_introspect(self):
+        """can_introspect is not on the form, so saving it does not read the missing
+        checkbox as False: the flag keeps its value."""
+        self.assertIs(self.app_foo_1.can_introspect, True)
+        self.client.login(username="foo_user", password="123456")
+        form_data = {
+            "client_id": self.app_foo_1.client_id,
+            "redirect_uris": "http://changed.example.com",
+            "client_type": Application.CLIENT_CONFIDENTIAL,
+            "authorization_grant_type": self.app_foo_1.authorization_grant_type,
+        }
+        response = self.client.post(
+            reverse("oauth2_provider:update", args=(self.app_foo_1.pk,)), data=form_data
+        )
+        self.assertRedirects(response, reverse("oauth2_provider:detail", args=(self.app_foo_1.pk,)))
+
+        self.app_foo_1.refresh_from_db()
+        self.assertEqual(self.app_foo_1.redirect_uris, "http://changed.example.com")
+        self.assertIs(self.app_foo_1.can_introspect, True)
+
     def test_client_secret_help_text_new_application(self):
         self.client.login(username="foo_user", password="123456")
         response = self.client.get(reverse("oauth2_provider:register"))
@@ -619,6 +734,8 @@ class TestApplicationFormClassSetting(BaseTest):
         form_class = ApplicationRegistration().get_form_class()
         self.assertEqual(Application, form_class._meta.model)
         self.assertEqual(list(APPLICATION_FIELDS), list(form_class.base_fields))
+        # #1451: can_introspect is edited in the admin only, never self-service.
+        self.assertNotIn("can_introspect", form_class.base_fields)
 
     def test_view_form_class_attribute_is_used_verbatim(self):
         # A subclass setting ``form_class`` gets it back untouched, as Django's own

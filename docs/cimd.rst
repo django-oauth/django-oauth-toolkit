@@ -32,7 +32,11 @@ How it works
 When an authorization or token request arrives with a ``client_id`` that is an ``https`` URL and no
 application is stored for it, the server fetches and validates the document, then persists a single
 public :class:`~oauth2_provider.models.Application` keyed on the URL, with ``registration_source``
-set to ``"cimd"``.
+set to ``"cimd"``. ``can_introspect`` is not client metadata: the row gets the default ``True``, and
+a later re-fetch leaves it as it is, so a value an administrator set in the admin survives refreshes
+(see :ref:`introspection-authorization`; being a public client, a CIMD client can introspect only
+with an access token carrying the ``introspection`` scope, never by authenticating as itself). To
+turn the flag off as CIMD clients are first seen, see :ref:`introspection-open-registration`.
 Subsequent requests (and refresh-token exchanges) load that stored application without re-fetching,
 until its cached metadata expires (``cimd_expires_at``), at which point the next use re-fetches.
 

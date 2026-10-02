@@ -71,6 +71,7 @@ class ApplicationAdmin(admin.ModelAdmin):
         "skip_authorization",
         "registration_source",
         "token_endpoint_auth_method",
+        "can_introspect",
     )
     radio_fields = {
         "client_type": admin.HORIZONTAL,
