@@ -293,6 +293,18 @@ def _resolve_grant_type(grant_types: list[str]) -> str:
     return GRANT_TYPE_MAP[preferred]
 
 
+def _dropped_grant_types(grant_types: list[str], registered: str) -> list[str]:
+    """Return the declared grant types a registration for *registered* leaves out.
+
+    ``refresh_token`` is implied by ``authorization_code``, so it is never reported.
+    """
+    return [
+        g
+        for g in dict.fromkeys(grant_types)
+        if g not in IGNORED_GRANT_TYPES and GRANT_TYPE_MAP.get(g) != registered
+    ]
+
+
 def _supported_auth_methods() -> tuple[str, ...]:
     """Return the methods this server registers CIMD clients with.
 
@@ -496,19 +508,6 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
         kwargs["client_type"] = AbstractApplication.CLIENT_CONFIDENTIAL
     # Logged only once the whole document has passed, so a document refused on a
     # later field never leaves a notice saying it was registered.
-    dropped = [
-        g
-        for g in dict.fromkeys(grant_types)
-        if g not in IGNORED_GRANT_TYPES and GRANT_TYPE_MAP.get(g) != kwargs["authorization_grant_type"]
-    ]
-    if dropped:
-        log.info(
-            "CIMD client %r declares grant_types %r, which this server does not "
-            "register; registering %r only",
-            metadata.get("client_id"),
-            dropped,
-            kwargs["authorization_grant_type"],
-        )
     declared = metadata.get("token_endpoint_auth_method")
     if declared is not None and declared != auth_method:
         log.info(
@@ -621,6 +620,20 @@ def _fetch_validate_upsert(client_id: str) -> AbstractApplication:
         if application.registration_source != Application.RegistrationSource.CIMD:
             raise CIMDError("client_id URL collides with a non-CIMD application")
     else:
+        # Logged only once the row is saved, so a document refused by the
+        # collision guard or by model validation never leaves a notice saying
+        # it was registered.
+        dropped = _dropped_grant_types(
+            metadata.get("grant_types", ["authorization_code"]), application.authorization_grant_type
+        )
+        if dropped:
+            log.info(
+                "CIMD client %r declares grant_types %r, which this server does not "
+                "register; registering %r only",
+                client_id,
+                dropped,
+                application.authorization_grant_type,
+            )
         if previous_algorithm is not None and application.algorithm != previous_algorithm:
             log.info(
                 "CIMD application %r ID Token signing algorithm changed from %r to %r on re-fetch",
