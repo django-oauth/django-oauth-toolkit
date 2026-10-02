@@ -718,6 +718,41 @@ def test_build_application_kwargs_registers_a_document_with_an_extra_grant():
     assert _build_application_kwargs(document)["authorization_grant_type"] == "authorization-code"
 
 
+@pytest.mark.parametrize(
+    "grant_types,dropped",
+    [
+        (
+            ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+            ["urn:ietf:params:oauth:grant-type:jwt-bearer"],
+        ),
+        (["implicit", "authorization_code"], ["implicit"]),
+        (["implicit", "client_credentials", "client_credentials"], ["client_credentials"]),
+    ],
+)
+def test_build_application_kwargs_logs_dropped_grants(caplog, grant_types, dropped):
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        _build_application_kwargs(_document(grant_types=grant_types))
+    assert f"declares grant_types {dropped!r}, which this server does not register" in caplog.text
+
+
+@pytest.mark.parametrize("grant_types", [["authorization_code", "refresh_token"], ["authorization_code"]])
+def test_build_application_kwargs_does_not_log_grants_it_registers(caplog, grant_types):
+    """``refresh_token`` rides along with ``authorization_code``, so it is not reported as dropped."""
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        _build_application_kwargs(_document(grant_types=grant_types))
+    assert "declares grant_types" not in caplog.text
+
+
+def test_build_application_kwargs_does_not_log_dropped_grants_for_a_refused_document(caplog):
+    """A document refused on a later field never leaves a notice saying it was registered."""
+    document = _document(grant_types=["authorization_code", "client_credentials"], redirect_uris=[])
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        with pytest.raises(CIMDError, match="redirect_uris"):
+            _build_application_kwargs(document)
+    assert "declares grant_types" not in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # ID Token signing algorithm
 # (OpenID Connect Dynamic Client Registration 1.0 section 2)

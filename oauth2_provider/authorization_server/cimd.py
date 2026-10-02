@@ -58,8 +58,8 @@ GRANT_TYPE_MAP = {
     "authorization_code": "authorization-code",
     "implicit": "implicit",
 }
-# Handled automatically by DOT alongside authorization_code, so it is absent from
-# GRANT_TYPE_MAP above and dropped like any other grant this server does not register.
+# Implied by authorization_code (DOT issues refresh tokens alongside it), so it is
+# never registered on its own and never reported as a dropped grant.
 IGNORED_GRANT_TYPES = {"refresh_token"}
 
 # Every method a CIMD registration can be stored with. Shared-secret methods
@@ -493,6 +493,19 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
         kwargs["client_type"] = AbstractApplication.CLIENT_CONFIDENTIAL
     # Logged only once the whole document has passed, so a document refused on a
     # later field never leaves a notice saying it was registered.
+    dropped = [
+        g
+        for g in dict.fromkeys(grant_types)
+        if g not in IGNORED_GRANT_TYPES and GRANT_TYPE_MAP.get(g) != kwargs["authorization_grant_type"]
+    ]
+    if dropped:
+        log.info(
+            "CIMD client %r declares grant_types %r, which this server does not "
+            "register; registering %r only",
+            metadata.get("client_id"),
+            dropped,
+            kwargs["authorization_grant_type"],
+        )
     declared = metadata.get("token_endpoint_auth_method")
     if declared is not None and declared != auth_method:
         log.info(
