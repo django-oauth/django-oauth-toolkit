@@ -682,10 +682,6 @@ jobs:
           - dynamic
           - rp-initiated-logout
           - rp-initiated-logout-dcr
-        include:
-          # Registration rejects the hybrid client, so no module completes.
-          - plan: hybrid-dcr
-            optional: true
     steps:
       - uses: actions/checkout@v4
 
