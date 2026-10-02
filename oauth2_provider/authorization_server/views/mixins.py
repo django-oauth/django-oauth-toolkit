@@ -7,7 +7,12 @@ endpoints. It builds on the shared
 """
 
 from django.http import HttpRequest
+from oauthlib.oauth2.rfc6749 import errors as oauth2_errors
 
+from oauth2_provider.authorization_server.response_modes import (
+    add_params_to_authorization_redirect,
+    response_mode_permitted,
+)
 from oauth2_provider.core.exceptions import FatalClientError
 from oauth2_provider.core.utils import add_iss_to_redirect
 from oauth2_provider.core.views import OAuthLibCoreMixin
@@ -94,6 +99,23 @@ class AuthorizationServerViewMixin(OAuthLibCoreMixin):
         """
         oauthlib_error = error.oauthlib_error
 
+        # OpenID Connect Core 1.0 §3.1.2.6: if the Response Mode is not supported, the
+        # error cannot be returned in it, so the request gets an HTTP 400 without Error
+        # Response parameters. OAuth2Validator.validate_response_type refuses such a
+        # mode during validation, but errors raised before oauthlib reaches it (a
+        # missing or unknown response_type) or built by the toolkit (access_denied,
+        # invalid_target) arrive here and must not be redirected either.
+        response_mode = oauthlib_error.response_mode
+        if (
+            not isinstance(error, FatalClientError)
+            and response_mode
+            and not response_mode_permitted(oauthlib_error.response_type, response_mode)
+        ):
+            oauthlib_error = oauth2_errors.InvalidRequestFatalError(
+                description="The requested response_mode is not supported for this response_type."
+            )
+            error = FatalClientError(error=oauthlib_error)
+
         # A fatal error means the client_id/redirect_uri combination could not be
         # trusted, so the error is rendered to the resource owner instead of
         # redirected (RFC 6749 §4.1.2.1: the server "MUST NOT automatically
@@ -101,9 +123,14 @@ class AuthorizationServerViewMixin(OAuthLibCoreMixin):
         redirect = not isinstance(error, FatalClientError)
 
         redirect_uri = oauthlib_error.redirect_uri or ""
-        separator = "&" if "?" in redirect_uri else "?"
-
-        url = redirect_uri + separator + oauthlib_error.urlencoded
+        # Implicit and hybrid errors go in the fragment, like their successful
+        # responses (OpenID Connect Core 3.2.2.6 and 3.3.2.6).
+        url = add_params_to_authorization_redirect(
+            redirect_uri,
+            oauthlib_error.urlencoded,
+            oauthlib_error.response_type,
+            oauthlib_error.response_mode,
+        )
 
         # RFC 9207 §2 requires `iss` on every authorization response returned to
         # the client, including error responses. A fatal error returns nothing to

@@ -251,6 +251,19 @@ To setup an OIDC Hybrid Flow application, create an ``Application`` with a
 grant type of ``OpenID connect hybrid`` and select your desired signing
 algorithm.
 
+For both the Implicit and Hybrid flows, authorization responses, errors
+included, are returned in the fragment of the redirect URI, as `OAuth 2.0
+Multiple Response Type Encoding Practices
+<https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#Combinations>`_
+requires for any ``response_type`` containing ``token`` or ``id_token``.
+
+The supported values of ``response_mode`` are ``query`` and ``fragment``, and
+``query`` is not permitted for response types containing ``token`` or
+``id_token``. A request with any other value, ``form_post`` included, is refused
+with an HTTP 400 and no redirect, as `OpenID Connect Core 1.0 §3.1.2.6
+<https://openid.net/specs/openid-connect-core-1_0.html#AuthError>`_ requires,
+because the error cannot be returned in a mode the server does not support.
+
 .. _oidc-request-objects:
 
 Request objects

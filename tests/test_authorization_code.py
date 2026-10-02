@@ -465,6 +465,51 @@ class TestAuthorizationCodeView(BaseTest):
         self.assertIn("error=access_denied", response["Location"])
         self.assertIn("state=random_state_string", response["Location"])
 
+    def test_code_post_auth_deny_response_mode_from_url(self):
+        """
+        A consent template that omits the response_mode field posts back to the
+        original URL, which still carries response_mode=fragment.
+        """
+        self.client.login(username="test_user", password="123456")
+
+        form_data = {
+            "client_id": self.application.client_id,
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://example.org",
+            "response_type": "code",
+            "allow": False,
+        }
+
+        response = self.client.post(
+            reverse("oauth2_provider:authorize") + "?response_mode=fragment", data=form_data
+        )
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        self.assertEqual(parse_qs(location.fragment)["error"], ["access_denied"])
+
+    def test_unsupported_response_mode_rejected(self):
+        """
+        OpenID Connect Core 1.0 §3.1.2.6: an unsupported Response Mode gets an HTTP 400
+        without Error Response parameters; the code flow is treated the same.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.client.login(username="test_user", password="123456")
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "response_mode": "form_post",
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://example.org",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+
     def test_code_post_auth_deny_no_state(self):
         """
         Test optional state when resource owner deny access

@@ -27,6 +27,7 @@ from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
 from .authorization_server import cimd, client_assertions
+from .authorization_server.response_modes import response_mode_permitted
 from .core.bcp import bcp_compliant
 from .core.exceptions import FatalClientError
 from .core.scopes import get_scopes_backend
@@ -533,7 +534,22 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         """
         We currently do not support the Authorization Endpoint Response Types registry as in
         rfc:`8.4`, so validate the response_type only if it matches "code" or "token"
+
+        Also rejects a ``response_mode`` this server cannot honour: an unsupported mode
+        (e.g. ``form_post``), or ``query`` for a response type that returns tokens in
+        the front channel (OAuth 2.0 Multiple Response Type Encoding Practices §§2.1,
+        3 and 5). OpenID Connect Core 1.0 §3.1.2.6 requires an HTTP 400 without Error
+        Response parameters, since the parameters cannot be returned in the requested
+        mode, so the error is fatal and never redirected. oauthlib passes the
+        parameters merged from every source (the query, a consent form, a pushed
+        authorization request body).
         """
+        response_mode = getattr(request, "response_mode", None)
+        if response_mode and not response_mode_permitted(response_type, response_mode):
+            raise errors.InvalidRequestFatalError(
+                description="The requested response_mode is not supported for this response_type.",
+                request=request,
+            )
         if response_type == "code":
             return client.allows_grant_type(AbstractApplication.GRANT_AUTHORIZATION_CODE)
         elif response_type == "token":

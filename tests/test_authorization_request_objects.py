@@ -71,11 +71,15 @@ class TestUnsupportedRequestObjects(TestCase):
         send = getattr(self.client, method)
         return send(reverse("oauth2_provider:authorize"), {k: v for k, v in query.items() if v})
 
-    def assertErrorRedirect(self, response, error, state="outer_state"):
+    def assertErrorRedirect(self, response, error, state="outer_state", fragment=False):
         self.assertEqual(response.status_code, 302)
         location = urlparse(response["Location"])
         self.assertEqual(f"{location.scheme}://{location.netloc}", "http://example.org")
-        params = parse_qs(location.query)
+        # Response types that include token or id_token return errors in the
+        # fragment, like their successful responses (OpenID Connect Core 3.2.2.6).
+        if fragment:
+            self.assertEqual(location.query, "")
+        params = parse_qs(location.fragment if fragment else location.query)
         self.assertEqual(params["error"], [error])
         if state is None:
             self.assertNotIn("state", params)
@@ -100,7 +104,7 @@ class TestUnsupportedRequestObjects(TestCase):
             response_type="id_token",
             request=REQUEST_OBJECT,
         )
-        self.assertErrorRedirect(response, "request_not_supported")
+        self.assertErrorRedirect(response, "request_not_supported", fragment=True)
 
     def test_request_uri_is_rejected(self):
         response = self.authorize(request_uri="https://client.example/req.jwt")

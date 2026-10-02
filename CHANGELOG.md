@@ -292,6 +292,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as a PAR reference and failed with an error page. Both discovery documents now publish
   `request_parameter_supported` and `request_uri_parameter_supported` as `false`; OpenID Connect
   Discovery defaults the latter to `true`. PAR `request_uri` handling is unchanged.
+* #1881 Authorization errors for response types that include `token` or `id_token` (the implicit
+  and hybrid flows) are now returned in the redirect URI fragment, the same encoding as their
+  successful responses, as OAuth 2.0 Multiple Response Type Encoding Practices §5 and OpenID
+  Connect Core §3.2.2.6 and §3.3.2.6 require. They were always put in the query: oauthlib
+  validation errors (e.g. a missing `nonce`), the resource owner denying access, an invalid
+  `resource`, and the `prompt=none` `login_required` redirect. Responses for `code` and `none`
+  stay in the query unless `response_mode=fragment` is requested. The RFC 9207 `iss` parameter
+  follows the error into the fragment. A `response_mode` the server cannot honour is now
+  refused with an HTTP 400 and no redirect, as OpenID Connect Core §3.1.2.6 requires: an
+  unsupported mode such as `form_post` or an unknown value, which was previously ignored, and
+  `response_mode=query` with one of those response types, which was previously honoured although
+  the query encoding must not be used for them. This applies to every response type, on the
+  authorization request, the consent POST and pushed authorization requests, and to error
+  responses (e.g. a denied consent or a missing `response_type`) as well. The consent form
+  now carries `response_mode` in a hidden field, so a mode sent through a pushed authorization
+  request (RFC 9126) is kept after consent; it was lost because the form posts back to a URL
+  that carries only `request_uri`. A custom `authorize.html` that renders the form's hidden fields
+  one by one should add `response_mode`; without it the mode is still read from the URL the form
+  posts back to, which carries it for every request except a pushed one.
 * #1853 Applications registered from a Client ID Metadata Document or through Dynamic Client
   Registration (RFC 7591) now get an ID Token signing algorithm. Neither path set
   `Application.algorithm`, so an `openid` request from such a client failed at the token endpoint
