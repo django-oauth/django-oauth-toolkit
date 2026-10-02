@@ -587,6 +587,93 @@ def test_unexpected_jwks_fetch_error_fails_authentication_and_arms_backoff(mocke
 JWKS_URI = "https://client.example.com/jwks.json"
 
 
+# Fetchers injected via CLIENT_ASSERTION_JWKS_FETCHER. The settings wrapper
+# stores the value as-is, so tests assign the class object directly (in
+# production the setting is a dotted path resolved by perform_import).
+def _fetcher_class(document=None, error=None):
+    calls = []
+
+    class _Fetcher:
+        def fetch(self, uri):
+            calls.append(uri)
+            if error is not None:
+                raise error
+            return document
+
+    return _Fetcher, calls
+
+
+def test_jwks_fetcher_setting_defaults_to_safe_fetcher(oauth2_settings):
+    assert oauth2_settings.CLIENT_ASSERTION_JWKS_FETCHER is client_assertions.SafeJWKSFetcher
+
+
+def test_safe_jwks_fetcher_uses_safe_fetch_with_the_jwks_limits(mocker, oauth2_settings):
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(RSA_KEY), {}),
+    )
+    assert client_assertions.SafeJWKSFetcher().fetch(JWKS_URI) == _jwks_document(RSA_KEY)
+    fetch.assert_called_once_with(
+        JWKS_URI,
+        timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_FETCH_TIMEOUT_SECONDS,
+        max_size=oauth2_settings.CLIENT_ASSERTION_JWKS_MAX_SIZE,
+        exc_class=client_assertions.ClientAssertionError,
+    )
+
+
+def test_configured_jwks_fetcher_replaces_safe_fetch(mocker, oauth2_settings):
+    fetcher, calls = _fetcher_class(document=_jwks_document(RSA_KEY))
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FETCHER = fetcher
+    safe = mocker.patch.object(client_assertions.safe_fetch, "fetch_https_json")
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is True
+    assert calls == [JWKS_URI]
+    safe.assert_not_called()
+
+
+def test_configured_jwks_fetcher_result_is_still_filtered(oauth2_settings):
+    fetcher, _calls = _fetcher_class(
+        document={"keys": [{"kty": "oct", "k": base64url_encode(CLEARTEXT_SECRET), "kid": "shared"}]}
+    )
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FETCHER = fetcher
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    with pytest.raises(client_assertions.ClientAssertionError, match="no usable public keys"):
+        client_assertions.fetch_remote_jwks(app)
+
+
+def test_configured_jwks_fetcher_error_arms_backoff(oauth2_settings):
+    fetcher, calls = _fetcher_class(error=client_assertions.ClientAssertionError("boom"))
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FETCHER = fetcher
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    for _ in range(2):
+        ok, _request = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+        assert ok is False
+    assert calls == [JWKS_URI]
+
+
+def test_unexpected_jwks_fetcher_error_fails_authentication_and_arms_backoff(oauth2_settings, caplog):
+    fetcher, calls = _fetcher_class(error=RuntimeError("transport exploded"))
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FETCHER = fetcher
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    with caplog.at_level(logging.ERROR, logger="oauth2_provider.authorization_server.client_assertions"):
+        for _ in range(2):
+            ok, _request = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+            assert ok is False
+    assert calls == [JWKS_URI]
+    assert "Unexpected error fetching client jwks_uri" in caplog.text
+
+
+@pytest.mark.parametrize("document", [None, [], "keys"])
+def test_configured_jwks_fetcher_non_object_result_is_refused(oauth2_settings, document):
+    fetcher, _calls = _fetcher_class(document=document)
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FETCHER = fetcher
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    with pytest.raises(client_assertions.ClientAssertionError, match="did not return a JSON object"):
+        client_assertions.fetch_remote_jwks(app)
+
+
 def _refetch_marker_key(uri=JWKS_URI):
     return client_assertions.JWKS_REFETCH_CACHE_PREFIX + hashlib.sha256(uri.encode()).hexdigest()
 

@@ -261,6 +261,60 @@ returning ``lambda uri: None``.
     client-facing messages, and remember that a permissive validator widens the open-redirect and
     phishing surface just as ``ALLOW_URI_WILDCARDS`` does.
 
+.. _custom-fetchers:
+
+Custom outbound fetchers
+========================
+
+Two features make the server fetch a document from a URL the client chose: :doc:`Client ID
+Metadata Documents <cimd>` fetch the client's metadata (``CIMD_METADATA_FETCHER``), and
+:doc:`private_key_jwt clients with a jwks_uri <rfc7523>` have their JWK Set fetched
+(``CLIENT_ASSERTION_JWKS_FETCHER``). Both settings take the import path of a class whose
+``fetch()`` makes that request, so a deployment can route it through an egress proxy, add
+site-specific policy, or, in a test environment, reach a host the defaults refuse.
+
+The defaults, ``SafeMetadataFetcher`` and ``SafeJWKSFetcher``, are built on
+``oauth2_provider.core.safe_fetch`` and defend against server-side request forgery (SSRF): the URL
+is client-controlled, and the request is made from inside your network, often before anyone has
+authenticated. A replacement takes over that responsibility. Unless the fetch already leaves
+through an egress proxy that enforces the same rules, a custom fetcher must:
+
+* accept ``https`` URLs only, with no userinfo component;
+* resolve the host and refuse it if **any** address is not globally routable (private, loopback,
+  link-local including the cloud metadata address ``169.254.169.254``, CGNAT, multicast,
+  reserved), judging IPv6 forms that embed an IPv4 address by that address;
+* connect to the address it validated, not to the hostname again, so DNS cannot rebind the
+  connection to an internal address after the check;
+* verify the TLS certificate against the hostname;
+* not follow redirects;
+* bound the whole fetch with one deadline across every address tried, and cap the response size.
+
+A CIMD fetcher must also keep two things the default does before and after the request:
+
+* refuse a ``client_id`` URL the specification does not allow (no path, a fragment, ``.`` or
+  ``..`` path segments; see :ref:`cimd-security`), as ``SafeMetadataFetcher`` does before fetching;
+* return a cache lifetime clamped to ``CIMD_METADATA_MIN_AGE_SECONDS`` and
+  ``CIMD_METADATA_MAX_AGE_SECONDS``: the library stores the ``max_age_seconds`` a fetcher returns
+  as it is.
+
+``safe_fetch.fetch_https_document()`` does all of the list above except the size cap and hands the
+unread response to a callback. ``safe_fetch.read_json_document()`` applies the status, media type,
+size and JSON-object checks to a response; a transport error while it reads the body is raised as
+the ``urllib3`` exception, for the fetcher to convert. A fetcher that only changes one step can
+reuse the rest.
+
+Relaxing a rule should be narrow and explicit. Allow named hosts rather than whole address ranges,
+and keep TLS verification on (trust a private CA instead of disabling it), as the conformance
+stack's test-only ``tests/app/idp/idp/client_assertions.py`` does. Never deploy the demo provider's
+fetchers: that one, and ``tests/app/idp/idp/cimd.py``, which the end-to-end tests use to fetch over
+plain HTTP from a loopback server.
+
+The fetcher only transports the document. The library still applies its own checks to what comes
+back: CIMD checks that the document's ``client_id`` matches the URL and validates the metadata, and
+a JWK Set keeps only public signing keys, with caching, failure backoff and the unknown-``kid``
+refetch limit unchanged. A JWK Set fetcher that raises anything other than ``ClientAssertionError``
+fails the client's authentication and arms the backoff, as the CIMD resolver does for its fetcher.
+
 .. _extend_token_models:
 
 Extending the token models

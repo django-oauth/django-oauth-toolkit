@@ -559,6 +559,27 @@ def _check_jti_replay(client_id, claims):
         raise ClientAssertionError("client assertion jti was replayed")
 
 
+class SafeJWKSFetcher:
+    """Default SSRF-hardened fetcher for client ``jwks_uri`` documents.
+
+    Override with the ``CLIENT_ASSERTION_JWKS_FETCHER`` setting to route the
+    fetch through an egress proxy or apply site-specific policy; a replacement
+    takes over the SSRF defences listed under "Custom outbound fetchers" in the
+    docs. A fetcher's ``fetch(uri)`` returns the JWK Set document as a dict or
+    raises :class:`ClientAssertionError`. Key filtering, caching, the failure
+    backoff and the unknown-``kid`` refetch limit stay with the caller.
+    """
+
+    def fetch(self, uri: str) -> dict[str, Any]:
+        data, _headers = safe_fetch.fetch_https_json(
+            uri,
+            timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_FETCH_TIMEOUT_SECONDS,
+            max_size=oauth2_settings.CLIENT_ASSERTION_JWKS_MAX_SIZE,
+            exc_class=ClientAssertionError,
+        )
+        return data
+
+
 def fetch_remote_jwks(application: "AbstractApplication", *, force: bool = False) -> jwk.JWKSet:
     """Fetch and cache the JWK Set at *application.client_jwks_uri*.
 
@@ -596,21 +617,22 @@ def _load_remote_jwks(application: "AbstractApplication", *, force: bool = False
     if cache.get(backoff_key):
         raise ClientAssertionError("client jwks_uri is in failure backoff")
 
+    # Built outside the try so a broken CLIENT_ASSERTION_JWKS_FETCHER setting
+    # surfaces as a configuration error rather than as a failed fetch.
+    fetcher = oauth2_settings.CLIENT_ASSERTION_JWKS_FETCHER()
     try:
-        data, _headers = safe_fetch.fetch_https_json(
-            uri,
-            timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_FETCH_TIMEOUT_SECONDS,
-            max_size=oauth2_settings.CLIENT_ASSERTION_JWKS_MAX_SIZE,
-            exc_class=ClientAssertionError,
-        )
+        data = fetcher.fetch(uri)
+        if not isinstance(data, dict):
+            raise ClientAssertionError("client jwks_uri fetcher did not return a JSON object")
         key_set = _build_public_jwks(data)
     except ClientAssertionError:
         cache.set(backoff_key, True, timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS)
         raise
     except Exception as exc:
         # The fetch runs before the client has authenticated, against a URL the
-        # client chose, so an unexpected error must fail authentication, never
-        # become a 500, and must back off like any other failure.
+        # client chose, so an unexpected error (from a custom fetcher, or the
+        # document itself) must fail authentication, never become a 500, and
+        # must back off like any other failure.
         log.exception("Unexpected error fetching client jwks_uri %r", uri)
         cache.set(backoff_key, True, timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS)
         raise ClientAssertionError("client jwks_uri fetch failed") from exc
