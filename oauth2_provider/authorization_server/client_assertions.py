@@ -22,7 +22,12 @@ implemented here.
 import hashlib
 import json
 import logging
+import math
+import numbers
+import threading
 import time
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from django.conf import settings as django_settings
@@ -38,13 +43,31 @@ from oauth2_provider.core.utils import jwk_allows_verification
 from oauth2_provider.settings import oauth2_settings
 
 
+if TYPE_CHECKING:
+    from oauth2_provider.models import AbstractApplication
+
+
 log = logging.getLogger(__name__)
 
 REQUIRED_CLAIMS = ("iss", "sub", "aud", "exp", "jti")
 
 JWKS_CACHE_PREFIX = "oauth2_provider:client_jwks:"
 JWKS_BACKOFF_CACHE_PREFIX = "oauth2_provider:client_jwks_backoff:"
+JWKS_REFETCH_CACHE_PREFIX = "oauth2_provider:client_jwks_refetch:"
 JTI_CACHE_PREFIX = "oauth2_provider:client_assertion_jti:"
+
+# Upper bound for CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS: 30 days, the
+# longest relative expiry memcached accepts. Larger timeouts are read as
+# absolute timestamps by memcached, rejected by Redis once they overflow, and
+# make LocMemCache raise OverflowError.
+JWKS_REFETCH_INTERVAL_MAX_SECONDS = 30 * 24 * 60 * 60
+
+# The invalid CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS values (by repr)
+# already warned about. The setting is read on every unknown-kid assertion,
+# which unauthenticated callers can send, so a misconfiguration is logged once
+# per distinct value per process rather than once per request.
+_refetch_interval_warnings: set[tuple[str, str]] = set()
+_refetch_interval_warnings_lock = threading.Lock()
 
 
 class ClientAssertionError(Exception):
@@ -153,14 +176,18 @@ def _allowed_algs(application):
     )
 
 
-def _candidate_keys(application, header):
+def _candidate_keys(application: "AbstractApplication", header: dict[str, Any]) -> list[jwk.JWK]:
     """Resolve the verification key candidates for *application*.
 
     For client_secret_jwt this is the oct key derived from the plaintext
     secret. For private_key_jwt it is the registered JWKS (inline or fetched
     from client_jwks_uri), narrowed by the assertion's ``kid`` when given; an
-    unknown ``kid`` against a remote JWKS triggers exactly one cache-bypassing
-    refetch so freshly rotated keys are honored without hammering the URL.
+    unknown ``kid`` against a remote JWKS triggers a cache-bypassing refetch
+    so freshly rotated keys are honored. That refetch runs before the
+    signature is verified, on a ``kid`` the caller chooses, so it is limited
+    to one per ``jwks_uri`` per ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS``
+    (see :func:`_claim_forced_refetch`); otherwise, or when the refetch
+    fails, the cached set is used.
 
     ``kid`` is a hint (RFC 7515 section 4.1.4), not a filter: when it matches
     nothing, every registered signing key is tried instead — the signature
@@ -182,11 +209,21 @@ def _candidate_keys(application, header):
             raise ClientAssertionError("registered client_jwks could not be parsed")
         keys = _signing_keys(key_set, kid) or _signing_keys(key_set, None)
     elif application.client_jwks_uri:
-        key_set = fetch_remote_jwks(application)
+        key_set, from_cache = _load_remote_jwks(application)
         keys = _signing_keys(key_set, kid)
-        if not keys and kid:
-            key_set = fetch_remote_jwks(application, force=True)
-            keys = _signing_keys(key_set, kid)
+        # A set that was just fetched is as fresh as a forced refetch would
+        # be; only a cached set can be missing a recently rotated key.
+        if not keys and kid and from_cache and _claim_forced_refetch(application.client_jwks_uri):
+            try:
+                key_set = fetch_remote_jwks(application, force=True)
+            except ClientAssertionError as exc:
+                # A failed refetch must not reject an assertion a cached key
+                # verifies. The next forced refetch waits for the failure
+                # backoff or the interval, whichever is longer.
+                _release_forced_refetch(application.client_jwks_uri)
+                log.debug("Forced client JWKS refetch failed, using the cached set: %s", exc)
+            else:
+                keys = _signing_keys(key_set, kid)
         if not keys:
             keys = _signing_keys(key_set, None)
     else:
@@ -194,6 +231,178 @@ def _candidate_keys(application, header):
     if not keys:
         raise ClientAssertionError("no registered key matches the client assertion")
     return keys
+
+
+def _claim_forced_refetch(uri: str) -> bool:
+    """Atomically claim the right to a cache-bypassing refetch of *uri*.
+
+    The claim is a per-URI marker held in the default Django cache for
+    ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS``; ``cache.add`` only
+    succeeds for the first caller, so at most one forced refetch per interval
+    reaches the URL however many unknown-``kid`` assertions arrive. ``0`` or
+    ``None`` disables forced refetches entirely. Deployments running multiple
+    instances need a shared cache backend for the limit to be global.
+
+    Nothing is claimed while the failure backoff for *uri* is armed: the
+    fetch would be refused anyway, and a marker held without a fetch would
+    delay recognizing a rotated key past the backoff. A backoff shorter than
+    the interval would not make :func:`_release_forced_refetch` give such a
+    marker back either.
+    """
+    interval = _refetch_interval()
+    if interval is None:
+        return False
+    digest = hashlib.sha256(uri.encode()).hexdigest()
+    if cache.get(JWKS_BACKOFF_CACHE_PREFIX + digest):
+        return False
+    return cache.add(JWKS_REFETCH_CACHE_PREFIX + digest, True, timeout=interval)
+
+
+def _refetch_interval() -> int | None:
+    """``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` as whole seconds.
+
+    Returns ``None`` when forced refetches are disabled. Accepted values are
+    numbers (``int``, ``float``, ``Decimal`` and the like) and strings that
+    ``int()`` parses (``"60"``, but not ``"60.0"``):
+
+    * ``None`` and zero (``0``, ``0.0``, ``"0"``) disable refetches silently.
+    * A whole number from 1 up is used, clamped to
+      :data:`JWKS_REFETCH_INTERVAL_MAX_SECONDS` (30 days) with a warning.
+    * A number with a fractional part is truncated with a warning, and
+      disables refetches if that leaves less than 1: a timeout below one
+      second would make some cache backends, memcached among them, expire
+      the marker at once.
+    * Anything else disables refetches with a warning: a negative value
+      (which would disable the limit), a ``bool`` (``True`` is not a
+      duration), ``inf``, ``nan``, any other string or other type.
+
+    Each warning is logged once per distinct value and problem (see
+    :func:`_warn_refetch_interval_once`).
+    """
+    value = oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS
+    if value is None:
+        return None
+    interval = None
+    fractional = False
+    if isinstance(value, bool):
+        pass  # bool is an int subclass, but True/False are not durations.
+    elif isinstance(value, str):
+        try:
+            interval = int(value)
+        except ValueError:
+            pass  # not a whole-number string: interval stays None and is warned about below
+    elif isinstance(value, numbers.Number):
+        # Judge the magnitude before converting: this runs on unauthenticated
+        # requests, and int() of an absurd Decimal such as Decimal("1e1000000")
+        # takes seconds.
+        too_large, negative = _interval_out_of_range(value)
+        if too_large:
+            interval = JWKS_REFETCH_INTERVAL_MAX_SECONDS + 1
+        elif not negative:
+            try:
+                interval = int(value)
+                fractional = interval != value
+            except Exception:
+                # complex, inf, nan, or a value whose conversion or comparison
+                # raises: the token path must not raise, so treat it as invalid.
+                interval = None
+                fractional = False
+    if interval is None or interval < 0 or (interval == 0 and fractional):
+        _warn_refetch_interval_once(
+            value,
+            "Invalid CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS %s; it must be a positive "
+            "whole number of seconds. Unknown-kid JWKS refetches are disabled.",
+        )
+        return None
+    if interval == 0:
+        return None
+    if interval > JWKS_REFETCH_INTERVAL_MAX_SECONDS:
+        _warn_refetch_interval_once(
+            value,
+            "CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS %s exceeds the maximum of "
+            f"{JWKS_REFETCH_INTERVAL_MAX_SECONDS} seconds (30 days); using the maximum.",
+        )
+        return JWKS_REFETCH_INTERVAL_MAX_SECONDS
+    if fractional:
+        _warn_refetch_interval_once(
+            value,
+            "CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS %s is not a whole number of seconds; "
+            f"using {interval}.",
+        )
+    return interval
+
+
+def _interval_out_of_range(value: numbers.Number) -> tuple[bool, bool]:
+    """Return ``(too_large, negative)`` for a numeric refetch interval, cheaply.
+
+    A Decimal is not a ``numbers.Real``, so it gets its own branch, judged by
+    its sign and exponent. Infinities and NaNs, of any numeric type (numpy
+    scalars included), report neither, so that ``int()`` rejects them; so do
+    complex numbers, which do not order, and any value whose comparison raises.
+    """
+    if isinstance(value, Decimal):
+        if not value.is_finite() or value.is_zero():
+            return False, False
+        if value.is_signed():
+            return False, True
+        return value.adjusted() >= len(str(JWKS_REFETCH_INTERVAL_MAX_SECONDS)), False
+    if not isinstance(value, numbers.Real):
+        return False, False
+    try:
+        is_nan = math.isnan(value)
+    except (TypeError, ValueError, OverflowError):
+        is_nan = False  # too large for a float, or not convertible to one: not a NaN
+    try:
+        # Infinities and NaNs of any Real type, not only the builtin float.
+        if is_nan or value == math.inf or value == -math.inf:
+            return False, False
+        return value > JWKS_REFETCH_INTERVAL_MAX_SECONDS, value < 0
+    except Exception:
+        return False, False
+
+
+def _warn_refetch_interval_once(value: object, message: str) -> None:
+    """Log *message* about the refetch interval *value*, once per value and message.
+
+    *message* gets ``repr(value)`` as its only ``%s`` argument. The memo is
+    keyed on the message as well as the value, so two different problems whose
+    values render alike are both reported.
+    """
+    try:
+        rendered = repr(value)
+    except Exception:
+        # An int with more digits than sys.get_int_max_str_digits() allows, or
+        # a configuration object whose __repr__ raises: this runs on the
+        # unauthenticated token path, which must never raise from here.
+        rendered = f"<{type(value).__name__} that cannot be displayed>"
+    key = (message, rendered)
+    with _refetch_interval_warnings_lock:
+        if key in _refetch_interval_warnings:
+            return
+        _refetch_interval_warnings.add(key)
+    log.warning(message, rendered)
+
+
+def _release_forced_refetch(uri: str) -> None:
+    """Give back the forced-refetch marker for *uri* after a failed fetch.
+
+    The marker is only released when the failure backoff the fetch armed
+    lasts at least as long as the interval: the backoff then keeps the next
+    forced refetch at least one interval away on its own, and holding the
+    marker as well would only delay recognizing a rotated key beyond the
+    backoff. With a shorter backoff (including ``0``, which arms none),
+    releasing the marker would allow one forced refetch of a failing URL per
+    backoff rather than per interval, so the marker is kept until the
+    interval elapses. Either way a failing URL is force-fetched at most once
+    per ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS``.
+    """
+    interval = _refetch_interval()
+    backoff = oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS
+    if interval is None or (backoff is not None and backoff < interval):
+        return
+    digest = hashlib.sha256(uri.encode()).hexdigest()
+    if cache.get(JWKS_BACKOFF_CACHE_PREFIX + digest):
+        cache.delete(JWKS_REFETCH_CACHE_PREFIX + digest)
 
 
 def _signing_keys(key_set, kid):
@@ -340,14 +549,27 @@ def _check_jti_replay(client_id, claims):
         raise ClientAssertionError("client assertion jti was replayed")
 
 
-def fetch_remote_jwks(application, *, force=False):
+def fetch_remote_jwks(application: "AbstractApplication", *, force: bool = False) -> jwk.JWKSet:
     """Fetch and cache the JWK Set at *application.client_jwks_uri*.
 
     Returns a ``jwk.JWKSet`` holding only usable public signing keys. Results
     are cached for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` seconds; fetch or
     validation failures arm a short backoff so a broken URL is not hammered
     on every authentication attempt. ``force=True`` bypasses the value cache
-    (for unknown-``kid`` refetches) but still honors the failure backoff.
+    (for unknown-``kid`` refetches) but still honors the failure backoff;
+    callers rate-limit it with :func:`_claim_forced_refetch`.
+    """
+    key_set, _from_cache = _load_remote_jwks(application, force=force)
+    return key_set
+
+
+def _load_remote_jwks(application: "AbstractApplication", *, force: bool = False) -> tuple[jwk.JWKSet, bool]:
+    """Implement :func:`fetch_remote_jwks`, also reporting where the set came from.
+
+    Returns ``(key_set, from_cache)``: ``from_cache`` is ``True`` when the set
+    was served from the value cache and ``False`` when it was just fetched,
+    which lets the unknown-``kid`` path skip a forced refetch that could only
+    return the same document.
     """
     uri = application.client_jwks_uri
     digest = hashlib.sha256(uri.encode()).hexdigest()
@@ -358,7 +580,7 @@ def fetch_remote_jwks(application, *, force=False):
         cached = cache.get(cache_key)
         if cached is not None:
             try:
-                return jwk.JWKSet.from_json(cached)
+                return jwk.JWKSet.from_json(cached), True
             except (JWException, ValueError):
                 cache.delete(cache_key)
     if cache.get(backoff_key):
@@ -380,7 +602,7 @@ def fetch_remote_jwks(application, *, force=False):
         key_set.export(private_keys=False),
         timeout=oauth2_settings.CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT,
     )
-    return key_set
+    return key_set, False
 
 
 def _build_public_jwks(data):

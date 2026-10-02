@@ -7,8 +7,14 @@ Application instances; endpoint integration tests (token / introspection /
 revocation) live further down and use the DB-backed fixtures from conftest.
 """
 
+import hashlib
 import json
+import logging
+import math
+import numbers
 import time
+import uuid
+from decimal import Decimal
 
 import pytest
 from django.core.cache import cache
@@ -41,6 +47,14 @@ def _clear_cache():
     cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_refetch_interval_warnings():
+    """Each test sees invalid refetch interval values as not yet warned about."""
+    client_assertions._refetch_interval_warnings.clear()
+    yield
+    client_assertions._refetch_interval_warnings.clear()
+
+
 def build_assertion(key, claims, alg="RS256", kid=None, typ="JWT"):
     """Sign an arbitrary claim set — unlike make_client_assertion this allows
     broken/missing claims for negative tests."""
@@ -62,7 +76,9 @@ def default_claims(client_id="pkj-client", **overrides):
         "aud": TOKEN_AUDIENCE,
         "exp": now + 60,
         "iat": now,
-        "jti": f"jti-{time.monotonic_ns()}",
+        # A random jti, not a timestamp: on Windows the monotonic clock ticks about every 15 ms,
+        # so assertions built back to back could share one and trip replay protection.
+        "jti": f"jti-{uuid.uuid4().hex}",
     }
     claims.update(overrides)
     return {k: v for k, v in claims.items() if v is not None}
@@ -455,6 +471,7 @@ def test_jwks_uri_result_is_cached(mocker):
 
 def test_unknown_kid_triggers_exactly_one_forced_refetch(mocker):
     app = pkj_app(client_jwks_uri="https://client.example.com/jwks.json")
+    _seed_jwks_cache(EC_KEY)
     fetch = mocker.patch.object(
         client_assertions.safe_fetch,
         "fetch_https_json",
@@ -463,20 +480,36 @@ def test_unknown_kid_triggers_exactly_one_forced_refetch(mocker):
     assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
     ok, _ = authenticate(assertion, app)
     assert ok is False
-    assert fetch.call_count == 2
+    assert fetch.call_count == 1
+
+
+def test_unknown_kid_on_cold_cache_fetches_once(mocker):
+    # The cache-miss fetch is already fresh: forcing a second, identical fetch
+    # would add nothing and only spend the interval's refetch.
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is False
+    assert fetch.call_count == 1
+    assert cache.get(_refetch_marker_key()) is None
 
 
 def test_unknown_kid_refetch_picks_up_rotated_key(mocker):
     app = pkj_app(client_jwks_uri="https://client.example.com/jwks.json")
+    _seed_jwks_cache(EC_KEY)
     fetch = mocker.patch.object(
         client_assertions.safe_fetch,
         "fetch_https_json",
-        side_effect=[(_jwks_document(EC_KEY), {}), (_jwks_document(EC_KEY, RSA_KEY), {})],
+        return_value=(_jwks_document(EC_KEY, RSA_KEY), {}),
     )
     assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
     ok, _ = authenticate(assertion, app)
     assert ok is True
-    assert fetch.call_count == 2
+    assert fetch.call_count == 1
 
 
 def test_fetch_failure_arms_backoff(mocker):
@@ -492,6 +525,542 @@ def test_fetch_failure_arms_backoff(mocker):
         assert ok is False
     # The second attempt hit the backoff flag instead of refetching.
     assert fetch.call_count == 1
+
+
+JWKS_URI = "https://client.example.com/jwks.json"
+
+
+def _refetch_marker_key(uri=JWKS_URI):
+    return client_assertions.JWKS_REFETCH_CACHE_PREFIX + hashlib.sha256(uri.encode()).hexdigest()
+
+
+def _backoff_key(uri=JWKS_URI):
+    return client_assertions.JWKS_BACKOFF_CACHE_PREFIX + hashlib.sha256(uri.encode()).hexdigest()
+
+
+def _seed_jwks_cache(*keys, uri=JWKS_URI):
+    """Warm the cached JWK Set for *uri*, as an earlier successful fetch would."""
+    digest = hashlib.sha256(uri.encode()).hexdigest()
+    document = json.dumps(_jwks_document(*keys))
+    cache.set(client_assertions.JWKS_CACHE_PREFIX + digest, document, 300)
+
+
+def test_unknown_kid_forced_refetch_is_rate_limited(mocker):
+    # The kid is read before the signature is verified, so it must not let any
+    # caller force an outbound fetch per request: after the first forced
+    # refetch, further unknown kids within the interval use the cached set.
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    for i in range(5):
+        assertion = build_assertion(OTHER_KEY, default_claims(), kid=f"unknown-{i}")
+        ok, _ = authenticate(assertion, app)
+        assert ok is False
+    # One regular cache-miss fetch, then exactly one forced refetch.
+    assert fetch.call_count == 2
+    assert cache.get(_refetch_marker_key()) is True
+
+
+def test_unknown_kid_forced_refetch_allowed_again_after_interval(mocker):
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    for _ in range(2):
+        ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown-a"), app)
+        assert ok is False
+    assert fetch.call_count == 2
+    # Simulate the interval elapsing: the marker expires from the cache.
+    cache.delete(_refetch_marker_key())
+    for _ in range(2):
+        ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown-b"), app)
+        assert ok is False
+    assert fetch.call_count == 3
+
+
+def test_rate_limited_refetch_still_tries_all_cached_keys(mocker):
+    # While the marker is held, kid stays a hint: a signature by a registered
+    # key under a different kid label still verifies without a fetch.
+    document = {"keys": [dict(json.loads(RSA_KEY.export_public()), kid="other-label")]}
+    _seed_jwks_cache(jwk.JWK(**document["keys"][0]))
+    fetch = mocker.patch.object(client_assertions.safe_fetch, "fetch_https_json", return_value=(document, {}))
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is True
+    assert fetch.call_count == 1
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is True
+    assert fetch.call_count == 1
+
+
+def test_rotated_key_accepted_after_single_forced_refetch(mocker):
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        side_effect=[(_jwks_document(EC_KEY), {}), (_jwks_document(EC_KEY, RSA_KEY), {})],
+    )
+    # Warm the cache with the pre-rotation set.
+    ok, _ = authenticate(build_assertion(EC_KEY, default_claims(), alg="ES256", kid="unit-ec"), app)
+    assert ok is True
+    assert fetch.call_count == 1
+    # The client rotates in a new key: one forced refetch picks it up, and the
+    # refreshed cache serves every later assertion signed with it.
+    for _ in range(3):
+        ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+        assert ok is True
+    assert fetch.call_count == 2
+
+
+def test_rotated_key_waits_for_interval_when_marker_already_held(mocker):
+    # The trade-off of the limit: if the interval's refetch was already spent,
+    # a freshly rotated key is recognized once the interval elapses.
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        side_effect=[
+            (_jwks_document(EC_KEY), {}),
+            (_jwks_document(EC_KEY, RSA_KEY), {}),
+        ],
+    )
+    ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown"), app)
+    assert ok is False
+    assert fetch.call_count == 1
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is False
+    assert fetch.call_count == 1
+    cache.delete(_refetch_marker_key())
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is True
+    assert fetch.call_count == 2
+
+
+def test_forced_refetch_markers_are_independent_per_jwks_uri(mocker):
+    other_uri = "https://other-client.example.com/jwks.json"
+    app_a = pkj_app(client_jwks_uri=JWKS_URI, client_id="pkj-a")
+    app_b = pkj_app(client_jwks_uri=other_uri, client_id="pkj-b")
+    _seed_jwks_cache(EC_KEY)
+    _seed_jwks_cache(EC_KEY, uri=other_uri)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims("pkj-a"), kid="unknown"), app_a)
+    assert ok is False
+    assert fetch.call_count == 1
+    # Spending the marker of one URL leaves another URL's refetch available.
+    ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims("pkj-b"), kid="unknown"), app_b)
+    assert ok is False
+    assert fetch.call_count == 2
+    assert [call.args[0] for call in fetch.call_args_list] == [JWKS_URI, other_uri]
+    assert cache.get(_refetch_marker_key()) is True
+    assert cache.get(_refetch_marker_key(other_uri)) is True
+
+
+def test_forced_refetch_marker_is_shared_by_applications_with_one_jwks_uri(mocker):
+    # The marker is keyed on the URL, not the client: registering more
+    # clients against the same jwks_uri does not buy more refetches of it.
+    app_a = pkj_app(client_jwks_uri=JWKS_URI, client_id="pkj-a")
+    app_b = pkj_app(client_jwks_uri=JWKS_URI, client_id="pkj-b")
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims("pkj-a"), kid="unknown"), app_a)
+    assert ok is False
+    assert fetch.call_count == 1
+    ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims("pkj-b"), kid="unknown"), app_b)
+    assert ok is False
+    assert fetch.call_count == 1
+
+
+def test_forced_refetch_not_claimed_while_backoff_is_armed(mocker):
+    # The backoff would refuse the fetch anyway; claiming the marker without
+    # fetching would hold back a rotated key for another interval. With a
+    # backoff at least as long as the interval a failed fetch would give the
+    # marker back, so the end state alone cannot show that it was never
+    # claimed: spy on the cache to check it is not even attempted.
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    cache.set(_backoff_key(), True, 60)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY, RSA_KEY), {}),
+    )
+    cache_spy = mocker.patch.object(client_assertions, "cache", wraps=cache)
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is False
+    assert fetch.call_count == 0
+    assert [c for c in cache_spy.add.call_args_list if c.args[0] == _refetch_marker_key()] == []
+    assert cache.get(_refetch_marker_key()) is None
+
+
+@pytest.mark.parametrize("backoff", [60, 61, None])
+def test_failed_forced_refetch_releases_marker(oauth2_settings, mocker, backoff):
+    # A backoff at least as long as the interval keeps the next forced
+    # refetch an interval away on its own, so the marker is given back.
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS = backoff
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = 60
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        side_effect=[client_assertions.ClientAssertionError("boom"), (_jwks_document(EC_KEY, RSA_KEY), {})],
+    )
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is False
+    assert fetch.call_count == 1
+    # The failure armed the backoff, which now limits fetches instead of the marker.
+    assert cache.get(_backoff_key()) is True
+    assert cache.get(_refetch_marker_key()) is None
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is False
+    assert fetch.call_count == 1
+    # Once the backoff elapses, the next unknown kid refetches straight away.
+    cache.delete(_backoff_key())
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is True
+    assert fetch.call_count == 2
+
+
+def test_failed_forced_refetch_keeps_marker_without_backoff(oauth2_settings, mocker):
+    # With the failure backoff disabled nothing else limits a failing URL, so
+    # the marker is kept and the next unknown kid does not fetch again.
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS = 0
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        side_effect=client_assertions.ClientAssertionError("boom"),
+    )
+    for _ in range(3):
+        ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+        assert ok is False
+    assert fetch.call_count == 1
+    assert cache.get(_refetch_marker_key()) is True
+
+
+@pytest.mark.parametrize("backoff", [1, 59])
+def test_failing_url_force_fetched_once_per_interval_with_short_backoff(oauth2_settings, mocker, backoff):
+    # A backoff shorter than the interval must not turn the limit into one
+    # forced refetch per backoff: the marker is kept for the whole interval.
+    oauth2_settings.CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS = backoff
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = 60
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        side_effect=client_assertions.ClientAssertionError("boom"),
+    )
+    ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown"), app)
+    assert ok is False
+    assert fetch.call_count == 1
+    assert cache.get(_backoff_key()) is True
+    assert cache.get(_refetch_marker_key()) is True
+    for i in range(3):
+        # Simulate the backoff elapsing while the interval has not.
+        cache.delete(_backoff_key())
+        ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims(), kid=f"unknown-{i}"), app)
+        assert ok is False
+    assert fetch.call_count == 1
+    assert cache.get(_refetch_marker_key()) is True
+    # Once the interval elapses as well, the next unknown kid may refetch.
+    cache.delete(_backoff_key())
+    cache.delete(_refetch_marker_key())
+    ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown"), app)
+    assert ok is False
+    assert fetch.call_count == 2
+
+
+def test_failed_forced_refetch_falls_back_to_cached_keys(mocker):
+    # kid is only a hint: a registered key published under a different kid
+    # label still verifies even though the forced refetch fails.
+    relabeled = jwk.JWK(**dict(json.loads(RSA_KEY.export_public()), kid="other-label"))
+    _seed_jwks_cache(relabeled)
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        side_effect=client_assertions.ClientAssertionError("boom"),
+    )
+    ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+    assert ok is True
+    assert fetch.call_count == 1
+
+
+@pytest.mark.parametrize("interval", [0, None])
+def test_refetch_interval_zero_or_none_disables_forced_refetch(oauth2_settings, mocker, caplog, interval):
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = interval
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        for _ in range(3):
+            ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+            assert ok is False
+    # The cached set is used throughout; no marker is ever claimed.
+    assert fetch.call_count == 0
+    assert cache.get(_refetch_marker_key()) is None
+    # 0 and None are documented ways to disable the refetch, not mistakes.
+    assert "CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS" not in caplog.text
+
+
+def test_refetch_interval_numeric_string_is_coerced(oauth2_settings, mocker):
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = "60"
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    for _ in range(3):
+        ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+        assert ok is False
+    # Exactly one forced refetch, then the marker limits the rest.
+    assert fetch.call_count == 1
+    assert cache.get(_refetch_marker_key()) is True
+    assert client_assertions._refetch_interval() == 60
+
+
+@pytest.mark.parametrize("interval", [0.5, -5, "abc"])
+def test_invalid_refetch_interval_disables_refetch_and_warns(oauth2_settings, mocker, caplog, interval):
+    # A fractional value below 1 would let memcached expire the marker at
+    # once, a negative one would disable the limit, and a non-numeric one used
+    # to raise TypeError (a 500): all disable the refetch instead, loudly.
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = interval
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        for _ in range(3):
+            ok, _ = authenticate(build_assertion(RSA_KEY, default_claims(), kid="unit-rsa"), app)
+            assert ok is False
+    assert fetch.call_count == 0
+    assert cache.get(_refetch_marker_key()) is None
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS" in warnings[0].getMessage()
+    assert repr(interval) in warnings[0].getMessage()
+
+
+def _interval_warning_records(caplog):
+    return [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS" in r.getMessage()
+    ]
+
+
+def test_invalid_refetch_interval_warns_once_per_value(oauth2_settings, mocker, caplog):
+    # Unauthenticated callers can send unknown-kid assertions at will, so an
+    # invalid setting must not log a warning per request.
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    mocker.patch.object(client_assertions.safe_fetch, "fetch_https_json")
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = "abc"
+        for _ in range(20):
+            authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown"), app)
+        assert len(_interval_warning_records(caplog)) == 1
+        # A different invalid value is a different misconfiguration: warn again.
+        oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = -5
+        for _ in range(20):
+            authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown"), app)
+        assert len(_interval_warning_records(caplog)) == 2
+        # Going back to a value already warned about stays quiet.
+        oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = "abc"
+        authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown"), app)
+    warnings = _interval_warning_records(caplog)
+    assert len(warnings) == 2
+    assert "'abc'" in warnings[0].getMessage()
+    assert "-5" in warnings[1].getMessage()
+
+
+@pytest.mark.parametrize(
+    "value,expected,warns",
+    [
+        (None, None, False),
+        (0, None, False),
+        (0.0, None, False),
+        (-0.0, None, False),
+        (Decimal("0"), None, False),
+        (Decimal("-0"), None, False),
+        ("0", None, False),
+        (60, 60, False),
+        (60.0, 60, False),
+        (Decimal("60"), 60, False),
+        ("60", 60, False),
+        # bool is an int subclass, but True/False are not durations.
+        (True, None, True),
+        (False, None, True),
+        # A fractional part is truncated, disabling the refetch below 1.
+        (1.9, 1, True),
+        (Decimal("60.9"), 60, True),
+        (0.5, None, True),
+        (-0.5, None, True),
+        (-5, None, True),
+        ("-5", None, True),
+        (float("inf"), None, True),
+        (float("nan"), None, True),
+        (Decimal("NaN"), None, True),
+        (Decimal("Infinity"), None, True),
+        # Only strings int() parses are accepted.
+        ("60.0", None, True),
+        ("0.0", None, True),
+        ("abc", None, True),
+        (b"60", None, True),
+        ([60], None, True),
+        (complex(60), None, True),  # a Number but not a Real: it does not order
+    ],
+)
+def test_refetch_interval_coercion(oauth2_settings, caplog, value, expected, warns):
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = value
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        for _ in range(3):
+            assert client_assertions._refetch_interval() == expected
+    warnings = _interval_warning_records(caplog)
+    assert len(warnings) == (1 if warns else 0)
+
+
+def test_refetch_interval_warnings_are_memoised_per_problem(oauth2_settings, caplog):
+    # Two huge ints render alike (repr() refuses them), but one is clamped and
+    # the other disables refetches: both problems must be reported.
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = 10**5000
+        assert client_assertions._refetch_interval() == 2592000
+        oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = -(10**5000)
+        assert client_assertions._refetch_interval() is None
+    assert len(_interval_warning_records(caplog)) == 2
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [(Decimal("1e1000000"), 2592000), (Decimal("-1e1000000"), None), (1e300, 2592000), (-1e300, None)],
+    ids=["huge-decimal", "huge-negative-decimal", "huge-float", "huge-negative-float"],
+)
+def test_absurd_refetch_interval_is_rejected_without_converting_it(oauth2_settings, value, expected):
+    # int(Decimal("1e1000000")) takes tens of seconds; this runs per request.
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = value
+    started = time.monotonic()
+    assert client_assertions._refetch_interval() == expected
+    assert time.monotonic() - started < 1
+
+
+def test_refetch_interval_with_failing_repr_does_not_raise(oauth2_settings, caplog):
+    class Unprintable(int):
+        def __repr__(self):
+            raise RuntimeError("no repr")
+
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = Unprintable(-1)
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        assert client_assertions._refetch_interval() is None
+    assert "cannot be displayed" in _interval_warning_records(caplog)[0].getMessage()
+
+
+def test_refetch_interval_of_a_non_float_infinity_is_rejected(oauth2_settings, caplog):
+    """An infinite Real that is not a builtin float (a numpy scalar, say) disables refetches."""
+
+    class RealInfinity:
+        """Stands in for e.g. numpy.float32("inf"): a Real, but not a float subclass."""
+
+        def __eq__(self, other):
+            return other == math.inf
+
+        def __ne__(self, other):
+            return not self.__eq__(other)
+
+        def __gt__(self, other):
+            return True
+
+        def __ge__(self, other):
+            return True
+
+        def __lt__(self, other):
+            return False
+
+        def __le__(self, other):
+            return False
+
+        __hash__ = None
+
+        def __repr__(self):
+            return "RealInfinity()"
+
+    numbers.Real.register(RealInfinity)
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = RealInfinity()
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        assert client_assertions._refetch_interval() is None
+    assert "Invalid" in _interval_warning_records(caplog)[0].getMessage()
+
+
+def test_refetch_interval_of_an_unorderable_real_is_rejected(oauth2_settings, caplog):
+    """A Real whose comparisons raise disables refetches instead of escaping as a 500."""
+
+    # Registered as a Real but defining neither comparisons nor __int__, so both
+    # ``value > ...`` and ``int(value)`` raise TypeError on their own.
+    class Unorderable:
+        def __repr__(self):
+            return "Unorderable()"
+
+    numbers.Real.register(Unorderable)
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = Unorderable()
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        assert client_assertions._refetch_interval() is None
+    assert "Unorderable()" in _interval_warning_records(caplog)[0].getMessage()
+
+
+@pytest.mark.parametrize("interval", [2592001, 10**400, 10**5000], ids=["30-days-plus-1", "1e400", "1e5000"])
+def test_huge_refetch_interval_is_clamped_to_30_days(oauth2_settings, mocker, caplog, interval):
+    # Cache backends reject or overflow on huge timeouts (LocMemCache raises
+    # OverflowError), which would turn an unknown kid into a 500.
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = interval
+    app = pkj_app(client_jwks_uri=JWKS_URI)
+    _seed_jwks_cache(EC_KEY)
+    fetch = mocker.patch.object(
+        client_assertions.safe_fetch,
+        "fetch_https_json",
+        return_value=(_jwks_document(EC_KEY), {}),
+    )
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        assert client_assertions._refetch_interval() == 2592000
+        for _ in range(3):
+            ok, _ = authenticate(build_assertion(OTHER_KEY, default_claims(), kid="unknown"), app)
+            assert ok is False
+    assert fetch.call_count == 1
+    assert cache.get(_refetch_marker_key()) is True
+    warnings = _interval_warning_records(caplog)
+    assert len(warnings) == 1
+    assert "maximum" in warnings[0].getMessage()
+
+
+def test_refetch_interval_at_maximum_is_used_silently(oauth2_settings, caplog):
+    oauth2_settings.CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS = 2592000
+    with caplog.at_level(logging.WARNING, logger=client_assertions.__name__):
+        assert client_assertions._refetch_interval() == 2592000
+    assert not _interval_warning_records(caplog)
 
 
 def test_remote_jwks_skips_private_and_unusable_keys():
@@ -896,15 +1465,15 @@ def test_application_without_any_jwks_rejected():
 
 
 def test_remote_unknown_kid_falls_back_to_all_keys(mocker):
-    # Registered under a different kid label: after the forced refetch still
-    # finds no kid match, all registered keys are tried and the signature wins.
+    # Registered under a different kid label: the freshly fetched set has no
+    # kid match, so all registered keys are tried and the signature wins.
     document = {"keys": [dict(json.loads(RSA_KEY.export_public()), kid="other-label")]}
     fetch = mocker.patch.object(client_assertions.safe_fetch, "fetch_https_json", return_value=(document, {}))
     app = pkj_app(client_jwks_uri="https://client.example.com/jwks.json")
     assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
     ok, _ = authenticate(assertion, app)
     assert ok is True
-    assert fetch.call_count == 2
+    assert fetch.call_count == 1
 
 
 def test_check_times_rejects_non_numeric_claims():

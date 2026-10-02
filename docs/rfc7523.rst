@@ -54,10 +54,40 @@ For ``private_key_jwt``, register the client's public keys on the application:
 ``client_jwks_uri``
     An ``https`` URL serving the client's JWK Set. The server fetches it with the same SSRF
     hardening used for :doc:`CIMD <cimd>` (public-IP validation and pinning, no redirects, size and
-    timeout caps) and caches it for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` seconds. When an
-    assertion arrives with an unknown ``kid``, the set is re-fetched once — so key rotation works
-    without manual intervention — and fetch failures back off for
-    ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS``.
+    timeout caps) and caches it for ``CLIENT_ASSERTION_JWKS_CACHE_TIMEOUT`` seconds. Fetch failures
+    back off for ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS``.
+
+    When an assertion names a ``kid`` that matches no key in the *cached* set, the set is
+    re-fetched bypassing the cache, so key rotation works without manual intervention, but at most
+    once per ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` for each URL, and not while the
+    failure backoff is in effect. The ``kid`` is read before the signature is verified, so without
+    this limit any caller could make the server fetch the URL on every request. When no re-fetch
+    is allowed, or the re-fetch fails, the cached set is used and every signing key in it is still
+    tried. A set that was only just fetched because nothing was cached is not fetched a second
+    time.
+
+    Clients must publish a new key in their JWK Set at least
+    ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` before they sign with it. A client that
+    signs with a key before publishing it can spend the interval's re-fetch itself, fetching a set
+    that does not contain the key yet, and is then refused until the interval has passed; any other
+    caller can spend the re-fetch the same way. A key published at least one interval ahead is
+    normally accepted on first use, provided the fetches succeed. The exceptions are narrow races.
+    For example, if another request's forced re-fetch is still in flight when the first assertion
+    signed with the new key arrives, that assertion is checked against the cached set and refused;
+    that re-fetch was started after the key was published, so it caches a set containing the key,
+    and the client's retry succeeds. Likewise, a slow ordinary fetch started just before the key
+    was published can finish last and overwrite a newer cached set, so the key is refused until
+    the interval's marker expires. This is a deliberate departure from
+    `OpenID Connect Core 1.0 section 10.1.1
+    <https://openid.net/specs/openid-connect-core-1_0.html#RotateSigKeys>`_, which lets the signer
+    start using a new key at its discretion and expects the verifier to re-fetch the JWK Set when it
+    sees an unfamiliar ``kid``: refusing to re-fetch on every such ``kid`` is what bounds the
+    outbound fetches unauthenticated callers can cause.
+
+    The limit is tracked per exact ``client_jwks_uri`` string, in the default Django cache. See
+    the ``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` setting below for what it does and does
+    not bound, and :doc:`views/dynamic_client_registration` for its effect under open
+    registration.
 
 The two fields are mutually exclusive. Both are validated by ``Application.clean()``.
 
@@ -208,6 +238,37 @@ Settings
 
 ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS`` (default ``60``)
     After a failed fetch, no re-fetch of that URL is attempted for this long.
+
+``CLIENT_ASSERTION_JWKS_REFETCH_INTERVAL_SECONDS`` (default ``60``)
+    Minimum time between two cache-bypassing re-fetches of the same ``client_jwks_uri`` triggered
+    by an assertion whose ``kid`` matches no cached key. Within an interval, further such
+    assertions use the cached set; once it has passed, the next one can force a re-fetch again.
+    This holds whether the re-fetch succeeds or fails: after a failed one, the next waits for this
+    interval or ``CLIENT_ASSERTION_JWKS_FAILURE_BACKOFF_SECONDS``, whichever is longer. Provided
+    that re-fetch succeeds, a key the client has already published is therefore recognized within
+    at most one interval. Clients must publish a new key at least this long before signing with
+    it; see ``client_jwks_uri`` above.
+
+    The limit is tracked per exact ``client_jwks_uri`` string in the default Django cache, so it
+    needs a cache backend that is shared across processes and instances and actually keeps
+    entries. With ``DummyCache``, or when the cached key set is evicted, it does not bound fetches.
+    It does not cover the regular cache-miss fetch either, including several concurrent requests
+    that each fetch the URL while the cached set is being repopulated.
+
+    The value must be a positive whole number of seconds: a number with no fractional part (``60``,
+    ``60.0``, ``Decimal("60")``) or a string ``int()`` parses (``"60"``). ``None`` or zero (``0``,
+    ``0.0``, ``"0"``) disables these re-fetches entirely: a rotated key is then only picked up when
+    the cached set expires. The maximum is ``2592000`` (30 days, the longest relative expiry
+    memcached accepts). The following are corrected and log a warning:
+
+    * a larger value is clamped to the maximum;
+    * a number with a fractional part is truncated (``1.9`` is used as ``1``), and disables the
+      re-fetches when less than 1 remains (``0.5``);
+    * a negative value, ``True`` or ``False``, ``inf`` or ``nan``, any other string (including
+      ``"60.0"`` and ``"0.0"``: only whole-number strings are accepted) and any other type disables
+      the re-fetches.
+
+    Each such warning is logged once per distinct value and problem per process.
 
 The resource-server settings (``RESOURCE_SERVER_INTROSPECTION_JWT_*``) are documented in
 :doc:`settings`.
