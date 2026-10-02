@@ -15,6 +15,7 @@ from oauth2_provider.models import get_application_model, get_id_token_model
 from oauth2_provider.settings import oauth2_settings as _oauth2_settings
 
 from . import presets
+from .utils import post_form
 
 
 Application = get_application_model()
@@ -234,7 +235,8 @@ def generate_access_token(oauth2_settings, application, test_user, client, setti
     assert auth_rsp.status_code == 302
     code = parse_qs(urlparse(auth_rsp["Location"]).query)["code"]
     client.logout()
-    token_rsp = client.post(
+    token_rsp = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "authorization_code",

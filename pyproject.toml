@@ -118,6 +118,13 @@ addopts = [
     # in-process unit-test collection.
     "--ignore=tests/e2e",
 ]
+filterwarnings = [
+    # Fail any test that reaches a form-encoded OAuth endpoint with a body that is not
+    # application/x-www-form-urlencoded: such a request only works while the deprecated
+    # REQUIRE_FORM_ENCODED_REQUEST_BODY = False default holds. Tests of that
+    # compatibility path assert the warning explicitly.
+    "error:.*takes its parameters in an application/x-www-form-urlencoded request body:DeprecationWarning",
+]
 markers = [
     "oauth2_settings: Custom OAuth2 settings to use - use with oauth2_settings fixture",
     "nologinrequiredmiddleware",

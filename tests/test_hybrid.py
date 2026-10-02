@@ -22,7 +22,7 @@ from oauth2_provider.views import ProtectedResourceView, ScopedProtectedResource
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header, spy_on
+from .utils import get_basic_auth_header, post_form, spy_on
 
 
 Application = get_application_model()
@@ -836,7 +836,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -857,7 +859,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 400)
 
     def test_basic_auth_bad_granttype(self):
@@ -869,7 +873,9 @@ class TestHybridTokenView(BaseTest):
         token_request_data = {"grant_type": "UNKNOWN", "code": "BLAH", "redirect_uri": "http://example.org"}
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 400)
 
     def test_basic_auth_grant_expired(self):
@@ -894,7 +900,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 400)
 
     def test_basic_auth_bad_secret(self):
@@ -911,7 +919,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, "BOOM!")
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 401)
 
     def test_basic_auth_wrong_auth_type(self):
@@ -933,7 +943,9 @@ class TestHybridTokenView(BaseTest):
             "HTTP_AUTHORIZATION": "Wrong " + auth_string.decode("utf-8"),
         }
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 401)
 
     def test_request_body_params(self):
@@ -951,7 +963,7 @@ class TestHybridTokenView(BaseTest):
             "client_secret": CLEARTEXT_SECRET,
         }
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data)
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=token_request_data)
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -976,7 +988,7 @@ class TestHybridTokenView(BaseTest):
             "client_id": self.application.client_id,
         }
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data)
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=token_request_data)
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -1002,7 +1014,7 @@ class TestHybridTokenView(BaseTest):
             "scope": "openid",
         }
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data)
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=token_request_data)
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -1030,7 +1042,7 @@ class TestHybridTokenView(BaseTest):
             "client_id": self.application.client_id,
         }
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data)
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=token_request_data)
         self.assertEqual(response.status_code, 400)
         data = response.json()
         self.assertEqual(data["error"], "invalid_request")
@@ -1063,7 +1075,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -1098,7 +1112,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 400)
         data = response.json()
         self.assertEqual(data["error"], "invalid_request")
@@ -1133,7 +1149,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -1170,7 +1188,9 @@ class TestHybridTokenView(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         self.assertEqual(response.status_code, 200)
 
         content = json.loads(response.content.decode("utf-8"))
@@ -1207,7 +1227,9 @@ class TestHybridProtectedResource(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         access_token = content["access_token"]
 
@@ -1246,7 +1268,9 @@ class TestHybridProtectedResource(BaseTest):
         }
         auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
 
-        response = self.client.post(reverse("oauth2_provider:token"), data=token_request_data, **auth_headers)
+        response = post_form(
+            self.client, reverse("oauth2_provider:token"), data=token_request_data, **auth_headers
+        )
         content = json.loads(response.content.decode("utf-8"))
         access_token = content["access_token"]
         id_token = content["id_token"]
@@ -1349,7 +1373,8 @@ def test_id_token_nonce_in_token_response(oauth2_settings, test_user, hybrid_app
     code = auth_data["code"][0]
     client.logout()
     # Get the token response using the code
-    token_rsp = client.post(
+    token_rsp = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "authorization_code",
@@ -1420,7 +1445,8 @@ def test_claims_passed_to_code_generation(
     # Get the token response using the code
     client.logout()
     code = auth_data["code"][0]
-    token_rsp = client.post(
+    token_rsp = post_form(
+        client,
         reverse("oauth2_provider:token"),
         data={
             "grant_type": "authorization_code",

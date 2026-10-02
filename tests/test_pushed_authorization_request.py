@@ -16,7 +16,7 @@ from oauth2_provider.models import (
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header
+from .utils import get_basic_auth_header, post_form
 
 
 Application = get_application_model()
@@ -82,7 +82,7 @@ class PARBaseTestCase(TestCase):
         headers = {}
         if auth:
             headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        return self.client.post(self.par_url, data=data, **headers, **kwargs)
+        return post_form(self.client, self.par_url, data=data, **headers, **kwargs)
 
 
 class TestPAREndpoint(PARBaseTestCase):
@@ -118,7 +118,8 @@ class TestPAREndpoint(PARBaseTestCase):
         # The guard must also catch request_uri supplied via the query string, which
         # oauthlib would otherwise merge into the request (RFC 9126 §2.1).
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(
+        response = post_form(
+            self.client,
             self.par_url + f"?request_uri={REQUEST_URI_PREFIX}abc",
             data={
                 "client_id": self.application.client_id,
@@ -133,7 +134,8 @@ class TestPAREndpoint(PARBaseTestCase):
 
     def test_reject_request_object_in_query_string(self):
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(
+        response = post_form(
+            self.client,
             self.par_url + "?request=eyJ.abc.def",
             data={
                 "client_id": self.application.client_id,
@@ -155,7 +157,8 @@ class TestPAREndpoint(PARBaseTestCase):
 
     def test_wrong_client_secret_rejected(self):
         headers = get_basic_auth_header(self.application.client_id, "wrong-secret")
-        response = self.client.post(
+        response = post_form(
+            self.client,
             self.par_url,
             data={
                 "client_id": self.application.client_id,
@@ -169,7 +172,8 @@ class TestPAREndpoint(PARBaseTestCase):
 
     def test_public_client_with_pkce(self):
         _, challenge = _pkce_pair()
-        response = self.client.post(
+        response = post_form(
+            self.client,
             self.par_url,
             data={
                 "client_id": self.public_application.client_id,
@@ -211,7 +215,8 @@ class TestPAREndpoint(PARBaseTestCase):
         # oauthlib validates the merged query string + body, so a client_id supplied
         # via the query string must not bypass the binding check.
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(
+        response = post_form(
+            self.client,
             self.par_url + f"?client_id={self.public_application.client_id}",
             data={
                 "response_type": "code",
@@ -228,7 +233,8 @@ class TestPAREndpoint(PARBaseTestCase):
         # must also be stored (merged with the body) — otherwise the request_uri would
         # resolve to different parameters than were validated.
         headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
-        response = self.client.post(
+        response = post_form(
+            self.client,
             self.par_url + "?scope=read+write",
             data={
                 "client_id": self.application.client_id,
@@ -244,7 +250,8 @@ class TestPAREndpoint(PARBaseTestCase):
     def test_client_secret_post_excluded_from_stored_parameters(self):
         # Authenticate via client_secret_post (credentials in the body). The
         # client-authentication parameters must not be stored on the pushed request.
-        response = self.client.post(
+        response = post_form(
+            self.client,
             self.par_url,
             data={
                 "client_id": self.application.client_id,

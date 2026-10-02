@@ -294,6 +294,7 @@ When you begin your PR, you'll be asked to provide the following:
   correct error behavior as well as normal expected behavior. Strive for 100% code coverage of any new
   code you contribute! Improving unit tests is always a welcome contribution.
   If your change reduces coverage, you'll be warned by `Codecov <https://codecov.io/>`_.
+  Use ``tests.utils.post_form`` to POST to OAuth endpoints in tests.
 
 * Update the documentation (in `docs/`) to describe the new or changed functionality.
 
