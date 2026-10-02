@@ -455,8 +455,22 @@
             "response_type": "id_token token"
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "WebRunner",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckDiscEndpointRequestUriParameterSupported",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
@@ -469,8 +483,22 @@
             "response_type": "id_token token"
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ExtractAccessTokenFromAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
@@ -483,8 +511,22 @@
             "response_type": "id_token"
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "WebRunner",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckDiscEndpointRequestUriParameterSupported",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "id_token"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
@@ -497,9 +539,37 @@
             "response_type": "id_token"
         },
         "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "",
-        "condition": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ExtractIdTokenFromAuthorizationResponse",
         "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "id_token"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "id_token"
+        },
+        "configuration-filename": "*dot-oidcc-dcr.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ValidateIdTokenFromAuthorizationResponseEncryption",
+        "expected-result": "warning",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
     },
