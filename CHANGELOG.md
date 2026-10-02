@@ -281,11 +281,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * #1894 The authorization endpoint accepts the authorization request by HTTP POST, with the
   parameters form-serialized in the body, as OpenID Connect Core 1.0 §3.1.2.1 requires; it was
-  refused as a consent submission without a CSRF token. The request is handled like the same
-  request sent by GET, and a user who is not logged in is redirected (303) to the GET form of it.
-  `AuthorizationView` is now CSRF-exempt and enforces CSRF on consent submissions only: a POST
-  carrying the consent form's `allow` field or a CSRF token (field or header), and any other
-  unsafe method. `AuthorizationView.is_consent_submission` tells the two kinds of POST apart.
+  refused as a consent submission without a CSRF token. It answers with a redirect (303) to the
+  same request sent by GET. `AuthorizationView` is now CSRF-exempt and enforces CSRF on consent
+  submissions only: a POST carrying the consent form's `allow` field or a CSRF token (field or
+  header), and any other unsafe method. `AuthorizationView.is_consent_submission` tells the two
+  kinds of POST apart.
 * #1880 The Dynamic Client Registration (RFC 7591) response now includes `client_secret_expires_at`
   (`0`, since the toolkit's client secrets do not expire) whenever it returns a `client_secret`, as
   RFC 7591 section 3.2.1 requires, and reports `client_id_issued_at` in registration and RFC 7592

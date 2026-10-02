@@ -1,7 +1,8 @@
 """Authorization requests sent by HTTP POST (OpenID Connect Core 1.0 section 3.1.2.1).
 
 The authorization endpoint must accept the request by POST, with its parameters
-form-serialized in the body, as well as by GET. The consent form also posts to the
+form-serialized in the body, as well as by GET. It answers such a request with a
+redirect to the same request sent by GET. The consent form also posts to the
 endpoint; it is told apart by its ``allow`` field or CSRF token, and stays
 CSRF-protected, while an authorization request sent by POST carries no CSRF token.
 """
@@ -27,6 +28,10 @@ UserModel = get_user_model()
 
 CLEARTEXT_SECRET = "1234567890abcdefghijklmnopqrstuvwxyz"
 REDIRECT_URI = "http://example.org"
+
+
+def _b64decode(segment):
+    return base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -71,6 +76,12 @@ class TestAuthorizationRequestByPost(TestCase):
     def post_authorization_request(self, url=None, **params):
         return post_form(self.client, url or self.authorize_url, self.request_parameters(**params))
 
+    def authorize_by_post(self, url=None, **params):
+        """POST the request and follow the redirect to its GET form, as a browser does."""
+        response = self.post_authorization_request(url=url, **params)
+        self.assertEqual(response.status_code, 303)
+        return self.client.get(response["Location"])
+
     def submit_consent(self, consent, allow=True, csrf_token=True):
         """Post the rendered consent form back to the URL it was loaded from."""
         data = {key: value for key, value in consent.context_data["form"].initial.items() if value}
@@ -78,28 +89,49 @@ class TestAuthorizationRequestByPost(TestCase):
             data["allow"] = "Authorize"
         if csrf_token:
             data["csrfmiddlewaretoken"] = consent.context["csrf_token"]
-        # The browser's address after a POST carries no query string.
-        return post_form(self.client, self.authorize_url, data)
+        return post_form(self.client, consent.wsgi_request.get_full_path(), data)
 
-    def assertRedirectParameters(self, response):
+    def assertRedirectParameters(self, response, fragment=False):
         self.assertEqual(response.status_code, 302)
         location = urlparse(response["Location"])
         self.assertEqual(f"{location.scheme}://{location.netloc}", REDIRECT_URI)
-        return parse_qs(location.query)
+        return parse_qs(location.fragment if fragment else location.query)
+
+    def assertGetForm(self, response, parameters):
+        self.assertEqual(response.status_code, 303)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.path, self.authorize_url)
+        self.assertEqual(parse_qs(location.query), parameters)
+
+    def test_post_redirects_to_get_form(self):
+        response = self.post_authorization_request()
+
+        self.assertGetForm(response, {key: [value] for key, value in self.request_parameters().items()})
+
+    def test_post_keeps_query_string_parameters(self):
+        url = f"{self.authorize_url}?{urlencode({'ui_locales': 'fr'})}"
+
+        response = self.post_authorization_request(url=url)
+
+        expected = {key: [value] for key, value in self.request_parameters(ui_locales="fr").items()}
+        self.assertGetForm(response, expected)
+
+    def test_multipart_post_redirects_to_get_form(self):
+        response = self.client.post(self.authorize_url, self.request_parameters())
+
+        self.assertGetForm(response, {key: [value] for key, value in self.request_parameters().items()})
 
     def test_post_shows_consent_like_get(self):
-        response = self.post_authorization_request()
+        response = self.authorize_by_post()
 
         self.assertEqual(response.status_code, 200)
         get_response = self.client.get(self.authorize_url, self.request_parameters())
         self.assertEqual(response.context_data["form"].initial, get_response.context_data["form"].initial)
-        # The consent form is shown, not submitted: it is unbound, without errors.
-        self.assertFalse(response.context_data["form"].is_bound)
         self.assertEqual(response.context_data["application"], self.application)
         self.assertEqual(response.context_data["scopes"], ["openid"])
 
     def test_post_then_consent_issues_code_and_id_token(self):
-        consent = self.post_authorization_request()
+        consent = self.authorize_by_post()
         response = self.submit_consent(consent)
 
         params = self.assertRedirectParameters(response)
@@ -116,10 +148,18 @@ class TestAuthorizationRequestByPost(TestCase):
         self.assertEqual(payload["nonce"], "random_nonce_string")
         self.assertEqual(payload["aud"], self.application.client_id)
 
+    def test_post_with_response_mode_is_honoured_through_consent(self):
+        consent = self.authorize_by_post(response_mode="fragment")
+        response = self.submit_consent(consent)
+
+        params = self.assertRedirectParameters(response, fragment=True)
+        self.assertIn("code", params)
+        self.assertEqual(params["state"], ["random_state_string"])
+
     def test_post_then_denial_returns_access_denied(self):
         # The default template's Cancel button submits no allow field, only the
         # CSRF token.
-        consent = self.post_authorization_request()
+        consent = self.authorize_by_post()
         response = self.submit_consent(consent, allow=False)
 
         params = self.assertRedirectParameters(response)
@@ -130,14 +170,14 @@ class TestAuthorizationRequestByPost(TestCase):
         self.application.skip_authorization = True
         self.application.save()
 
-        response = self.post_authorization_request()
+        response = self.authorize_by_post()
 
         params = self.assertRedirectParameters(response)
         self.assertIn("code", params)
         self.assertEqual(params["state"], ["random_state_string"])
 
     def test_post_invalid_request_is_rejected_like_get(self):
-        response = self.post_authorization_request(redirect_uri="http://attacker.example")
+        response = self.authorize_by_post(redirect_uri="http://attacker.example")
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.context_data["error"].error, "invalid_request")
@@ -147,25 +187,16 @@ class TestAuthorizationRequestByPost(TestCase):
         # repeated parameter, as it would be in a GET; it is never resolved in
         # favour of either copy.
         url = f"{self.authorize_url}?{urlencode({'client_id': 'other-client'})}"
-        response = self.post_authorization_request(url=url)
+        response = self.authorize_by_post(url=url)
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.context_data["error"].error, "invalid_request")
 
-    def test_logged_out_post_redirects_to_get_form(self):
+    def test_logged_out_post_redirects_to_login_through_get_form(self):
         self.client.logout()
 
-        response = self.post_authorization_request()
+        response = self.authorize_by_post()
 
-        self.assertEqual(response.status_code, 303)
-        location = urlparse(response["Location"])
-        self.assertEqual(location.path, self.authorize_url)
-        self.assertEqual(
-            {key: values[0] for key, values in parse_qs(location.query).items()}, self.request_parameters()
-        )
-
-        # The GET form sends the user to log in, then back to the same request.
-        response = self.client.get(response["Location"])
         self.assertEqual(response.status_code, 302)
         login = urlparse(response["Location"])
         next_url = urlparse(parse_qs(login.query)["next"][0])
@@ -177,16 +208,14 @@ class TestAuthorizationRequestByPost(TestCase):
     def test_logged_out_post_with_prompt_none_returns_login_required(self):
         self.client.logout()
 
-        response = self.post_authorization_request(prompt="none", scope="read", nonce=None)
-        self.assertEqual(response.status_code, 303)
-        response = self.client.get(response["Location"])
+        response = self.authorize_by_post(prompt="none", scope="read", nonce=None)
 
         params = self.assertRedirectParameters(response)
         self.assertEqual(params["error"], ["login_required"])
         self.assertEqual(params["state"], ["random_state_string"])
 
     def test_post_with_prompt_login_redirects_to_login(self):
-        response = self.post_authorization_request(prompt="login")
+        response = self.authorize_by_post(prompt="login")
 
         self.assertEqual(response.status_code, 302)
         login = urlparse(response["Location"])
@@ -199,7 +228,7 @@ class TestAuthorizationRequestByPost(TestCase):
         self.assertEqual(next_parameters["nonce"], ["random_nonce_string"])
 
     def test_post_with_approval_prompt_auto_reuses_prior_authorization(self):
-        consent = self.post_authorization_request()
+        consent = self.authorize_by_post()
         code = self.assertRedirectParameters(self.submit_consent(consent))["code"][0]
         post_form(
             self.client,
@@ -208,33 +237,33 @@ class TestAuthorizationRequestByPost(TestCase):
             **get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET),
         )
 
-        response = self.post_authorization_request(approval_prompt="auto")
+        response = self.authorize_by_post(approval_prompt="auto")
 
         self.assertIn("code", self.assertRedirectParameters(response))
 
     def test_post_with_resources(self):
         resources = ["https://api.example.com", "https://other.example.com"]
 
-        response = self.post_authorization_request(resource=resources)
+        response = self.authorize_by_post(resource=resources)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context_data["form"].initial["resource"], " ".join(resources))
 
     def test_post_with_invalid_resource_returns_invalid_target(self):
-        response = self.post_authorization_request(resource="not-a-uri")
+        response = self.authorize_by_post(resource="not-a-uri")
 
         params = self.assertRedirectParameters(response)
         self.assertEqual(params["error"], ["invalid_target"])
         self.assertEqual(params["state"], ["random_state_string"])
 
     def test_post_with_request_object_is_rejected(self):
-        response = self.post_authorization_request(request="eyJhbGciOiJub25lIn0.e30.")
+        response = self.authorize_by_post(request="eyJhbGciOiJub25lIn0.e30.")
 
         params = self.assertRedirectParameters(response)
         self.assertEqual(params["error"], ["request_not_supported"])
 
     def test_post_with_request_uri_is_rejected(self):
-        response = self.post_authorization_request(request_uri="https://client.example/request.jwt")
+        response = self.authorize_by_post(request_uri="https://client.example/request.jwt")
 
         params = self.assertRedirectParameters(response)
         self.assertEqual(params["error"], ["request_uri_not_supported"])
@@ -249,11 +278,13 @@ class TestAuthorizationRequestByPost(TestCase):
         self.assertEqual(push.status_code, 201)
         request_uri = json.loads(push.content)["request_uri"]
 
-        consent = post_form(
+        response = post_form(
             self.client,
             self.authorize_url,
             {"client_id": self.application.client_id, "request_uri": request_uri},
         )
+        self.assertEqual(response.status_code, 303)
+        consent = self.client.get(response["Location"])
 
         self.assertEqual(consent.status_code, 200)
         # The pushed request is authoritative and drives the consent screen.
@@ -263,14 +294,14 @@ class TestAuthorizationRequestByPost(TestCase):
         self.assertEqual(params["state"], ["random_state_string"])
 
     def test_consent_without_csrf_token_is_rejected(self):
-        consent = self.post_authorization_request()
+        consent = self.authorize_by_post()
 
         response = self.submit_consent(consent, csrf_token=False)
 
         self.assertEqual(response.status_code, 403)
 
     def test_consent_with_wrong_csrf_token_is_rejected(self):
-        consent = self.post_authorization_request()
+        consent = self.authorize_by_post()
         data = {key: value for key, value in consent.context_data["form"].initial.items() if value}
         data["csrfmiddlewaretoken"] = "x" * 64
 
@@ -279,7 +310,7 @@ class TestAuthorizationRequestByPost(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_consent_with_csrf_header_is_csrf_protected(self):
-        consent = self.post_authorization_request()
+        consent = self.authorize_by_post()
         data = {key: value for key, value in consent.context_data["form"].initial.items() if value}
 
         response = post_form(self.client, self.authorize_url, data, HTTP_X_CSRFTOKEN="x" * 64)
@@ -307,6 +338,8 @@ class TestAuthorizationRequestByPost(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_options_is_unchanged(self):
+        response = self.client.options(self.authorize_url)
 
-def _b64decode(segment):
-    return base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("POST", response["Allow"])
