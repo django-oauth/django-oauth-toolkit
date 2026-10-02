@@ -294,6 +294,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `grant_types_supported` of both documents while a hybrid response type (for example `code token`)
   is still advertised, because hybrid response types need it. Previously the RFC 8414 metadata
   dropped it in that case.
+* #1895 Dynamic Client Registration (RFC 7591) now registers OpenID Connect hybrid clients. A
+  `grant_types` list holding both `authorization_code` and `implicit` (with or without
+  `refresh_token`) creates an application with the OpenID Connect hybrid grant, and registration
+  and RFC 7592 management responses report it as `["authorization_code", "implicit",
+  "refresh_token"]`. Before, such a registration was refused with `invalid_client_metadata`. A
+  `response_types` list, previously ignored, is now checked against the grant types (RFC 7591
+  section 2.1, OpenID Connect Dynamic Client Registration 1.0 section 2). A response type the
+  registered grant cannot serve is refused with `invalid_client_metadata`, for example `code
+  id_token` without `implicit`, or plain `code` for a hybrid client.
 * #1880 The Dynamic Client Registration (RFC 7591) response now includes `client_secret_expires_at`
   (`0`, since the toolkit's client secrets do not expire) whenever it returns a `client_secret`, as
   RFC 7591 section 3.2.1 requires, and reports `client_id_issued_at` in registration and RFC 7592

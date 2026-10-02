@@ -401,17 +401,128 @@ class TestDynamicClientRegistration(TestCase):
 
     # -- validation failures -------------------------------------------------
 
-    def test_register_multiple_grant_types_is_400(self):
-        """Multiple non-refresh_token grant types → 400."""
+    def test_register_hybrid_client(self):
+        """#1895: authorization_code + implicit registers an OpenID Connect hybrid client.
+
+        The hybrid client's response types need both grants (OpenID Connect
+        Registration 1.0 section 2), which the toolkit's single hybrid grant
+        serves. The response reports them in RFC 7591 terms.
+        """
         self.client.force_login(self.user)
-        data = {
-            "redirect_uris": ["https://example.com/cb"],
-            "grant_types": ["authorization_code", "implicit"],
-        }
-        response = _post_register(self.client, data)
+        cases = (
+            (["authorization_code", "implicit"], None),
+            (["authorization_code", "implicit", "refresh_token"], None),
+            (["implicit", "authorization_code"], ["code id_token"]),
+            (["authorization_code", "implicit", "refresh_token"], ["code token"]),
+            (["authorization_code", "implicit"], ["code id_token token"]),
+            (["authorization_code", "implicit"], ["code id_token", "code token", "code id_token token"]),
+            # Response type values are unordered space-delimited lists.
+            (["authorization_code", "implicit"], ["id_token code"]),
+        )
+        for grant_types, response_types in cases:
+            with self.subTest(grant_types=grant_types, response_types=response_types):
+                data = {"redirect_uris": ["https://example.com/cb"], "grant_types": grant_types}
+                if response_types is not None:
+                    data["response_types"] = response_types
+                response = _post_register(self.client, data)
+                assert response.status_code == 201, response.content
+                body = response.json()
+                assert body["grant_types"] == ["authorization_code", "implicit", "refresh_token"]
+                app = Application.objects.get(client_id=body["client_id"])
+                assert app.authorization_grant_type == Application.GRANT_OPENID_HYBRID
+
+    def test_register_hybrid_missing_redirect_uris_is_400_with_rfc_terms(self):
+        """A hybrid client needs redirect_uris; the refusal names RFC 7591 grant types."""
+        self.client.force_login(self.user)
+        response = _post_register(self.client, {"grant_types": ["authorization_code", "implicit"]})
         assert response.status_code == 400
         body = response.json()
         assert body["error"] == "invalid_client_metadata"
+        assert "redirect_uris" in body["error_description"]
+        assert "openid-hybrid" not in body["error_description"]
+
+    def test_register_multiple_grant_types_is_400(self):
+        """Multiple non-refresh_token grant types other than the hybrid pair → 400."""
+        self.client.force_login(self.user)
+        for grant_types in (
+            ["authorization_code", "client_credentials"],
+            ["authorization_code", "implicit", "password"],
+        ):
+            with self.subTest(grant_types=grant_types):
+                data = {"redirect_uris": ["https://example.com/cb"], "grant_types": grant_types}
+                response = _post_register(self.client, data)
+                assert response.status_code == 400
+                assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_register_consistent_response_types(self):
+        """response_types the registered grant serves are accepted (RFC 7591 section 2.1)."""
+        self.client.force_login(self.user)
+        cases = (
+            (["authorization_code"], ["code"]),
+            (["authorization_code", "refresh_token"], ["code"]),
+            (["implicit"], ["id_token"]),
+            (["implicit"], ["id_token token", "token"]),
+            (["client_credentials"], []),
+        )
+        for grant_types, response_types in cases:
+            with self.subTest(grant_types=grant_types, response_types=response_types):
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": grant_types,
+                    "response_types": response_types,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 201, response.content
+
+    def test_register_inconsistent_response_types_is_400(self):
+        """RFC 7591 section 2.1: a client cannot register itself into an inconsistent state.
+
+        Each response type must be one the registered grant serves: OpenID
+        Connect Registration 1.0 section 2 lists the grant types each needs,
+        and a hybrid client's grant does not serve the plain code flow.
+        """
+        self.client.force_login(self.user)
+        cases = (
+            (["authorization_code"], ["code id_token"]),
+            (["authorization_code"], ["token"]),
+            (["implicit"], ["code"]),
+            (["authorization_code", "implicit"], ["code"]),
+            (["authorization_code", "implicit"], ["code id_token", "id_token"]),
+            (["client_credentials"], ["code"]),
+            (["authorization_code"], ["code", "magic"]),
+            (["authorization_code"], [""]),
+        )
+        for grant_types, response_types in cases:
+            with self.subTest(grant_types=grant_types, response_types=response_types):
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": grant_types,
+                    "response_types": response_types,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 400, response.content
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert "response_type" in body["error_description"]
+                # Refusals speak RFC 7591, never DOT's internal grant constants.
+                assert "openid-hybrid" not in body["error_description"]
+                assert "authorization-code" not in body["error_description"]
+
+    def test_register_malformed_response_types_is_400(self):
+        """response_types must be an array of strings."""
+        self.client.force_login(self.user)
+        for response_types in ("code", ["code", 1], {"code": True}):
+            with self.subTest(response_types=response_types):
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "response_types": response_types,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 400
+                body = response.json()
+                assert body["error"] == "invalid_client_metadata"
+                assert "response_type" in body["error_description"]
 
     def test_register_only_refresh_token_is_400(self):
         """grant_types=[refresh_token] only → 400."""
@@ -1366,10 +1477,10 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert response.json()["error"] == "invalid_client_metadata"
 
     def test_put_multiple_grant_types_is_400(self):
-        """PUT with multiple non-refresh_token grant types → 400."""
+        """PUT with multiple non-refresh_token grant types other than the hybrid pair → 400."""
         update_data = {
             "redirect_uris": ["https://example.com/cb"],
-            "grant_types": ["authorization_code", "implicit"],
+            "grant_types": ["authorization_code", "client_credentials"],
         }
         response = self.client.put(
             self.management_url,
@@ -1379,6 +1490,49 @@ class TestDynamicClientRegistrationManagement(TestCase):
         )
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_put_to_hybrid_and_read_back(self):
+        """#1895: a PUT can make the client hybrid, and GET reports it in RFC 7591 terms."""
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code", "implicit", "refresh_token"],
+            "response_types": ["code id_token"],
+            "client_name": "Managed App",
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200, response.content
+        hybrid_grant_types = ["authorization_code", "implicit", "refresh_token"]
+        assert response.json()["grant_types"] == hybrid_grant_types
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.authorization_grant_type == Application.GRANT_OPENID_HYBRID
+
+        token = response.json()["registration_access_token"]
+        response = self.client.get(self.management_url, **_bearer(token))
+        assert response.status_code == 200
+        assert response.json()["grant_types"] == hybrid_grant_types
+
+    def test_put_inconsistent_response_types_is_400(self):
+        """A PUT is checked like a registration; the row is left unchanged."""
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code", "implicit"],
+            "response_types": ["code"],
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.authorization_grant_type == Application.GRANT_AUTHORIZATION_CODE
 
     def test_put_invalid_metadata_is_400(self):
         """PUT with an invalid redirect_uri → 400 with validation message."""
@@ -1480,6 +1634,52 @@ class TestDynamicClientRegistrationOpenID(TestCase):
         claims = json.loads(verified.claims)
         assert claims["aud"] == client_id
         assert claims["nonce"] == "random_nonce"
+
+    def test_registered_hybrid_client_completes_hybrid_flow(self):
+        """#1895: a registered hybrid client gets a code and an ID Token in the fragment."""
+        redirect_uri = "https://example.com/cb"
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code", "implicit", "refresh_token"],
+                "response_types": ["code id_token"],
+            },
+        )
+        assert response.status_code == 201, response.content
+        registered = response.json()
+
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": registered["client_id"],
+                "response_type": "code id_token",
+                "redirect_uri": redirect_uri,
+                "scope": "openid",
+                "state": "random_state_string",
+                "nonce": "random_nonce",
+                "allow": True,
+            },
+        )
+        assert response.status_code == 302, response.content
+        fragment = parse_qs(urlparse(response["Location"]).fragment)
+        assert "code" in fragment
+        assert "id_token" in fragment
+
+        response = post_form(
+            self.client,
+            reverse("oauth2_provider:token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": fragment["code"][0],
+                "redirect_uri": redirect_uri,
+            },
+            **get_basic_auth_header(registered["client_id"], registered["client_secret"]),
+        )
+        assert response.status_code == 200, response.content
+        content = response.json()
+        assert "id_token" in content
+        assert "refresh_token" in content
 
 
 # ---------------------------------------------------------------------------

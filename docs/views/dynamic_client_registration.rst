@@ -103,7 +103,14 @@ Field Mapping
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``grant_types`` (array)             | ``authorization_grant_type``      | ``refresh_token`` is ignored;    |
 |                                     |                                   | only one non-refresh grant type  |
-|                                     |                                   | is supported per application     |
+|                                     |                                   | is supported per application,    |
+|                                     |                                   | except ``authorization_code``    |
+|                                     |                                   | with ``implicit``, which maps to |
+|                                     |                                   | ``openid-hybrid``; see the note  |
+|                                     |                                   | below                            |
++-------------------------------------+-----------------------------------+----------------------------------+
+| ``response_types`` (array)          | (not stored)                      | Checked against ``grant_types``; |
+|                                     |                                   | see the note below               |
 +-------------------------------------+-----------------------------------+----------------------------------+
 | ``token_endpoint_auth_method: none``| ``client_type = "public"``        |                                  |
 +-------------------------------------+-----------------------------------+----------------------------------+
@@ -114,6 +121,24 @@ Field Mapping
 |                                     |                                   | ``OIDC_RSA_PRIVATE_KEY``; see    |
 |                                     |                                   | the note below                   |
 +-------------------------------------+-----------------------------------+----------------------------------+
+
+.. note::
+    An application serves one grant type, so ``grant_types`` may name only one besides
+    ``refresh_token``. The exception is an OpenID Connect hybrid client, whose response types need
+    both ``authorization_code`` and ``implicit`` (`OpenID Connect Dynamic Client Registration 1.0
+    section 2 <https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata>`_):
+    that pair registers an application with the OpenID Connect hybrid grant, reported in responses
+    as ``["authorization_code", "implicit", "refresh_token"]``.
+
+    ``response_types`` is optional and not stored. When it is sent, every value must be one the
+    registered grant can use, or the request is refused with ``invalid_client_metadata``
+    (`RFC 7591 section 2.1 <https://datatracker.ietf.org/doc/html/rfc7591#section-2.1>`_):
+
+    - ``authorization_code``: ``code``;
+    - ``implicit``: ``token``, ``id_token`` and ``id_token token``;
+    - ``authorization_code`` with ``implicit``: ``code id_token``, ``code token`` and
+      ``code id_token token``. A hybrid client cannot also use plain ``code``;
+    - any other grant type: none.
 
 .. note::
     ``id_token_signed_response_alg`` (`OpenID Connect Dynamic Client Registration 1.0 section 2

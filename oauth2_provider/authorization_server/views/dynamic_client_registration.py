@@ -54,8 +54,36 @@ GRANT_TYPE_MAP = {
 # Grant types that are handled automatically by DOT alongside authorization_code
 IGNORED_GRANT_TYPES = {"refresh_token"}
 
+# The one combination of grant types DOT serves with a single application: an
+# OpenID Connect hybrid client, whose response types need both (OpenID Connect
+# Dynamic Client Registration 1.0 section 2).
+HYBRID_GRANT_TYPES = frozenset({"authorization_code", "implicit"})
+
 # DOT grant types for which Application.clean() requires redirect_uris
-REDIRECT_REQUIRED_GRANT_TYPES = {"authorization-code", "implicit"}
+REDIRECT_REQUIRED_GRANT_TYPES = {
+    AbstractApplication.GRANT_AUTHORIZATION_CODE,
+    AbstractApplication.GRANT_IMPLICIT,
+    AbstractApplication.GRANT_OPENID_HYBRID,
+}
+
+# The response types an application of each DOT grant type can use, as sets of
+# their space-delimited values, which are unordered (OAuth 2.0 Multiple
+# Response Type Encoding Practices section 2). They mirror
+# OAuth2Validator.validate_response_type. A grant type absent here serves no
+# response type.
+RESPONSE_TYPES_BY_GRANT = {
+    AbstractApplication.GRANT_AUTHORIZATION_CODE: frozenset({frozenset({"code"})}),
+    AbstractApplication.GRANT_IMPLICIT: frozenset(
+        {frozenset({"token"}), frozenset({"id_token"}), frozenset({"id_token", "token"})}
+    ),
+    AbstractApplication.GRANT_OPENID_HYBRID: frozenset(
+        {
+            frozenset({"code", "id_token"}),
+            frozenset({"code", "token"}),
+            frozenset({"code", "id_token", "token"}),
+        }
+    ),
+}
 
 
 def _error_response(error, description, status=400):
@@ -121,9 +149,12 @@ def _parse_metadata(body):
     return data, None
 
 
-def _resolve_grant_type(grant_types):
+def _resolve_grant_type(grant_types: list[str]) -> tuple[str | None, JsonResponse | None]:
     """
     Resolve RFC 7591 grant_types list to a single DOT grant type constant.
+
+    ``authorization_code`` together with ``implicit`` resolves to the OpenID
+    Connect hybrid grant, which serves both.
 
     Returns (dot_grant_type, error_response).
     """
@@ -139,11 +170,15 @@ def _resolve_grant_type(grant_types):
             "grant_types must contain at least one grant type other than refresh_token",
         )
 
+    if set(meaningful) == HYBRID_GRANT_TYPES:
+        return AbstractApplication.GRANT_OPENID_HYBRID, None
+
     if len(meaningful) > 1:
         return None, _error_response(
             "invalid_client_metadata",
             "DOT only supports one grant type per application; "
-            "multiple non-refresh_token grant types are not supported",
+            "multiple non-refresh_token grant types are not supported, "
+            "except authorization_code with implicit for an OpenID Connect hybrid client",
         )
 
     grant_type = meaningful[0]
@@ -154,6 +189,39 @@ def _resolve_grant_type(grant_types):
             f"Unsupported grant_type: {grant_type!r}",
         )
     return dot_grant, None
+
+
+def _check_response_types(data: dict[str, Any], dot_grant: str) -> JsonResponse | None:
+    """
+    Check the requested response_types against the resolved DOT grant type.
+
+    RFC 7591 section 2.1 asks the server to keep a client from registering
+    itself into an inconsistent state, so every response type must be one the
+    application will be able to use: OpenID Connect Dynamic Client
+    Registration 1.0 section 2 lists the grant types each response type needs,
+    and DOT serves one grant type per application, so a hybrid client cannot
+    use the plain ``code`` response type either. response_types is not stored;
+    when it is omitted there is nothing to check.
+
+    Returns an error response, or None when the response types are consistent.
+    """
+    response_types = data.get("response_types")
+    if response_types is None:
+        return None
+    if not isinstance(response_types, list):
+        return _error_response("invalid_client_metadata", "response_types must be an array")
+    if not all(isinstance(rt, str) for rt in response_types):
+        return _error_response("invalid_client_metadata", "Each response_type must be a string")
+
+    served = RESPONSE_TYPES_BY_GRANT.get(dot_grant, frozenset())
+    for response_type in response_types:
+        if frozenset(response_type.split()) not in served:
+            grant_types = ", ".join(_dot_grant_to_rfc_grant_types(dot_grant))
+            return _error_response(
+                "invalid_client_metadata",
+                f"response_type {response_type!r} is inconsistent with grant_types [{grant_types}]",
+            )
+    return None
 
 
 def _build_application_kwargs(
@@ -201,6 +269,10 @@ def _build_application_kwargs(
     if err:
         return None, err
     kwargs["authorization_grant_type"] = dot_grant
+
+    err = _check_response_types(data, dot_grant)
+    if err:
+        return None, err
 
     # Fail early with RFC 7591 field names/values; deferring to
     # Application.clean() would surface DOT's internal grant type constants
@@ -447,8 +519,12 @@ def _stored_jwks_for_response(application):
     return {"keys": public_keys}
 
 
-def _dot_grant_to_rfc_grant_types(dot_grant):
+def _dot_grant_to_rfc_grant_types(dot_grant: str) -> list[str]:
     """Return the RFC 7591 grant_types list for a DOT grant type constant."""
+    if dot_grant == AbstractApplication.GRANT_OPENID_HYBRID:
+        # The hybrid grant serves both grants its response types need, and
+        # refresh_token like authorization_code below.
+        return ["authorization_code", "implicit", "refresh_token"]
     reverse_map = {v: k for k, v in GRANT_TYPE_MAP.items()}
     rfc_grant = reverse_map.get(dot_grant, dot_grant)
     # For authorization_code, also surface refresh_token per RFC 7591 convention
