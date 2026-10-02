@@ -1,0 +1,1164 @@
+[
+    {
+        "test-name": "oidcc-alternate-happy-flow",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-alternate-happy-flow",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-claims-essential",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "EnsureUserInfoContainsName",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-claims-essential",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "EnsureUserInfoContainsName",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-claims-essential",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "EnsureUserInfoContainsName",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-codereuse-30seconds",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Testing if access token was revoked after authorization code reuse (the AS 'should' have revoked the access token)",
+        "condition": "EnsureHttpStatusCodeIs4xx",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-codereuse-30seconds",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Testing if access token was revoked after authorization code reuse (the AS 'should' have revoked the access token)",
+        "condition": "EnsureHttpStatusCodeIs4xx",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-codereuse-30seconds",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Testing if access token was revoked after authorization code reuse (the AS 'should' have revoked the access token)",
+        "condition": "EnsureHttpStatusCodeIs4xx",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "oidcc-ensure-request-object-with-redirect-uri",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "oidcc-ensure-request-object-with-redirect-uri",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "oidcc-ensure-request-object-with-redirect-uri",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-with-acr-values-succeeds",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "ValidateIdTokenACRClaimAgainstAcrValuesRequest",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-with-acr-values-succeeds",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ValidateIdTokenACRClaimAgainstAcrValuesRequest",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-with-acr-values-succeeds",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ValidateIdTokenACRClaimAgainstAcrValuesRequest",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-with-acr-values-succeeds",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "ValidateIdTokenACRClaimAgainstAcrValuesRequest",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckErrorFromAuthorizationEndpointErrorInvalidRequest",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckForUnexpectedParametersInErrorResponseFromAuthorizationEndpoint",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureErrorFromAuthorizationEndpointResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckErrorFromAuthorizationEndpointErrorInvalidRequest",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckForUnexpectedParametersInErrorResponseFromAuthorizationEndpoint",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureErrorFromAuthorizationEndpointResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-fails",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-max-age-1",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-max-age-1",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "oidcc-max-age-1",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-max-age-1",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-max-age-1",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "oidcc-max-age-1",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-max-age-1",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "WebRunner",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-max-age-1",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "oidcc-max-age-1",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckErrorFromAuthorizationEndpointIsOneThatRequiredAUserInterface",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckForUnexpectedParametersInErrorResponseFromAuthorizationEndpoint",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureErrorFromAuthorizationEndpointResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckErrorFromAuthorizationEndpointIsOneThatRequiredAUserInterface",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckForUnexpectedParametersInErrorResponseFromAuthorizationEndpoint",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureErrorFromAuthorizationEndpointResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckErrorFromAuthorizationEndpointIsOneThatRequiredAUserInterface",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckForUnexpectedParametersInErrorResponseFromAuthorizationEndpoint",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureErrorFromAuthorizationEndpointResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-not-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-refresh-token",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "EnsureServerConfigurationSupportsRefreshToken",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-refresh-token",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Second client: Verify authorization endpoint response",
+        "condition": "EnsureServerConfigurationSupportsRefreshToken",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-refresh-token",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureServerConfigurationSupportsRefreshToken",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-refresh-token",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "EnsureServerConfigurationSupportsRefreshToken",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-address",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-address",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-address",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-all",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-all",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-all",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-phone",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-phone",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-phone",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-profile",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-profile",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-scope-profile",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "VerifyScopesReturnedInUserInfoClaims",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckDiscEndpointRequestParameterSupported",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ExtractAuthorizationCodeFromAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckDiscEndpointRequestParameterSupported",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ExtractAuthorizationCodeFromAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code id_token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "RejectErrorInUrlQuery",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "",
+        "condition": "ValidateIdTokenNonce",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckDiscEndpointRequestParameterSupported",
+        "expected-result": "warning",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "code token"
+        },
+        "configuration-filename": "*dot-oidcc-hybrid.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckStateInAuthorizationResponse",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    }
+]

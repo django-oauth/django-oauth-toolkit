@@ -28,8 +28,8 @@ tox -e openid-conformance-suite -- --verbose         # print waiver templates
 2. `docker compose up --build` on `docker-compose.yml`: the suite's prebuilt images from
    `registry.gitlab.com/openid/conformance-suite` pinned to the suite version, MongoDB, and the IdP
    image built from this checkout (the root `Dockerfile`), served over TLS by gunicorn.
-   `seed_idp.py` runs once inside the IdP container to create the test user and the two
-   statically registered clients.
+   `seed_idp.py` runs once inside the IdP container to create the test user and a pair of
+   statically registered clients per grant type.
 3. Downloads the suite's own CI runner (`scripts/run-test-plan.py` and its two helper modules)
    at the same tag, checks their SHA-256, and runs the plans with their `config/*.json` and the
    plan's calibration files under `expected/`.
@@ -49,26 +49,32 @@ that did not run to completion.
 runs with. CI runs one matrix job per name, each with its own stack, so a plan's failure is
 visible on its own and the jobs run in parallel.
 
-Only the plans that pass are required: `config` and `rp-initiated-logout`, marked `required` in
-the workflow matrix and gating the merge through the `Test successful` check. The others run on
-every push but do not fail their job; each job writes the runner's totals to its summary and
-uploads the full report, so progress on the open gaps shows up run over run. When a plan passes,
-add it to the matrix's `include` list with `required: true` so it cannot regress.
+Every plan gates the merge through the `Test successful` check, except `hybrid-dcr`, which is
+marked `optional` in the workflow matrix because the registration endpoint rejects its client and
+no module runs to completion. Each plan's known toolkit gaps are recorded in its baseline (see
+[Baseline and waivers](#baseline-and-waivers)), so a new failure or warning anywhere fails CI,
+and so does a fixed one until its entry is removed. Every job also writes the runner's totals to
+its summary and uploads the full report. Once `hybrid-dcr` completes, record its baseline and
+drop it from the matrix's `include` list.
 
-| Name | Plan | Clients |
-|---|---|---|
-| `config` | `oidcc-config-certification-test-plan` | static |
-| `basic` | `oidcc-basic-certification-test-plan` (discovery, static client) | static |
-| `implicit` | `oidcc-implicit-certification-test-plan` (discovery, static client) | static |
-| `hybrid` | `oidcc-hybrid-certification-test-plan` (discovery, static client) | static |
-| `basic-dcr` | `oidcc-basic-certification-test-plan` (discovery, dynamic client) | RFC 7591 |
-| `implicit-dcr` | `oidcc-implicit-certification-test-plan` (discovery, dynamic client) | RFC 7591 |
-| `hybrid-dcr` | `oidcc-hybrid-certification-test-plan` (discovery, dynamic client) | RFC 7591 |
-| `dynamic` | `oidcc-dynamic-certification-test-plan` (`response_type=code`) | RFC 7591 |
-| `rp-initiated-logout` | `oidcc-rp-initiated-logout-certification-test-plan` (`code`, static client) | static |
-| `rp-initiated-logout-dcr` | `oidcc-rp-initiated-logout-certification-test-plan` (`code id_token`, dynamic client) | RFC 7591 |
+The plan names are the OpenID Provider certification profiles, which are named after the
+OpenID Connect flow they test rather than the OAuth grant:
 
-"Static" clients are the two `seed_idp.py` registers; "RFC 7591" means the suite registers
+| Name | Plan | Flow (`response_type`) | Clients |
+|---|---|---|---|
+| `config` | `oidcc-config-certification-test-plan` | none: discovery document and JWKS | static |
+| `basic` | `oidcc-basic-certification-test-plan` | Authorization Code (`code`) | static |
+| `implicit` | `oidcc-implicit-certification-test-plan` | Implicit (`id_token`, `id_token token`) | static |
+| `hybrid` | `oidcc-hybrid-certification-test-plan` | Hybrid (`code id_token`, `code token`, `code id_token token`) | static |
+| `basic-dcr` | `oidcc-basic-certification-test-plan` | Authorization Code (`code`) | RFC 7591 |
+| `implicit-dcr` | `oidcc-implicit-certification-test-plan` | Implicit (`id_token`, `id_token token`) | RFC 7591 |
+| `hybrid-dcr` | `oidcc-hybrid-certification-test-plan` | Hybrid (`code id_token`, `code token`, `code id_token token`) | RFC 7591 |
+| `dynamic` | `oidcc-dynamic-certification-test-plan` | Authorization Code (`code`), `private_key_jwt` clients | RFC 7591 |
+| `rp-initiated-logout` | `oidcc-rp-initiated-logout-certification-test-plan` | Authorization Code (`code`), then logout | static |
+| `rp-initiated-logout-dcr` | `oidcc-rp-initiated-logout-certification-test-plan` | Hybrid (`code id_token`), then logout | RFC 7591 |
+
+The static-client plans run with `client_secret_basic` and, for the code-based flows, also
+`client_secret_post`. "Static" clients are the pairs `seed_idp.py` registers; "RFC 7591" means the suite registers
 its own through the toolkit's dynamic client registration endpoint, which the demo IdP leaves
 open (`AllowAllDCRPermission`). That is why the Basic, Implicit and Hybrid plans run twice: the
 second run exercises registration as well as the flow.
@@ -118,18 +124,36 @@ Changing a template or URL in `tests/app/idp` can therefore break a browser step
 `docker-compose.log` in `reports/` and the suite's log-detail pages (linked from the runner
 output) show which one.
 
-## Waivers
+## Baseline and waivers
 
 `expected/<name>.failures.json` and `expected/<name>.skips.json` hold, per plan, the deviations
-that are accepted, in the suite's own format: a module name, a variant filter, a config filename
-glob, and for failures the failing condition class, whether a `failure` or a `warning` is expected,
-and a comment saying why; skips name the modules the suite skips because the OP does not
-support what they test (unsigned ID tokens, for one). Run with `--verbose` to get a ready-made
-failures entry for every unexpected failure. The files are per plan because the runner fails a
-run whose entries match no module it ran. Add an entry only with a reason that would survive
-review: a feature the toolkit does not implement, or something CI cannot do. A fix in
-`oauth2_provider` is the right response to everything else, and the runner fails the build
-when a listed failure or skip no longer happens, so stale waivers are caught.
+the runner accepts, in the suite's own format: a module name, a variant filter, a config filename
+glob, and for failures the failing condition class, whether a `failure` or a `warning` is
+expected, and a comment saying why. Skips name the modules the suite skips because the OP does
+not support what they test (unsigned ID tokens, for one). The files are per plan because the
+runner fails a run whose entries match no module it ran.
+
+The failures files hold two kinds of entry:
+
+* **Baseline** entries (`"baseline": true`) record the toolkit's known conformance gaps, one per
+  failing module, variant, block and condition. They turn each plan into a ratchet: the runner
+  fails the build for a failure or warning that is not listed, so a regression cannot land, and
+  for a listed one that no longer happens, so a fix must also delete its entries and the diff
+  shows exactly which gaps it closed. `baseline.py` writes them from a runner log; never edit
+  them by hand.
+* **Waivers** (no `baseline` key) are hand-written, each with a reason that would survive review:
+  a feature the toolkit does not implement on purpose, or something CI cannot do (rotating the
+  OP's signing key, reaching a `jwks_uri` on the suite's private host). `baseline.py` keeps them.
+
+To update a plan's baseline after a change that moves it, take the runner output (in CI, the
+job's `runner.log` artifact or its log; locally, the terminal output), regenerate, and commit the
+diff with the change:
+
+```sh
+python tests/openid-conformance-suite/baseline.py basic path/to/runner.log
+```
+
+Run with `--verbose` to get a ready-made entry for a single unexpected failure instead.
 
 ## Upgrading the suite
 

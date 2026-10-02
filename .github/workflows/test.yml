@@ -658,10 +658,12 @@ jobs:
     # suite version, the plan table and the accepted deviations live in
     # tests/openid-conformance-suite/.
     #
-    # Only plans marked `required` gate the merge (through `success`). The rest
-    # run on every push and report their totals in the job summary, so progress
-    # on the open conformance gaps is visible, but a red run does not fail the
-    # job. Mark a plan required once it passes.
+    # Every plan gates the merge (through `success`) except those marked
+    # `optional`. A plan's known toolkit gaps are recorded in its expected/
+    # baseline, so any new failure or warning fails the job, and so does a fixed
+    # one until its baseline entry is removed (see the README there). A plan is
+    # optional only while its modules cannot run to completion, which leaves
+    # nothing to baseline; it still runs and reports its totals in the summary.
     name: openid-conformance-suite
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -681,10 +683,9 @@ jobs:
           - rp-initiated-logout
           - rp-initiated-logout-dcr
         include:
-          - plan: config
-            required: true
-          - plan: rp-initiated-logout
-            required: true
+          # Registration rejects the hybrid client, so no module completes.
+          - plan: hybrid-dcr
+            optional: true
     steps:
       - uses: actions/checkout@v4
 
@@ -697,9 +698,9 @@ jobs:
         run: python -m pip install --upgrade tox
 
       - name: Run the ${{ matrix.plan }} plan
-        # A plan that does not pass yet must not fail the job; its result is
-        # still in the step status, the summary below and the artifact.
-        continue-on-error: ${{ !matrix.required }}
+        # An optional plan must not fail the job; its result is still in the
+        # step status, the summary below and the artifact.
+        continue-on-error: ${{ matrix.optional == true }}
         run: |
           mkdir -p tests/openid-conformance-suite/reports
           tox -e openid-conformance-suite -- --plan ${{ matrix.plan }} 2>&1 \
@@ -709,7 +710,7 @@ jobs:
         if: always()
         env:
           PLAN: ${{ matrix.plan }}
-          GATE: ${{ matrix.required && 'required' || 'not required yet' }}
+          GATE: ${{ matrix.optional && 'optional' || 'required' }}
         run: |
           {
             echo "### openid-conformance-suite: ${PLAN} (${GATE})"
@@ -765,7 +766,7 @@ jobs:
       - mysql-pr
       - oracle-standalone
       - e2e-compliance
-      # Only its `required` plans can fail this job; see the job's comment.
+      # Every plan but the `optional` ones can fail this job; see its comment.
       - openid-conformance-suite
     runs-on: ubuntu-latest
     name: Test successful

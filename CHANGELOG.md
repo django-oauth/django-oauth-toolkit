@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/app/idp` demo provider in Docker: the Config, Basic, Implicit, Hybrid, Dynamic and
   RP-Initiated Logout OP certification plans, with static and RFC 7591 dynamically registered
   clients, one CI matrix entry per plan, the suite version pinned and accepted deviations recorded
-  in an expected-failures file. The plans that pass (Config, RP-Initiated Logout) are required;
-  the rest report their results without blocking a merge.
+  in per-plan expected-failures files. Each plan's known gaps are recorded as a baseline
+  (`tests/openid-conformance-suite/baseline.py` regenerates it), so any conformance regression
+  fails CI.
 * #1730 A `cleardcrapplications` management command that deletes DCR-registered applications
   (`registration_source="dcr"`) which hold no live tokens or grants and were last registered or
   modified at least `--min-unmodified-days` days ago (default 7). DCR clients that re-register
