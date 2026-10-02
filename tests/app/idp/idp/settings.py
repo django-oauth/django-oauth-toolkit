@@ -38,6 +38,14 @@ env = environ.FileAwareEnv(
         str,
         "oauth2_provider.authorization_server.cimd.SafeMetadataFetcher",
     ),
+    OAUTH2_PROVIDER_CLIENT_ASSERTION_JWKS_FETCHER=(
+        str,
+        "oauth2_provider.authorization_server.client_assertions.SafeJWKSFetcher",
+    ),
+    # Hosts idp.client_assertions.PrivateHostJWKSFetcher may fetch a client
+    # jwks_uri from although they resolve to private addresses (the OpenID
+    # conformance stack names the suite's host). Ignored by the default fetcher.
+    JWKS_URI_PRIVATE_HOSTS=(list, []),
     OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY=(
         str,
         """
@@ -339,7 +347,13 @@ OAUTH2_PROVIDER = {
     # fetch metadata documents from a plain-HTTP loopback server; production
     # deployments must keep the default SSRF-hardened fetcher.
     "CIMD_METADATA_FETCHER": env("OAUTH2_PROVIDER_CIMD_METADATA_FETCHER"),
+    # The OpenID conformance stack points this at
+    # idp.client_assertions.PrivateHostJWKSFetcher so the suite's jwks_uri on
+    # the compose network can be fetched; production deployments must keep the
+    # default SSRF-hardened fetcher.
+    "CLIENT_ASSERTION_JWKS_FETCHER": env("OAUTH2_PROVIDER_CLIENT_ASSERTION_JWKS_FETCHER"),
 }
+JWKS_URI_PRIVATE_HOSTS = env("JWKS_URI_PRIVATE_HOSTS")
 # needs to be set to allow cors requests from the test app, along with ALLOWED_SCHEMES=["http"]
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = env("OAUTHLIB_INSECURE_TRANSPORT")
 

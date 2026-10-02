@@ -37,6 +37,14 @@ x-idp: &idp
     OAUTH2_PROVIDER_PKCE_REQUIRED: "False"
     OAUTH2_PROVIDER_OIDC_ENABLED: "True"
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED: "True"
+    # The suite registers private_key_jwt clients whose jwks_uri is on its own
+    # host, which resolves to a private compose address. The demo IdP's test-only
+    # fetcher lets that one host through the SSRF guard, and the IdP trusts the
+    # certificate run.py mints for it (and nothing else: it makes no other
+    # outbound TLS connections here).
+    OAUTH2_PROVIDER_CLIENT_ASSERTION_JWKS_FETCHER: idp.client_assertions.PrivateHostJWKSFetcher
+    JWKS_URI_PRIVATE_HOSTS: localhost.emobix.co.uk
+    SSL_CERT_FILE: /certs/suite-cert.pem
 
 services:
   idp-migrate:
@@ -90,6 +98,11 @@ services:
 
   nginx:
     image: registry.gitlab.com/openid/conformance-suite/nginx:${IMAGE_TAG:-release-v5.3.1}
+    volumes:
+      # The image's own certificate is for CN=localhost only; run.py mints one
+      # for localhost.emobix.co.uk that the IdP trusts (see SSL_CERT_FILE above).
+      - ./.certs/suite-cert.pem:/etc/ssl/certs/nginx-selfsigned.crt:ro
+      - ./.certs/suite-key.pem:/etc/ssl/private/nginx-selfsigned.key:ro
     ports:
       - "8443:8443"
       - "8444:8444"

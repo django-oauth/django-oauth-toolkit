@@ -9,24 +9,6 @@
         "comment": "The module needs the OP's signing key rotated between its two JWKS fetches, and the suite's runner starts it with no hook in between, so CI cannot rotate the key; the suite's own CI waives this condition the same way. The demo IdP can rotate: README.md, 'Rotating the signing key', is the manual step that passes the module."
     },
     {
-        "test-name": "oidcc-registration-jwks-uri",
-        "variant": "*",
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Verify authorization endpoint response",
-        "condition": "CheckTokenEndpointHttpStatus200",
-        "expected-result": "failure",
-        "comment": "The suite registers the client with a jwks_uri on its own host. Inside the compose network that host resolves to a private address and serves a self-signed certificate for CN=localhost, and oauth2_provider.core.safe_fetch refuses both (SSRF guard, default TLS trust), so the private_key_jwt assertion cannot be verified and the token endpoint returns an error. Clients registering with an inline jwks pass the same flow, and against the hosted suite, whose jwks_uri is public and publicly trusted, the module is expected to pass: an environment limitation of CI, not an OP gap (README.md, 'The client's jwks_uri')."
-    },
-    {
-        "test-name": "oidcc-refresh-token-rp-key-rotation",
-        "variant": "*",
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Verify authorization endpoint response",
-        "condition": "CheckTokenEndpointHttpStatus200",
-        "expected-result": "failure",
-        "comment": "The suite registers the client with a jwks_uri on its own host. Inside the compose network that host resolves to a private address and serves a self-signed certificate for CN=localhost, and oauth2_provider.core.safe_fetch refuses both (SSRF guard, default TLS trust), so the private_key_jwt assertion cannot be verified and the token endpoint returns an error. Clients registering with an inline jwks pass the same flow, and against the hosted suite, whose jwks_uri is public and publicly trusted, the module is expected to pass: an environment limitation of CI, not an OP gap (README.md, 'The client's jwks_uri')."
-    },
-    {
         "test-name": "oidcc-request-uri-signed-rs256",
         "variant": {
             "client_auth_type": "private_key_jwt",

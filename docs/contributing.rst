@@ -499,9 +499,9 @@ them with ``tests/openid-conformance-suite/baseline.py`` from the job's ``runner
 the diff with the fix. The one plan that cannot complete yet (RP-Initiated Logout with dynamically
 registered clients) is marked ``optional`` in the workflow and only reports its results.
 ``tests/openid-conformance-suite/README.md`` describes the plans, how to run a single one, and how
-to update the waivers or the pinned suite version. It also lists the three Dynamic plan conditions
-that CI waives because it cannot satisfy them, and the manual signing-key rotation that passes one
-of them.
+to update the waivers or the pinned suite version. It also explains the one Dynamic plan condition
+CI waives because it cannot satisfy it, the manual signing-key rotation that passes it, and how the
+stack lets the IdP fetch the suite's ``jwks_uri``.
 These runs are not a certification: that still means running the hosted suite at
 certification.openid.net and submitting the results.
 

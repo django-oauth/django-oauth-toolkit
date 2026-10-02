@@ -23,8 +23,10 @@ tox -e openid-conformance-suite -- --verbose         # print waiver templates
 
 `run.py` does the work:
 
-1. Generates a throwaway self-signed certificate for the IdP hostname `dot-idp`. The suite
-   requires an https issuer; it does not validate the certificate of the server under test.
+1. Generates two throwaway self-signed certificates. One is for the IdP hostname `dot-idp`: the
+   suite requires an https issuer, but does not validate the certificate of the server under test.
+   The other is for the suite's own host, `localhost.emobix.co.uk`. It replaces the certificate in
+   the suite's nginx image, and the IdP trusts it (see [The client's `jwks_uri`](#the-clients-jwks_uri)).
 2. `docker compose up --build` on `docker-compose.yml`: the suite's prebuilt images from
    `registry.gitlab.com/openid/conformance-suite` pinned to the suite version, MongoDB, and the IdP
    image built from this checkout (the root `Dockerfile`), served over TLS by gunicorn.
@@ -137,8 +139,8 @@ The failures files hold two kinds of entry:
   them by hand.
 * **Waivers** (no `baseline` key) are hand-written, each with a reason that would survive review:
   a feature the toolkit does not implement on purpose, or something CI cannot do (rotating the
-  OP's signing key, reaching a `jwks_uri` on the suite's private host; see
-  [What CI cannot satisfy](#what-ci-cannot-satisfy)). `baseline.py` keeps them.
+  OP's signing key; see [What CI cannot satisfy](#what-ci-cannot-satisfy)). `baseline.py` keeps
+  them.
 
 To update a plan's baseline after a change that moves it, take the runner output (in CI, the
 job's `runner.log` artifact or its log; locally, the terminal output), regenerate, and commit the
@@ -156,14 +158,9 @@ Run with `--verbose` to get a ready-made entry for a single unexpected failure i
 
 ## What CI cannot satisfy
 
-The `dynamic` plan carries the only waivers. CI runs all three modules, but each one has a
-condition that CI cannot satisfy, and that condition is waived. None of them covers a toolkit gap.
-
-| Module | Waived condition | Why CI cannot satisfy it | For certification |
-|---|---|---|---|
-| `oidcc-server-rotate-keys` | `VerifyNewJwksHasNewSigningKey` | The OP's signing key has to be rotated between two JWKS fetches. | Manual step, [below](#rotating-the-signing-key). |
-| `oidcc-registration-jwks-uri` | `CheckTokenEndpointHttpStatus200` | The IdP cannot fetch the suite's `jwks_uri`. | Expected to pass against the hosted suite. |
-| `oidcc-refresh-token-rp-key-rotation` | `CheckTokenEndpointHttpStatus200` | The same `jwks_uri`. | Expected to pass against the hosted suite. |
+The `dynamic` plan carries the only waiver. CI runs `oidcc-server-rotate-keys`, but cannot
+satisfy its `VerifyNewJwksHasNewSigningKey` condition, so that condition is waived. It does not
+cover a toolkit gap, and the manual step [below](#rotating-the-signing-key) passes it.
 
 ### Rotating the signing key
 
@@ -203,28 +200,26 @@ way. To pass the module by hand:
 5. `docker compose down --volumes` when done. To go back to the original key and keep the stack
    up, run the last command of step 3 again without `-f docker-compose.rotate-keys.yml`.
 
-### The client's `jwks_uri`
+## The client's `jwks_uri`
 
-These two modules register a `private_key_jwt` client whose `jwks_uri` is on the suite's own host,
-`https://localhost.emobix.co.uk:8443/...`. The IdP fetches that document through
-`oauth2_provider.core.safe_fetch` to verify the client assertion. Inside the compose network two
-things stop the fetch:
+`oidcc-registration-jwks-uri` and `oidcc-refresh-token-rp-key-rotation` register a
+`private_key_jwt` client whose `jwks_uri` is on the suite's own host,
+`https://localhost.emobix.co.uk:8443/...`, and the IdP has to fetch it to verify the client's
+assertions. Inside the compose network two things would stop that fetch, and the stack deals with
+both:
 
-* The `nginx` alias resolves to a private compose address, and the SSRF guard refuses every
-  non-public address. Unlike the CIMD metadata fetch, which the demo IdP can swap out through
-  `CIMD_METADATA_FETCHER`, the `jwks_uri` fetch has no pluggable fetcher, so the demo IdP has no
-  supported way to allow the suite's host.
-* The suite's `nginx` image serves a self-signed certificate for `CN=localhost` with no
-  `localhost.emobix.co.uk` name, so the IdP's default TLS verification would refuse it even from a
-  public address.
+* The host resolves to a private compose address, which the library's SSRF guard refuses.
+  `docker-compose.yml` sets `CLIENT_ASSERTION_JWKS_FETCHER` to the demo IdP's test-only
+  `idp.client_assertions.PrivateHostJWKSFetcher`. It lets the hosts in `JWKS_URI_PRIVATE_HOSTS`,
+  here only the suite's host, resolve to private addresses, and sends every other host through the
+  default fetcher. It still requires `https`, verifies the certificate, refuses redirects and
+  applies the default size and content checks.
+* The suite's nginx image serves a self-signed certificate for `CN=localhost` only. `run.py` mints
+  one for `localhost.emobix.co.uk`, `docker-compose.yml` mounts it over the image's, and the IdP
+  trusts it through `SSL_CERT_FILE`.
 
-Client authentication therefore fails and the token endpoint returns an error. The modules whose
-clients register an inline `jwks` cover client assertion verification in this plan. Fetching a
-`jwks_uri`, and refetching it when a new `kid` appears, are covered by the unit tests in
-`tests/test_client_assertions.py`. At certification.openid.net the `jwks_uri` is on the hosted
-suite's public hostname with a publicly trusted certificate, so both modules are expected to pass
-there for an OP the hosted suite can reach, with no manual step. They have not been run there
-yet.
+Both live in the conformance stack only. "Custom outbound fetchers" in the docs
+(`docs/advanced_topics.rst`) lists what a production fetcher must keep doing.
 
 ## Upgrading the suite
 
