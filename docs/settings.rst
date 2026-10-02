@@ -721,7 +721,11 @@ Default::
         "urn:ietf:params:oauth:grant-type:device_code",
     ]
 
-The grant types advertised by the :doc:`oauth2_server_metadata` endpoint.
+The grant types advertised as ``grant_types_supported`` by the :doc:`oauth2_server_metadata`
+endpoint and, when OpenID Connect is enabled, by the OpenID Connect discovery document
+(``/.well-known/openid-configuration``). With ``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT`` or
+``COMPLIANT_BCP_RFC9700_PASSWORD_GRANT`` enabled, ``implicit`` or ``password`` is left out;
+``implicit`` stays while a hybrid response type is still advertised, since those need it.
 
 OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

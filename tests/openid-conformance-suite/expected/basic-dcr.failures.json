@@ -68,33 +68,5 @@
         "expected-result": "failure",
         "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
         "baseline": true
-    },
-    {
-        "test-name": "oidcc-refresh-token",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Second client: Verify authorization endpoint response",
-        "condition": "EnsureServerConfigurationSupportsRefreshToken",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-refresh-token",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code"
-        },
-        "configuration-filename": "*dot-oidcc-dcr.json",
-        "current-block": "Verify authorization endpoint response",
-        "condition": "EnsureServerConfigurationSupportsRefreshToken",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
     }
 ]

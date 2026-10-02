@@ -86,9 +86,26 @@ class TestConnectDiscoveryInfoView(TestCase):
     def test_get_connect_discovery_info_drops_bcp_gated_grant_types(self):
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code"]
         response = self.client.get("/o/.well-known/openid-configuration")
         assert response.json()["grant_types_supported"] == [
             "authorization_code",
+            "client_credentials",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:device_code",
+        ]
+
+    def test_get_connect_discovery_info_keeps_implicit_while_hybrid_is_advertised(self):
+        """Hybrid response types need the implicit grant type (OIDC DCR 1.0 §2) and the
+        implicit gate leaves them enabled, so the document must not contradict itself."""
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT = True
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "code id_token", "id_token"]
+        body = self.client.get("/o/.well-known/openid-configuration").json()
+        assert body["response_types_supported"] == ["code", "code id_token"]
+        assert body["grant_types_supported"] == [
+            "authorization_code",
+            "implicit",
             "client_credentials",
             "refresh_token",
             "urn:ietf:params:oauth:grant-type:device_code",

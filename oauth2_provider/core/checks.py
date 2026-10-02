@@ -13,8 +13,8 @@ from oauth2_provider.settings import oauth2_settings
 # in 4.0.
 #
 # Note: the OAUTH2_GRANT_TYPES_SUPPORTED / OAUTH2_RESPONSE_TYPES_SUPPORTED metadata
-# lists are advertisement-only (RFC 8414 discovery) and do not gate what the endpoints
-# accept, so they are deliberately not consulted here: while a behavior gate is False
+# lists are advertisement-only (RFC 8414 and OpenID Connect discovery) and do not gate what
+# the endpoints accept, so they are deliberately not consulted here: while a behavior gate is False
 # the server accepts the discouraged behavior regardless of what discovery advertises.
 _BCP_GATES = [
     (

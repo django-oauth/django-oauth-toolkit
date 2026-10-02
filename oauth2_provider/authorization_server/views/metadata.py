@@ -5,6 +5,7 @@ by the OpenID Connect discovery document
 (:class:`oauth2_provider.authorization_server.oidc.views.ConnectDiscoveryInfoView`).
 """
 
+from collections.abc import Iterable
 from urllib.parse import urlparse
 
 from django.http import JsonResponse
@@ -30,6 +31,12 @@ def _is_implicit_response_type(response_type):
     return "code" not in values and bool(values & {"token", "id_token"})
 
 
+def _is_hybrid_response_type(response_type: str) -> bool:
+    """Whether a response type mixes ``code`` with ``token`` and/or ``id_token``."""
+    values = set(response_type.split())
+    return "code" in values and bool(values & {"token", "id_token"})
+
+
 def bcp_filter_response_types(response_types):
     """
     Drop implicit response types from a discovery list when the implicit-grant gate
@@ -42,14 +49,21 @@ def bcp_filter_response_types(response_types):
     return [rt for rt in response_types if not _is_implicit_response_type(rt)]
 
 
-def bcp_filter_grant_types(grant_types):
+def bcp_filter_grant_types(grant_types: Iterable[str], response_types: Iterable[str] = ()) -> list[str]:
     """
     Drop ``implicit`` and ``password`` from a discovery list when their gates
     (``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT`` / ``COMPLIANT_BCP_RFC9700_PASSWORD_GRANT``)
     are enabled. Shared by the RFC 8414 and OIDC discovery documents.
+
+    ``implicit`` is kept while *response_types* (the already filtered list being
+    advertised) still holds a hybrid response type, because those need both the
+    ``authorization_code`` and ``implicit`` grant types (OpenID Connect Dynamic
+    Client Registration 1.0 section 2) and the implicit gate leaves them enabled.
     """
     grant_types = list(grant_types)
-    if oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT:
+    if oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT and not any(
+        _is_hybrid_response_type(rt) for rt in response_types
+    ):
         grant_types = [gt for gt in grant_types if gt != "implicit"]
     if oauth2_settings.COMPLIANT_BCP_RFC9700_PASSWORD_GRANT:
         grant_types = [gt for gt in grant_types if gt != "password"]
@@ -114,7 +128,7 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
         # COMPLIANT_BCP_RFC9700_* gate has enabled, so discovery reflects what
         # the server will actually accept.
         response_types = bcp_filter_response_types(oauth2_settings.OAUTH2_RESPONSE_TYPES_SUPPORTED)
-        grant_types = bcp_filter_grant_types(oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED)
+        grant_types = bcp_filter_grant_types(oauth2_settings.OAUTH2_GRANT_TYPES_SUPPORTED, response_types)
 
         data = {
             "issuer": issuer_url,
