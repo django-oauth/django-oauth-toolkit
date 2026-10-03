@@ -897,6 +897,15 @@ Default: ``["public"]``
 
 The subject types that are advertised to be supported by this server.
 
+OIDC_ACR_VALUES_SUPPORTED
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``[]``
+
+The Authentication Context Class References published as ``acr_values_supported``
+in the OpenID Connect discovery document, which leaves the field out when the list
+is empty. List the values your validator's ``get_acr`` can return in the ``acr``
+claim of the ID Token; see :ref:`oidc-acr`.
+
 OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``["client_secret_post", "client_secret_basic"]``

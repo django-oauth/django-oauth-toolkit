@@ -263,6 +263,9 @@ DEFAULTS = {
         "code id_token token",
     ],
     "OIDC_SUBJECT_TYPES_SUPPORTED": ["public"],
+    # Authentication Context Class References published as acr_values_supported
+    # (OpenID Connect Discovery 1.0 section 3); omitted from discovery when empty.
+    "OIDC_ACR_VALUES_SUPPORTED": [],
     "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
         "client_secret_post",
         "client_secret_basic",

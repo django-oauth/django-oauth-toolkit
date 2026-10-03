@@ -31,6 +31,9 @@ class AllowForm(forms.Form):
     code_challenge = forms.CharField(required=False, widget=forms.HiddenInput())
     code_challenge_method = forms.CharField(required=False, widget=forms.HiddenInput())
     claims = forms.CharField(required=False, widget=forms.HiddenInput())
+    # Kept for the same reason as response_mode: with a stored request, the URL the
+    # form posts back to carries only request_uri.
+    acr_values = forms.CharField(required=False, widget=forms.HiddenInput())
     resource = forms.CharField(required=False, widget=forms.HiddenInput())  # RFC 8707
 
 

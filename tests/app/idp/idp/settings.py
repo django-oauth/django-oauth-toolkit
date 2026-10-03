@@ -335,6 +335,9 @@ OAUTH2_PROVIDER = {
     "DCR_REGISTRATION_PERMISSION_CLASSES": (
         "oauth2_provider.authorization_server.dcr.AllowAllDCRPermission",
     ),
+    # The only Authentication Context Class this demo's password login can claim;
+    # idp.oauth.CustomOAuth2Validator.get_acr reports it in the ID Token's acr.
+    "OIDC_ACR_VALUES_SUPPORTED": ["0"],
     # Advertise RFC 7523 JWT client authentication (the seed data ships a
     # private_key_jwt demo application; see tests/app/README.md). Listing
     # private_key_jwt in both also lets a CIMD document choose it when

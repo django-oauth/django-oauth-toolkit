@@ -153,6 +153,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             "code_challenge": self.oauth2_data.get("code_challenge", None),
             "code_challenge_method": self.oauth2_data.get("code_challenge_method", None),
             "claims": self.oauth2_data.get("claims", None),
+            "acr_values": self.oauth2_data.get("acr_values", None),
             "resource": self.oauth2_data.get("resource", None),  # RFC 8707
         }
         return initial_data
@@ -179,6 +180,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             credentials["nonce"] = form.cleaned_data.get("nonce")
         if form.cleaned_data.get("claims", False):
             credentials["claims"] = form.cleaned_data.get("claims")
+        if form.cleaned_data.get("acr_values", False):
+            credentials["acr_values"] = form.cleaned_data.get("acr_values")
         if form.cleaned_data.get("resource", False):  # RFC 8707
             resource_value = form.cleaned_data.get("resource")
             # RFC 8707 uses repeated query params for multiple resources, but the
@@ -643,6 +646,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             kwargs["nonce"] = credentials["nonce"]
         if "claims" in credentials:
             kwargs["claims"] = json.dumps(credentials["claims"])
+        if request.GET.get("acr_values"):
+            kwargs["acr_values"] = request.GET["acr_values"]
         # RFC 8707: Extract resource parameter(s) from request (oauthlib doesn't handle it)
         # Multiple resource parameters are allowed per RFC 8707
         if "resource" in request.GET:

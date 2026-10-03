@@ -53,6 +53,16 @@ class CustomOAuth2Validator(OAuth2Validator):
     def validate_silent_authorization(self, request) -> bool:
         return True
 
+    def get_acr(self, request) -> str | None:
+        # The acr claim of the ID Token (OpenID Connect Core 1.0 section 2). This demo
+        # signs users in with a password only, which does not meet ISO/IEC 29115 level
+        # 1, so the only class it can truthfully claim is "0", whatever the client
+        # asked for in request.acr_values. A deployment with stronger login methods
+        # would inspect request.user here (for example, django-otp's
+        # request.user.is_verified()) and return the class that login satisfied,
+        # preferring one of the space-separated request.acr_values when it qualifies.
+        return "0"
+
     def get_additional_claims(self, request):
         # Standard OIDC claims sourced from the Django user and its idp.models.UserProfile.
         # django-oauth-toolkit filters each claim by the granted scope via
