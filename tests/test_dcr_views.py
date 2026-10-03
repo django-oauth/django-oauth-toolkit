@@ -792,6 +792,7 @@ class TestDynamicClientRegistration(TestCase):
                 response = _post_register(self.client, data)
                 assert response.status_code == 400, (field, bad_uri)
                 assert response.json()["error"] == "invalid_client_metadata"
+                assert field in response.json()["error_description"], (field, bad_uri)
         assert Application.objects.count() == 0
 
     def test_register_public_client_http_post_logout_redirect_uri_strict_is_400(self):

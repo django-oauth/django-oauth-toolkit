@@ -69,7 +69,8 @@ class AllowedURIValidator(URIValidator):
     def __call__(self, value):
         value = force_str(value)
         try:
-            scheme, netloc, path, query, fragment = urlsplit(value)
+            split = urlsplit(value)
+            scheme, netloc, path, query, fragment = split
         except ValueError as e:
             raise ValidationError(
                 "%(name)s URI validation error. %(cause)s: %(value)s",
@@ -132,7 +133,7 @@ class AllowedURIValidator(URIValidator):
         # URIValidator's regex is not anchored at the end, so it accepts a prefix like
         # "https://host" of "https://host:abc"; urlsplit().port is what rejects it.
         try:
-            urlsplit(value).port
+            split.port
         except ValueError as e:
             raise ValidationError(
                 "%(name)s URI validation error. %(cause)s: %(value)s",

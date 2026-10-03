@@ -392,10 +392,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
-* #1918 The default redirect URI validator rejects a non-numeric or out-of-range port such as
-  `https://rp.example.com:abc/bye` or `:99999`. Redirect URI matching treats a malformed port in a
-  stored or requested URI as a mismatch instead of raising `ValueError`, so one bad legacy entry no
-  longer breaks the valid URIs registered beside it (RP-Initiated Logout returned HTTP 500).
+* #1918 `AllowedURIValidator` rejects a non-numeric or out-of-range port such as
+  `https://rp.example.com:abc/bye` or `:99999`. This applies to every field it validates, including
+  `allowed_origins`, and to custom validators that subclass it. Redirect URI matching treats a
+  malformed port in a stored or requested URI as a mismatch instead of raising `ValueError`, so one
+  bad legacy entry no longer breaks the valid URIs registered beside it. RP-Initiated Logout and the
+  authorization endpoint both returned HTTP 500 for an affected client. An application already stored
+  with a malformed port now fails `clean()` on its next save, for example in the admin, so operators
+  must correct those values.
 * #1899 An unexpected error while fetching or reading a `private_key_jwt` client's `jwks_uri`
   (RFC 7523), such as a deeply nested JSON document that exhausts the parser's recursion limit, now
   fails client authentication with `invalid_client` and arms the fetch failure backoff, instead of

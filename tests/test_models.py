@@ -2169,6 +2169,10 @@ def test_redirect_to_uri_allowed_malformed_port_is_a_mismatch():
     ]
     assert redirect_to_uri_allowed("https://rp.example.com/bye", allowed)
     assert not redirect_to_uri_allowed("https://rp.example.com/bye", allowed[:2])
+    allowed_ok, reasons = check_redirect_to_uri_allowed("https://rp.example.com/bye", allowed[:2])
+    assert not allowed_ok
+    assert [r[0] for r in reasons] == allowed[:2]
+    assert all("malformed port" in r[1] for r in reasons)
     assert not redirect_to_uri_allowed("https://rp.example.com:abc/bye", allowed)
     assert not redirect_to_uri_allowed("http://127.0.0.1:99999/cb", ["http://127.0.0.1/cb"])
     assert not redirect_to_uri_allowed("http://127.0.0.1/cb", ["http://127.0.0.1:abc/cb"])
