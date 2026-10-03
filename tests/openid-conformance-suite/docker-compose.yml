@@ -37,6 +37,9 @@ x-idp: &idp
     OAUTH2_PROVIDER_PKCE_REQUIRED: "False"
     OAUTH2_PROVIDER_OIDC_ENABLED: "True"
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED: "True"
+    # oidcc-codereuse-30seconds checks that reusing an authorization code revokes the
+    # access token issued from it (RFC 6749 section 4.1.2).
+    OAUTH2_PROVIDER_COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE: "True"
     # The suite registers private_key_jwt clients whose jwks_uri is on its own
     # host, which resolves to a private compose address. The demo IdP's test-only
     # fetcher lets that one host through the SSRF guard, and the IdP trusts the

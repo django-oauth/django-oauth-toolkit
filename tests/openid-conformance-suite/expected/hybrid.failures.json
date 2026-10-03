@@ -42,48 +42,6 @@
         "baseline": true
     },
     {
-        "test-name": "oidcc-codereuse-30seconds",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code id_token token"
-        },
-        "configuration-filename": "*dot-oidcc-hybrid.json",
-        "current-block": "Testing if access token was revoked after authorization code reuse (the AS 'should' have revoked the access token)",
-        "condition": "EnsureHttpStatusCodeIs4xx",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-codereuse-30seconds",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code id_token"
-        },
-        "configuration-filename": "*dot-oidcc-hybrid.json",
-        "current-block": "Testing if access token was revoked after authorization code reuse (the AS 'should' have revoked the access token)",
-        "condition": "EnsureHttpStatusCodeIs4xx",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
-        "test-name": "oidcc-codereuse-30seconds",
-        "variant": {
-            "client_auth_type": "client_secret_basic",
-            "response_mode": "default",
-            "response_type": "code token"
-        },
-        "configuration-filename": "*dot-oidcc-hybrid.json",
-        "current-block": "Testing if access token was revoked after authorization code reuse (the AS 'should' have revoked the access token)",
-        "condition": "EnsureHttpStatusCodeIs4xx",
-        "expected-result": "warning",
-        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
-        "baseline": true
-    },
-    {
         "test-name": "oidcc-ensure-request-with-acr-values-succeeds",
         "variant": {
             "client_auth_type": "client_secret_basic",
