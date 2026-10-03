@@ -87,8 +87,21 @@ A module that does not run to completion counts toward the runner's circuit brea
 (`CONFORMANCE_MAX_CONSECUTIVE_FAILURES`, set to 25 by `run.py` so one gap does not hide the
 rest of the plan's report).
 
-Form Post, Session Management, Front-Channel/Back-Channel Logout, 3rd-party initiated login and
-the FAPI profiles are out of reach until the toolkit implements those specifications. The
+Form Post, Session Management, Front-Channel Logout, 3rd-party initiated login and the FAPI
+profiles are out of reach until the toolkit implements those specifications.
+
+Back-Channel Logout is implemented, but its certification plan is not reachable yet: the
+profile's configuration sets `backchannel_logout_session_required: true`, so the suite
+registers as a relying party requiring a `sid` claim in the Logout Token, and the toolkit
+does not model sessions and so issues none (it advertises
+`backchannel_logout_session_supported: false`). Until the session entity lands
+([#1723](https://github.com/django-oauth/django-oauth-toolkit/issues/1723)) the
+specification is covered by `tests/e2e/oidc_backchannel_logout/`, which takes the same
+shape as the profile — be the relying party, register a `backchannel_logout_uri`, log out,
+and validate the Logout Token that arrives — against a loopback endpoint, so it needs
+none of the public ingress the hosted suite does.
+
+The
 suite has no OpenID Connect plans for the toolkit's OAuth-only features (device grant,
 introspection, revocation, PAR, resource indicators); those stay covered by `tests/e2e`.
 

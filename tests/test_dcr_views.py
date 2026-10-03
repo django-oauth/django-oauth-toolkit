@@ -2333,6 +2333,144 @@ class TestDCREmptyPermissionClasses(TestCase):
 
 @pytest.mark.usefixtures("oauth2_settings")
 @pytest.mark.oauth2_settings(presets.DCR_SETTINGS)
+class TestDCRBackchannelLogoutDisabled(TestCase):
+    """With back-channel logout off, the member is metadata this server does not implement."""
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("bcl_off", "off@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def test_backchannel_logout_uri_is_ignored(self):
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://rp.example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "backchannel_logout_uri": "https://rp.example.com/backchannel-logout",
+            },
+        )
+        assert response.status_code == 201
+        body = response.json()
+        # Not registered, so not echoed: the OP does not advertise support for it either.
+        assert "backchannel_logout_uri" not in body
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.backchannel_logout_uri == ""
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.DCR_SETTINGS_BACKCHANNEL_LOGOUT)
+class TestDCRBackchannelLogout(TestCase):
+    """backchannel_logout_uri, registered by Back-Channel Logout 1.0 section 5.1.1."""
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("bcl_on", "on@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def _register(self, **extra):
+        data = {
+            "redirect_uris": ["https://rp.example.com/cb"],
+            "grant_types": ["authorization_code"],
+        }
+        data.update(extra)
+        return _post_register(self.client, data)
+
+    def test_registers_and_is_echoed_back(self):
+        response = self._register(backchannel_logout_uri="https://rp.example.com/backchannel-logout")
+        assert response.status_code == 201
+        body = response.json()
+        assert body["backchannel_logout_uri"] == "https://rp.example.com/backchannel-logout"
+        app = Application.objects.get(client_id=body["client_id"])
+        assert app.backchannel_logout_uri == "https://rp.example.com/backchannel-logout"
+
+    def test_omitted_registers_nothing(self):
+        response = self._register()
+        assert response.status_code == 201
+        body = response.json()
+        assert "backchannel_logout_uri" not in body
+        assert Application.objects.get(client_id=body["client_id"]).backchannel_logout_uri == ""
+
+    def test_non_string_is_rejected(self):
+        response = self._register(backchannel_logout_uri=["https://rp.example.com/bcl"])
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "backchannel_logout_uri must be a string" in body["error_description"]
+
+    def test_section_2_2_scheme_rule_is_enforced(self):
+        # Section 2.2 allows http only for a confidential client; token_endpoint_auth_method
+        # "none" registers a public one, so the plaintext URI must be refused here too
+        # rather than only through the admin or the application views.
+        response = self._register(
+            token_endpoint_auth_method="none",
+            backchannel_logout_uri="http://rp.example.com/backchannel-logout",
+        )
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "backchannel_logout_uri" in body["error_description"]
+        assert Application.objects.count() == 0
+
+    def test_fragment_is_rejected(self):
+        # Section 2.2: the URI "MUST NOT include a fragment component".
+        response = self._register(backchannel_logout_uri="https://rp.example.com/bcl#frag")
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_session_required_true_is_registered_and_reported_false(self):
+        # Section 2.2 lets an RP require a sid, which this server does not issue. A
+        # registration can say so: register the client and report false (RFC 7591
+        # section 3.2.1), so the client sees its request was not honoured.
+        response = self._register(
+            backchannel_logout_uri="https://rp.example.com/backchannel-logout",
+            backchannel_logout_session_required=True,
+        )
+        assert response.status_code == 201
+        assert response.json()["backchannel_logout_session_required"] is False
+
+    def test_session_required_false_is_reported_with_the_logout_uri(self):
+        response = self._register(backchannel_logout_uri="https://rp.example.com/backchannel-logout")
+        assert response.status_code == 201
+        assert response.json()["backchannel_logout_session_required"] is False
+
+    def test_session_required_not_reported_without_a_logout_uri(self):
+        response = self._register()
+        assert response.status_code == 201
+        assert "backchannel_logout_session_required" not in response.json()
+
+    def test_session_required_must_be_a_boolean(self):
+        response = self._register(
+            backchannel_logout_uri="https://rp.example.com/backchannel-logout",
+            backchannel_logout_session_required="true",
+        )
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_client_metadata"
+        assert "backchannel_logout_session_required must be a boolean" in body["error_description"]
+
+    def test_put_omitting_it_clears_it(self):
+        # RFC 7592 section 2.2: a management request is a full replacement.
+        registered = self._register(backchannel_logout_uri="https://rp.example.com/backchannel-logout").json()
+        self.client.logout()
+        response = self.client.put(
+            _management_url(registered["client_id"]),
+            data=json.dumps(
+                {
+                    "client_id": registered["client_id"],
+                    "redirect_uris": ["https://rp.example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                }
+            ),
+            content_type="application/json",
+            **_bearer(registered["registration_access_token"]),
+        )
+        assert response.status_code == 200
+        assert "backchannel_logout_uri" not in response.json()
+        app = Application.objects.get(client_id=registered["client_id"])
+        assert app.backchannel_logout_uri == ""
+
+
+@pytest.mark.usefixtures("oauth2_settings")
+@pytest.mark.oauth2_settings(presets.DCR_SETTINGS)
 class TestDCRCustomPermissionClass(TestCase):
     def test_custom_permission_class_applied(self):
         """DCR_REGISTRATION_PERMISSION_CLASSES with always-deny class → 401."""

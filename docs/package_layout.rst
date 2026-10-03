@@ -86,7 +86,8 @@ Package map
           views.py, mixins.py (OIDC gating), urls.py,
           server.py (default OIDC_SERVER_CLASS: oauthlib server with signed UserInfo),
           client_metadata.py (OIDC client metadata shared by the dcr/cimd registration paths),
-          request_objects.py (OpenID Connect Core section 6 request objects)
+          request_objects.py (OpenID Connect Core section 6 request objects),
+          handlers.py (Back-Channel Logout signal receiver)
       resource_server/          resource server side
         www_authenticate, backends, decorators, middleware,
         validators.py (ResourceServerValidatorMixin + RFC 8707 helpers),

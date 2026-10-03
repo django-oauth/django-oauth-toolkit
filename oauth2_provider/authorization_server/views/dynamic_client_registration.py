@@ -26,6 +26,8 @@ from django.views.decorators.csrf import csrf_exempt
 
 from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
+    backchannel_logout_session_required,
+    backchannel_logout_uri,
     id_token_signed_response_alg,
     id_token_signing_algorithm,
     request_object_signing_alg,
@@ -398,6 +400,26 @@ def _build_application_kwargs(
             f"redirect_uris is required for grant type {rfc_grant!r}",
         )
 
+    # backchannel_logout_uri — read through the shared OIDC client metadata module so the
+    # dcr and cimd paths provision it identically. None means the parameter was not read
+    # (back-channel logout is off); otherwise it is always set, so a PUT omitting it
+    # clears the value (RFC 7592 section 2.2), like client_name above.
+    try:
+        logout_uri = backchannel_logout_uri(data)
+    except UnsupportedClientMetadataError as exc:
+        return None, _error_response("invalid_client_metadata", str(exc))
+    if logout_uri is not None:
+        kwargs["backchannel_logout_uri"] = logout_uri
+
+    # backchannel_logout_session_required — this server issues no sid, so true cannot be
+    # honoured. A registration can be told so: the client is registered anyway and the
+    # response reports false (RFC 7591 section 3.2.1), so a client that cannot work
+    # without sid can see that and decide what to do. Only the type is checked here.
+    try:
+        backchannel_logout_session_required(data)
+    except UnsupportedClientMetadataError as exc:
+        return None, _error_response("invalid_client_metadata", str(exc))
+
     # token_endpoint_auth_method → client_type (+ token_endpoint_auth_method field)
     SUPPORTED_AUTH_METHODS = (
         "none",
@@ -626,6 +648,11 @@ def _application_to_response(
         data["request_uris"] = application.request_uris.split()
     if application.request_object_signing_alg:
         data["request_object_signing_alg"] = application.request_object_signing_alg
+    if application.backchannel_logout_uri:
+        data["backchannel_logout_uri"] = application.backchannel_logout_uri
+        # What this server registers whatever the client asked for, since it issues no
+        # sid; reporting it is how a client learns its request was not honoured.
+        data["backchannel_logout_session_required"] = False
     return data
 
 

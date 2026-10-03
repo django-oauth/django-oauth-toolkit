@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 import urllib3
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.urls import reverse
 from django.utils import timezone
@@ -869,6 +870,89 @@ def test_resolve_does_not_log_dropped_grants_when_refusing_a_hijack(cimd_enabled
     with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
         assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
     assert "declares grant_types" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# backchannel_logout_uri
+# (OpenID Connect Back-Channel Logout 1.0 sections 2.2 and 5.1.1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+def test_build_application_kwargs_reads_backchannel_logout_uri(oauth2_settings):
+    document = _document(backchannel_logout_uri="https://client.example.com/backchannel-logout")
+    kwargs = _build_application_kwargs(document)
+    assert kwargs["backchannel_logout_uri"] == "https://client.example.com/backchannel-logout"
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+def test_build_application_kwargs_clears_an_absent_backchannel_logout_uri(oauth2_settings):
+    # Emitted on every fetch, so a re-fetched document that dropped the parameter
+    # clears the URI the previous one registered.
+    assert _build_application_kwargs(_document())["backchannel_logout_uri"] == ""
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+def test_build_application_kwargs_rejects_non_string_backchannel_logout_uri(oauth2_settings):
+    with pytest.raises(CIMDError, match="backchannel_logout_uri"):
+        _build_application_kwargs(_document(backchannel_logout_uri=["https://client.example.com/bcl"]))
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+@pytest.mark.django_db(databases="__all__")
+def test_section_2_2_rules_reach_a_document_registered_logout_uri(oauth2_settings):
+    # The reader deliberately leaves section 2.2 to Application.clean(), which the
+    # resolver reaches through full_clean(). A document describes a public client, so a
+    # plaintext http logout URI off-loopback must be refused rather than stored.
+    kwargs = _build_application_kwargs(
+        _document(backchannel_logout_uri="http://client.example.com/backchannel-logout")
+    )
+    application = Application(client_id=CLIENT_URL, **kwargs)
+    with pytest.raises(ValidationError) as exc_info:
+        application.full_clean(exclude=["client_secret"], validate_unique=False)
+    assert "backchannel_logout_uri" in exc_info.value.message_dict
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+def test_build_application_kwargs_refuses_backchannel_logout_session_required(oauth2_settings):
+    # A document gets no registration response, so substituting false would go unseen
+    # and leave an RP that requires sid unable to use the Logout Tokens it is sent.
+    document = _document(
+        backchannel_logout_uri="https://client.example.com/backchannel-logout",
+        backchannel_logout_session_required=True,
+    )
+    with pytest.raises(CIMDError, match="backchannel_logout_session_required"):
+        _build_application_kwargs(document)
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+def test_build_application_kwargs_accepts_backchannel_logout_session_not_required(oauth2_settings):
+    document = _document(
+        backchannel_logout_uri="https://client.example.com/backchannel-logout",
+        backchannel_logout_session_required=False,
+    )
+    assert _build_application_kwargs(document)["backchannel_logout_uri"] == (
+        "https://client.example.com/backchannel-logout"
+    )
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+def test_build_application_kwargs_rejects_non_boolean_session_required(oauth2_settings):
+    with pytest.raises(CIMDError, match="must be a boolean"):
+        _build_application_kwargs(_document(backchannel_logout_session_required="true"))
+
+
+def test_build_application_kwargs_ignores_session_required_when_disabled(oauth2_settings):
+    # With back-channel logout off the parameter is not read, so true is no reason to
+    # refuse a document that is otherwise fine.
+    _build_application_kwargs(_document(backchannel_logout_session_required=True))
+
+
+def test_build_application_kwargs_ignores_backchannel_logout_uri_when_disabled(oauth2_settings):
+    # With back-channel logout off the parameter is metadata this server does not
+    # implement: not read, and a stored value left alone rather than cleared.
+    document = _document(backchannel_logout_uri="https://client.example.com/backchannel-logout")
+    assert "backchannel_logout_uri" not in _build_application_kwargs(document)
 
 
 # ---------------------------------------------------------------------------

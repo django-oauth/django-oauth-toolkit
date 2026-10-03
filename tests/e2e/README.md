@@ -85,7 +85,8 @@ tests/e2e/
     local_http.py      # readiness polling for the local servers
     oauth_client.py    # Python relying-party (login/consent forms, token, ...)
     http_forms.py      # stdlib HTML form parsing
-    jwt_tools.py       # ID Token / JWKS validation (OIDC Core 3.1.3.7)
+    jwt_tools.py       # ID Token / Logout Token validation (OIDC Core 3.1.3.7, BCL 2.6)
+    backchannel_receiver.py  # loopback backchannel_logout_uri that records what arrives
   rfc6749_authorization_code/   rfc6749_client_credentials/
   rfc6749_resource_owner_password/  rfc6749_implicit/  rfc6749_refresh_token/
   rfc7636_pkce/  rfc7009_revocation/  rfc7662_introspection/
@@ -93,6 +94,7 @@ tests/e2e/
   rfc7591_dynamic_client_registration/
   cimd_client_id_metadata_document/   # CIMD-enabled IdP + loopback document server
   oidc_core/  oidc_discovery/  oidc_rp_initiated_logout/
+  oidc_backchannel_logout/      # loopback RP endpoint receiving real Logout Tokens
   browser_rp/          # Playwright over the real SvelteKit RP (localhost, Chromium)
   browser_cross_site/  # Chromium + Firefox over idp.test / rp.test (HTTPS)
 ```
