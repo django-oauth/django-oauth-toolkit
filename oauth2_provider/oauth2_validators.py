@@ -27,6 +27,12 @@ from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.openid import RequestValidator
 
 from .authorization_server import cimd, client_assertions
+from .authorization_server.oidc.claims import (
+    claim_value_matches,
+    normalize_claims_request,
+    requests_claim_value,
+    safe_normalize_claims_request,
+)
 from .authorization_server.oidc.server import signs_userinfo_for
 from .authorization_server.response_modes import response_mode_permitted
 from .core.bcp import bcp_compliant
@@ -905,10 +911,21 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             application=request.client,
             source_refresh_token=source_refresh_token,
             resource=getattr(request, "resource", []),  # RFC 8707
+            claims=self._claims_request_to_store(request),  # OIDC Core 5.5
         )
         self._set_token_value(access_token, token["access_token"])
         access_token.save()
         return access_token
+
+    def _claims_request_to_store(self, request: OauthlibRequest) -> dict:
+        """
+        The claims request (OIDC Core 5.5) to keep on an access token, so the
+        UserInfo endpoint and a refresh can honour it; empty unless
+        ``OIDC_CLAIMS_PARAMETER_ENABLED`` is set.
+        """
+        if not oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            return {}
+        return safe_normalize_claims_request(getattr(request, "claims", None))
 
     def _create_authorization_code(self, request, code, expires=None):
         if not expires:
@@ -1142,6 +1159,13 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             if expire_delta and rt.access_token.expires + expire_delta <= timezone.now():
                 return False
 
+        if oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            # Carry the claims request (OIDC Core 5.5) into the refreshed tokens. Within
+            # the rotation grace window the paired access token is gone, so read it from
+            # the access token this refresh token already minted.
+            source = rt.access_token or AccessToken.objects.filter(source_refresh_token=rt).first()
+            request.claims = source.claims if source is not None else {}
+
         request.user = rt.user
         # Use the raw token presented in the request, not rt.token: under hashed-at-rest
         # storage (COMPLIANT_BCP_RFC9700_TOKEN_STORAGE=True) the stored
@@ -1200,11 +1224,49 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         data = self.get_claim_dict(request)
         claims = {}
 
-        # TODO if request.claims then return only the claims requested, but limited by granted scopes.
-
         for k, v in data.items():
             if not self.oidc_claim_scope or self.oidc_claim_scope.get(k) in request.scopes:
                 claims[k] = v(request) if callable(v) else v
+        return claims
+
+    def get_requested_claims(self, request: OauthlibRequest, target: str) -> dict:
+        """
+        Return the individual claims requested through the ``claims`` parameter
+        (OIDC Core 5.5) for ``target``, ``"id_token"`` or ``"userinfo"``: a mapping
+        of claim name to its individual claim request (``None`` or a dict with
+        ``essential``, ``value`` or ``values``).
+
+        These claims are added to the scope-derived ones, limited to those
+        ``get_claim_dict()`` can supply. Override this to narrow what a client may
+        request, for example per application or per user. Returns an empty mapping
+        unless ``OIDC_CLAIMS_PARAMETER_ENABLED`` is set.
+        """
+        if not oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            return {}
+        return safe_normalize_claims_request(getattr(request, "claims", None)).get(target, {})
+
+    def _add_requested_claims(self, claims: dict, request: OauthlibRequest, target: str) -> dict:
+        """
+        Add the claims requested for ``target`` through the ``claims`` parameter
+        to ``claims``, then leave out any whose value does not match a requested
+        ``value`` or ``values`` (OIDC Core 5.5.1). ``sub`` is never left out: a
+        mismatch on it fails the authorization instead (``validate_user_match``).
+        Neither is ``acr``, which ``get_acr()`` reports: when a requested value
+        cannot be provided, the session's current ``acr`` is returned (5.5.1.1).
+        """
+        requested = self.get_requested_claims(request, target)
+        if not requested:
+            return claims
+
+        data = self.get_claim_dict(request)
+        for name in requested:
+            if name in data and name not in claims:
+                value = data[name]
+                claims[name] = value(request) if callable(value) else value
+
+        for name, spec in requested.items():
+            if name not in ("sub", "acr") and name in claims and not claim_value_matches(claims[name], spec):
+                del claims[name]
         return claims
 
     def _id_token_includes_scope_claims(self, token: dict | None, request: OauthlibRequest) -> bool:
@@ -1243,7 +1305,9 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         calling ``get_oidc_claims()``, and acr when ``get_acr()`` reports one.
         With ``OIDC_COMPLIANT_SCOPE_CLAIMS`` enabled, the claims of
         ``oidc_userinfo_only_scopes`` are left out unless no access token is
-        issued (OIDC Core §5.4).
+        issued (OIDC Core §5.4). With ``OIDC_CLAIMS_PARAMETER_ENABLED``, the
+        claims requested for the ID Token through the ``claims`` parameter are
+        added (OIDC Core §5.5).
         """
         claims = self.get_oidc_claims(token, token_handler, request)
 
@@ -1258,6 +1322,8 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         acr = self._get_id_token_acr(request)
         if acr:
             claims["acr"] = acr
+
+        claims = self._add_requested_claims(claims, request, "id_token")
 
         expiration_time = timezone.now() + timedelta(seconds=oauth2_settings.ID_TOKEN_EXPIRE_SECONDS)
 
@@ -1301,9 +1367,12 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         issued on a refresh token carry no ``acr``.
 
         ``request.acr_values`` is the space-separated ``acr_values`` of the
-        authentication request, or ``None`` (section 3.1.2.1). It states the
-        client's preference only: return a value only if the authentication
-        actually met it, and return it whether or not the client asked for one.
+        authentication request, or ``None`` (section 3.1.2.1). With
+        ``OIDC_CLAIMS_PARAMETER_ENABLED``, an ``acr`` requested through the
+        ``claims`` parameter is ``self.get_requested_claims(request,
+        "id_token").get("acr")`` (section 5.5.1.1). Both state the client's
+        preference only: return a value only if the authentication actually met
+        it, and return it whether or not the client asked for one.
 
         The default knows nothing about how the End-User authenticated and
         returns ``None``.
@@ -1428,10 +1497,48 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             audience = [audience]
         return Application.objects.filter(client_id__in=audience).first()
 
-    def validate_user_match(self, id_token_hint, scopes, claims, request):
+    def validate_user_match(
+        self, id_token_hint: str | None, scopes: list[str], claims: object, request: OauthlibRequest
+    ) -> bool:
         # TODO: Fix to validate when necessary according
         # https://github.com/idan/oauthlib/blob/master/oauthlib/oauth2/rfc6749/request_validator.py#L556
         # http://openid.net/specs/openid-connect-core-1_0.html#AuthRequest id_token_hint section
+        if not oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            return True
+
+        # oauthlib calls this with the parsed claims parameter (OIDC Core 5.5) on every
+        # OpenID authorization request, so it is validated, and normalized for storage,
+        # here.
+        request.claims = normalize_claims_request(claims, request)
+
+        # The rest needs the End-User, who is known once the request is being authorized
+        # (consent POST, skipped consent, token issuance). oauthlib also exposes a
+        # client-sent ``user`` parameter as request.user, so only a user set on the
+        # request itself is trusted.
+        if vars(request).get("user") is None:
+            return True
+        id_token_request = request.claims.get("id_token", {})
+
+        # OIDC Core 5.5.1: a sub requested for the ID Token with a value (or values)
+        # other than the End-User's MUST cause the authentication to fail.
+        sub_request = id_token_request.get("sub")
+        if requests_claim_value(sub_request):
+            sub = self.get_claim_dict(request)["sub"]
+            sub = sub(request) if callable(sub) else sub
+            if not claim_value_matches(sub, sub_request):
+                return False
+
+        # OIDC Core 5.5.1.1: an essential acr requested with a value (or values) that
+        # the End-User's authentication did not meet is a failed authentication, which
+        # the unmet_authentication_requirements error code signals.
+        acr_request = id_token_request.get("acr")
+        if requests_claim_value(acr_request) and acr_request.get("essential") is True:
+            if not claim_value_matches(self._get_id_token_acr(request), acr_request):
+                raise errors.CustomOAuth2Error(
+                    error="unmet_authentication_requirements",
+                    description="The authentication does not meet the requested essential acr.",
+                    request=request,
+                )
         return True
 
     def get_authorization_code_nonce(self, client_id, code, redirect_uri, request):
@@ -1459,9 +1566,16 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
     def get_userinfo_claims(self, request: OauthlibRequest) -> dict:
         """
         Return the current user's claims for the UserInfo response, limited by
-        the scopes granted to the access token.
+        the scopes granted to the access token, plus, with
+        ``OIDC_CLAIMS_PARAMETER_ENABLED``, those requested for UserInfo through
+        the ``claims`` parameter (OIDC Core §5.5).
         """
-        return self.get_oidc_claims(request.access_token, None, request)
+        claims = self.get_oidc_claims(request.access_token, None, request)
+        if oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            # The claims request is the one the access token was issued for, never a
+            # parameter sent to the UserInfo endpoint itself.
+            request.claims = getattr(request.access_token, "claims", None) or {}
+        return self._add_requested_claims(claims, request, "userinfo")
 
     # Registered JWT claims of a signed UserInfo response that only the OP sets.
     _USERINFO_JWT_OP_CLAIMS = frozenset({"exp", "nbf", "jti"})

@@ -100,6 +100,11 @@ This template gets passed the following context variables:
 
 - ``scopes_descriptions`` - :obj:`list` with the descriptions for the scopes requested;
 
+- ``requested_claims`` - sorted :obj:`list` with the names of the individual claims requested through the
+  OpenID Connect ``claims`` parameter, other than ``sub`` and before ``get_requested_claims`` narrows them (empty
+  unless :ref:`OIDC_CLAIMS_PARAMETER_ENABLED <oidc_claims_parameter_enabled>` is set). They can be released beyond
+  what the scopes cover, so list them to the user;
+
 - ``application`` - An :class:`~oauth2_provider.models.Application` object
 
 .. note::
@@ -146,6 +151,15 @@ Example (this is the default page you may find on ``templates/oauth2_provider/au
                             <li>{{ scope }}</li>
                         {% endfor %}
                     </ul>
+
+                    {% if requested_claims %}
+                        <p>{% trans "Application also requests the following information" %}</p>
+                        <ul>
+                            {% for claim in requested_claims %}
+                                <li>{{ claim }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
 
                     {{ form.errors }}
                     {{ form.non_field_errors }}
