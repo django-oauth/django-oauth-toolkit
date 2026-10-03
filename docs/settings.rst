@@ -261,6 +261,9 @@ The number of seconds an authorization code remains valid. Requesting an access
 token after this duration will fail. :rfc:`4.1.2` recommends expire after a short lifetime,
 with 10 minutes (600 seconds) being the maximum acceptable.
 
+A used code is kept, marked consumed, until it expires, so a reuse within this window can
+revoke the tokens issued from it (see ``COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE``).
+
 REFRESH_TOKEN_EXPIRE_SECONDS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 How long a refresh token remains valid. Can be an ``Int`` or ``datetime.timedelta``.
@@ -672,6 +675,16 @@ for the full mapping and a copy/paste compliant settings block.
     rather than in cleartext (RFC 9700 §4). Incompatible with a non-zero
     ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` (``manage.py check --deploy`` raises
     ``oauth2_provider.E001``).
+
+``COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE``
+    Default: ``False``. A second use of an authorization code is always rejected with
+    ``invalid_grant``. When ``True``, it also revokes the tokens the token endpoint issued
+    from that code: the refresh tokens of its rotation chain are revoked, and their live
+    access tokens deleted with the ID tokens bound to them (:rfc:`6749#section-4.1.2`,
+    RFC 9700 §4.2.4). Reuse is detected for as long as the used code is kept, which is
+    until it expires (`AUTHORIZATION_CODE_EXPIRE_SECONDS`_). Revocation is performed by
+    ``AbstractGrant.revoke_issued_tokens()``. Flagged as ``W014`` by
+    ``manage.py check --deploy`` while ``False``.
 
 The remaining gates are *config-validation* gates: they do not change runtime behavior
 or replace the settings they cover — the canonical setting stays in control. They set

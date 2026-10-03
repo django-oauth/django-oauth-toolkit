@@ -1022,6 +1022,16 @@ class AbstractGrant(models.Model):
 
     resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))
 
+    # RFC 6749 §4.1.2: a code is single use, and a second use SHOULD revoke the tokens
+    # issued from it. ``consumed`` marks the code as used instead of deleting the row, so
+    # a replay can be told apart from an unknown code until ``clear_expired`` reaps the
+    # row at ``expires``. ``token_family`` is handed to the refresh token minted from the
+    # code, which ties the whole rotation chain back to it.
+    consumed = models.DateTimeField(null=True, blank=True, verbose_name=_("consumed"))
+    token_family = models.UUIDField(
+        null=True, blank=True, default=uuid.uuid4, editable=False, verbose_name=_("token family")
+    )
+
     def is_expired(self):
         """
         Check token expiration with timezone awareness
@@ -1030,6 +1040,39 @@ class AbstractGrant(models.Model):
             return True
 
         return timezone.now() >= self.expires
+
+    def revoke_issued_tokens(self) -> None:
+        """
+        Revoke every token issued from this authorization code (RFC 6749 §4.1.2).
+
+        The refresh token minted at the code exchange inherits :attr:`token_family`, and
+        rotation carries the family forward, so the family covers every refresh token and
+        access token descended from the code -- including those of a concurrent exchange
+        that lost the race to consume it. ID tokens bound to the family's live access
+        tokens are deleted as well (their cascade deletes those access tokens), then
+        :meth:`AbstractRefreshToken.revoke_family` revokes the refresh tokens and deletes
+        any access token left. Override this (alongside ``revoke_family``) when a swapped
+        model needs revocation to do more.
+
+        A grant created before ``token_family`` existed has none and revokes nothing.
+        """
+        if not self.token_family:
+            return
+
+        access_token_model = get_access_token_model()
+        refresh_token_model = get_refresh_token_model()
+        id_token_model = get_id_token_model()
+
+        with transaction.atomic(using=router.db_for_write(access_token_model)):
+            # Sub-select through the forward FKs; a swapped model may rename the reverse
+            # accessors.
+            family_access_tokens = refresh_token_model.objects.filter(token_family=self.token_family).values(
+                "access_token_id"
+            )
+            id_token_model.objects.filter(
+                pk__in=access_token_model.objects.filter(pk__in=family_access_tokens).values("id_token_id")
+            ).delete()
+            refresh_token_model.revoke_family(self.token_family)
 
     def redirect_uri_allowed(self, uri: str) -> bool:
         allowed = uri == self.redirect_uri

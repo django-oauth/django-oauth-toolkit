@@ -377,6 +377,14 @@ Then run ``makemigrations`` and ``migrate``. On a fresh database this works out 
     ``REFRESH_TOKEN_REUSE_PROTECTION`` runs over a whole token family, and it reproduces what
     ``revoke()`` does in bulk rather than calling it per row. Anything extra your ``revoke()``
     does needs to happen in ``revoke_family()`` too, or reuse detection will skip it.
+    ``Grant.revoke_issued_tokens()``, which ``COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE`` runs when
+    an authorization code is reused, revokes through ``revoke_family()`` as well.
+
+.. note:: When adding ``AbstractGrant.token_family`` to an existing swapped ``Grant`` table, split
+    the migration ``makemigrations`` generates the way ``oauth2_provider`` migration ``0031`` does:
+    ``AddField`` without a default, then ``AlterField`` to ``default=uuid.uuid4``. A single
+    ``AddField`` with the callable default gives every existing grant the same UUID, so a reuse of
+    one of those codes would revoke the tokens issued from all of them.
 
 .. note:: This is straightforward for a **new** project. Migrating an **existing** deployment that
     already has data in the default ``oauth2_provider`` tables is a data-migration exercise that is

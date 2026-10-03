@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1903 New `COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE` gate (default `False`, scheduled to flip in
+  4.0): when an authorization code is used a second time, revoke the tokens the token endpoint
+  issued from it, as RFC 6749 section 4.1.2 recommends and RFC 9700 section 4.2.4 repeats. The
+  refresh tokens of the code's rotation chain are revoked, and their live access tokens deleted with
+  the ID tokens bound to them, including those of a concurrent exchange that lost the race to
+  consume the code. The reuse is rejected with `invalid_grant` either way; while the gate is `False`
+  the tokens survive and a `DeprecationWarning` is emitted, and `manage.py check --deploy` reports
+  `oauth2_provider.W014`. Revocation runs through the new, overridable
+  `AbstractGrant.revoke_issued_tokens()`.
 * #1899 New `CLIENT_ASSERTION_JWKS_FETCHER` setting: the import path of the class that fetches a
   `private_key_jwt` client's `jwks_uri` (RFC 7523), so the fetch can go through an egress proxy or
   follow site-specific policy, as `CIMD_METADATA_FETCHER` already allows for CIMD. The default,
@@ -236,6 +245,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   demo IdP's login page (`tests/app/idp`) shows them too, for the OpenID certification
   `oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` review modules.
 ### Changed
+* #1903 Exchanging an authorization code now marks its `Grant` consumed instead of deleting it, so a
+  later reuse of the code can be recognised; `cleartokens` still removes it once it expires. Grants
+  gain `consumed` and `token_family` fields (migration `0031`), and the refresh token issued at the
+  code exchange joins the grant's `token_family`. Code that counted on the row disappearing after the
+  exchange should check `consumed` instead. The migration skips a swapped Grant model: run
+  `makemigrations` for your app, then split the generated `token_family` `AddField` the way `0031`
+  does -- add the field without a default, then `AlterField` it to `default=uuid.uuid4` -- because a
+  one-step `AddField` with a callable default writes the same UUID into every existing grant, and a
+  reuse of one of those codes would then revoke the tokens issued from all of them.
 * #1896 `Application.clean()` now validates each entry in `post_logout_redirect_uris` with the
   `REDIRECT_URI_VALIDATOR` (by default against `ALLOWED_REDIRECT_URI_SCHEMES`), reporting problems on
   that field, as it already did for `redirect_uris`. While RP-Initiated Logout is enabled with

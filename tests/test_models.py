@@ -641,6 +641,16 @@ class TestClearExpired(BaseTestModels):
         result = excinfo.value.__class__.__name__
         assert result == "ImproperlyConfigured"
 
+    def test_clear_expired_keeps_consumed_grants_until_they_expire(self):
+        # A consumed grant is the tombstone that detects reuse of its code (RFC 6749
+        # §4.1.2): it is reaped at expiry like any other grant, not before.
+        Grant.objects.filter(code__in=["old grant code 0", "new grant code 0"]).update(consumed=self.now)
+
+        clear_expired()
+
+        assert not Grant.objects.filter(code="old grant code 0").exists()
+        assert Grant.objects.get(code="new grant code 0").consumed == self.now
+
     def test_clear_expired_tokens_with_tokens(self):
         self.oauth2_settings.CLEAR_EXPIRED_TOKENS_BATCH_SIZE = 10
         self.oauth2_settings.CLEAR_EXPIRED_TOKENS_BATCH_INTERVAL = 0.0

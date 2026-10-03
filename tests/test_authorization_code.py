@@ -2,6 +2,7 @@ import base64
 import datetime
 import hashlib
 import json
+from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -21,8 +22,10 @@ from oauth2_provider.models import (
     get_access_token_model,
     get_application_model,
     get_grant_model,
+    get_id_token_model,
     get_refresh_token_model,
 )
+from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.views import ProtectedResourceView
 
 from . import presets
@@ -33,6 +36,7 @@ from .utils import get_basic_auth_header, post_form
 Application = get_application_model()
 AccessToken = get_access_token_model()
 Grant = get_grant_model()
+IDToken = get_id_token_model()
 RefreshToken = get_refresh_token_model()
 UserModel = get_user_model()
 
@@ -2880,3 +2884,162 @@ class TestResourceIndicators(BaseTest):
         response_data = response.json()
         token = AccessToken.objects.get(token=response_data["access_token"])
         self.assertEqual(token.resource, ["https://api.example.com/resource"])
+
+
+@pytest.mark.oauth2_settings(presets.DEFAULT_SCOPES_RW)
+class TestAuthorizationCodeReuse(BaseAuthorizationCodeTokenView):
+    """
+    RFC 6749 §4.1.2 / RFC 9700 §4.2.4: a code used more than once is denied, and the
+    tokens previously issued from it are revoked (gated by
+    COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE = True
+        self.auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        self.client.login(username="test_user", password="123456")
+
+    def exchange(self, code):
+        data = {"grant_type": "authorization_code", "code": code, "redirect_uri": "http://example.org"}
+        return post_form(self.client, reverse("oauth2_provider:token"), data=data, **self.auth_headers)
+
+    def refresh(self, refresh_token):
+        data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+        return post_form(self.client, reverse("oauth2_provider:token"), data=data, **self.auth_headers)
+
+    def assert_replay_denied(self, code):
+        response = self.exchange(code)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "invalid_grant")
+
+    def assert_revoked(self, tokens):
+        self.assertFalse(AccessToken.objects.filter(token=tokens["access_token"]).exists())
+        self.assertIsNotNone(RefreshToken.objects.get(token=tokens["refresh_token"]).revoked)
+        self.assertEqual(self.refresh(tokens["refresh_token"]).status_code, 400)
+
+    def assert_live(self, tokens):
+        self.assertTrue(AccessToken.objects.filter(token=tokens["access_token"]).exists())
+        self.assertIsNone(RefreshToken.objects.get(token=tokens["refresh_token"]).revoked)
+
+    def test_exchange_consumes_grant_and_links_refresh_token(self):
+        code = self.get_auth()
+        tokens = self.exchange(code).json()
+
+        grant = Grant.objects.get(code=code)
+        self.assertIsNotNone(grant.consumed)
+        self.assertIsNotNone(grant.token_family)
+        self.assertEqual(
+            RefreshToken.objects.get(token=tokens["refresh_token"]).token_family, grant.token_family
+        )
+
+    def test_reuse_revokes_issued_tokens(self):
+        code = self.get_auth()
+        tokens = self.exchange(code).json()
+
+        self.assert_replay_denied(code)
+        self.assert_revoked(tokens)
+
+    def test_reuse_revokes_tokens_rotated_from_the_code(self):
+        code = self.get_auth()
+        first = self.exchange(code).json()
+        response = self.refresh(first["refresh_token"])
+        self.assertEqual(response.status_code, 200)
+        rotated = response.json()
+
+        self.assert_replay_denied(code)
+        self.assert_revoked(rotated)
+        self.assertFalse(AccessToken.objects.filter(token=first["access_token"]).exists())
+
+    def test_reuse_of_expired_code_still_revokes(self):
+        code = self.get_auth()
+        tokens = self.exchange(code).json()
+        Grant.objects.filter(code=code).update(expires=timezone.now() - datetime.timedelta(seconds=1))
+
+        self.assert_replay_denied(code)
+        self.assert_revoked(tokens)
+
+    def test_reuse_leaves_tokens_from_other_codes(self):
+        code = self.get_auth()
+        self.exchange(code)
+        other = self.exchange(self.get_auth()).json()
+
+        self.assert_replay_denied(code)
+        self.assert_live(other)
+
+    def test_reuse_without_gate_keeps_tokens_and_warns(self):
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE = False
+        code = self.get_auth()
+        tokens = self.exchange(code).json()
+
+        with self.assertWarns(DeprecationWarning):
+            self.assert_replay_denied(code)
+        self.assert_live(tokens)
+
+    def test_concurrent_exchange_revokes_both_token_sets(self):
+        """
+        Two exchanges of one code both pass ``validate_code`` and store tokens before
+        either consumes the grant; the one that loses the race to consume it is reuse.
+        """
+        code = self.get_auth()
+        first = self.exchange(code).json()
+        # Rewind to the moment the second request validates the code, before the first
+        # consumed it; the first request's consumption then lands after the second has
+        # stored its tokens.
+        Grant.objects.filter(code=code).update(consumed=None)
+        save_bearer_token = OAuth2Validator.save_bearer_token
+
+        def save_then_lose_race(validator, token, request, *args, **kwargs):
+            result = save_bearer_token(validator, token, request, *args, **kwargs)
+            Grant.objects.filter(code=code).update(consumed=timezone.now())
+            return result
+
+        with mock.patch.object(OAuth2Validator, "save_bearer_token", save_then_lose_race):
+            response = self.exchange(code)
+        self.assertEqual(response.status_code, 400)
+        # Raised after oauthlib's own error handling, so the body is not labelled JSON.
+        self.assertEqual(json.loads(response.content)["error"], "invalid_grant")
+
+        self.assert_revoked(first)
+        family = Grant.objects.get(code=code).token_family
+        self.assertEqual(RefreshToken.objects.filter(token_family=family).count(), 2)
+        self.assertFalse(RefreshToken.objects.filter(token_family=family, revoked__isnull=True).exists())
+        self.assertFalse(AccessToken.objects.filter(application=self.application).exists())
+
+    def test_reuse_of_grant_without_token_family_revokes_nothing(self):
+        # A grant issued before the upgrade has no family to revoke.
+        code = self.get_auth()
+        Grant.objects.filter(code=code).update(token_family=None)
+        tokens = self.exchange(code).json()
+        self.assertIsNotNone(RefreshToken.objects.get(token=tokens["refresh_token"]).token_family)
+
+        self.assert_replay_denied(code)
+        self.assert_live(tokens)
+
+
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestOIDCAuthorizationCodeReuse(BaseAuthorizationCodeTokenView):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.application.algorithm = Application.RS256_ALGORITHM
+        cls.application.save()
+
+    def test_reuse_deletes_id_token(self):
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE = True
+        self.client.login(username="test_user", password="123456")
+        auth_headers = get_basic_auth_header(self.application.client_id, CLEARTEXT_SECRET)
+        data = {
+            "grant_type": "authorization_code",
+            "code": self.get_auth(scope="openid"),
+            "redirect_uri": "http://example.org",
+        }
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=data, **auth_headers)
+        self.assertEqual(response.status_code, 200)
+        id_token = AccessToken.objects.get(token=response.json()["access_token"]).id_token
+        self.assertIsNotNone(id_token)
+
+        response = post_form(self.client, reverse("oauth2_provider:token"), data=data, **auth_headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(IDToken.objects.filter(pk=id_token.pk).exists())
+        self.assertFalse(AccessToken.objects.filter(application=self.application).exists())

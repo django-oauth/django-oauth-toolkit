@@ -27,7 +27,8 @@ preserves the legacy behavior. There are two kinds:
 
 * ``False`` (the current default) — the insecure/legacy behavior is allowed. The
   request-time gates (implicit grant, password grant, ``plain`` PKCE, access token in
-  the query string) emit a ``DeprecationWarning`` each time the behavior is exercised.
+  the query string, authorization code reuse) emit a ``DeprecationWarning`` each time
+  the behavior is exercised.
   The two ambient gates (``COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS`` and
   ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE``) would fire on every request,
   so they are surfaced by ``manage.py check --deploy`` (``W005``/``W006``) instead of a
@@ -77,6 +78,7 @@ below); enable it once you have confirmed ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS``
         "COMPLIANT_BCP_RFC9700_PKCE_METHOD": True,
         "COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT": True,
         "COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS": True,
+        "COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE": True,
 
         # Canonical settings whose defaults also change in 4.0
         "REFRESH_TOKEN_REUSE_PROTECTION": True,
@@ -143,6 +145,28 @@ Resource owner password credentials grant (§2.4)
 The password grant MUST NOT be used. Set
 ``COMPLIANT_BCP_RFC9700_PASSWORD_GRANT = True`` to reject
 ``grant_type=password`` and stop advertising it.
+
+Authorization code replay (§4.2.4)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+An authorization code is single use: a second token request with the same code is
+rejected with ``invalid_grant``. :rfc:`6749#section-4.1.2` adds that the authorization
+server SHOULD then revoke the tokens already issued from the code, since it cannot tell
+whether the legitimate client or an attacker redeemed it first; RFC 9700 §4.2.4 repeats
+this recommendation (see also §4.5 on authorization code injection). Set
+``COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE = True`` to do so: the refresh tokens of the
+code's rotation chain are revoked, and their live access tokens are deleted together with
+the ID tokens bound to them. That includes the tokens of a concurrent exchange that lost
+the race to consume the code. While the gate is ``False`` the reuse is still rejected, but
+the tokens survive, a ``DeprecationWarning`` is emitted, and ``manage.py check --deploy``
+reports ``oauth2_provider.W014``.
+
+Only tokens issued by the token endpoint are covered. In a hybrid flow (``code token``,
+``code id_token token``) the tokens returned from the authorization endpoint are not
+issued from the code and survive its reuse.
+
+A used code is kept, marked consumed, until it expires, so reuse is detected within
+``AUTHORIZATION_CODE_EXPIRE_SECONDS``. Codes issued before upgrading to a version with
+this feature are not linked to their tokens, and their reuse revokes nothing.
 
 Access tokens in the query string (§4.3.2)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

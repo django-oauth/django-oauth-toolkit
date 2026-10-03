@@ -42,6 +42,9 @@ soon as their ``REFRESH_TOKEN_GRACE_PERIOD_SECONDS`` grace period has passed, wi
 revoked refresh tokens are then what allows reuse of a rotated token to be detected, so they are kept
 until they expire per ``REFRESH_TOKEN_EXPIRE_SECONDS``.
 
+Authorization codes (grants) are removed once they expire. A code that has been exchanged is
+kept, marked consumed, until then, so that a reuse of it can be detected.
+
 Note: Refresh tokens need to expire before AccessTokens can be removed from the
 database. Using ``cleartokens`` without ``REFRESH_TOKEN_EXPIRE_SECONDS`` has limited effect.
 When ``REFRESH_TOKEN_EXPIRE_SECONDS`` is unset (or ``0``), ``cleartokens`` prints a warning to

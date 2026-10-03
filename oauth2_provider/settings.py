@@ -165,6 +165,7 @@ DEFAULTS = {
     "COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT": False,
     "COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS": False,
     "COMPLIANT_BCP_RFC9700_TOKEN_STORAGE": False,
+    "COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE": False,
     # Config-validation gates. Unlike the behavior gates above, these do not change
     # runtime behavior and do not replace the settings they cover — the canonical
     # settings (REFRESH_TOKEN_REUSE_PROTECTION, ALLOWED_REDIRECT_URI_SCHEMES,

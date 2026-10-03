@@ -52,6 +52,11 @@ _BCP_GATES = [
         "access and refresh tokens are stored in plaintext (RFC 9700 §4)",
         "oauth2_provider.W006",
     ),
+    (
+        "COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE",
+        "tokens issued from a reused authorization code are not revoked (RFC 9700 §4.2.4)",
+        "oauth2_provider.W014",
+    ),
 ]
 
 

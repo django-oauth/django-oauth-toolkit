@@ -36,6 +36,7 @@ from .core.utils import jwk_from_pem
 from .models import (
     AbstractAccessToken,
     AbstractApplication,
+    AbstractGrant,
     AbstractIDToken,
     AbstractRefreshToken,
     get_access_token_model,
@@ -466,13 +467,45 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
     def invalidate_authorization_code(self, client_id, code, request, *args, **kwargs):
         """
-        Remove the temporary grant used to swap the authorization token.
+        Mark the grant used to swap the authorization token as consumed.
 
-        :raises: InvalidGrantError if the grant does not exist.
+        The row is kept until it expires so a later replay of the code is recognised as
+        reuse (RFC 6749 §4.1.2); ``clear_expired`` reaps it. Consuming is a conditional
+        update, so of two concurrent exchanges of the same code only one succeeds. The
+        other has already stored its tokens, in the code's token family, and is handled
+        as reuse.
+
+        :raises: InvalidGrantError if the grant does not exist or was already consumed.
         """
-        deleted_grant_count, _ = Grant.objects.filter(code=code, application=request.client).delete()
-        if not deleted_grant_count:
+        now = timezone.now()
+        # ``updated`` is ``auto_now``, which a queryset update does not trigger.
+        consumed_grant_count = Grant.objects.filter(
+            code=code, application=request.client, consumed__isnull=True
+        ).update(consumed=now, updated=now)
+        if not consumed_grant_count:
+            grant = Grant.objects.filter(code=code, application=request.client).first()
+            if grant is not None:
+                self._authorization_code_reused(grant, request)
             raise errors.InvalidGrantError(request=request)
+
+    def _authorization_code_reused(self, grant: AbstractGrant, request: OauthlibRequest) -> None:
+        """
+        Handle a second use of an authorization code.
+
+        RFC 6749 §4.1.2 (and RFC 9700 §4.2.4): the request is denied by the caller, and
+        the tokens previously issued from the code SHOULD be revoked. Revocation is
+        gated by ``COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE``.
+        """
+        log.warning(
+            "Authorization code reuse detected for client %s (grant %s).",
+            request.client.client_id,
+            grant.pk,
+        )
+        if bcp_compliant(
+            "COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE",
+            "Keeping the tokens issued from a reused authorization code",
+        ):
+            grant.revoke_issued_tokens()
 
     def validate_client_id(self, client_id, request, *args, **kwargs):
         """
@@ -499,7 +532,15 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
     def validate_code(self, client_id, code, client, request, *args, **kwargs):
         try:
             grant = Grant.objects.get(code=code, application=client)
+            if grant.consumed is not None:
+                # Checked before expiry: a consumed code is a replay for as long as its
+                # row exists, whether or not it has expired.
+                self._authorization_code_reused(grant, request)
+                return False
             if not grant.is_expired():
+                # Read by ``_create_refresh_token`` to put the issued refresh token in
+                # the grant's token family.
+                request.grant_instance = grant
                 request.scopes = grant.scope.split(" ")
                 request.user = grant.user
                 if grant.nonce:
@@ -943,7 +984,10 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         if previous_refresh_token:
             token_family = previous_refresh_token.token_family
         else:
-            token_family = uuid.uuid4()
+            # A refresh token minted from an authorization code joins the code's family,
+            # so reuse of the code can revoke it (RFC 6749 §4.1.2).
+            grant = getattr(request, "grant_instance", None)
+            token_family = getattr(grant, "token_family", None) or uuid.uuid4()
         refresh_token = RefreshToken(
             user=request.user,
             application=request.client,

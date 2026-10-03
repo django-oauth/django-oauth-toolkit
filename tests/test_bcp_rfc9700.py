@@ -689,6 +689,7 @@ class TestDeployChecks(TestCase):
             "oauth2_provider.W006",
             "oauth2_provider.W007",
             "oauth2_provider.W008",
+            "oauth2_provider.W014",
         ]:
             self.assertIn(expected, ids)
 
@@ -699,6 +700,7 @@ class TestDeployChecks(TestCase):
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT = True
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_TOKEN_STORAGE = True
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_CODE_REUSE = True
         self.oauth2_settings.REFRESH_TOKEN_REUSE_PROTECTION = True
         self.oauth2_settings.ALLOWED_REDIRECT_URI_SCHEMES = ["https"]
         self.assertEqual(self._run(), [])

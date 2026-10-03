@@ -655,7 +655,7 @@ def test_rfc8707_refresh_token_preserves_resource(client, oauth2_settings):
     """
     Test that resource restrictions are preserved through refresh token flow.
 
-    The grant is deleted after initial token issuance, so the RefreshToken
+    The grant is consumed by the initial token issuance, so the RefreshToken
     must carry the resource information for subsequent refresh operations.
     """
 
@@ -718,8 +718,8 @@ def test_rfc8707_refresh_token_preserves_resource(client, oauth2_settings):
     refresh_token = RefreshToken.objects.get(token=token_data["refresh_token"])
     assert refresh_token.resource == ["https://api.example.com/protected"]
 
-    # Verify grant is deleted (DOT behavior)
-    assert Grant.objects.filter(code=code).count() == 0
+    # Verify grant is consumed (kept until expiry to detect reuse, RFC 6749 §4.1.2)
+    assert Grant.objects.get(code=code).consumed is not None
 
     # Step 3: Use refresh token to get new access token
     refresh_response = post_form(
