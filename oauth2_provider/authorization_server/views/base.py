@@ -32,6 +32,7 @@ from oauthlib.openid.connect.core.exceptions import (
 from oauth2_provider.authorization_server import par, stored_requests
 from oauth2_provider.authorization_server.forms import AllowForm
 from oauth2_provider.authorization_server.oidc import request_objects
+from oauth2_provider.authorization_server.oidc.claims import requested_claim_names
 from oauth2_provider.authorization_server.oidc.max_age import INVALID_MAX_AGE_DESCRIPTION, is_valid_max_age
 from oauth2_provider.authorization_server.response_modes import add_params_to_authorization_redirect
 from oauth2_provider.authorization_server.sessions import (
@@ -648,6 +649,14 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             kwargs["claims"] = json.dumps(credentials["claims"])
         if request.GET.get("acr_values"):
             kwargs["acr_values"] = request.GET["acr_values"]
+        # OIDC Core 5.5: show the End-User the individual claims requested on top of
+        # the scopes, as they can be released beyond what the scopes cover.
+        requested_claims = (
+            requested_claim_names(credentials.get("claims"))
+            if oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED
+            else set()
+        )
+        kwargs["requested_claims"] = sorted(requested_claims)
         # RFC 8707: Extract resource parameter(s) from request (oauthlib doesn't handle it)
         # Multiple resource parameters are allowed per RFC 8707
         if "resource" in request.GET:
@@ -711,9 +720,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                     .all()
                 )
 
-                # check past authorizations regarded the same scopes as the current one
+                # check past authorizations regarded the same scopes as the current one,
+                # and the same individual claims (OIDC Core 5.5), so newly requested
+                # claims are always presented to the End-User
                 for token in tokens:
-                    if token.allow_scopes(scopes):
+                    if token.allow_scopes(scopes) and requested_claims <= requested_claim_names(token.claims):
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request,
                             scopes=" ".join(scopes),

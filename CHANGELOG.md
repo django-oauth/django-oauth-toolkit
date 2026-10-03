@@ -88,6 +88,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for `response_type=id_token` (OpenID Connect Core 1.0 §5.4). The default `False` keeps returning
   them in both; it is scheduled to change to `True` in 4.0. The scope values affected are listed in
   `OAuth2Validator.oidc_userinfo_only_scopes`.
+* #1901 New `OIDC_CLAIMS_PARAMETER_ENABLED` setting (default `False`) that honours the OpenID
+  Connect `claims` request parameter (OpenID Connect Core 1.0 §5.5). Individual claims requested
+  for the ID Token or UserInfo are added to the scope-derived ones, limited to what the validator
+  supplies; a claim whose value doesn't match a requested `value`/`values` is left out, a
+  mismatched `sub` value fails the authorization with `login_required`, an essential `acr`
+  requested with `value`/`values` that `get_acr()` does not meet fails it with
+  `unmet_authentication_requirements`, and a malformed `claims` value is refused with
+  `invalid_request`. The requested claims are listed on the consent page (`requested_claims`),
+  `approval_prompt=auto` asks again for newly requested claims, and the new
+  `OAuth2Validator.get_requested_claims` hook narrows what a client may request. A new
+  `AccessToken.claims` field (migration `0032`) keeps the request for the UserInfo endpoint and
+  refreshes; swapped access token models need a migration for it. Discovery publishes
+  `claims_parameter_supported`.
 * An `openid-conformance-suite` CI job and `tox -e openid-conformance-suite` environment
   (`tests/openid-conformance-suite/`) that run the OpenID Foundation conformance suite against the
   `tests/app/idp` demo provider in Docker: the Config, Basic, Implicit, Hybrid, Dynamic and

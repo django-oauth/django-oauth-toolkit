@@ -1079,6 +1079,7 @@ class AbstractAccessToken(models.Model):
     * :attr:`expires` Date and time of token expiration, in DateTime format
     * :attr:`scope` Allowed scopes
     * :attr:`resource` RFC 8707 resource indicator(s) - JSON-encoded array of URIs
+    * :attr:`claims` The OIDC ``claims`` request (Core 5.5) the token was issued for
     """
 
     id = models.BigAutoField(primary_key=True)
@@ -1127,6 +1128,9 @@ class AbstractAccessToken(models.Model):
     scope = models.TextField(blank=True, verbose_name=_("scope"))
 
     resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))
+    # The normalized OIDC claims request (Core 5.5) behind this token, so the UserInfo
+    # endpoint and a refresh know which individual claims were requested.
+    claims = models.JSONField(blank=True, default=dict, verbose_name=_("claims"))
 
     created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
     updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
