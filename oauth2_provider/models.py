@@ -1018,6 +1018,12 @@ class AbstractGrant(models.Model):
     )
 
     nonce = models.CharField(max_length=255, blank=True, default="", verbose_name=_("nonce"))
+    # The Authentication Context Class Reference the End-User's authentication
+    # satisfied (OpenID Connect Core 1.0 section 2), determined at the
+    # authorization endpoint for the ID Token issued at code exchange.
+    acr = models.CharField(
+        max_length=255, blank=True, default="", verbose_name=_("authentication context class reference")
+    )
     claims = models.TextField(blank=True, verbose_name=_("claims"))
 
     resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))

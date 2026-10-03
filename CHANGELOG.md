@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1902 ID Tokens can carry the `acr` claim (OpenID Connect Core 1.0 §2), reported by the new
+  `OAuth2Validator.get_acr(request)` hook. It is called at the authorization endpoint, where
+  `request.user` is the session user and `request.acr_values` holds the client's `acr_values`, and
+  its value is stored on the grant (new `acr` field, migration `0031`) for the ID Token issued at
+  code exchange. The default returns `None`, so the claim is left out as before. `acr_values` is now
+  kept through the consent form. The new `OIDC_ACR_VALUES_SUPPORTED` setting publishes
+  `acr_values_supported` in discovery. Swapped grant models need a migration for the new field.
 * #1899 New `CLIENT_ASSERTION_JWKS_FETCHER` setting: the import path of the class that fetches a
   `private_key_jwt` client's `jwks_uri` (RFC 7523), so the fetch can go through an egress proxy or
   follow site-specific policy, as `CIMD_METADATA_FETCHER` already allows for CIMD. The default,

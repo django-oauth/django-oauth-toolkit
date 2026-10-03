@@ -130,6 +130,10 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
                 data["registration_endpoint"] = registration_url
         if oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS:
             data["authorization_response_iss_parameter_supported"] = True
+        # OpenID Connect Discovery 1.0 section 3 (OPTIONAL): the acr values the
+        # validator's get_acr() can report.
+        if oauth2_settings.OIDC_ACR_VALUES_SUPPORTED:
+            data["acr_values_supported"] = list(oauth2_settings.OIDC_ACR_VALUES_SUPPORTED)
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
             data["prompt_values_supported"].append("create")
 

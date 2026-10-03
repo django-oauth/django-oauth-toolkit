@@ -590,6 +590,46 @@ What claims you decide to put in to the token is up to you to determine based
 upon what the scopes and / or claims means to your provider.
 
 
+.. _oidc-acr:
+
+Reporting the authentication context (``acr``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A client can ask for particular Authentication Context Class References with the
+``acr_values`` parameter of the authentication request (`3.1.2.1 Authentication
+Request`_), and the OP reports the one the End-User's authentication satisfied in
+the ``acr`` claim of the ID Token (`2 ID Token`_). Only your login knows how the
+End-User authenticated, so the claim comes from your validator's ``get_acr``
+method. The default returns ``None``, and the ID Token has no ``acr`` claim.
+
+``get_acr(request)`` is called at the authorization endpoint for an OpenID Connect
+request (one with the ``openid`` scope) once the End-User has authenticated:
+``request.user`` is the user of the current session, as your authentication
+middleware set it up. ``request.acr_values`` holds the requested values, space
+separated, or ``None``. They state the client's preference only, so return a value
+your login actually met, whether or not it was requested::
+
+    class CustomOAuth2Validator(OAuth2Validator):
+
+        def get_acr(self, request):
+            # e.g. django-otp marks a user who passed a second factor as verified
+            if request.user.is_verified():
+                return "urn:example:acr:mfa"
+            return "urn:example:acr:password"
+
+The value is used for every ID Token issued from that authorization: the ones the
+authorization endpoint returns (implicit and hybrid flows), and the one issued
+when the authorization code is exchanged, for which it is stored on the grant.
+ID Tokens issued on a refresh token have no ``acr`` claim. Requesting ``acr`` as an
+essential claim through the ``claims`` parameter is not supported yet.
+
+Publish the values ``get_acr`` can return with the ``OIDC_ACR_VALUES_SUPPORTED``
+setting, which the discovery document lists as ``acr_values_supported``.
+
+.. _2 ID Token: https://openid.net/specs/openid-connect-core-1_0.html#IDToken
+.. _3.1.2.1 Authentication Request: https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest
+
+
 Adding information to the ``UserInfo`` service
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

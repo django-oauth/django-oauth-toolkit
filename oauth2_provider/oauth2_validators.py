@@ -504,6 +504,9 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
                 request.user = grant.user
                 if grant.nonce:
                     request.nonce = grant.nonce
+                # Assigned even when empty, so a client-sent "acr" parameter, which
+                # oauthlib would otherwise expose as request.acr, is never used.
+                request.acr = grant.acr or None
                 if grant.claims:
                     request.claims = json.loads(grant.claims)
                 return True
@@ -935,6 +938,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             code_challenge=request.code_challenge or "",
             code_challenge_method=request.code_challenge_method or "",
             nonce=request.nonce or "",
+            acr=self._get_id_token_acr(request) or "",
             claims=json.dumps(request.claims or {}),
             resource=resource,
         )
@@ -1236,9 +1240,10 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         ``oauthlib`` - aud, iat, nonce, at_hash, c_hash.
 
         This function adds in iss, exp and auth_time, plus any claims added from
-        calling ``get_oidc_claims()``. With ``OIDC_COMPLIANT_SCOPE_CLAIMS`` enabled,
-        the claims of ``oidc_userinfo_only_scopes`` are left out unless no access
-        token is issued (OIDC Core §5.4).
+        calling ``get_oidc_claims()``, and acr when ``get_acr()`` reports one.
+        With ``OIDC_COMPLIANT_SCOPE_CLAIMS`` enabled, the claims of
+        ``oidc_userinfo_only_scopes`` are left out unless no access token is
+        issued (OIDC Core §5.4).
         """
         claims = self.get_oidc_claims(token, token_handler, request)
 
@@ -1249,6 +1254,10 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             claims = {
                 k: v for k, v in claims.items() if claim_scope.get(k) not in self.oidc_userinfo_only_scopes
             }
+
+        acr = self._get_id_token_acr(request)
+        if acr:
+            claims["acr"] = acr
 
         expiration_time = timezone.now() + timedelta(seconds=oauth2_settings.ID_TOKEN_EXPIRE_SECONDS)
 
@@ -1278,6 +1287,53 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         )
 
         return claims, expiration_time
+
+    def get_acr(self, request: OauthlibRequest) -> str | None:
+        """
+        Return the Authentication Context Class Reference that the End-User's
+        authentication satisfied, for the ``acr`` claim of the ID Token (OpenID
+        Connect Core 1.0 section 2), or ``None`` to leave the claim out.
+
+        Called at the authorization endpoint for an OpenID Connect request, after
+        the End-User authenticated, so ``request.user`` is the user of the
+        current session. The value is stored with an authorization code and
+        reused for the ID Token issued when the code is exchanged. ID Tokens
+        issued on a refresh token carry no ``acr``.
+
+        ``request.acr_values`` is the space-separated ``acr_values`` of the
+        authentication request, or ``None`` (section 3.1.2.1). It states the
+        client's preference only: return a value only if the authentication
+        actually met it, and return it whether or not the client asked for one.
+
+        The default knows nothing about how the End-User authenticated and
+        returns ``None``.
+        """
+        return None
+
+    def _get_id_token_acr(self, request: OauthlibRequest) -> str | None:
+        """
+        The ``acr`` claim for an ID Token issued in response to *request*.
+
+        At the authorization endpoint it comes from ``get_acr()``, called once
+        per OpenID Connect request (a hybrid response stores it with the code
+        and also puts it in the ID Token it issues). At code exchange it is the
+        value ``validate_code()`` restored from the grant. Any other token
+        request gets none.
+
+        oauthlib exposes every request parameter as an attribute of the request,
+        so neither the value nor the endpoint is taken from what the client sent
+        (``acr``, ``grant_type``): only attributes set on the request itself are
+        read. oauthlib's token endpoint always sets ``extra_credentials``.
+        """
+        stored = vars(request)
+        if "acr" in stored:
+            return stored["acr"]
+        if "extra_credentials" in stored:
+            return None
+        if not oauth2_settings.OIDC_ENABLED or "openid" not in (request.scopes or ()):
+            return None
+        request.acr = self.get_acr(request) or None
+        return request.acr
 
     def get_oidc_issuer_endpoint(self, request):
         return oauth2_settings.oidc_issuer(request)
