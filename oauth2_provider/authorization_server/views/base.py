@@ -3,7 +3,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from django import http
@@ -20,12 +20,18 @@ from django.utils.encoding import escape_uri_path
 from django.views.decorators.csrf import csrf_exempt, csrf_protect, requires_csrf_token
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
+from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestError, OAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
-from oauthlib.openid.connect.core.exceptions import RequestNotSupported, RequestURINotSupported
+from oauthlib.openid.connect.core.exceptions import (
+    InvalidRequestObject,
+    RequestNotSupported,
+    RequestURINotSupported,
+)
 
 from oauth2_provider.authorization_server import par, stored_requests
 from oauth2_provider.authorization_server.forms import AllowForm
+from oauth2_provider.authorization_server.oidc import request_objects
 from oauth2_provider.authorization_server.oidc.max_age import INVALID_MAX_AGE_DESCRIPTION, is_valid_max_age
 from oauth2_provider.authorization_server.response_modes import add_params_to_authorization_redirect
 from oauth2_provider.authorization_server.sessions import (
@@ -43,6 +49,10 @@ from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.models import get_access_token_model, get_application_model, get_device_grant_model
 from oauth2_provider.resource_server.validators import is_valid_resource_uri
 from oauth2_provider.settings import oauth2_settings
+
+
+if TYPE_CHECKING:
+    from oauth2_provider.models import AbstractApplication
 
 
 log = logging.getLogger("oauth2_provider")
@@ -263,7 +273,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         """
         request_uri = request.GET.get("request_uri")
         # Only stored-request URIs are resolved here; any other request_uri (OpenID
-        # Connect Core 1.0 section 6.2) is rejected by _reject_request_objects.
+        # Connect Core 1.0 section 6.2) is handled by _handle_request_objects.
         if stored_requests.is_stored_request_uri(request_uri):
             return self._resolve_stored_request_uri(request, request_uri)
         if par.pushed_authorization_required(request.GET.get("client_id")):
@@ -274,20 +284,30 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             return self._fatal_invalid_request(message)
         return None
 
-    def _reject_request_objects(self, request: http.HttpRequest) -> http.HttpResponse | None:
-        """Reject the ``request`` and non-stored ``request_uri`` parameters.
+    def _handle_request_objects(self, request: http.HttpRequest) -> http.HttpResponse | None:
+        """Resolve or reject the ``request`` and non-stored ``request_uri`` parameters.
 
-        Request objects (OpenID Connect Core 1.0 section 6) are not supported, so
-        such a request is answered with ``request_not_supported`` or
-        ``request_uri_not_supported`` (section 3.1.2.6). The error is redirected
-        only once the client and redirect URI have been validated; otherwise it is
-        rendered like any other fatal authorization error.
+        With ``OIDC_REQUEST_OBJECTS_ENABLED`` the request object (OpenID Connect
+        Core 1.0 section 6) is validated, the authorization request is assembled
+        from it and the query parameters (section 6.3.3), and
+        :meth:`_store_resolved_request` stores it and redirects the user agent
+        back to this endpoint with a reference to it. The rest of the flow,
+        including the login redirect, the ``prompt`` handling and the consent
+        form, then resolves it like any stored request, so the request object is
+        resolved, and a ``request_uri`` fetched, exactly once, and its
+        parameters never enter the URL. An invalid request object is
+        answered with ``invalid_request_object``, ``invalid_request_uri`` or
+        ``invalid_request``. Otherwise request objects
+        are not supported, and such a request is answered with
+        ``request_not_supported`` or ``request_uri_not_supported`` (section
+        3.1.2.6). See :meth:`_request_object_error_response` for where errors go.
 
         This runs from :meth:`dispatch`, before the login gate: the request is
         validated before the end-user is authenticated (sections 3.1.2.2 and
-        3.1.2.3), so an anonymous request, including a ``prompt=none`` one, gets
-        the unsupported-parameter error rather than a login page or
-        ``login_required``.
+        3.1.2.3). An invalid request object is therefore reported as such even
+        for an anonymous request, including a ``prompt=none`` one, rather than
+        sent to a login page or answered with ``login_required``; a valid one is
+        stored, and goes through login and ``prompt`` handling from there.
 
         Returns ``None`` to leave the request to the normal flow: when it carries
         neither parameter, when its ``request_uri`` refers to a stored request (the
@@ -298,17 +318,131 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         request_uri = request.GET.get("request_uri")
         if stored_requests.is_stored_request_uri(request_uri):
             return None
-        if request.GET.get("request"):
-            error_class = RequestNotSupported
-        elif request_uri:
-            error_class = RequestURINotSupported
-        else:
+        # Any non-empty value counts, not just the last one, so a repeated
+        # parameter is refused rather than hidden behind an empty last value.
+        has_request = any(request.GET.getlist("request"))
+        if not has_request and not any(request.GET.getlist("request_uri")):
             return None
         if par.pushed_authorization_required(request.GET.get("client_id")):
             return None
+        if not request_objects.request_objects_enabled():
+            error_class = RequestNotSupported if has_request else RequestURINotSupported
+            return self._request_object_error_response(request, error_class)
 
-        # Validate what remains of the request so the error only goes to a
-        # registered redirect URI, with the client's state echoed.
+        application = self._load_request_object_client(request)
+        if application is None:
+            # No client to verify the request object for; the outer parameters
+            # decide how this is reported (an unknown client is never redirected).
+            return self._request_object_error_response(request, InvalidRequestObject)
+        try:
+            parameters = request_objects.resolve_request_object(
+                dict(request.GET.lists()), application, request
+            )
+        except request_objects.RequestObjectError as error:
+            return self._request_object_error_response(request, error.error_class, error.description)
+        return self._store_resolved_request(request, application, parameters)
+
+    def _store_resolved_request(
+        self, request: http.HttpRequest, application: "AbstractApplication", parameters: dict[str, list[str]]
+    ) -> http.HttpResponse:
+        """Store the assembled authorization request and redirect to its reference.
+
+        The assembled request never enters the URL (OpenID Connect Core 1.0
+        section 6): it is kept on the server in the stored-request store and the
+        user agent is redirected to this endpoint with only ``client_id`` and a
+        single-use ``request_uri``, which the rest of the flow resolves like any
+        stored request. It is first validated in full, as the store requires
+        (see :mod:`oauth2_provider.authorization_server.stored_requests`), so an
+        invalid request is reported now, before the end-user is asked to log in
+        (sections 3.1.2.2 and 3.1.2.3), with the response :meth:`get` would give.
+
+        An anonymous end-user's stored request is only a reference until they log
+        in, so its ``prompt`` is acted on here: ``none`` is answered with
+        ``login_required`` and ``create`` sends them to register, returning to
+        the stored request. ``login`` and ``max_age`` are handled as for any
+        stored request.
+        """
+        self._replace_query(request, parameters)
+        try:
+            scopes, credentials = self.validate_authorization_request(request)
+        except OAuthToolkitError as error:
+            return self.error_response(error, application=None)
+        oidc_request = oauth2_settings.OIDC_ENABLED and "openid" in scopes
+        repeated = self._repeated_authentication_parameter(oidc_request)
+        if repeated is not None:
+            return self._invalid_request_response(credentials, f"{repeated} must not be repeated.")
+        max_age = request.GET.get("max_age")
+        if oidc_request and max_age and not is_valid_max_age(max_age):
+            return self._invalid_request_response(credentials, INVALID_MAX_AGE_DESCRIPTION)
+
+        prompt = set(request.GET.get("prompt", "").split())
+        anonymous = not request.user.is_authenticated
+        if anonymous and "none" in prompt:
+            return self._login_required_response(credentials)
+        registration_url = None
+        if anonymous and "create" in prompt:
+            unsupported = self._prompt_create_unsupported_response()
+            if unsupported is not None:
+                return unsupported
+            registration_url = self._registration_url()
+
+        # The store's shape: each name's last value, except resource (RFC 8707).
+        stored = {
+            name: values if name == "resource" else values[-1]
+            for name, values in parameters.items()
+            if name not in par.CLIENT_AUTH_PARAMETERS
+        }
+        request_uri = stored_requests.store_authorization_request(
+            application.client_id,
+            stored,
+            expires_in=oauth2_settings.OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS,
+        )
+        reference = {"client_id": [application.client_id], "request_uri": [request_uri]}
+        location = f"{escape_uri_path(request.path)}?{urlencode(reference, doseq=True)}"
+        if registration_url is not None:
+            # As handle_no_permission does for a stored request, so the login that
+            # registering ends with satisfies the stored prompt and max_age.
+            self._request_reauthentication(reference, fresh=False)
+            return self._registration_redirect(registration_url, request.build_absolute_uri(location))
+        return HttpResponseRedirect(location)
+
+    def _load_request_object_client(self, request: http.HttpRequest) -> "AbstractApplication | None":
+        """Load the client a request object is verified for, as the validator does.
+
+        Goes through the validator's ``_load_application``, so a client_id that
+        is a Client ID Metadata Document URL is resolved like at any other
+        point of the flow, and an unusable application is not returned.
+        """
+        client_id = request.GET.get("client_id")
+        if not client_id:
+            return None
+        # Built with the method and headers the rest of the flow passes, so
+        # is_usable() overrides and CIMD permission classes see the same request.
+        # The query is re-encoded from its decoded form: oauthlib refuses a
+        # malformed percent escape, which Django's decoding tolerates.
+        core = self.get_oauthlib_core()
+        uri = f"{request.path}?{urlencode(list(request.GET.lists()), doseq=True)}"
+        oauthlib_request = OauthlibRequest(
+            uri,
+            http_method=request.method,
+            body=urlencode(core.extract_body(request)),
+            headers=core.extract_headers(request),
+        )
+        oauthlib_request.client = None
+        return self.get_validator_class()()._load_application(client_id, oauthlib_request)
+
+    def _request_object_error_response(
+        self, request: http.HttpRequest, error_class: type[OAuth2Error], description: str | None = None
+    ) -> http.HttpResponse:
+        """Answer a request whose request object is unsupported or invalid.
+
+        The rest of the request is validated without ``request`` and
+        ``request_uri`` so the error is only redirected to a redirect URI the
+        client registered and sent with the OAuth 2.0 syntax (or its only
+        registered one, when none was sent), never one only the request object
+        named, with the client's ``state`` echoed. Otherwise it is
+        rendered like any other fatal authorization error.
+        """
         self._replace_query(
             request,
             {key: values for key, values in request.GET.lists() if key not in ("request", "request_uri")},
@@ -322,23 +456,23 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             return self.error_response(error, application=None)
         except OAuthToolkitError as error:
             # Any other error may be down to parameters that were only sent inside
-            # the unsupported request object (a nonce, say), so report the
-            # unsupported parameter rather than the symptom.
+            # the request object (a nonce, say), so report the request object
+            # error rather than the symptom.
             oauthlib_error: OAuth2Error = error.oauthlib_error
             client_id = oauthlib_error.client_id
             redirect_uri = oauthlib_error.redirect_uri
             state = oauthlib_error.state
 
-        unsupported = error_class(state=state)
+        request_object_error = error_class(description=description, state=state)
         # Carry what oauthlib records from a request, so the error is encoded with
         # the response mode the client's response type calls for.
-        unsupported.client_id = client_id
-        unsupported.response_type = request.GET.get("response_type")
-        unsupported.response_mode = request.GET.get("response_mode")
+        request_object_error.client_id = client_id
+        request_object_error.response_type = request.GET.get("response_type")
+        request_object_error.response_mode = request.GET.get("response_mode")
         if not redirect_uri:
-            return self.error_response(FatalClientError(error=unsupported), application=None)
+            return self.error_response(FatalClientError(error=request_object_error), application=None)
         application = get_application_model().objects.filter(client_id=client_id).first()
-        error = OAuthToolkitError(error=unsupported, redirect_uri=redirect_uri)
+        error = OAuthToolkitError(error=request_object_error, redirect_uri=redirect_uri)
         return self.error_response(error, application)
 
     @classmethod
@@ -419,13 +553,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # The consent submission, and any other method that could submit the
             # form (FormView handles PUT like POST), keep their CSRF protection.
             return self._dispatch_csrf_protected(request, *args, **kwargs)
-        # Request objects are rejected before LoginRequiredMixin can send the
-        # user to log in (or answer prompt=none with login_required). HEAD is
-        # included because Django's View routes it to get().
+        # Request objects are resolved (or rejected) before LoginRequiredMixin can
+        # send the user to log in (or answer prompt=none with login_required).
+        # HEAD is included because Django's View routes it to get(). A resolved
+        # request object redirects to a stored request, so the consent POST never
+        # carries one.
         if request.method in ("GET", "HEAD"):
-            unsupported_response = self._reject_request_objects(request)
-            if unsupported_response is not None:
-                return unsupported_response
+            request_object_response = self._handle_request_objects(request)
+            if request_object_response is not None:
+                return request_object_response
         return self._dispatch_with_csrf_token(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
@@ -815,14 +951,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         Implements OpenID Connect Prompt Create 1.0 specification.
         https://openid.net/specs/openid-connect-prompt-create-1_0.html
         """
-        # Per Prompt Create 1.0 section 4.1.1, an OP receiving a prompt value it
-        # does not support (one not declared in prompt_values_supported) SHOULD
-        # respond with HTTP 400 and an error value of invalid_request.
-        if not oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
-            return JsonResponse(
-                {"error": "invalid_request", "error_description": "prompt=create is not supported"},
-                status=400,
-            )
+        unsupported = self._prompt_create_unsupported_response()
+        if unsupported is not None:
+            return unsupported
 
         # The no-op for authenticated sessions comes before the registration
         # URL is resolved: these requests never redirect to registration, so
@@ -831,23 +962,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         if self.request.user.is_authenticated:
             return None
 
-        # An enabled feature without a resolvable registration page is server
-        # misconfiguration, not a client error: fail loudly for the operator
-        # instead of sending a misleading error to the relying party.
-        registration_location = oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL
-        if not registration_location:
-            raise ImproperlyConfigured(
-                "OIDC_RP_INITIATED_REGISTRATION_URL must be set when "
-                "OIDC_RP_INITIATED_REGISTRATION_ENABLED is True."
-            )
-        try:
-            # Like LOGIN_URL, accepts a URL pattern name, a path or an absolute URL.
-            registration_url = resolve_url(registration_location)
-        except NoReverseMatch as exc:
-            raise ImproperlyConfigured(
-                f"OIDC_RP_INITIATED_REGISTRATION_URL {registration_location!r} could not be "
-                "resolved to a registration page."
-            ) from exc
+        registration_url = self._registration_url()
 
         # The request MUST be validated against a registered client before
         # the user is redirected anywhere: an invalid request has to fail here
@@ -869,7 +984,45 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         if other_prompts:
             parsed_query["prompt"] = " ".join(other_prompts)
         next_url = parsed._replace(query=urlencode(parsed_query)).geturl()
+        return self._registration_redirect(registration_url, next_url)
 
+    @staticmethod
+    def _prompt_create_unsupported_response() -> JsonResponse | None:
+        """The answer to ``prompt=create`` when it is not supported, else ``None``."""
+        # Per Prompt Create 1.0 section 4.1.1, an OP receiving a prompt value it
+        # does not support (one not declared in prompt_values_supported) SHOULD
+        # respond with HTTP 400 and an error value of invalid_request.
+        if not oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
+            return JsonResponse(
+                {"error": "invalid_request", "error_description": "prompt=create is not supported"},
+                status=400,
+            )
+        return None
+
+    @staticmethod
+    def _registration_url() -> str:
+        """Resolve ``OIDC_RP_INITIATED_REGISTRATION_URL``."""
+        # An enabled feature without a resolvable registration page is server
+        # misconfiguration, not a client error: fail loudly for the operator
+        # instead of sending a misleading error to the relying party.
+        registration_location = oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_URL
+        if not registration_location:
+            raise ImproperlyConfigured(
+                "OIDC_RP_INITIATED_REGISTRATION_URL must be set when "
+                "OIDC_RP_INITIATED_REGISTRATION_ENABLED is True."
+            )
+        try:
+            # Like LOGIN_URL, accepts a URL pattern name, a path or an absolute URL.
+            return resolve_url(registration_location)
+        except NoReverseMatch as exc:
+            raise ImproperlyConfigured(
+                f"OIDC_RP_INITIATED_REGISTRATION_URL {registration_location!r} could not be "
+                "resolved to a registration page."
+            ) from exc
+
+    @staticmethod
+    def _registration_redirect(registration_url: str, next_url: str) -> HttpResponseRedirect:
+        """Send the user to register, returning to *next_url* afterwards."""
         # Merge next into the registration URL's query so an existing query
         # string or fragment in the configured URL is preserved.
         parsed_registration = urlparse(registration_url)

@@ -45,6 +45,13 @@ x-idp: &idp
     OAUTH2_PROVIDER_CLIENT_ASSERTION_JWKS_FETCHER: idp.client_assertions.PrivateHostJWKSFetcher
     JWKS_URI_PRIVATE_HOSTS: localhost.emobix.co.uk
     SSL_CERT_FILE: /certs/suite-cert.pem
+    # Request objects (OpenID Connect Core 1.0 section 6). The suite serves its
+    # request_uri documents from its nginx, which resolves to a private address
+    # with a self-signed certificate, so that one host is fetched without the
+    # stock fetcher's SSRF and certificate checks.
+    OAUTH2_PROVIDER_OIDC_REQUEST_OBJECTS_ENABLED: "True"
+    OAUTH2_PROVIDER_OIDC_REQUEST_URI_FETCHER: idp.request_uri.ConformanceRequestURIFetcher
+    CONFORMANCE_REQUEST_URI_HOSTS: localhost.emobix.co.uk:8443
 
 services:
   idp-migrate:

@@ -294,9 +294,9 @@ well as ``GET``, with the parameters form-serialized
 (``application/x-www-form-urlencoded``) in the request body. It answers with a
 ``303 See Other`` redirect to the same request sent by ``GET``: the body's
 parameters are added to the query string, so every later step (logging in,
-``prompt``, ``resource``, pushed authorization requests, the rejection of request
-objects and the consent form) sees the request exactly as if it had been sent by
-``GET``. A parameter sent in both the query string and the body counts as
+``prompt``, ``resource``, pushed authorization requests, :ref:`request objects
+<oidc-request-objects>` and the consent form) sees the request exactly as if it had
+been sent by ``GET``. A parameter sent in both the query string and the body counts as
 repeated, as it would in a ``GET``.
 
 The redirect also matters for the session: a ``POST`` from the client's site does
@@ -324,21 +324,106 @@ custom consent form submits neither the ``allow`` field nor a CSRF token, overri
 Request objects
 ---------------
 
-Request objects (OpenID Connect Core 1.0 section 6), passed by value in the
-``request`` parameter or by reference in a ``request_uri``, are not supported.
-Once the client and redirect URI have been validated, the authorization endpoint
-redirects such a request back to the client with the section 3.1.2.6 error
-``request_not_supported`` or ``request_uri_not_supported``. If the client or
-redirect URI is invalid, the error is shown to the user instead. The request is
-checked before the user is asked to log in, so a client gets this error even when the
-user is not logged in, including for a ``prompt=none`` request. Parameters inside a
-request object are never read, so a ``state`` sent only inside it is not echoed.
+Request objects (`OpenID Connect Core 1.0 section 6
+<https://openid.net/specs/openid-connect-core-1_0.html#JWTRequests>`_) carry the authorization
+request parameters in a JWT, passed by value in the ``request`` parameter or by reference in a
+``request_uri`` the server fetches. They are off by default; enable them with
+``OIDC_REQUEST_OBJECTS_ENABLED`` (``OIDC_ENABLED`` must be on too):
 
-The discovery document publishes ``request_parameter_supported`` and
-``request_uri_parameter_supported`` as ``false``. A ``request_uri`` issued by the
-:doc:`pushed authorization request <pushed_authorization_requests>` endpoint
-(``urn:ietf:params:oauth:request_uri:...``) is still accepted: PAR is advertised
-separately through ``pushed_authorization_request_endpoint``.
+.. code-block:: python
+
+    OAUTH2_PROVIDER = {
+        "OIDC_ENABLED": True,
+        "OIDC_REQUEST_OBJECTS_ENABLED": True,
+        # ...
+    }
+
+**Assembling the request.** The parameters inside the request object are combined with those sent
+the usual way, and when both carry a parameter the request object's value is used (section 6.3.3).
+``client_id``, ``response_type`` and a ``scope`` including ``openid`` must be sent the usual way
+even when the request object carries them (sections 6.1 and 6.2), or the request is answered with
+``invalid_request``; the request object's ``client_id`` and ``response_type``, if present, must
+match the ones sent the usual way. A parameter sent more than once the usual way is refused even
+when the request object carries it (only ``resource`` may repeat). A request object must not
+contain ``request`` or ``request_uri``, and ``request`` and ``request_uri`` cannot be used together.
+
+**Keeping the request off the URL.** Once the request object is valid, the assembled request is
+validated as the authorization endpoint validates any request, and an invalid one is reported at
+once, before the user is asked to log in (sections 3.1.2.2 and 3.1.2.3). A valid one is kept on the
+server, in the same store as :doc:`pushed authorization requests <pushed_authorization_requests>`,
+and the authorization endpoint redirects the user agent back to itself with only ``client_id`` and
+a single-use ``request_uri`` in the ``urn:ietf:params:oauth:request_uri:`` namespace, bound to the
+client. The rest of the flow (logging in, ``prompt``, ``max_age`` and the consent form) resolves
+that reference, so a ``redirect_uri``, ``state`` or ``nonce`` sent only inside the request object is
+honoured, and the request object's parameters never appear in the browser URL, its history, server
+logs or ``Referer`` headers, cannot be edited there, and are not limited by URL length. The request
+object is resolved, and a ``request_uri`` fetched, exactly once, before the user is asked to log in.
+Every valid request object therefore stores a row (see :ref:`stored-authorization-requests`); one
+that is never redeemed is removed once it expires by the ``cleartokens`` management command, so
+run it regularly when request objects are enabled.
+
+For a user who is not logged in, the stored request is only a reference until they log in, so its
+``prompt`` is acted on when the request object is resolved: ``none`` is answered with
+``login_required`` at once, and ``create`` sends the user to register (see
+``OIDC_RP_INITIATED_REGISTRATION_ENABLED``), returning to the stored request. Logging in, or
+registering, has to finish within ``OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS`` (60 seconds by
+default); after that the stored request has expired and the client has to start again.
+
+**Signing.** A request object may be unsigned (``alg`` ``none``) or signed with an algorithm in
+``OIDC_REQUEST_OBJECT_SIGNING_ALGS`` (by default RS, PS and ES with SHA-256, -384 and -512). A signed
+request object is verified against the client's registered public keys, ``client_jwks`` or
+``client_jwks_uri``, which also verify :doc:`private_key_jwt <rfc7523>` client assertions and are
+fetched and cached the same way. If a signed request object carries ``iss``, it must be the client's
+``client_id``; if it carries ``aud``, that must be or include this server's issuer, exactly as
+published in discovery (no trailing-slash or case normalization, RFC 7519 section 2). ``exp`` and ``nbf``
+are checked when present. A client that registers ``request_object_signing_alg`` must sign every
+request object with exactly that algorithm, so a client registering an asymmetric algorithm cannot
+have unsigned request objects accepted on its behalf. Remove ``"none"`` from
+``OIDC_REQUEST_OBJECT_SIGNING_ALGS`` to require signed request objects from every client. Encrypted
+request objects are not supported.
+
+**Fetching** ``request_uri``. A ``request_uri`` is fetched with the fetcher configured as
+``OIDC_REQUEST_URI_FETCHER``. The default fetcher only fetches ``https`` URLs and only from public
+addresses, pins the connection to the address it checked, does not follow redirects, and is
+bounded by ``OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS`` and ``OIDC_REQUEST_URI_MAX_SIZE``. Fetched
+documents are not cached. At most ``OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES`` fetches run at once,
+and a ``request_uri`` that could not be fetched is not fetched again for
+``OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS``. A client may register ``request_uris``; when it has registered any, a
+``request_uri`` must match one of them, ignoring the fragment, and is refused without being
+fetched otherwise. Clients that registered none may use any ``https`` URL, so
+``require_request_uri_registration`` is published as ``false``. Because the request is resolved
+before the user logs in, anyone who knows a client's ``client_id`` can make the server fetch a URL;
+registering ``request_uris`` limits that client to known URLs.
+
+**Errors.** An invalid request object passed in ``request`` is answered with
+``invalid_request_object``; a ``request_uri`` that is not registered, cannot be fetched or refers to
+an invalid request object with ``invalid_request_uri`` (section 3.1.2.6); and a ``request`` sent with
+a ``request_uri`` with ``invalid_request``. As for other authorization errors, the error is only
+redirected to a redirect URI the client registered and sent the usual way, or to the client's only
+registered redirect URI when none was sent, with the ``state`` sent the usual way; values inside the
+rejected request object are never used. Otherwise the error is
+shown to the user.
+
+**Discovery.** With request objects enabled, both discovery documents publish
+``request_parameter_supported`` and ``request_uri_parameter_supported`` as ``true``,
+``request_object_signing_alg_values_supported`` and ``require_request_uri_registration``. Clients
+register ``request_uris`` and ``request_object_signing_alg`` through :doc:`dynamic client
+registration <views/dynamic_client_registration>`, :doc:`CIMD <cimd>`, or the admin.
+
+**Disabled.** With ``OIDC_REQUEST_OBJECTS_ENABLED`` off, once the client and redirect URI have been
+validated, the authorization endpoint redirects a request carrying ``request`` or a ``request_uri``
+back to the client with the section 3.1.2.6 error ``request_not_supported`` or
+``request_uri_not_supported``. If the client or redirect URI is invalid, the error is shown to the
+user instead. The request is checked before the user is asked to log in, so a client gets this
+error even when the user is not logged in, including for a ``prompt=none`` request. Parameters
+inside a request object are never read, so a ``state`` sent only inside it is not echoed. Both
+discovery documents publish ``request_parameter_supported`` and ``request_uri_parameter_supported``
+as ``false``.
+
+Either way, a ``request_uri`` issued by the :doc:`pushed authorization request
+<pushed_authorization_requests>` endpoint (``urn:ietf:params:oauth:request_uri:...``) is resolved as
+a pushed request, never fetched: PAR is advertised separately through
+``pushed_authorization_request_endpoint``.
 
 
 Customizing the OIDC responses

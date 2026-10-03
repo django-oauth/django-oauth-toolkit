@@ -35,8 +35,11 @@ from oauthlib.common import Request
 from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
     id_token_signing_algorithm,
+    request_object_signing_alg,
+    request_uris,
     userinfo_signing_algorithm,
 )
+from oauth2_provider.authorization_server.oidc.request_objects import request_objects_enabled
 from oauth2_provider.core import safe_fetch
 
 # Re-exported for backward compatibility: NAT64_PREFIX was a public module constant
@@ -419,7 +422,9 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     stored as a confidential client with that key source. Rejects any
     ``client_secret`` property, and requires at least one redirect URI. The ID Token signing algorithm follows
     ``id_token_signed_response_alg`` (OpenID Connect Dynamic Client
-    Registration 1.0 section 2). Returns kwargs; raises :class:`CIMDError` on
+    Registration 1.0 section 2), and ``request_uris`` and
+    ``request_object_signing_alg`` are mapped as for Dynamic Client
+    Registration. Returns kwargs; raises :class:`CIMDError` on
     invalid metadata.
     """
     auth_method = _resolve_auth_method(metadata)
@@ -509,6 +514,18 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
             keys = sorted(jwks["keys"], key=lambda key: json.dumps(key, sort_keys=True))
             kwargs["client_jwks"] = json.dumps({**jwks, "keys": keys}, sort_keys=True)
         kwargs["client_type"] = AbstractApplication.CLIENT_CONFIDENTIAL
+    # Request object metadata (OpenID Connect Dynamic Client Registration 1.0
+    # section 2). A signed request_object_signing_alg is verified with the keys
+    # stored above, so it needs a private_key_jwt client's jwks or jwks_uri.
+    # Ignored while request objects are disabled, leaving stored values as they are.
+    if request_objects_enabled():
+        try:
+            kwargs["request_uris"] = request_uris(metadata)
+            kwargs["request_object_signing_alg"] = request_object_signing_alg(
+                metadata, has_keys=bool(kwargs["client_jwks"] or kwargs["client_jwks_uri"])
+            )
+        except UnsupportedClientMetadataError as exc:
+            raise CIMDError(str(exc)) from exc
     # Logged only once the whole document has passed, so a document refused on a
     # later field never leaves a notice saying it was registered.
     declared = metadata.get("token_endpoint_auth_method")

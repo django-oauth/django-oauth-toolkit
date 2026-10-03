@@ -14,6 +14,7 @@ from django.utils.decorators import method_decorator
 from django.views.generic import View
 
 from oauth2_provider.authorization_server import client_assertions
+from oauth2_provider.authorization_server.oidc import request_objects
 from oauth2_provider.core.compat import login_not_required
 from oauth2_provider.models import AbstractGrant
 from oauth2_provider.settings import oauth2_settings
@@ -180,11 +181,9 @@ class OAuthServerMetadataView(ServerMetadataViewMixin, View):
             data["code_challenge_methods_supported"] = bcp_filter_code_challenge_methods(
                 [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS]
             )
-            # Request objects are not supported. RFC 8414 adopts these OpenID Connect
-            # Discovery fields, including request_uri_parameter_supported's default of
-            # true, so publish both as the OpenID discovery document does.
-            data["request_parameter_supported"] = False
-            data["request_uri_parameter_supported"] = False
+            # Request objects: RFC 8414 adopts these OpenID Connect Discovery fields,
+            # so publish them as the OpenID discovery document does.
+            data.update(request_objects.discovery_metadata())
         # RFC 8414: when a JWT client authentication method (RFC 7523) is
         # advertised, also advertise the JWS algs assertions may be signed with.
         auth_signing_algs = client_assertions.token_endpoint_auth_signing_algs(auth_methods)

@@ -5,7 +5,7 @@ RFC 7591 Dynamic Client Registration and OAuth Client ID Metadata Documents both
 describe a client with the IANA-registered client metadata parameters, which
 include the OpenID Connect Dynamic Client Registration 1.0 ones. This module
 maps the parameters that select how the OpenID Provider signs a client's ID
-Tokens and UserInfo responses onto
+Tokens and UserInfo responses, and the request object parameters, onto
 :class:`~oauth2_provider.models.AbstractApplication` so that every registration
 path provisions them the same way. See
 ``rfcs/openid-connect-registration-1_0.txt``.
@@ -27,6 +27,12 @@ ID_TOKEN_SIGNED_RESPONSE_ALG = "id_token_signed_response_alg"
 #: the client wants its UserInfo responses signed with. OPTIONAL; by default
 #: the response is plain JSON.
 USERINFO_SIGNED_RESPONSE_ALG = "userinfo_signed_response_alg"
+
+#: OpenID Connect Dynamic Client Registration 1.0 section 2: the
+#: ``request_uri`` values the client may use (OpenID Connect Core 1.0
+#: section 6.2), and the JWS ``alg`` all its request objects must be signed with.
+REQUEST_URIS = "request_uris"
+REQUEST_OBJECT_SIGNING_ALG = "request_object_signing_alg"
 
 # ``AbstractApplication.algorithm`` stores the JWS ``alg`` name itself, so the
 # wire value and the model value are one and the same; this is the subset a
@@ -292,3 +298,50 @@ def userinfo_signed_response_alg(application: AbstractApplication) -> str | None
     if not signs_userinfo_for(application):
         return None
     return application.userinfo_signed_response_alg
+
+
+def request_uris(metadata: Mapping[str, Any]) -> str:
+    """Return the ``AbstractApplication.request_uris`` value to provision for *metadata*.
+
+    ``request_uris`` is an array of https URLs (OpenID Connect Dynamic Client
+    Registration 1.0 section 2), stored space separated like
+    ``redirect_uris``. Absent or JSON ``null`` registers none. Raises
+    :class:`UnsupportedClientMetadataError` for a malformed value. Callers
+    only map it while request objects are enabled.
+    """
+    value = metadata.get(REQUEST_URIS)
+    if value is None:
+        return ""
+    if not isinstance(value, list) or not all(isinstance(uri, str) for uri in value):
+        raise UnsupportedClientMetadataError(f"{REQUEST_URIS} must be an array of strings")
+    for uri in value:
+        if not uri.lower().startswith("https://") or any(char.isspace() for char in uri):
+            raise UnsupportedClientMetadataError(f"each of {REQUEST_URIS} must be an https URL")
+    return " ".join(value)
+
+
+def request_object_signing_alg(metadata: Mapping[str, Any], *, has_keys: bool) -> str:
+    """Return the ``AbstractApplication.request_object_signing_alg`` for *metadata*.
+
+    Absent or JSON ``null`` registers no algorithm, so any algorithm in
+    ``OIDC_REQUEST_OBJECT_SIGNING_ALGS`` is accepted (OpenID Connect Dynamic
+    Client Registration 1.0 section 2). A value outside that setting is
+    refused, and so is a signing algorithm when the client registers no
+    ``jwks`` or ``jwks_uri`` (*has_keys*) to verify it with. The value is never
+    echoed in the message, which a registration response returns as its
+    ``error_description``. Raises :class:`UnsupportedClientMetadataError`.
+    Callers only map it while request objects are enabled.
+    """
+    value = metadata.get(REQUEST_OBJECT_SIGNING_ALG)
+    if value is None:
+        return ""
+    supported = oauth2_settings.OIDC_REQUEST_OBJECT_SIGNING_ALGS
+    if not isinstance(value, str) or value not in supported:
+        raise UnsupportedClientMetadataError(
+            f"Unsupported {REQUEST_OBJECT_SIGNING_ALG}. Supported values: {', '.join(supported)}"
+        )
+    if value != "none" and not has_keys:
+        raise UnsupportedClientMetadataError(
+            f"A signing {REQUEST_OBJECT_SIGNING_ALG} requires jwks or jwks_uri to verify request objects"
+        )
+    return value

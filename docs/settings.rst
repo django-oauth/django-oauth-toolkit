@@ -908,6 +908,77 @@ authentication <rfc7523>`; the discovery document then also emits
 registers a client whose metadata document chooses ``"private_key_jwt"`` only when it is advertised
 both here and in ``OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED``.
 
+OIDC_REQUEST_OBJECTS_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Whether the authorization endpoint accepts :ref:`request objects <oidc-request-objects>` (OpenID
+Connect Core 1.0 section 6) in the ``request`` and ``request_uri`` parameters. Only takes effect
+with ``OIDC_ENABLED``. When off, such requests are answered with ``request_not_supported`` or
+``request_uri_not_supported``. Pushed authorization request URIs are resolved either way.
+
+OIDC_REQUEST_OBJECT_SIGNING_ALGS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``["none", "RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512"]``
+
+The JWS algorithms accepted for :ref:`request objects <oidc-request-objects>` (OpenID Connect Core
+1.0 section 6), and the values a client may register as ``request_object_signing_alg``. ``"none"``
+accepts unsigned request objects; remove it to require signed ones. Signed request objects are
+verified with the client's registered ``client_jwks`` or ``client_jwks_uri``, so only asymmetric
+algorithms are supported. Published as ``request_object_signing_alg_values_supported`` when request
+objects are enabled.
+
+OIDC_REQUEST_URI_FETCHER
+~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``"oauth2_provider.authorization_server.oidc.request_objects.SafeRequestURIFetcher"``
+
+Import path of the class that fetches the request object a ``request_uri`` refers to. Its instances
+must have a ``fetch(request_uri)`` method returning the document as a string and raising
+``oauth2_provider.authorization_server.oidc.request_objects.RequestURIFetchError`` on failure. The
+default only fetches ``https`` URLs on public addresses, without following redirects; replace it
+only to change the transport, for example for a test environment.
+
+OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``5``
+
+Total time allowed for fetching a ``request_uri``, across every address its host resolves to.
+
+OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``60``
+
+How long a ``request_uri`` that could not be fetched is answered with ``invalid_request_uri``
+without fetching it again (the fragment is ignored). Kept in the default Django cache, so
+deployments running multiple instances need a shared cache backend for it to apply across them.
+``0`` or ``None`` disables it.
+
+OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``60``
+
+How long, in seconds, a resolved request object stays stored on the server for the authorization
+endpoint to continue with it (see :ref:`oidc-request-objects`). A user who is not logged in has to
+log in, or register, within this time. A login the authorization request itself asks for
+(``prompt=login`` or an elapsed ``max_age``) stores the request again for
+``PAR_REQUEST_URI_LIFETIME_SECONDS``, as for a pushed authorization request.
+
+OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``10``
+
+How many ``request_uri`` fetches may run at once in a process. A request arriving while that many
+are in flight is answered with ``invalid_request_uri`` at once rather than waiting, since fetches
+run before the end-user logs in. ``0`` or ``None`` disables the cap.
+
+OIDC_REQUEST_URI_MAX_SIZE
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``65536``
+
+Maximum size, in bytes, of the request object a ``request_uri`` refers to. A valid request object
+is kept on the server, so only this limit bounds it, not the length of any URL; see
+:ref:`oidc-request-objects`.
+
 OIDC_RP_INITIATED_REGISTRATION_ENABLED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``False``

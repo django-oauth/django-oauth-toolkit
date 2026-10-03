@@ -362,6 +362,29 @@ class AbstractApplication(models.Model):
         help_text=_("HTTPS URL of the client's terms of service, linked from the consent page."),
         verbose_name=_("terms of service URI"),
     )
+    # OpenID Connect Dynamic Client Registration 1.0 section 2 request object
+    # metadata (OpenID Connect Core 1.0 section 6).
+    request_uris = models.TextField(
+        blank=True,
+        default="",
+        help_text=_(
+            "HTTPS request_uri values this client may use to pass a request object by reference, "
+            "space separated. When any are registered, a request_uri must match one of them "
+            "(ignoring the fragment); when none are, any HTTPS request_uri is accepted."
+        ),
+        verbose_name=_("request URIs"),
+    )
+    request_object_signing_alg = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        help_text=_(
+            "The JWS alg every request object from this client must be signed with ('none' for "
+            "unsigned). Leave blank to accept any algorithm in OIDC_REQUEST_OBJECT_SIGNING_ALGS. "
+            "Signed request objects are verified with client_jwks or client_jwks_uri."
+        ),
+        verbose_name=_("request object signing alg"),
+    )
     allowed_origins = models.TextField(
         blank=True,
         help_text=_("Allowed origins list to enable CORS, space separated"),
@@ -660,6 +683,7 @@ class AbstractApplication(models.Model):
                 )
 
         self._clean_client_assertion_config(field_errors)
+        self._clean_request_object_config(field_errors)
 
         if field_errors:
             raise ValidationError(field_errors)
@@ -761,6 +785,51 @@ class AbstractApplication(models.Model):
                         )
                     )
                 )
+
+    def _clean_request_object_config(self, field_errors: dict[str, list]) -> None:
+        """Validate the request object fields (see clean()).
+
+        OpenID Connect Dynamic Client Registration 1.0 section 2 requires
+        ``request_uris`` to use the https scheme. A signed
+        ``request_object_signing_alg`` is verified against the client's
+        registered keys, so it needs ``client_jwks`` or ``client_jwks_uri``.
+
+        The ``request_object_signing_alg`` checks only apply while request
+        objects are enabled. Otherwise the stored value is unused, and Dynamic
+        Client Registration and CIMD leave it as it is, so checking it would
+        refuse every update of a client that registered it (say, one dropping
+        its keys) for a value the client cannot change. Should request objects
+        be enabled again, a signing alg without keys fails closed.
+        """
+        from django.core.exceptions import ValidationError
+
+        from oauth2_provider.authorization_server.oidc.request_objects import request_objects_enabled
+
+        for uri in self.request_uris.split():
+            if not uri.lower().startswith("https://"):
+                field_errors["request_uris"].append(
+                    ValidationError(_("request_uris must use the https scheme: {uri}").format(uri=uri))
+                )
+        alg = self.request_object_signing_alg
+        if not alg or not request_objects_enabled():
+            return
+        if alg not in oauth2_settings.OIDC_REQUEST_OBJECT_SIGNING_ALGS:
+            field_errors["request_object_signing_alg"].append(
+                ValidationError(
+                    _("request_object_signing_alg {alg} is not in OIDC_REQUEST_OBJECT_SIGNING_ALGS.").format(
+                        alg=alg
+                    )
+                )
+            )
+        elif alg != "none" and not (self.client_jwks or self.client_jwks_uri):
+            field_errors["request_object_signing_alg"].append(
+                ValidationError(
+                    _(
+                        "request_object_signing_alg {alg} requires client_jwks or client_jwks_uri "
+                        "to verify the request object signature."
+                    ).format(alg=alg)
+                )
+            )
 
     def get_absolute_url(self):
         return reverse("oauth2_provider:detail", args=[str(self.pk)])

@@ -136,6 +136,18 @@ Field Mapping
 |                                     |                                   | the consent page; see the note   |
 |                                     |                                   | below                            |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``request_uris`` (array)            | ``request_uris`` (space-joined)   | https URLs only; ignored, and    |
+|                                     |                                   | the stored value kept, unless    |
+|                                     |                                   | request objects are enabled; see |
+|                                     |                                   | :ref:`oidc-request-objects`      |
++-------------------------------------+-----------------------------------+----------------------------------+
+| ``request_object_signing_alg``      | ``request_object_signing_alg``    | An alg the server accepts (see   |
+|                                     |                                   | :doc:`../settings`); a signing   |
+|                                     |                                   | alg needs ``jwks`` or            |
+|                                     |                                   | ``jwks_uri``; ignored, and the   |
+|                                     |                                   | stored value kept, unless        |
+|                                     |                                   | request objects are enabled      |
++-------------------------------------+-----------------------------------+----------------------------------+
 
 .. note::
     An application serves one grant type, so ``grant_types`` may name only one besides

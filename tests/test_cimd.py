@@ -330,6 +330,72 @@ def test_build_application_kwargs_public():
     }
 
 
+REQUEST_OBJECTS_ENABLED = {
+    "OIDC_ENABLED": True,
+    "OIDC_REQUEST_OBJECTS_ENABLED": True,
+    # With OpenID Connect enabled, CIMD registers private_key_jwt only when both lists advertise it.
+    "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": ["client_secret_basic", "private_key_jwt"],
+}
+
+
+@pytest.mark.oauth2_settings(REQUEST_OBJECTS_ENABLED)
+def test_build_application_kwargs_request_object_metadata(private_key_jwt_advertised):
+    kwargs = _build_application_kwargs(
+        _document(
+            request_uris=["https://client.example.com/req/1", "https://client.example.com/req/2#hash"],
+            request_object_signing_alg="none",
+        )
+    )
+    assert kwargs["request_uris"] == "https://client.example.com/req/1 https://client.example.com/req/2#hash"
+    assert kwargs["request_object_signing_alg"] == "none"
+
+    # A signing alg is verified with the keys a private_key_jwt client registers.
+    kwargs = _build_application_kwargs(
+        _document(
+            token_endpoint_auth_method="private_key_jwt",
+            jwks=PUBLIC_JWKS,
+            request_object_signing_alg="ES256",
+        )
+    )
+    assert kwargs["request_object_signing_alg"] == "ES256"
+    kwargs = _build_application_kwargs(
+        _document(
+            token_endpoint_auth_method="private_key_jwt",
+            jwks_uri="https://client.example.com/jwks.json",
+            request_object_signing_alg="RS256",
+        )
+    )
+    assert kwargs["request_object_signing_alg"] == "RS256"
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"request_uris": "https://client.example.com/req"}, "request_uris must be an array of strings"),
+        ({"request_uris": [123]}, "request_uris must be an array of strings"),
+        ({"request_uris": ["http://client.example.com/req"]}, "must be an https URL"),
+        ({"request_object_signing_alg": "HS256"}, "Unsupported request_object_signing_alg"),
+        # A public client stores no keys to verify a signature with.
+        ({"request_object_signing_alg": "RS256"}, "requires jwks or jwks_uri"),
+    ],
+)
+@pytest.mark.oauth2_settings(REQUEST_OBJECTS_ENABLED)
+def test_build_application_kwargs_rejects_bad_request_object_metadata(oauth2_settings, overrides, message):
+    with pytest.raises(CIMDError, match=message):
+        _build_application_kwargs(_document(**overrides))
+
+
+def test_build_application_kwargs_ignores_request_object_metadata_when_disabled():
+    # Without request objects nothing would use these, so even values this
+    # server would refuse do not make the document invalid.
+    # The fields are left out, so a re-fetch keeps whatever is stored.
+    kwargs = _build_application_kwargs(
+        _document(request_uris=["http://client.example.com/req"], request_object_signing_alg="EdDSA")
+    )
+    assert "request_uris" not in kwargs
+    assert "request_object_signing_alg" not in kwargs
+
+
 @pytest.mark.parametrize(
     "key_metadata, expected_key_field",
     [

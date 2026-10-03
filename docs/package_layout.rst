@@ -85,7 +85,8 @@ Package map
         oidc/                   OpenID Connect Provider facet
           views.py, mixins.py (OIDC gating), urls.py,
           server.py (default OIDC_SERVER_CLASS: oauthlib server with signed UserInfo),
-          client_metadata.py (OIDC client metadata shared by the dcr/cimd registration paths)
+          client_metadata.py (OIDC client metadata shared by the dcr/cimd registration paths),
+          request_objects.py (OpenID Connect Core section 6 request objects)
       resource_server/          resource server side
         www_authenticate, backends, decorators, middleware,
         validators.py (ResourceServerValidatorMixin + RFC 8707 helpers),
