@@ -224,8 +224,108 @@ allows the OP to send direct requests to terminate sessions at the RP.
 .. _Backchannel Logout: https://openid.net/specs/openid-connect-backchannel-1_0.html
 
 To make use of this, the application being created needs to provide a
-valid ``backchannel_logout_uri``.
+valid ``backchannel_logout_uri``. It is validated against
+``OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES`` (``["https"]`` by default) and may carry a port,
+path and query, but not a fragment. Plaintext ``http`` is accepted only for a confidential
+client, or on a loopback address for local development.
 
+A relying party that registers itself can set the URI with the ``backchannel_logout_uri``
+member, which `Backchannel Logout`_ section 5.1.1 registers in the OAuth Dynamic Client
+Registration Metadata registry. Both self-registration paths read it: Dynamic Client
+Registration (:rfc:`7591`), whose registration response echoes it back, and a Client ID
+Metadata Document. The same validation applies on both, so a URI the rules above reject is
+refused rather than stored — as an ``invalid_client_metadata`` error for a registration
+request, and as a resolution failure for a metadata document. Note a document describes a
+*public* client, so its logout URI must use ``https`` unless it is on a loopback address.
+
+The member is only read while back-channel logout is enabled — the same condition under
+which the OP advertises support for it — and is otherwise ignored, as metadata this server
+does not implement, leaving any stored value alone.
+
+The companion ``backchannel_logout_session_required`` member asks the OP to put a ``sid``
+claim in the Logout Token, which DOT does not do (see below), so ``true`` cannot be
+honoured. The two registration paths handle that differently, because only one of them
+can tell the client. Dynamic Client Registration registers the client anyway and reports
+``backchannel_logout_session_required: false`` in its response, as :rfc:`7591` section
+3.2.1 allows, so a client that cannot work without ``sid`` can see that its request was
+not met. A Client ID Metadata Document has no registration response to report that in,
+so a document asking for ``true`` is refused rather than resolved.
+
+Which Relying Parties can be logged out
+---------------------------------------
+
+`Backchannel Logout`_ section 4 asks an implementation to "make it clear ... whether
+they are capable of logging out native applications or only Web RPs", because the answer
+differs between OPs.
+
+DOT delivers a logout token by making an HTTP POST from the server to the URI the
+relying party registered, so it can log out any relying party that has an endpoint it can
+reach: a web application, and a native or mobile application that has a backend of its
+own. It cannot log out a relying party that exists only on the end user's device, with no
+server component for the OP to contact — there is nothing to POST to. Such a client has
+to notice the logout some other way, for example from a refresh or introspection attempt
+failing after its tokens were revoked.
+
+Which Relying Parties are notified
+----------------------------------
+
+DOT does not yet model the OP authentication session, so it has no ``sid`` to scope a
+logout to and advertises ``backchannel_logout_session_supported: false``. Logout tokens
+carry the ``sub`` claim only, which per `Backchannel Logout`_ section 2.4 is a valid
+Logout Token: it asks the RP to end *all* of that user's sessions, not one of them.
+
+Participation is likewise approximated: on logout, DOT notifies every application that
+registered a ``backchannel_logout_uri`` and holds an unexpired ID Token for the user. ID
+Token lifetime and RP session lifetime are not the same thing, so an RP whose server-side
+session is still live but whose ID Token row has expired will not be notified.
+
+How wide that gap is, is set by ``ID_TOKEN_EXPIRE_SECONDS``, which defaults to 36000 (ten
+hours) — long enough that a user who signed in during the working day is still covered.
+Shortening it, which is otherwise reasonable since an ID Token is only needed at
+authentication time, narrows back-channel logout coverage by the same amount, and does so
+silently: a logout simply finds fewer relying parties to notify. Keep it at least as long
+as the sessions your relying parties hold, or accept that logout reaches only the ones
+that authenticated within that window.
+
+Both bounds are lifted by the session entity in the `Authorization and Session entities
+ADR <https://github.com/django-oauth/django-oauth-toolkit/issues/1723>`_.
+
+The ``offline_access`` scope does not suppress the notification. `Backchannel Logout`_
+section 2.7 addresses it to the :term:`Client` (Relying Party) receiving the token —
+"Refresh tokens issued with the ``offline_access`` property normally SHOULD NOT be
+revoked" — so the Relying Party clears the session state and decides for itself what to do
+with its refresh token. Withholding the request would deny it that choice.
+
+Delivery
+--------
+
+Logout tokens are sent from the logout request itself, in parallel across
+``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS`` threads, so a logout waits on the slowest relying
+party rather than on all of them in turn. Each request is bounded by
+``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT``.
+
+No relying party can *prevent* the logout, on either path below: a failure to notify is
+logged and never propagates.
+
+How far a relying party can *delay* one depends on how the user is logged out.
+
+``RPInitiatedLogoutView`` — the ``end_session_endpoint`` — works out who to notify,
+revokes the user's tokens, flushes the session, and sends only then. Nothing a relying
+party does holds up either the revocation or the flush. The notifications still precede
+the post-logout redirect, as `RP-Initiated Logout 1.0
+<https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ section 2 requires.
+
+A plain ``django.contrib.auth.logout()`` is picked up through the ``user_logged_out``
+signal, which Django sends *before* it flushes the session. There the flush does wait on
+the dispatch — bounded by ``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT`` per round of
+``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS`` relying parties, not by every relying party in
+turn. A handler that hands the work to a task queue (below) takes it off that path
+altogether.
+
+One request is sent per relying party, with no retry. Deployments that want retries, or
+that would rather not send at all from the request-response cycle, set
+``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` to a callable that hands the work to a task queue;
+``docs/settings.rst`` documents what such a handler needs to know.
 
 Setting up OIDC enabled clients
 ===============================

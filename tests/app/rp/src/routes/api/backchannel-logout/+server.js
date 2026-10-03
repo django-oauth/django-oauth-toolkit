@@ -8,7 +8,10 @@ const corsHeaders = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'POST, OPTIONS',
 	'Access-Control-Allow-Headers': 'Content-Type',
-	Accept: '*'
+	Accept: '*',
+	// Section 2.8: keep a response from being cached, where it could interfere with a
+	// future logout request.
+	'Cache-Control': 'no-store'
 };
 
 /**

@@ -33,6 +33,12 @@ env = environ.FileAwareEnv(
     # request the way discovery does it. The default matches `runserver` on its default
     # port; the e2e suite overrides it with the address it actually bound to.
     OAUTH2_PROVIDER_OIDC_ISS_ENDPOINT=(str, "http://localhost:8000/o"),
+    # The demo RP is a public client served over plaintext on the developer's own
+    # machine, which Back-Channel Logout 1.0 section 2.2 allows only on a loopback
+    # address. Both of these are local-development settings; keep the production
+    # defaults (https only, no localhost) in a real deployment.
+    OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES=(list, ["https", "http"]),
+    OAUTH2_PROVIDER_ALLOW_LOCALHOST_LOOPBACK=(bool, True),
     OAUTH2_PROVIDER_DCR_ENABLED=(bool, True),
     OAUTH2_PROVIDER_CIMD_ENABLED=(bool, False),
     # Return the profile/email/address/phone scope claims from UserInfo rather than the
@@ -306,6 +312,10 @@ OAUTH2_PROVIDER = {
     "OIDC_COMPLIANT_SCOPE_CLAIMS": env("OAUTH2_PROVIDER_OIDC_COMPLIANT_SCOPE_CLAIMS"),
     "OIDC_BACKCHANNEL_LOGOUT_ENABLED": env("OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_ENABLED"),
     "OIDC_ISS_ENDPOINT": env("OAUTH2_PROVIDER_OIDC_ISS_ENDPOINT"),
+    "OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES": env(
+        "OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES"
+    ),
+    "ALLOW_LOCALHOST_LOOPBACK": env("OAUTH2_PROVIDER_ALLOW_LOCALHOST_LOOPBACK"),
     # this key is just for out test app, you should never store a key like this in a production environment.
     "OIDC_RSA_PRIVATE_KEY": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY"),
     "OIDC_RSA_PRIVATE_KEYS_INACTIVE": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEYS_INACTIVE"),

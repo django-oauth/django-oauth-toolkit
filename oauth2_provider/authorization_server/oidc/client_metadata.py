@@ -34,6 +34,15 @@ USERINFO_SIGNED_RESPONSE_ALG = "userinfo_signed_response_alg"
 REQUEST_URIS = "request_uris"
 REQUEST_OBJECT_SIGNING_ALG = "request_object_signing_alg"
 
+#: OpenID Connect Back-Channel Logout 1.0 section 2.2, which section 5.1.1
+#: registers in the OAuth Dynamic Client Registration Metadata registry: the URL
+#: the OpenID Provider POSTs a Logout Token to. OPTIONAL.
+BACKCHANNEL_LOGOUT_URI = "backchannel_logout_uri"
+
+#: Back-Channel Logout 1.0 section 2.2: whether the relying party requires a ``sid``
+#: Claim in the Logout Token. OPTIONAL; the default is false.
+BACKCHANNEL_LOGOUT_SESSION_REQUIRED = "backchannel_logout_session_required"
+
 # ``AbstractApplication.algorithm`` stores the JWS ``alg`` name itself, so the
 # wire value and the model value are one and the same; this is the subset a
 # registered client may ask for. HS256 is deliberately absent: its HMAC key is
@@ -344,4 +353,60 @@ def request_object_signing_alg(metadata: Mapping[str, Any], *, has_keys: bool) -
         raise UnsupportedClientMetadataError(
             f"A signing {REQUEST_OBJECT_SIGNING_ALG} requires jwks or jwks_uri to verify request objects"
         )
+    return value
+
+
+def backchannel_logout_uri(metadata: Mapping[str, Any]) -> str | None:
+    """Return the ``AbstractApplication.backchannel_logout_uri`` to provision.
+
+    ``None`` means the parameter was not read at all, so a caller must leave the
+    stored value alone: the provider only reads it while it offers back-channel
+    logout, which is the same condition under which it advertises
+    ``backchannel_logout_supported``, and otherwise ignores it like any other
+    metadata it does not implement.
+
+    ``""`` means it was read and the document did not set it, which clears a
+    stored value -- what a full-replacement update should do (RFC 7592 section
+    2.2) and what a re-fetched document that dropped the parameter should do.
+
+    The rules of section 2.2 -- the scheme list, no fragment, and plaintext
+    ``http`` only for a confidential client -- are left to
+    ``AbstractApplication.clean()``, which both registration paths run through
+    ``full_clean()`` and whose field name is already this parameter's name, so a
+    refusal names the parameter the client sent.
+    """
+    if not (oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED):
+        return None
+
+    value = metadata.get(BACKCHANNEL_LOGOUT_URI)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise UnsupportedClientMetadataError(f"{BACKCHANNEL_LOGOUT_URI} must be a string")
+    return value.strip()
+
+
+def backchannel_logout_session_required(metadata: Mapping[str, Any]) -> bool:
+    """Return whether *metadata* requires a ``sid`` Claim in the Logout Token.
+
+    False when the parameter is absent or JSON ``null``, the section 2.2 default, and
+    when back-channel logout is off, in which case it is ignored like any other
+    metadata this provider does not implement.
+
+    This provider issues no ``sid`` -- it advertises
+    ``backchannel_logout_session_supported: false`` -- so ``true`` can never be
+    honoured. What to do about that is each registration path's decision, because only
+    one of them can tell the client: Dynamic Client Registration registers the client
+    and reports ``false`` in its response (RFC 7591 section 3.2.1), while a Client ID
+    Metadata Document gets no response to report a substitution in, and is refused.
+
+    Raises :class:`UnsupportedClientMetadataError` for a value that is not a boolean.
+    """
+    if not (oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED):
+        return False
+    value = metadata.get(BACKCHANNEL_LOGOUT_SESSION_REQUIRED)
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise UnsupportedClientMetadataError(f"{BACKCHANNEL_LOGOUT_SESSION_REQUIRED} must be a boolean")
     return value

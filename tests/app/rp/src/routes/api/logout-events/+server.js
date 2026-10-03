@@ -9,11 +9,12 @@ export async function GET({ url }) {
 		return new Response('Missing sid', { status: 400 });
 	}
 
+	let res;
 	const stream = new ReadableStream({
 		start(controller) {
 			const encoder = new TextEncoder();
 			// Adapt the stream controller to the write/close shape sseClients expects
-			const res = {
+			res = {
 				write: (data) => {
 					try {
 						controller.enqueue(encoder.encode(data));
@@ -26,10 +27,11 @@ export async function GET({ url }) {
 				close: () => controller.close()
 			};
 			addClient(sid, res);
-			// Remove client on stream close
-			controller.signal?.addEventListener('abort', () => {
-				removeClient(sid, res);
-			});
+		},
+		// ReadableStreamDefaultController has no signal; cancel() is what runs when the
+		// browser disconnects, and without it the client map grows for every closed tab.
+		cancel() {
+			removeClient(sid, res);
 		}
 	});
 

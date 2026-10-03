@@ -560,16 +560,38 @@ def validate_userinfo_jwt_expiry_configuration(
     return []
 
 
-@checks.register()
-def validate_backchannel_logout(app_configs, **kwargs):
+@checks.register(checks.Tags.security)
+def validate_backchannel_logout(
+    app_configs: Sequence[AppConfig] | None, **kwargs: Any
+) -> list[checks.CheckMessage]:
+    """Flag settings that would leave OIDC backchannel logout enabled but inoperative."""
     errors = []
 
     if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
         if not oauth2_settings.OIDC_ENABLED:
-            errors.append(checks.Error("OIDC_ENABLED must be True to enable OIDC backchannel logout."))
+            errors.append(
+                checks.Error(
+                    "OIDC_ENABLED must be True to enable OIDC backchannel logout.",
+                    id="oauth2_provider.E009",
+                )
+            )
         if not callable(oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_HANDLER):
-            errors.append(checks.Error("OIDC_BACKCHANNEL_LOGOUT_HANDLER must be a callable."))
+            errors.append(
+                checks.Error(
+                    "OIDC_BACKCHANNEL_LOGOUT_HANDLER must be a callable.",
+                    id="oauth2_provider.E010",
+                )
+            )
         if not oauth2_settings.OIDC_ISS_ENDPOINT:
-            errors.append(checks.Error("OIDC_ISS_ENDPOINT must be set to enable OIDC backchannel logout."))
+            errors.append(
+                checks.Error(
+                    "OIDC_ISS_ENDPOINT must be set to enable OIDC backchannel logout.",
+                    hint=(
+                        "Logout tokens carry the issuer as an absolute URL, so unlike the "
+                        "discovery documents it cannot be derived from the request."
+                    ),
+                    id="oauth2_provider.E011",
+                )
+            )
 
     return errors

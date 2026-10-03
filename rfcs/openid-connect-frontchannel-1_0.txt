@@ -1,0 +1,952 @@
+
+
+
+Final                                                           M. Jones
+                                                               Microsoft
+                                                      September 12, 2022
+
+
+                OpenID Connect Front-Channel Logout 1.0
+
+Abstract
+
+   OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0
+   protocol.  It enables Clients to verify the identity of the End-User
+   based on the authentication performed by an Authorization Server, as
+   well as to obtain basic profile information about the End-User in an
+   interoperable and REST-like manner.
+
+   This specification defines a logout mechanism that uses front-channel
+   communication via the User Agent between the OP and RPs being logged
+   out that does not need an OpenID Provider iframe on Relying Party
+   pages.  Other protocols have used HTTP GETs to RP URLs that clear
+   login state to achieve this.  This specification does the same thing.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                           [Page 1]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+Table of Contents
+
+   1.  Introduction . . . . . . . . . . . . . . . . . . . . . . . . .  3
+     1.1.  Requirements Notation and Conventions  . . . . . . . . . .  3
+     1.2.  Terminology  . . . . . . . . . . . . . . . . . . . . . . .  3
+   2.  Relying Party Logout Functionality . . . . . . . . . . . . . .  5
+   3.  OpenID Provider Logout Functionality . . . . . . . . . . . . .  7
+     3.1.  Example Front-Channel Logout URL Usage . . . . . . . . . .  7
+   4.  Implementation Considerations  . . . . . . . . . . . . . . . .  9
+     4.1.  User Agents Blocking Access to Third-Party Content . . . .  9
+   5.  Security Considerations  . . . . . . . . . . . . . . . . . . . 10
+   6.  IANA Considerations  . . . . . . . . . . . . . . . . . . . . . 11
+     6.1.  JSON Web Token Claims Registration . . . . . . . . . . . . 11
+       6.1.1.  Registry Contents  . . . . . . . . . . . . . . . . . . 11
+     6.2.  OAuth Dynamic Client Registration Metadata Registration  . 11
+       6.2.1.  Registry Contents  . . . . . . . . . . . . . . . . . . 11
+     6.3.  OAuth Authorization Server Metadata Registry . . . . . . . 11
+       6.3.1.  Registry Contents  . . . . . . . . . . . . . . . . . . 12
+   7.  References . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+     7.1.  Normative References . . . . . . . . . . . . . . . . . . . 13
+     7.2.  Informative References . . . . . . . . . . . . . . . . . . 14
+   Appendix A.  Acknowledgements  . . . . . . . . . . . . . . . . . . 15
+   Appendix B.  Notices . . . . . . . . . . . . . . . . . . . . . . . 16
+   Author's Address . . . . . . . . . . . . . . . . . . . . . . . . . 17
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                           [Page 2]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+1.  Introduction
+
+   OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0
+   [RFC6749] protocol.  It enables Clients to verify the identity of the
+   End-User based on the authentication performed by an Authorization
+   Server, as well as to obtain basic profile information about the End-
+   User in an interoperable and REST-like manner.
+
+   This specification defines a logout mechanism that uses front-channel
+   communication via the User Agent between the OP and RPs being logged
+   out that does not need an OpenID Provider iframe on Relying Party
+   pages, as OpenID Connect Session Management 1.0 [OpenID.Session]
+   does.  Other protocols have used HTTP GETs to RP URLs that clear
+   login state to achieve this; this specification does the same thing.
+
+   In contrast, the OpenID Connect Back-Channel Logout 1.0
+   [OpenID.BackChannel] specification uses direct back-channel
+   communication between the OP and RPs being logged out; this differs
+   from front-channel logout mechanisms, which communicate logout
+   requests from the OP to RPs via the User Agent.  The OpenID Connect
+   RP-Initiated Logout 1.0 [OpenID.RPInitiated] specification
+   complements these specifications by defining a mechanism for a
+   Relying Party to request that an OpenID Provider log out the End-
+   User.
+
+   This specification can be used separately from or in combination with
+   OpenID Connect RP-Initiated Logout 1.0, OpenID Connect Session
+   Management 1.0, and/or OpenID Connect Back-Channel Logout 1.0.
+
+1.1.  Requirements Notation and Conventions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in RFC
+   2119 [RFC2119].
+
+   In the .txt version of this specification, values are quoted to
+   indicate that they are to be taken literally.  When using these
+   values in protocol messages, the quotes MUST NOT be used as part of
+   the value.  In the HTML version of this specification, values to be
+   taken literally are indicated by the use of "this fixed-width font".
+
+1.2.  Terminology
+
+   This specification uses the terms "Authorization Server", "Client",
+   "Client Identifier", and "Redirection URI" defined by OAuth 2.0
+   [RFC6749], the term "User Agent" defined by RFC 7230 [RFC7230], and
+   the terms defined by OpenID Connect Core 1.0 [OpenID.Core].
+
+
+
+Jones                                                           [Page 3]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+   This specification also defines the following terms:
+
+   Session
+      Continuous period of time during which an End-User accesses a
+      Relying Party relying on the Authentication of the End-User
+      performed by the OpenID Provider.
+
+   Session ID
+      Identifier for a Session.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                           [Page 4]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+2.  Relying Party Logout Functionality
+
+   RPs supporting HTTP-based logout register a logout URI with the OP as
+   part of their client registration.  The domain, port, and scheme of
+   this URL MUST be the same as that of a registered Redirection URI
+   value.
+
+   The logout URI MUST be an absolute URI as defined by Section 4.3 of
+   [RFC3986].  The logout URI MAY include an
+   "application/x-www-form-urlencoded" formatted query component, per
+   Section 3.4 of [RFC3986], which MUST be retained when adding
+   additional query parameters.  The logout URI MUST NOT include a
+   fragment component.
+
+   The OP renders "<iframe src="frontchannel_logout_uri">" in a page
+   with the registered logout URI as the source to trigger the logout
+   actions by the RP.  Upon receiving a request to render the logout URI
+   in an iframe, the RP clears state associated with the logged-in
+   session, including any cookies and HTML5 local storage.  If the End-
+   User is already logged out at the RP when the logout request is
+   received, the logout is considered to have succeeded.
+
+   The OP MAY add these query parameters when rendering the logout URI,
+   and if either is included, both MUST be:
+
+   iss
+      Issuer Identifier for the OP issuing the front-channel logout
+      request.
+
+   sid
+      Identifier for the Session.
+
+   The RP MAY verify that any "iss" and "sid" parameters match the "iss"
+   and "sid" Claims in an ID Token issued for the current session or a
+   recent session of this RP with the OP and ignore the logout request
+   if they do not.
+
+   The RP's response SHOULD include the "Cache-Control" HTTP response
+   header field with a "no-store" value, keeping the response from being
+   cached to prevent cached responses from interfering with future
+   logout requests.  An example of this is:
+
+     Cache-Control: no-store
+
+   In the case that the RP is also an OP serving as an identity provider
+   to downstream logged-in sessions, it is desirable for the logout
+   request to the RP to likewise trigger downstream logout requests.
+   This is achieved by having the RP serve content in the iframe that
+
+
+
+Jones                                                           [Page 5]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+   contains logout requests to the downstream sessions, which themselves
+   are nested iframes rendering the downstream logout URIs.
+
+   If the RP supports OpenID Connect Dynamic Client Registration 1.0
+   [OpenID.Registration], it uses this metadata value to register the
+   logout URI:
+
+   frontchannel_logout_uri
+      OPTIONAL.  RP URL that will cause the RP to log itself out when
+      rendered in an iframe by the OP.  This URL SHOULD use the "https"
+      scheme and MAY contain port, path, and query parameter components;
+      however, it MAY use the "http" scheme, provided that the Client
+      Type is "confidential", as defined in Section 2.1 of OAuth 2.0
+      [RFC6749], and provided the OP allows the use of "http" RP URIs.
+      An "iss" (issuer) query parameter and a "sid" (session ID) query
+      parameter MAY be included by the OP to enable the RP to validate
+      the request and to determine which of the potentially multiple
+      sessions is to be logged out; if either is included, both MUST be.
+
+   It SHOULD also register this related metadata value:
+
+   frontchannel_logout_session_required
+      OPTIONAL.  Boolean value specifying whether the RP requires that
+      "iss" (issuer) and "sid" (session ID) query parameters be included
+      to identify the RP session with the OP when the
+      "frontchannel_logout_uri" is used.  If omitted, the default value
+      is "false".
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                           [Page 6]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+3.  OpenID Provider Logout Functionality
+
+   OPs supporting HTTP-based logout need to keep track of the set of
+   logged-in RPs so that they know what RPs to contact at their logout
+   URIs to cause them to log out.  Some OPs track this state using a
+   "visited sites" cookie.  OPs contact them in parallel using a
+   dynamically constructed page with HTML "<iframe
+   src="frontchannel_logout_uri">" tags rendering each logged-in RP's
+   logout URI.
+
+   If the OP supports OpenID Connect Discovery 1.0 [OpenID.Discovery],
+   it uses this metadata value to advertise its support for HTTP-based
+   logout:
+
+   frontchannel_logout_supported
+      OPTIONAL.  Boolean value specifying whether the OP supports HTTP-
+      based logout, with "true" indicating support.  If omitted, the
+      default value is "false".
+
+   It SHOULD also register this related metadata value:
+
+   frontchannel_logout_session_supported
+      OPTIONAL.  Boolean value specifying whether the OP can pass "iss"
+      (issuer) and "sid" (session ID) query parameters to identify the
+      RP session with the OP when the "frontchannel_logout_uri" is used.
+      If supported, the "sid" Claim is also included in ID Tokens issued
+      by the OP.  If omitted, the default value is "false".
+
+   The "sid" (session ID) Claim used in ID Tokens and as a
+   "frontchannel_logout_uri" parameter has the following definition:
+
+   sid
+      OPTIONAL.  Session ID - String identifier for a Session.  This
+      represents a Session of a User Agent or device for a logged-in
+      End-User at an RP.  Different "sid" values are used to identify
+      distinct sessions at an OP.  The "sid" value need only be unique
+      in the context of a particular issuer.  Its contents are opaque to
+      the RP.  Its syntax is the same as an OAuth 2.0 Client Identifier.
+
+3.1.  Example Front-Channel Logout URL Usage
+
+   In this non-normative example, the RP has registered the
+   "frontchannel_logout_uri" value
+   "https://rp.example.org/frontchannel_logout"" with the OP.  In the
+   simple case, in which "frontchannel_logout_session_required" is
+   false, the OP causes the front-channel logout to occur by rendering
+   this URL in an iframe:
+
+
+
+
+Jones                                                           [Page 7]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+     https://rp.example.org/frontchannel_logout
+
+   In a second example, in which "frontchannel_logout_session_required"
+   is true, Issuer and Session ID values are also sent.  This example
+   uses an Issuer value of "https://server.example.com" and a Session ID
+   value of "08a5019c-17e1-4977-8f42-65a12843ea02".  In this case, the
+   OP causes the front-channel logout to occur by rendering this URL in
+   an iframe (with line breaks for display purposes only):
+
+     https://rp.example.org/frontchannel_logout
+       ?iss=https%3A%2F%2Fserver.example.com
+       &sid=08a5019c-17e1-4977-8f42-65a12843ea02
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                           [Page 8]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+4.  Implementation Considerations
+
+   This specification defines features used by both Relying Parties and
+   OpenID Providers that choose to implement Front-Channel Logout.  All
+   of these Relying Parties and OpenID Providers MUST implement the
+   features that are listed in this specification as being "REQUIRED" or
+   are described with a "MUST".
+
+4.1.  User Agents Blocking Access to Third-Party Content
+
+   Note that at the time of this writing, some User Agents (browsers)
+   are starting to block access to third-party content by default to
+   block some mechanisms used to track the End-User's activity across
+   sites.  Specifically, the third-party content being blocked is
+   website content with an origin different that the origin of the
+   focused User Agent window.  Site data includes cookies and any web
+   storage APIs (sessionStorage, localStorage, etc.).
+
+   This can prevent the ability for notifications from the OP at the RP
+   from being able to access the RP's User Agent state to implement
+   local logout actions.  In particular, the "frontchannel_logout_uri"
+   might not be able to access the RP's login state when rendered by the
+   OP in an iframe because the iframe is in a different origin than the
+   OP's page.  Therefore, deployments of this specification are
+   recommended to include defensive code to detect this situation, and
+   if possible, notify the End-User that the requested RP logouts could
+   not be performed.  The details of the defensive code needed are
+   beyond the scope of this specification; it may vary per User Agent
+   and may vary over time, as the User Agent tracking prevention
+   situation is fluid and continues to evolve.
+
+   OpenID Connect Back-Channel Logout 1.0 [OpenID.BackChannel] is not
+   known to be affected by these developments.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                           [Page 9]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+5.  Security Considerations
+
+   Collisions between Session IDs and the guessing of their values by
+   attackers are prevented by including sufficient entropy in Session ID
+   values.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                          [Page 10]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+6.  IANA Considerations
+
+6.1.  JSON Web Token Claims Registration
+
+   This specification registers the following Claim in the IANA "JSON
+   Web Token Claims" registry [IANA.JWT.Claims] established by [JWT].
+
+6.1.1.  Registry Contents
+
+   o  Claim Name: "sid"
+   o  Claim Description: Session ID
+   o  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   o  Specification Document(s): Section 3 of this specification
+
+6.2.  OAuth Dynamic Client Registration Metadata Registration
+
+   This specification registers the following client metadata
+   definitions in the IANA "OAuth Dynamic Client Registration Metadata"
+   registry [IANA.OAuth.Parameters] established by [RFC7591]:
+
+6.2.1.  Registry Contents
+
+   o  Client Metadata Name: "frontchannel_logout_uri"
+   o  Client Metadata Description: RP URL that will cause the RP to log
+      itself out when rendered in an iframe by the OP
+   o  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   o  Specification Document(s): Section 2 of this specification
+
+   o  Client Metadata Name: "frontchannel_logout_session_required"
+   o  Client Metadata Description: Boolean value specifying whether the
+      RP requires that a "sid" (session ID) query parameter be included
+      to identify the RP session with the OP when the
+      "frontchannel_logout_uri" is used
+   o  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   o  Specification Document(s): Section 2 of this specification
+
+6.3.  OAuth Authorization Server Metadata Registry
+
+   This specification registers the following metadata name in the IANA
+   "OAuth Authorization Server Metadata" registry
+   [IANA.OAuth.Parameters] established by [RFC8414].
+
+
+
+
+
+
+
+Jones                                                          [Page 11]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+6.3.1.  Registry Contents
+
+   o  Metadata Name: "frontchannel_logout_supported"
+   o  Metadata Description: Boolean value specifying whether the OP
+      supports HTTP-based logout, with "true" indicating support
+   o  Change Controller: OpenID Foundation Artifact Binding Working
+      Group - openid-specs-ab@lists.openid.net
+   o  Specification Document(s): Section 3 of this document
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                          [Page 12]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+7.  References
+
+7.1.  Normative References
+
+   [IANA.JWT.Claims]
+              IANA, "JSON Web Token Claims",
+              <https://www.iana.org/assignments/jwt>.
+
+   [IANA.OAuth.Parameters]
+              IANA, "OAuth Parameters",
+              <https://www.iana.org/assignments/oauth-parameters>.
+
+   [OpenID.BackChannel]
+              Jones, M. and J. Bradley, "OpenID Connect Back-Channel
+              Logout 1.0", September 2022, <https://openid.net/specs/
+              openid-connect-backchannel-1_0.html>.
+
+   [OpenID.Core]
+              Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and
+              C. Mortimore, "OpenID Connect Core 1.0", November 2014,
+              <https://openid.net/specs/openid-connect-core-1_0.html>.
+
+   [OpenID.Discovery]
+              Sakimura, N., Bradley, J., Jones, M., and E. Jay, "OpenID
+              Connect Discovery 1.0", November 2014, <https://
+              openid.net/specs/openid-connect-discovery-1_0.html>.
+
+   [OpenID.RPInitiated]
+              Jones, M., de Medeiros, B., Agarwal, N., Sakimura, N., and
+              J. Bradley, "OpenID Connect RP-Initiated Logout 1.0",
+              September 2022, <https://openid.net/specs/
+              openid-connect-rpinitiated-1_0.html>.
+
+   [OpenID.Registration]
+              Sakimura, N., Bradley, J., and M. Jones, "OpenID Connect
+              Dynamic Client Registration 1.0", November 2014, <https://
+              openid.net/specs/openid-connect-registration-1_0.html>.
+
+   [OpenID.Session]
+              de Medeiros, B., Agarwal, N., Sakimura, N., Bradley, J.,
+              and M. Jones, "OpenID Connect Session Management 1.0",
+              September 2022,
+              <https://openid.net/specs/
+              openid-connect-session-1_0.html>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/
+              RFC2119, March 1997,
+
+
+
+Jones                                                          [Page 13]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC3986]  Berners-Lee, T., Fielding, R., and L. Masinter, "Uniform
+              Resource Identifier (URI): Generic Syntax", STD 66,
+              RFC 3986, DOI 10.17487/RFC3986, January 2005,
+              <https://www.rfc-editor.org/info/rfc3986>.
+
+   [RFC6749]  Hardt, D., Ed., "The OAuth 2.0 Authorization Framework",
+              RFC 6749, DOI 10.17487/RFC6749, October 2012,
+              <https://www.rfc-editor.org/info/rfc6749>.
+
+   [RFC7230]  Fielding, R., Ed. and J. Reschke, Ed., "Hypertext Transfer
+              Protocol (HTTP/1.1): Message Syntax and Routing",
+              RFC 7230, DOI 10.17487/RFC7230, June 2014,
+              <https://www.rfc-editor.org/info/rfc7230>.
+
+7.2.  Informative References
+
+   [JWT]      Jones, M., Bradley, J., and N. Sakimura, "JSON Web Token
+              (JWT)", RFC 7519, DOI 10.17487/RFC7519, May 2015,
+              <https://tools.ietf.org/html/rfc7519>.
+
+   [RFC7591]  Richer, J., Ed., Jones, M., Bradley, J., Machulak, M., and
+              P. Hunt, "OAuth 2.0 Dynamic Client Registration Protocol",
+              RFC 7591, DOI 10.17487/RFC7591, July 2015,
+              <https://www.rfc-editor.org/info/rfc7591>.
+
+   [RFC8414]  Jones, M., Sakimura, N., and J. Bradley, "OAuth 2.0
+              Authorization Server Metadata", RFC 8414, DOI 10.17487/
+              RFC8414, June 2018,
+              <https://www.rfc-editor.org/info/rfc8414>.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                          [Page 14]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+Appendix A.  Acknowledgements
+
+   The OpenID Community would like to thank the following people for
+   their contributions to this specification:
+
+      John Bradley (ve7jtb@ve7jtb.com), Yubico
+
+      Brian Campbell (bcampbell@pingidentity.com), Ping Identity
+
+      Andrii Deinega (andrii.deinega@gmail.com), GlobalLogic
+
+      Jim des Rivieres (Jim_des_Rivieres@ca.ibm.com), IBM
+
+      Vladimir Dzhuvinov (vladimir@connect2id.com), Connect2id
+
+      Joseph Heenan (joseph@authlete.com), Authlete
+
+      Michael B. Jones (mbj@microsoft.com), Microsoft
+
+      Torsten Lodderstedt (torsten@lodderstedt.net), yes.com
+
+      Nat Sakimura (nat@nat.consulting), NAT.Consulting
+
+      Filip Skokan (panva.ip@gmail.com), Auth0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                          [Page 15]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+Appendix B.  Notices
+
+   Copyright (c) 2022 The OpenID Foundation.
+
+   The OpenID Foundation (OIDF) grants to any Contributor, developer,
+   implementer, or other interested party a non-exclusive, royalty free,
+   worldwide copyright license to reproduce, prepare derivative works
+   from, distribute, perform and display, this Implementers Draft or
+   Final Specification solely for the purposes of (i) developing
+   specifications, and (ii) implementing Implementers Drafts and Final
+   Specifications based on such documents, provided that attribution be
+   made to the OIDF as the source of the material, but that such
+   attribution does not indicate an endorsement by the OIDF.
+
+   The technology described in this specification was made available
+   from contributions from various sources, including members of the
+   OpenID Foundation and others.  Although the OpenID Foundation has
+   taken steps to help ensure that the technology is available for
+   distribution, it takes no position regarding the validity or scope of
+   any intellectual property or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this specification or the extent to which any license under such
+   rights might or might not be available; neither does it represent
+   that it has made any independent effort to identify any such rights.
+   The OpenID Foundation and the contributors to this specification make
+   no (and hereby expressly disclaim any) warranties (express, implied,
+   or otherwise), including implied warranties of merchantability, non-
+   infringement, fitness for a particular purpose, or title, related to
+   this specification, and the entire risk as to implementing this
+   specification is assumed by the implementer.  The OpenID Intellectual
+   Property Rights policy requires contributors to offer a patent
+   promise not to assert certain patent claims against other
+   contributors and against implementers.  The OpenID Foundation invites
+   any interested party to bring to its attention any copyrights,
+   patents, patent applications, or other proprietary rights that may
+   cover technology that may be required to practice this specification.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                          [Page 16]
+
+                 OpenID Connect Front-Channel Logout 1.0  September 2022
+
+
+Author's Address
+
+   Michael B. Jones
+   Microsoft
+
+   Email: mbj@microsoft.com
+   URI:   https://self-issued.info/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jones                                                          [Page 17]
+

@@ -37,6 +37,10 @@ SPEC_BY_PACKAGE = {
     "oidc_core": ("OpenID Connect Core 1.0", "spec_oidc_core"),
     "oidc_discovery": ("OpenID Connect Discovery 1.0", "spec_oidc_discovery"),
     "oidc_rp_initiated_logout": ("OpenID Connect RP-Initiated Logout 1.0", "spec_oidc_rp_logout"),
+    "oidc_backchannel_logout": (
+        "OpenID Connect Back-Channel Logout 1.0",
+        "spec_oidc_backchannel_logout",
+    ),
     "browser_rp": ("Browser RP (SvelteKit)", "spec_browser_rp"),
     "browser_cross_site": (
         "Browser RP cross-site (third-party cookies)",
@@ -65,6 +69,7 @@ SPEC_LABEL_TO_MARKER = {
     "OpenID Connect Core 1.0": "spec_oidc_core",
     "OpenID Connect Discovery 1.0": "spec_oidc_discovery",
     "OpenID Connect RP-Initiated Logout 1.0": "spec_oidc_rp_logout",
+    "OpenID Connect Back-Channel Logout 1.0": "spec_oidc_backchannel_logout",
 }
 
 
