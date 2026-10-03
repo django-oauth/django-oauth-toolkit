@@ -28,7 +28,14 @@ NOT_SUPPORTED = [
     ("RFC 9449", "DPoP", "No DPoP-bound tokens."),
     ("RFC 8705", "mTLS client authentication", "No tls_client_auth / self_signed_tls_client_auth."),
     ("OAuth 2.0 Form Post Response Mode", "response_mode=form_post", "Only query/fragment."),
-    ("OIDC Session Management / Logout", "Back-/Front-Channel Logout", "Only RP-Initiated Logout."),
+    ("OpenID Connect Session Management 1.0", "OP iframe / session state", "Not implemented."),
+    ("OpenID Connect Front-Channel Logout 1.0", "Front-Channel Logout", "No frontchannel_logout_uri."),
+    (
+        "OpenID Connect Back-Channel Logout 1.0",
+        "sid claim and backchannel_logout_session_required",
+        "No session entity, so no sid is issued and backchannel_logout_session_supported is false; "
+        "a logout ends every session of the subject at the RP rather than one.",
+    ),
     ("OpenID Connect Core 1.0", "pairwise subject type", "Only public subject type."),
 ]
 

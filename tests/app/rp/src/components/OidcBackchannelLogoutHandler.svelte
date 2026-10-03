@@ -18,7 +18,7 @@
 			if (eventSource) {
 				eventSource.close();
 			}
-			eventSource = new EventSource(`/api/logout-events?sid=${sid}`);
+			eventSource = new EventSource(`/api/logout-events?sid=${encodeURIComponent(sid)}`);
 			eventSource.addEventListener('logout', async (event) => {
 				const oidcClient = await oidcPromise;
 				await oidcClient.removeUser();

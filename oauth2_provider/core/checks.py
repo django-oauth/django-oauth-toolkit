@@ -560,16 +560,34 @@ def validate_userinfo_jwt_expiry_configuration(
     return []
 
 
-@checks.register()
-def validate_backchannel_logout(app_configs, **kwargs):
+@checks.register(checks.Tags.security)
+def validate_backchannel_logout(
+    app_configs: Sequence[AppConfig] | None, **kwargs: Any
+) -> list[checks.CheckMessage]:
+    """Flag settings that would leave OIDC backchannel logout enabled but inoperative."""
     errors = []
 
     if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
         if not oauth2_settings.OIDC_ENABLED:
-            errors.append(checks.Error("OIDC_ENABLED must be True to enable OIDC backchannel logout."))
-        if not callable(oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_HANDLER):
-            errors.append(checks.Error("OIDC_BACKCHANNEL_LOGOUT_HANDLER must be a callable."))
-        if not oauth2_settings.OIDC_ISS_ENDPOINT:
-            errors.append(checks.Error("OIDC_ISS_ENDPOINT must be set to enable OIDC backchannel logout."))
+            errors.append(
+                checks.Error(
+                    "OIDC_ENABLED must be True to enable OIDC backchannel logout.",
+                    id="oauth2_provider.E009",
+                )
+            )
+        # The setting is import-string aware, so a dotted path that does not resolve
+        # raises ImportError; report it here rather than crashing ``manage.py check``.
+        try:
+            handler = oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_HANDLER
+        except ImportError as exc:
+            errors.append(checks.Error(str(exc), id="oauth2_provider.E010"))
+        else:
+            if not callable(handler):
+                errors.append(
+                    checks.Error(
+                        "OIDC_BACKCHANNEL_LOGOUT_HANDLER must be a callable.",
+                        id="oauth2_provider.E010",
+                    )
+                )
 
     return errors

@@ -148,6 +148,18 @@ Field Mapping
 |                                     |                                   | stored value kept, unless        |
 |                                     |                                   | request objects are enabled      |
 +-------------------------------------+-----------------------------------+----------------------------------+
+| ``backchannel_logout_uri``          | ``backchannel_logout_uri``        | Validated as in section 2.2 of   |
+|                                     |                                   | Back-Channel Logout 1.0; a PUT   |
+|                                     |                                   | that omits it clears it; ignored,|
+|                                     |                                   | and the stored value kept, unless|
+|                                     |                                   | back-channel logout is enabled;  |
+|                                     |                                   | see                              |
+|                                     |                                   | :ref:`oidc-backchannel-logout`   |
++-------------------------------------+-----------------------------------+----------------------------------+
+| ``backchannel_logout_session_       | (not stored)                      | No ``sid`` is issued, so         |
+| required``                          |                                   | ``true`` is answered with        |
+|                                     |                                   | ``false``                        |
++-------------------------------------+-----------------------------------+----------------------------------+
 
 .. note::
     An application serves one grant type, so ``grant_types`` may name only one besides

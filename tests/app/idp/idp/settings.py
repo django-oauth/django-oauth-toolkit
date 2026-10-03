@@ -29,10 +29,17 @@ env = environ.FileAwareEnv(
     OAUTH2_PROVIDER_OIDC_ENABLED=(bool, True),
     OAUTH2_PROVIDER_OIDC_RP_INITIATED_LOGOUT_ENABLED=(bool, True),
     OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_ENABLED=(bool, True),
-    # Logout tokens carry the issuer as an absolute URL, so it cannot be derived from the
-    # request the way discovery does it. The default matches `runserver` on its default
-    # port; the e2e suite overrides it with the address it actually bound to.
-    OAUTH2_PROVIDER_OIDC_ISS_ENDPOINT=(str, "http://localhost:8000/o"),
+    # Unset, the issuer is derived from each request, so the IdP is correct at whatever
+    # address it is reached on (the conformance suite reaches it as https://dot-idp). Set
+    # it to pin one.
+    OAUTH2_PROVIDER_OIDC_ISS_ENDPOINT=(str, ""),
+    # The demo RP is a public client served over plaintext on the developer's own
+    # machine. Back-Channel Logout 1.0 section 2.2 allows http only for a confidential
+    # client; DOT extends that to a public client on a loopback address, for local
+    # development only. Both of these are local-development settings; keep the
+    # production defaults (https only, no localhost) in a real deployment.
+    OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES=(list, ["https", "http"]),
+    OAUTH2_PROVIDER_ALLOW_LOCALHOST_LOOPBACK=(bool, True),
     OAUTH2_PROVIDER_DCR_ENABLED=(bool, True),
     OAUTH2_PROVIDER_CIMD_ENABLED=(bool, False),
     # Return the profile/email/address/phone scope claims from UserInfo rather than the
@@ -310,6 +317,22 @@ OAUTH2_PROVIDER = {
     "OIDC_CLAIMS_PARAMETER_ENABLED": env("OAUTH2_PROVIDER_OIDC_CLAIMS_PARAMETER_ENABLED"),
     "OIDC_BACKCHANNEL_LOGOUT_ENABLED": env("OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_ENABLED"),
     "OIDC_ISS_ENDPOINT": env("OAUTH2_PROVIDER_OIDC_ISS_ENDPOINT"),
+    "OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES": env(
+        "OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES"
+    ),
+    "ALLOW_LOCALHOST_LOOPBACK": env("OAUTH2_PROVIDER_ALLOW_LOCALHOST_LOOPBACK"),
+    # The stock handler refuses addresses that are not public, which is every address the
+    # demo RP listens on under `runserver`. With DEBUG on, the demo delivers through
+    # idp.backchannel instead, which drops that check; with DEBUG off -- as the Docker
+    # image runs -- it keeps the stock, SSRF-hardened handler unless this is set.
+    "OIDC_BACKCHANNEL_LOGOUT_HANDLER": env(
+        "OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_HANDLER",
+        default=(
+            "idp.backchannel.send_loopback_backchannel_logout_request"
+            if DEBUG
+            else "oauth2_provider.authorization_server.oidc.handlers.send_backchannel_logout_request"
+        ),
+    ),
     # this key is just for out test app, you should never store a key like this in a production environment.
     "OIDC_RSA_PRIVATE_KEY": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEY"),
     "OIDC_RSA_PRIVATE_KEYS_INACTIVE": env("OAUTH2_PROVIDER_OIDC_RSA_PRIVATE_KEYS_INACTIVE"),

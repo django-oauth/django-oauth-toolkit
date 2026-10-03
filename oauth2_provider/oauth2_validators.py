@@ -8,6 +8,7 @@ import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from datetime import timezone as datetime_timezone
+from typing import Any
 from urllib.parse import unquote_plus
 
 from django.conf import settings
@@ -1176,7 +1177,16 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
         return rt.application == client
 
-    def _save_id_token(self, jti, request, expires, *args, **kwargs):
+    def _save_id_token(
+        self,
+        jti: str,
+        request: OauthlibRequest,
+        expires: datetime,
+        *args: Any,
+        sub: str = "",
+        iss: str = "",
+        **kwargs: Any,
+    ) -> AbstractIDToken:
         scopes = request.scope or " ".join(request.scopes)
 
         id_token = IDToken.objects.create(
@@ -1184,9 +1194,57 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             scope=scopes,
             expires=expires,
             jti=jti,
+            sub=sub,
+            iss=iss,
             application=request.client,
         )
         return id_token
+
+    @staticmethod
+    def _recorded_sub(sub: Any) -> str:
+        """The ``sub`` to record on an ID Token's row, which Logout Tokens restate.
+
+        OpenID Connect Core 1.0 section 2 caps ``sub`` at 255 ASCII characters, the
+        column's width. A longer one is not recorded -- the ID Token is still issued -- and
+        no Logout Token is sent for it, since none could restate it; so say so, while
+        back-channel logout is on.
+        """
+        if sub is None:
+            return ""
+        sub = str(sub)
+        if len(sub) > 255:
+            if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+                log.warning(
+                    "Not recording an ID Token sub of %d characters, over the 255 OpenID Connect "
+                    "allows; no back-channel logout token will be sent for it.",
+                    len(sub),
+                )
+            return ""
+        return sub
+
+    @staticmethod
+    def _recorded_iss(iss: Any) -> str:
+        """The ``iss`` to record on an ID Token's row, which Logout Tokens restate.
+
+        One longer than the column is not recorded, and a Logout Token for the row names
+        ``OIDC_ISS_ENDPOINT`` instead, which may not be what the ID Token said; so say so,
+        while back-channel logout is on.
+        """
+        if iss is None:
+            return ""
+        iss = str(iss)
+        width = get_id_token_model()._meta.get_field("iss").max_length
+        if len(iss) > width:
+            if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+                log.warning(
+                    "Not recording an ID Token iss of %d characters, over the column's %d; "
+                    "back-channel logout tokens for it will name OIDC_ISS_ENDPOINT instead, or not "
+                    "be sent without one.",
+                    len(iss),
+                    width,
+                )
+            return ""
+        return iss
 
     @classmethod
     def _get_additional_claims_is_request_agnostic(cls):
@@ -1439,7 +1497,13 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         jwt_token.make_signed_token(request.client.jwk_key)
         # Use the IDToken's database instead of making the assumption it is in 'default'.
         with transaction.atomic(using=router.db_for_write(IDToken)):
-            id_token = self._save_id_token(id_token["jti"], request, expiration_time)
+            id_token = self._save_id_token(
+                id_token["jti"],
+                request,
+                expiration_time,
+                sub=self._recorded_sub(id_token.get("sub")),
+                iss=self._recorded_iss(id_token.get("iss")),
+            )
         # this is needed by django rest framework
         request.access_token = id_token
         request.id_token = id_token

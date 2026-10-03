@@ -1,3 +1,5 @@
+from django import forms
+
 from oauth2_provider.authorization_server.forms import ApplicationForm
 from oauth2_provider.authorization_server.views.application import APPLICATION_FIELDS
 
@@ -7,6 +9,17 @@ class SampleApplicationForm(ApplicationForm):
 
     class Meta:
         fields = APPLICATION_FIELDS + ("custom_field",)
+
+
+class NameField(forms.CharField):
+    """A project's own field class for ``name``."""
+
+
+class FieldClassApplicationForm(ApplicationForm):
+    """Keeps the default field set, swapping only the class of one field."""
+
+    class Meta:
+        field_classes = {"name": NameField}
 
 
 class ExcludeApplicationForm(ApplicationForm):

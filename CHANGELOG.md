@@ -209,13 +209,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Replay is detected by recognizing a token a previous rotation superseded, so without
   rotation the protection never fires — a pairing `docs/settings.rst` already documented but
   nothing enforced.
-* #1545 Support for OpenID Connect Back-Channel Logout. When
-  `OIDC_BACKCHANNEL_LOGOUT_ENABLED` is set, logging a user out sends a signed logout token to the
-  `backchannel_logout_uri` of every application that registered one and holds a live ID Token for
-  that user. Applications gain a `backchannel_logout_uri` field (deployments with a swapped/custom
-  Application model must add an equivalent migration), the capability is advertised in the OIDC
-  discovery document, and the request itself is delegated to `OIDC_BACKCHANNEL_LOGOUT_HANDLER` so it
-  can be queued rather than sent inline. See `docs/oidc.rst`.
+* #1545 Support for OpenID Connect Back-Channel Logout. When `OIDC_BACKCHANNEL_LOGOUT_ENABLED` is
+  set, logging a user out sends a signed logout token to the `backchannel_logout_uri` of every
+  application that registered one and holds a live ID Token for that user — including applications
+  holding `offline_access` grants, which section 2.7 leaves the relying party to decide about.
+  Applications gain a `backchannel_logout_uri` field, validated against the new
+  `OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES`, and ID Tokens `sub` and `iss` fields recording the
+  claims they were issued with, which logout tokens restate: a `sub` customised through
+  `get_additional_claims` needs no second customisation, and an issuer derived from the request
+  needs no `OIDC_ISS_ENDPOINT` (deployments with a swapped/custom Application or IDToken model must
+  add equivalent migrations; an override of the private `OAuth2Validator._save_id_token` now
+  receives `sub` and `iss` keyword arguments). An ID Token issued without a `sub` (removed through
+  `get_claim_dict`, or over 255 characters) gets no logout token, since none could match it. The
+  capability is advertised in both the OIDC discovery document and the RFC 8414 metadata document,
+  and `backchannel_logout_uri` may be set by a self-registering client (section 5.1.1) through
+  either Dynamic Client Registration or a Client ID Metadata Document, while the feature is enabled.
+  No `sid` is issued, so a request for `backchannel_logout_session_required: true` is answered with
+  `false` in a registration response and refused in a metadata document, which gets no response to
+  say so. Delivery runs in parallel over `OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS` threads, each HTTP
+  exchange held to `OIDC_BACKCHANNEL_LOGOUT_TIMEOUT` as a whole however slowly the relying party
+  answers (resolving its host is bounded by the system resolver), with tokens living
+  `OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS`. It connects directly, without proxy environment
+  variables. It is hardened against server-side request forgery like the CIMD fetch: an address that
+  is not public is refused, the connection goes to the address that was checked, and redirects are
+  not followed. No relying party can prevent the logout, and on the RP-initiated path none can delay
+  it either — the tokens are revoked and the session flushed before anything is sent, and under
+  `ATOMIC_REQUESTS` the database holding the tokens has committed. Only the relying parties of the
+  user whose OP session ends are notified, and none when nobody is logged in.
+  The relying party that initiated the logout is notified even once its ID Token has expired.
+  `OIDC_BACKCHANNEL_LOGOUT_HANDLER` swaps the whole delivery step, for instance for one that queues
+  the work or sends it through a proxy. System checks report the feature enabled without
+  `OIDC_ENABLED` (`oauth2_provider.E009`) and a handler that cannot be imported or called
+  (`oauth2_provider.E010`). See `docs/oidc.rst`.
 * Support for OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126). A new `par/` endpoint
   (`PushedAuthorizationRequestView`) lets clients push authorization request parameters over an
   authenticated back channel in exchange for a single-use `request_uri`, stored on the swappable
@@ -268,6 +293,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   demo IdP's login page (`tests/app/idp`) shows them too, for the OpenID certification
   `oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` review modules.
 ### Changed
+* #1545 `OAuth2Validator._save_id_token` is now called with `sub` and `iss` keyword arguments, the
+  claims the ID Token was issued with, so that back-channel logout tokens can restate them. An
+  override that accepts `**kwargs` keeps working; one with a fixed signature raises `TypeError` on
+  every ID Token issuance until it accepts them. Every ID Token row records the two, whether or not
+  back-channel logout is enabled.
 * #1928 `REQUEST_APPROVAL_PROMPT = "force"` (the default) and `approval_prompt=force` no longer
   apply to a request with `prompt=none`, which must not show the consent page (OpenID Connect Core
   1.0 §3.1.2.1). Such a request is now answered from remembered consent, an unexpired access token

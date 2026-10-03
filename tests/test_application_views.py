@@ -17,7 +17,7 @@ from oauth2_provider.models import get_access_token_model, get_application_model
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .forms import SampleApplicationForm
+from .forms import NameField, SampleApplicationForm
 from .models import SampleApplication
 from .utils import get_basic_auth_header, post_form
 
@@ -777,6 +777,13 @@ class TestApplicationFormClassSetting(BaseTest):
         # ApplicationOwnerIsUserMixin precedes ApplicationFormMixin in the MRO; it must
         # not shadow the default field set.
         self.assertEqual(APPLICATION_FIELDS, ApplicationUpdate.fields)
+
+    @pytest.mark.oauth2_settings({"APPLICATION_FORM_CLASS": "tests.forms.FieldClassApplicationForm"})
+    def test_custom_form_class_keeps_its_own_field_classes(self):
+        # The default field set applies, but the form's Meta.field_classes still does too.
+        form_class = ApplicationRegistration().get_form_class()
+        self.assertEqual(list(APPLICATION_FIELDS), list(form_class.base_fields))
+        self.assertIsInstance(form_class.base_fields["name"], NameField)
 
     @pytest.mark.oauth2_settings({"APPLICATION_MODEL": "tests.SampleApplication"})
     def test_custom_model_field_absent_without_custom_form(self):

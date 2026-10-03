@@ -6,21 +6,27 @@ Client ID Metadata Documents (``cimd.py``) and RFC 7523 ``jwks_uri`` key sets
 (``client_assertions.py``). Such fetches happen inside request handling, so
 the helpers here are hardened against SSRF (https only, resolve and validate
 the target IP once then connect to that same IP, no redirects, tight
-timeouts, response size caps).
+timeouts, response size caps). :func:`post_form` applies the same address
+rules to a notification POSTed to a URL a client registered, OpenID Connect
+Back-Channel Logout's logout request among them.
 
 Callers pass their own exception class so failures surface as the feature's
 native error type (e.g. ``CIMDError``); everything raised here is an instance
 of that class (or of :class:`SafeFetchError` by default).
 """
 
+import contextlib
+import http.client
 import ipaddress
 import json
+import re
 import socket
 import ssl
+import threading
 import time
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import urllib3
 
@@ -30,6 +36,9 @@ import urllib3
 NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
 
 JSON_ACCEPT = "application/json, application/*+json"
+
+# A "%" that does not start a valid percent-escape.
+_STRAY_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 
 class SafeFetchError(Exception):
@@ -230,3 +239,177 @@ def fetch_https_json(url, *, timeout, max_size, exc_class=SafeFetchError):
         return read_json_document(response, max_size=max_size, exc_class=exc_class)
 
     return fetch_https_document(url, timeout=timeout, read_response=_read, exc_class=exc_class)
+
+
+def post_form(
+    url: str,
+    fields: Mapping[str, str],
+    *,
+    timeout: float,
+    require_public_address: bool = True,
+    exc_class: type[Exception] = SafeFetchError,
+) -> tuple[int, http.client.HTTPMessage]:
+    """POST *fields* to *url* as ``application/x-www-form-urlencoded``.
+
+    For notifying a URL a client registered, where only the response status matters:
+    the body is never read. Returns ``(status, headers)``; redirects are not followed,
+    so a 3xx comes back for the caller to judge. Raises *exc_class* for an invalid URL,
+    a refused address, a transport failure, or the deadline passing.
+
+    The address rules match :func:`fetch_https_document`: every address the host
+    resolves to must be public, and the connection is made to that validated address
+    while TLS verification, SNI and the ``Host`` header use the real hostname, so a
+    second DNS lookup cannot rebind it. *require_public_address* turns the first rule
+    off for a local development setup that delivers to its own loopback interface. It is
+    a parameter rather than a setting so that turning it off takes code, as replacing
+    the CIMD fetcher does.
+
+    Two things differ. ``http`` is accepted as well as ``https``, because the caller has
+    already applied its own scheme policy to the URL. And *timeout* is a wall-clock
+    deadline for the HTTP exchange, every address attempt included: a socket timeout is
+    per read, so a server answering a byte at a time resets it on every read and can
+    hold the caller indefinitely. A watchdog shuts the connection down when the deadline
+    passes, which ends a blocked read wherever it is, the TLS handshake included.
+    Resolving the host comes first and is bounded by the system resolver's own timeout,
+    not by *timeout*.
+
+    An internationalised hostname is sent as its A-label, and anything outside ASCII in
+    the path or query is percent-encoded, as browsers and ``requests`` do.
+    """
+    try:
+        parsed = urlsplit(url)
+    except ValueError as exc:  # e.g. an unclosed IPv6 bracket
+        raise exc_class(f"URL is invalid: {exc}") from exc
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https"):
+        raise exc_class("URL must use the http or https scheme")
+    if not parsed.hostname:
+        raise exc_class("URL must contain a host")
+    try:
+        port = parsed.port or (443 if scheme == "https" else 80)
+    except ValueError as exc:
+        raise exc_class("URL has an invalid port") from exc
+    if parsed.username is not None or parsed.password is not None:
+        raise exc_class("URL must not contain a userinfo component")
+    try:
+        hostname = _ascii_hostname(parsed.hostname)
+    except UnicodeError as exc:
+        raise exc_class(f"URL has an invalid host: {exc}") from exc
+    # A fully qualified name's trailing dot is for resolution only: certificates and
+    # virtual hosts name the host without it, as urllib3 also assumes.
+    server_name = hostname.rstrip(".")
+
+    # getaddrinfo() encodes the name itself and raises UnicodeError for one it cannot,
+    # such as a label longer than 63 characters.
+    try:
+        if require_public_address:
+            addresses = resolve_and_validate(hostname, port, exc_class=exc_class)
+        else:
+            addresses = [info[4][0] for info in socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)]
+    except (socket.gaierror, UnicodeError) as exc:
+        raise exc_class(f"could not resolve host: {exc}") from exc
+
+    target = _encode_target(parsed.path or "/", "/%:@!$&'()*+,;=~")
+    if parsed.query:
+        target += "?" + _encode_target(parsed.query, "/?%:@!$&'()*+,;=~")
+    body = urlencode(fields).encode("ascii")
+    host = f"[{server_name}]" if ":" in server_name else server_name
+    headers = {
+        "Host": f"{host}:{parsed.port}" if parsed.port else host,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Connection": "close",
+    }
+
+    deadline = time.monotonic() + timeout
+    last_exc = None
+    for address in addresses:
+        if deadline - time.monotonic() <= 0:
+            break
+        try:
+            return _post_to_address(
+                address, port, server_name, scheme == "https", target, body, headers, deadline
+            )
+        except (OSError, http.client.HTTPException, ValueError) as exc:
+            last_exc = exc
+    if last_exc is None:
+        raise exc_class("could not post: timeout budget exhausted before any connection attempt")
+    raise exc_class(f"could not post: {last_exc}")
+
+
+def _post_to_address(
+    address: str,
+    port: int,
+    hostname: str,
+    use_tls: bool,
+    path: str,
+    body: bytes,
+    headers: Mapping[str, str],
+    deadline: float,
+) -> tuple[int, http.client.HTTPMessage]:
+    """One attempt of :func:`post_form` against a single resolved *address*."""
+    raw = socket.create_connection((address, port), timeout=max(deadline - time.monotonic(), 0.001))
+    # The socket timeout alone does not bound the exchange: CPython holds a TLS handshake
+    # to it as a whole, but every later read gets it afresh. Wrapping in TLS detaches
+    # *raw* from its descriptor, so the watchdog holds a duplicate: shutting that down
+    # ends the one connection they share, waking whichever read is blocked on it.
+    watched = raw.dup()
+    expired = threading.Event()
+
+    def expire():
+        expired.set()
+        # The peer may have closed the connection already; it is ended either way.
+        with contextlib.suppress(OSError):
+            watched.shutdown(socket.SHUT_RDWR)
+
+    watchdog = threading.Timer(max(deadline - time.monotonic(), 0), expire)
+    watchdog.daemon = True
+    watchdog.start()
+    try:
+        sock = raw
+        if use_tls:
+            sock = ssl.create_default_context().wrap_socket(raw, server_hostname=hostname)
+        conn = http.client.HTTPConnection(hostname, port)
+        conn.sock = sock
+        try:
+            conn.request("POST", path, body=body, headers=headers)
+            response = conn.getresponse()
+            status, response_headers = response.status, response.headers
+            response.close()
+        finally:
+            conn.close()
+    except (OSError, http.client.HTTPException) as exc:
+        if expired.is_set():
+            raise TimeoutError("deadline exceeded") from exc
+        raise
+    finally:
+        # join() as well as cancel(): cancel() does not stop an expire() already running,
+        # which must not reach shutdown() after the descriptor is closed and reused.
+        watchdog.cancel()
+        watchdog.join()
+        watched.close()
+        raw.close()
+    return status, response_headers
+
+
+def _encode_target(component: str, safe: str) -> str:
+    """Percent-encode what is not already a valid character of a URI path or query.
+
+    Existing ``%XX`` escapes and the reserved characters are left alone, so the target
+    means what the registered URI meant; a ``%`` that starts no valid escape is encoded
+    as ``%25``, and a control character or space cannot reach the request line.
+    """
+    return quote(_STRAY_PERCENT.sub("%25", component), safe=safe)
+
+
+def _ascii_hostname(hostname: str) -> str:
+    """*hostname* as it goes on the wire: IDNA A-labels, as ``requests`` sends it."""
+    if hostname.isascii():
+        return hostname
+    try:
+        import idna
+    except ImportError:  # pragma: no cover - requests depends on idna
+        return hostname.encode("idna").decode("ascii")
+    try:
+        return idna.encode(hostname, uts46=True).decode("ascii")
+    except idna.IDNAError as exc:
+        raise UnicodeError(str(exc)) from exc

@@ -3,6 +3,7 @@ from django.forms.models import modelform_defines_fields, modelform_factory
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
+from oauth2_provider.authorization_server.forms import HttpsURLField
 from oauth2_provider.models import get_application_model
 from oauth2_provider.settings import oauth2_settings
 
@@ -38,7 +39,7 @@ class ApplicationFormMixin:
         """
         fields = list(self.fields)
 
-        if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+        if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
             fields.append("backchannel_logout_uri")
 
         return fields
@@ -60,7 +61,15 @@ class ApplicationFormMixin:
         model = get_application_model()
         if modelform_defines_fields(form_class):
             return modelform_factory(model, form=form_class)
-        return modelform_factory(model, form=form_class, fields=self.get_fields())
+        # field_classes replaces the form's own Meta.field_classes rather than adding to it,
+        # so carry those over, letting the project's win.
+        own_field_classes = getattr(getattr(form_class, "Meta", None), "field_classes", None) or {}
+        return modelform_factory(
+            model,
+            form=form_class,
+            fields=self.get_fields(),
+            field_classes={"backchannel_logout_uri": HttpsURLField, **own_field_classes},
+        )
 
     def form_valid(self, form):
         # The application is always owned by the request user; a configured form exposing

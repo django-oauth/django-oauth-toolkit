@@ -37,7 +37,7 @@
 				<LoginButton>Login</LoginButton>
 				<LogoutButton>Logout</LogoutButton>
 				<RefreshTokenButton>refreshToken</RefreshTokenButton>
-				<a href="http://localhost:8000/admin">IDP Admin</a>
+				<a href={new URL('/admin', issuer).href}>IDP Admin</a>
 			</div>
 		</div>
 		<div class="row">

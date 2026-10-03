@@ -11,6 +11,7 @@ from django.test import override_settings
 from oauth2_provider.authorization_server.oidc.server import Server
 from oauth2_provider.core.checks import (
     validate_access_token_expiry_configuration,
+    validate_backchannel_logout,
     validate_refresh_token_configuration,
     validate_response_types_supported,
     validate_stored_authorization_request_model_setting,
@@ -27,6 +28,9 @@ from .presets import OIDC_SETTINGS_BACKCHANNEL_LOGOUT
 
 BAD_HANDLER_SETTINGS = deepcopy(OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
 BAD_HANDLER_SETTINGS["OIDC_BACKCHANNEL_LOGOUT_HANDLER"] = "sys.api_version"
+
+UNIMPORTABLE_HANDLER_SETTINGS = deepcopy(OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
+UNIMPORTABLE_HANDLER_SETTINGS["OIDC_BACKCHANNEL_LOGOUT_HANDLER"] = "does.not.exist.handler"
 
 MISSING_ISS_OIDC_ENDPOINT = deepcopy(OIDC_SETTINGS_BACKCHANNEL_LOGOUT)
 MISSING_ISS_OIDC_ENDPOINT["OIDC_ISS_ENDPOINT"] = None
@@ -57,23 +61,39 @@ class DjangoChecksTestCase(TestCase):
         self.assertNotIn(checks.Tags.database, validate_token_configuration.tags)
         self.assertIn(checks.Tags.models, validate_token_configuration.tags)
 
+    def test_backchannel_logout_check_is_tagged(self):
+        # An untagged check is skipped by tag-filtered runs (`manage.py check --tag
+        # security`, which deploy pipelines commonly use), so this misconfiguration guard
+        # has to carry the tag its neighbours do.
+        self.assertIn(checks.Tags.security, validate_backchannel_logout.tags)
+
     @override_settings(OAUTH2_PROVIDER=OIDC_DISABLED_SETTINGS)
     def test_checks_fail_when_backchannel_is_enabled_and_oidc_is_disabled(self):
         message = "OIDC_ENABLED must be True to enable OIDC backchannel logout."
         with self.assertRaisesMessage(SystemCheckError, message):
             call_command("check")
+        # The id the docs name, so that a project silencing it gets what it asked for.
+        self.assertEqual([e.id for e in validate_backchannel_logout(None)], ["oauth2_provider.E009"])
 
     @override_settings(OAUTH2_PROVIDER=BAD_HANDLER_SETTINGS)
     def test_checks_fail_when_backchannel_logout_handler_is_not_callable(self):
         message = "OIDC_BACKCHANNEL_LOGOUT_HANDLER must be a callable."
         with self.assertRaisesMessage(SystemCheckError, message):
             call_command("check")
+        self.assertEqual([e.id for e in validate_backchannel_logout(None)], ["oauth2_provider.E010"])
+
+    @override_settings(OAUTH2_PROVIDER=UNIMPORTABLE_HANDLER_SETTINGS)
+    def test_checks_report_an_unimportable_backchannel_logout_handler(self):
+        # The setting is an import string, so a typo raises ImportError on access; the
+        # check reports that instead of crashing `manage.py check`.
+        errors = validate_backchannel_logout(None)
+        self.assertEqual([e.id for e in errors], ["oauth2_provider.E010"])
+        self.assertIn("does.not.exist.handler", errors[0].msg)
 
     @override_settings(OAUTH2_PROVIDER=MISSING_ISS_OIDC_ENDPOINT)
-    def test_checks_fail_when_iss_oidc_endpoint_is_missing(self):
-        message = "OIDC_ISS_ENDPOINT must be set to enable OIDC backchannel logout."
-        with self.assertRaisesMessage(SystemCheckError, message):
-            call_command("check")
+    def test_backchannel_logout_does_not_require_an_issuer_setting(self):
+        # Logout tokens restate the issuer recorded on the ID Token, so no setting is needed.
+        self.assertEqual(validate_backchannel_logout(None), [])
 
 
 @pytest.mark.usefixtures("oauth2_settings")

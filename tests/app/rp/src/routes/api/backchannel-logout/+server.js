@@ -1,92 +1,67 @@
-// OIDC Backchannel Logout Endpoint for SvelteKit RP
-// Receives POST requests from the OP with a logout_token (JWT)
+// OIDC Back-Channel Logout endpoint for the demo RP.
+//
+// The OP POSTs a logout_token here server to server (OpenID Connect Back-Channel Logout 1.0
+// section 2.5), so this is not a browser endpoint: it takes only the form encoding section
+// 2.5 specifies, and has no CORS handling. It is authenticated by validating the signed
+// logout token (section 2.6), not by the request's origin.
 
 import { sendLogoutEvent } from '../sseClients.js';
 import { validateLogoutToken } from '../validateLogoutToken.js';
 
-const corsHeaders = {
-	'Access-Control-Allow-Origin': '*',
-	'Access-Control-Allow-Methods': 'POST, OPTIONS',
-	'Access-Control-Allow-Headers': 'Content-Type',
-	Accept: '*'
+// Section 2.8: a response must not be cached where it could interfere with a later logout
+// request.
+const headers = {
+	'Content-Type': 'application/json',
+	'Cache-Control': 'no-store'
 };
+
+// Section 2.8: a request that is invalid, or a logout that failed, is answered with 400 and
+// the error parameters of OAuth 2.0 section 5.2.
+function badRequest(description) {
+	return new Response(
+		JSON.stringify({ error: 'invalid_request', error_description: description }),
+		{
+			status: 400,
+			headers
+		}
+	);
+}
 
 /**
  * POST /api/backchannel-logout
- * Receives a logout_token from the OP and invalidates the user session.
+ * Receives a logout_token from the OP and logs the user's browser sessions out.
  */
 export async function POST({ request }) {
-	const headers = {
-		'Content-Type': 'application/json',
-		...corsHeaders
-	};
-	try {
-		let logout_token;
-		const contentType = request.headers.get('content-type') || '';
-		if (contentType.includes('application/json')) {
-			logout_token = (await request.json()).logout_token;
-		} else if (contentType.includes('application/x-www-form-urlencoded')) {
-			logout_token = (await request.formData()).get('logout_token');
-		} else {
-			return new Response(JSON.stringify({ error: 'Unsupported content type' }), {
-				status: 415,
-				headers
-			});
-		}
-		if (!logout_token) {
-			return new Response(JSON.stringify({ error: 'Missing logout_token' }), {
-				status: 400,
-				headers
-			});
-		}
-
-		// Validate the logout_token (JWT) according to OIDC spec
-		let payload;
-		try {
-			payload = await validateLogoutToken(logout_token);
-		} catch (e) {
-			console.log('Logout token validation error', e);
-			return new Response(
-				JSON.stringify({ error: 'Invalid logout_token', details: e.message }),
-				{
-					status: 400,
-					headers
-				}
-			);
-		}
-
-		// Notify the browser over SSE. DOT does not issue a sid claim yet, so the
-		// subscription is keyed on sub; keep using sub here so the two agree.
-		try {
-			sendLogoutEvent(payload.sub, {
-				sub: payload.sub,
-				sid: payload.sid,
-				event: 'logout'
-			});
-		} catch (e) {
-			console.log('Error sending logout sse events to frontend', e);
-		}
-		console.log('Processed backchannel logout for', { sub: payload.sub, sid: payload.sid });
-		return new Response(
-			JSON.stringify({ status: 'logout processed', sub: payload?.sub, sid: payload?.sid }),
-			{
-				status: 200,
-				headers
-			}
-		);
-	} catch (err) {
-		console.log('Error processing backchannel logout request', err);
-		return new Response(JSON.stringify({ error: 'Invalid request', details: err.message }), {
-			status: 400,
-			headers
-		});
+	const contentType = request.headers.get('content-type') || '';
+	if (!contentType.includes('application/x-www-form-urlencoded')) {
+		return badRequest('The logout request must be application/x-www-form-urlencoded');
 	}
-}
 
-// Handle preflight OPTIONS requests for CORS
-export async function OPTIONS() {
-	return new Response(null, {
-		status: 204,
-		headers: corsHeaders
-	});
+	let logoutToken;
+	try {
+		logoutToken = (await request.formData()).get('logout_token');
+	} catch (e) {
+		return badRequest('The logout request body could not be read');
+	}
+	if (!logoutToken) {
+		return badRequest('Missing logout_token');
+	}
+
+	let payload;
+	try {
+		payload = await validateLogoutToken(logoutToken);
+	} catch (e) {
+		console.log('Logout token validation error', e);
+		return badRequest(`Invalid logout_token: ${e.message}`);
+	}
+
+	// Notify the browser over SSE. DOT does not issue a sid claim yet, so the subscription
+	// is keyed on sub; keep using sub here so the two agree.
+	try {
+		sendLogoutEvent(payload.sub, { sub: payload.sub, sid: payload.sid, event: 'logout' });
+	} catch (e) {
+		console.log('Error sending logout sse events to frontend', e);
+	}
+	console.log('Processed backchannel logout for', { sub: payload.sub, sid: payload.sid });
+	return new Response(null, { status: 200, headers: { 'Cache-Control': 'no-store' } });
 }

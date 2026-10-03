@@ -129,9 +129,16 @@ class IdpServer:
         env["DJANGO_SETTINGS_MODULE"] = "idp.settings"
         env["DATABASE_URL"] = f"sqlite:///{self._tmpdir}/db.sqlite3"
         env["ALLOWED_HOSTS"] = ",".join(self.allowed_hosts)
-        # The demo settings hardcode the `runserver` default; this instance binds an
-        # arbitrary host/port, and an issuer that does not match it fails OIDC validation.
-        env["OAUTH2_PROVIDER_OIDC_ISS_ENDPOINT"] = self.issuer
+        # The back-channel logout package's relying party is a loopback receiver, which
+        # the stock handler refuses as a non-public address. Opt in explicitly rather than
+        # through the demo's DEBUG-dependent default.
+        env["OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_HANDLER"] = (
+            "idp.backchannel.send_loopback_backchannel_logout_request"
+        )
+        # The demo turns this on for its seeded public client's http://localhost logout URI.
+        # It also relaxes localhost redirect URI port matching, so the suite runs with the
+        # library default instead.
+        env["OAUTH2_PROVIDER_ALLOW_LOCALHOST_LOOPBACK"] = "False"
         if self.scopes:
             env["OAUTH2_PROVIDER_SCOPES"] = _encode_env_dict(self.scopes)
         if self.default_scopes:
