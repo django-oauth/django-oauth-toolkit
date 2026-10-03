@@ -1294,8 +1294,9 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         authentication satisfied, for the ``acr`` claim of the ID Token (OpenID
         Connect Core 1.0 section 2), or ``None`` to leave the claim out.
 
-        Called at the authorization endpoint, after the End-User authenticated,
-        so ``request.user`` is the user of the current session. The value is
+        Called at the authorization endpoint for an OpenID Connect request, after
+        the End-User authenticated, so ``request.user`` is the user of the
+        current session. The value is
         stored with an authorization code and reused for the ID Token issued
         when the code is exchanged. ID Tokens issued on a refresh token carry no
         ``acr``.
@@ -1315,23 +1316,25 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         The ``acr`` claim for an ID Token issued in response to *request*.
 
         At the authorization endpoint it comes from ``get_acr()``, called once
-        per request (a hybrid response stores it with the code and also puts it
-        in the ID Token it issues). At code exchange it is the value
-        ``validate_code()`` restored from the grant. Any other token request
-        gets none.
+        per OpenID Connect request (a hybrid response stores it with the code
+        and also puts it in the ID Token it issues). At code exchange it is the
+        value ``validate_code()`` restored from the grant. Any other token
+        request gets none.
 
         oauthlib exposes every request parameter as an attribute of the request,
-        so the value is read from the attributes set here or by
-        ``validate_code()`` only, never from what the client sent.
+        so neither the value nor the endpoint is taken from what the client sent
+        (``acr``, ``grant_type``): only attributes set on the request itself are
+        read. oauthlib's token endpoint always sets ``extra_credentials``.
         """
         stored = vars(request)
-        if request.grant_type is None:
-            if "acr" not in stored:
-                request.acr = self.get_acr(request) or None
-            return request.acr
-        if request.grant_type == "authorization_code":
-            return stored.get("acr")
-        return None
+        if "acr" in stored:
+            return stored["acr"]
+        if "extra_credentials" in stored:
+            return None
+        if not oauth2_settings.OIDC_ENABLED or "openid" not in (request.scopes or ()):
+            return None
+        request.acr = self.get_acr(request) or None
+        return request.acr
 
     def get_oidc_issuer_endpoint(self, request):
         return oauth2_settings.oidc_issuer(request)

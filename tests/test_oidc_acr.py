@@ -166,6 +166,42 @@ def test_hook_called_without_acr_values(oauth2_settings, test_user, application,
 
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(ACR_SETTINGS)
+def test_hook_not_called_without_openid_scope(oauth2_settings, test_user, application, client):
+    params = _consent(client, test_user, application, "code", scope="read", acr_values="1 2")
+
+    assert AcrValidator.calls == []
+    assert Grant.objects.get(code=params["code"][0]).acr == ""
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(ACR_SETTINGS)
+@pytest.mark.parametrize("grant_type", ["authorization_code", "password"])
+def test_client_sent_grant_type_does_not_skip_hook(
+    oauth2_settings, test_user, application, client, oidc_key, grant_type
+):
+    """oauthlib exposes a client-sent grant_type at the authorization endpoint too."""
+    params = _authorize_get(client, test_user, application, "code", acr_values="1 2", grant_type=grant_type)
+    token_data = _exchange(client, application, params["code"][0])
+
+    assert _claims(token_data["id_token"], oidc_key)["acr"] == ACR
+    assert len(AcrValidator.calls) == 1
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(ACR_SETTINGS)
+def test_client_sent_grant_type_does_not_skip_hook_in_implicit(
+    oauth2_settings, test_user, application, client, oidc_key
+):
+    application.authorization_grant_type = application.GRANT_IMPLICIT
+    application.save()
+
+    params = _authorize_get(client, test_user, application, "id_token", grant_type="password")
+
+    assert _claims(params["id_token"][0], oidc_key)["acr"] == ACR
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(ACR_SETTINGS)
 @pytest.mark.parametrize("response_type", ["id_token", "id_token token"])
 def test_implicit_id_token_carries_acr(
     oauth2_settings, test_user, application, client, oidc_key, response_type

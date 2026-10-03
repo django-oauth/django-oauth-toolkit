@@ -602,8 +602,8 @@ the ``acr`` claim of the ID Token (`2 ID Token`_). Only your login knows how the
 End-User authenticated, so the claim comes from your validator's ``get_acr``
 method. The default returns ``None``, and the ID Token has no ``acr`` claim.
 
-``get_acr(request)`` is called at the authorization endpoint once the End-User has
-authenticated: ``request.user`` is the user of the current session, as your
+``get_acr(request)`` is called at the authorization endpoint for an OpenID Connect
+request (one with the ``openid`` scope) once the End-User has authenticated: ``request.user`` is the user of the current session, as your
 authentication middleware set it up. ``request.acr_values`` holds the requested
 values, space separated, or ``None``. They state the client's preference only, so
 return a value your login actually met, whether or not it was requested::
