@@ -65,10 +65,28 @@ Behavior and limitations
   **not** supported — redirect URIs must be pre-registered and match exactly.
 * **Request objects.** JWT-Secured Authorization Requests (the ``request`` parameter, RFC 9126 §3 /
   RFC 9101) are **not** supported yet; such requests are rejected.
-* **Only PAR request URIs.** The authorization endpoint resolves only ``request_uri`` values in the
-  ``urn:ietf:params:oauth:request_uri:`` namespace issued by this endpoint. Any other
+* **Only stored request URIs.** The authorization endpoint resolves only ``request_uri`` values in
+  the ``urn:ietf:params:oauth:request_uri:`` namespace issued by this authorization server. Any other
   ``request_uri`` (a request object passed by reference) is answered with
   ``request_uri_not_supported``; see :ref:`oidc-request-objects`.
+
+.. _stored-authorization-requests:
+
+How pushed requests are stored
+------------------------------
+
+A pushed request is kept as a *stored authorization request*: a row of the swappable
+``StoredAuthorizationRequest`` model (``OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL``)
+holding the validated parameters, the client the ``request_uri`` is bound to, and its expiry. The
+store is not specific to PAR. The authorization endpoint also uses it to carry a stored request
+across a login it asks for (``prompt=login`` or an elapsed ``max_age``), storing the same
+parameters again under a new ``request_uri`` so they never enter the browser URL.
+
+Only requests that have already been validated in full are stored: they pass the same validation
+as at the authorization endpoint, including its ``prompt`` and ``max_age`` checks, and carry no
+client credentials and no ``request`` or ``request_uri`` parameter. The authorization endpoint
+relies on this when it treats a stored request as authoritative. Code that stores requests through
+``oauth2_provider.authorization_server.stored_requests`` must keep to that contract.
 
 Requiring PAR
 -------------

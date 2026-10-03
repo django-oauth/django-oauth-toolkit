@@ -15,10 +15,10 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from oauthlib.oauth2.rfc6749.errors import InvalidRequestError
 
-from oauth2_provider.authorization_server.par import REQUEST_URI_PREFIX
+from oauth2_provider.authorization_server.stored_requests import REQUEST_URI_PREFIX
 from oauth2_provider.authorization_server.views.base import AuthorizationView
 from oauth2_provider.core.exceptions import OAuthToolkitError
-from oauth2_provider.models import create_pushed_authorization_request, get_application_model
+from oauth2_provider.models import create_stored_authorization_request, get_application_model
 from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets
@@ -156,7 +156,7 @@ class TestUnsupportedRequestObjects(TestCase):
         self.assertIn("required for this client", response.content.decode().lower())
 
     def make_par(self):
-        return create_pushed_authorization_request(
+        return create_stored_authorization_request(
             request_uri=f"{REQUEST_URI_PREFIX}test-reference-value",
             client_id=self.application.client_id,
             parameters={

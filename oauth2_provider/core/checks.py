@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from django.apps import AppConfig, apps
+from django.conf import settings
 from django.core import checks
 from django.core.exceptions import ImproperlyConfigured
 from django.db import router
@@ -289,6 +290,38 @@ def validate_swapped_model_consistency(app_configs, **kwargs):
         ]
 
     return []
+
+
+@checks.register(checks.Tags.compatibility)
+def validate_stored_authorization_request_model_setting(
+    app_configs: Sequence[AppConfig] | None, **kwargs: Any
+) -> list[checks.CheckMessage]:
+    """Report the pre-release ``OAUTH2_PROVIDER_PAR_REQUEST_MODEL`` setting.
+
+    The swappable model it named was renamed to ``StoredAuthorizationRequest`` before
+    it was released, along with its setting. Django decides whether a model is swapped
+    only from the setting named in its ``Meta.swappable``, so the old name is not
+    honored: while only the old name is set, the default model would stay installed,
+    and migration ``0029_rename_pushedauthorizationrequest`` would try to rename a
+    table that a project which swapped the model never created. ``migrate`` runs this
+    check first, so the error is reported before that can happen. Once the new name
+    is set, the swap is honored and a leftover old name is harmless.
+    """
+    if getattr(settings, "OAUTH2_PROVIDER_PAR_REQUEST_MODEL", None) is None:
+        return []
+    if getattr(settings, "OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL", None) is not None:
+        return []
+    return [
+        checks.Error(
+            "OAUTH2_PROVIDER_PAR_REQUEST_MODEL has been renamed to "
+            "OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL and is no longer read.",
+            hint=(
+                "Rename the setting, and make the swapped model subclass "
+                "oauth2_provider.models.AbstractStoredAuthorizationRequest."
+            ),
+            id="oauth2_provider.E008",
+        )
+    ]
 
 
 @checks.register(checks.Tags.models)

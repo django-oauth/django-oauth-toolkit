@@ -24,7 +24,7 @@ from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestErro
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid.connect.core.exceptions import RequestNotSupported, RequestURINotSupported
 
-from oauth2_provider.authorization_server import par
+from oauth2_provider.authorization_server import par, stored_requests
 from oauth2_provider.authorization_server.forms import AllowForm
 from oauth2_provider.authorization_server.oidc.max_age import INVALID_MAX_AGE_DESCRIPTION, is_valid_max_age
 from oauth2_provider.authorization_server.response_modes import add_params_to_authorization_redirect
@@ -157,7 +157,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             "state": form.cleaned_data.get("state", None),
         }
         # A custom authorize.html may not render the response_mode field; the URL the
-        # form posts back to still carries it, except after a pushed request.
+        # form posts back to still carries it, except after a stored request.
         response_mode = form.cleaned_data.get("response_mode") or self.request.GET.get("response_mode")
         if response_mode:
             credentials["response_mode"] = response_mode
@@ -212,35 +212,39 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         log.debug("Success url for the request: {0}".format(self.success_url))
         return self.redirect(self.success_url, application)
 
-    def _fatal_par_error(self, description: str) -> http.HttpResponse:
-        """Render a non-redirecting authorization error (RFC 9126).
+    def _fatal_invalid_request(self, description: str) -> http.HttpResponse:
+        """Render a non-redirecting ``invalid_request`` authorization error.
 
-        Used for request_uri and PAR-enforcement failures: there is no validated
+        Used for stored request_uri and PAR-enforcement failures: there is no validated
         redirect_uri to trust, so the error is shown to the resource owner rather
         than redirected (which would risk an open redirect).
         """
         error = FatalClientError(error=CustomOAuth2Error(error="invalid_request", description=description))
         return self.error_response(error, application=None)
 
-    def _resolve_pushed_request_uri(
+    def _resolve_stored_request_uri(
         self, request: http.HttpRequest, request_uri: str
     ) -> http.HttpResponse | None:
-        """Replace an incoming ``request_uri`` with the parameters pushed to the PAR
-        endpoint (RFC 9126 §4), or return an error response.
+        """Replace an incoming ``request_uri`` with the parameters of the stored
+        authorization request it refers to (RFC 9126 §4), or return an error response.
 
-        The consume/binding/expiry logic lives in :mod:`oauth2_provider.par`; here we
-        only re-inject the resolved parameters into the request and render errors.
+        The consume/binding/expiry logic lives in
+        :mod:`oauth2_provider.authorization_server.stored_requests`; here we only
+        re-inject the resolved parameters into the request and render errors.
         """
         try:
-            parameters = par.consume_pushed_request(request_uri, request.GET.get("client_id"))
-        except par.PushedAuthorizationError as error:
-            return self._fatal_par_error(error.description)
-        self.pushed_request = True
-        self.pushed_request_uri = request_uri
-        # Re-inject the pushed parameters so the existing authorization flow, which
+            parameters = stored_requests.consume_authorization_request(
+                request_uri, request.GET.get("client_id")
+            )
+        except stored_requests.StoredAuthorizationRequestError as error:
+            return self._fatal_invalid_request(error.description)
+        self.stored_request = True
+        self.stored_request_uri = request_uri
+        # Re-inject the stored parameters so the existing authorization flow, which
         # reads from the query string, proceeds unchanged. Any parameters supplied
-        # alongside request_uri are intentionally ignored: the pushed request is
-        # authoritative (RFC 9126), which prevents parameter injection.
+        # alongside request_uri are intentionally ignored: the stored request was
+        # validated in full before it was stored and is authoritative (RFC 9126),
+        # which prevents parameter injection.
         self._replace_query(request, parameters)
         return None
 
@@ -251,27 +255,27 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         request.GET = QueryDict(query_string, mutable=False)
         request.META["QUERY_STRING"] = query_string
 
-    def _handle_pushed_authorization_request(self, request: http.HttpRequest) -> http.HttpResponse | None:
-        """Resolve a pushed ``request_uri`` or enforce mandatory PAR (RFC 9126).
+    def _resolve_stored_request_or_enforce_par(self, request: http.HttpRequest) -> http.HttpResponse | None:
+        """Resolve a stored ``request_uri`` or enforce mandatory PAR (RFC 9126).
 
         Returns an error response to short-circuit the view, or ``None`` to continue
         with the (possibly rewritten) request.
         """
         request_uri = request.GET.get("request_uri")
-        # Only PAR request URIs are resolved here; any other request_uri (OpenID
+        # Only stored-request URIs are resolved here; any other request_uri (OpenID
         # Connect Core 1.0 section 6.2) is rejected by _reject_request_objects.
-        if request_uri and request_uri.startswith(par.REQUEST_URI_PREFIX):
-            return self._resolve_pushed_request_uri(request, request_uri)
+        if stored_requests.is_stored_request_uri(request_uri):
+            return self._resolve_stored_request_uri(request, request_uri)
         if par.pushed_authorization_required(request.GET.get("client_id")):
             if oauth2_settings.REQUIRE_PUSHED_AUTHORIZATION_REQUESTS:
                 message = "This authorization server requires pushed authorization requests."
             else:
                 message = "Pushed authorization requests are required for this client."
-            return self._fatal_par_error(message)
+            return self._fatal_invalid_request(message)
         return None
 
     def _reject_request_objects(self, request: http.HttpRequest) -> http.HttpResponse | None:
-        """Reject the ``request`` and non-PAR ``request_uri`` parameters.
+        """Reject the ``request`` and non-stored ``request_uri`` parameters.
 
         Request objects (OpenID Connect Core 1.0 section 6) are not supported, so
         such a request is answered with ``request_not_supported`` or
@@ -286,13 +290,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         ``login_required``.
 
         Returns ``None`` to leave the request to the normal flow: when it carries
-        neither parameter, when its ``request_uri`` is a PAR request URI (the
-        pushed request is authoritative, and the PAR endpoint refuses to store
-        either parameter), and when the client must use PAR, which the PAR
-        enforcement in :meth:`get` reports instead.
+        neither parameter, when its ``request_uri`` refers to a stored request (the
+        stored request is authoritative, and never carries either parameter), and
+        when the client must use PAR, which the PAR enforcement in :meth:`get`
+        reports instead.
         """
         request_uri = request.GET.get("request_uri")
-        if request_uri and request_uri.startswith(par.REQUEST_URI_PREFIX):
+        if stored_requests.is_stored_request_uri(request_uri):
             return None
         if request.GET.get("request"):
             error_class = RequestNotSupported
@@ -399,10 +403,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         return f"{escape_uri_path(request.path)}?{query}" if query else escape_uri_path(request.path)
 
     def dispatch(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
-        # Whether the request being authorized was resolved from a pushed
+        # Whether the request being authorized was resolved from a stored
         # request_uri, which can be used only once (RFC 9126 section 4).
-        self.pushed_request = False
-        self.pushed_request_uri = None
+        self.stored_request = False
+        self.stored_request_uri = None
         if request.method == "POST" and not self.is_consent_submission(request):
             # An authorization request sent by POST (OpenID Connect Core 1.0
             # section 3.1.2.1) is redirected to the same request sent by GET, so
@@ -425,9 +429,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         return self._dispatch_with_csrf_token(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
-        par_response = self._handle_pushed_authorization_request(request)
-        if par_response is not None:
-            return par_response
+        stored_request_response = self._resolve_stored_request_or_enforce_par(request)
+        if stored_request_response is not None:
+            return stored_request_response
 
         try:
             scopes, credentials = self.validate_authorization_request(request)
@@ -463,8 +467,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         # Coming back to that request without the fresh login it still needs
         # gets login_required (OpenID Connect Core 1.0 section 3.1.2.1) rather
         # than another trip to the login page, so the flow can never loop.
-        if self.pushed_request:
-            returning = {"request_uri": [self.pushed_request_uri]}
+        if self.stored_request:
+            returning = {"request_uri": [self.stored_request_uri]}
         else:
             returning = dict(request.GET.lists())
         reauthentication = self._reauthentication_outcome(returning)
@@ -595,17 +599,20 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         :meth:`_reauthentication_outcome` has verified it, so following the
         return URL without logging in gains nothing.
 
-        A pushed request has already used up its ``request_uri`` (RFC 9126
-        section 4), so its parameters are pushed again for the same client and
+        A stored request has already used up its ``request_uri`` (RFC 9126
+        section 4), so its parameters are stored again for the same client and
         the return URL carries only the new ``request_uri``: the request stays
         on the server, and a client that must use PAR can still complete it.
         """
         parameters = dict(self.request.GET.lists())
-        if self.pushed_request:
+        if self.stored_request:
             client_id = self.request.GET["client_id"]
-            # Stored in the shape par.collect_pushed_parameters gives them.
-            pushed = {key: values if key == "resource" else values[-1] for key, values in parameters.items()}
-            request_uri, _expires_in = par.store_pushed_request(client_id, pushed)
+            # These parameters were resolved from the store, so they were validated
+            # in full when first stored. Stored in the shape the store documents.
+            stored = {key: values if key == "resource" else values[-1] for key, values in parameters.items()}
+            request_uri = stored_requests.store_authorization_request(
+                client_id, stored, expires_in=oauth2_settings.PAR_REQUEST_URI_LIFETIME_SECONDS
+            )
             parameters = {"client_id": [client_id], "request_uri": [request_uri]}
         self._request_reauthentication(parameters, fresh=True)
 
@@ -698,12 +705,12 @@ class AuthorizationView(BaseAuthorizationView, FormView):
     def _reauthentication_binding(parameters: dict[str, list[str]]) -> str:
         """Identify the authorization request that the user returns with.
 
-        A pushed request is identified by its ``request_uri``, and any other
+        A stored request is identified by its ``request_uri``, and any other
         by its parameters. ``prompt`` is left out, so a login asked for by an
         anonymous request without one still matches.
         """
         request_uri = parameters.get("request_uri")
-        if request_uri and request_uri[-1].startswith(par.REQUEST_URI_PREFIX):
+        if request_uri and stored_requests.is_stored_request_uri(request_uri[-1]):
             identity = ["request_uri", request_uri[-1]]
         else:
             identity = sorted([key, values] for key, values in parameters.items() if key != "prompt")
@@ -929,13 +936,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         request_uri = self.request.GET.get("request_uri", "")
         malformed = bool(max_age) and not is_valid_max_age(max_age)
         repeated = any(len(self.request.GET.getlist(name)) > 1 for name in ("prompt", "max_age"))
-        if (malformed or repeated) and not request_uri.startswith(par.REQUEST_URI_PREFIX):
+        if (malformed or repeated) and not stored_requests.is_stored_request_uri(request_uri):
             # The request is validated before the end-user is authenticated
             # (OpenID Connect Core 1.0 sections 3.1.2.2 and 3.1.2.3), so a
             # malformed or repeated max_age or prompt is reported now rather
             # than after a login. error_response never redirects to an
-            # unregistered redirect_uri. A pushed request is authoritative and
-            # was checked when pushed.
+            # unregistered redirect_uri. A stored request is authoritative and
+            # was validated in full before it was stored (see stored_requests).
             try:
                 scopes, credentials = self.validate_authorization_request(self.request)
             except OAuthToolkitError as error:
@@ -973,11 +980,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             return self._login_required_response(credentials)
 
         # Lets get() count the login that follows (after registering, too) as
-        # one it asked for, by max_age or by a pushed request's prompt or
+        # one it asked for, by max_age or by a stored request's prompt or
         # max_age (which are not in the query), so the user is not sent to log
         # in a second time. Other requests do not need it, and are left without
         # a session. A prompt=login redirect below records its own.
-        if "max_age" in self.request.GET or request_uri.startswith(par.REQUEST_URI_PREFIX):
+        if "max_age" in self.request.GET or stored_requests.is_stored_request_uri(request_uri):
             self._request_reauthentication(dict(self.request.GET.lists()), fresh=False)
 
         if "create" in prompt:

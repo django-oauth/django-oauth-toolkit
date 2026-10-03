@@ -2239,7 +2239,7 @@ TRANSLATABLE_LABEL_MODELS = [
     oauth2_models.AbstractRefreshToken,
     oauth2_models.AbstractIDToken,
     oauth2_models.AbstractDeviceGrant,
-    oauth2_models.AbstractPushedAuthorizationRequest,
+    oauth2_models.AbstractStoredAuthorizationRequest,
 ]
 
 

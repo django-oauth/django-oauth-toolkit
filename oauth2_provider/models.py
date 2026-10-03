@@ -1486,22 +1486,26 @@ def create_device_grant(
     )
 
 
-class AbstractPushedAuthorizationRequest(models.Model):
+class AbstractStoredAuthorizationRequest(models.Model):
     """
-    A pushed authorization request as described in :rfc:`9126`.
+    A validated authorization request kept by the authorization server.
 
-    A confidential or public client POSTs an authorization request to the PAR
-    endpoint and receives a ``request_uri`` that references the stored request
-    data. The subsequent call to the authorization endpoint carries only the
-    ``request_uri`` (and ``client_id``) instead of the full parameter set.
+    The request is referenced by a single-use, client-bound ``request_uri`` in
+    the ``urn:ietf:params:oauth:request_uri:`` namespace (:rfc:`9126#section-2.2`),
+    so the authorization endpoint can be called with only ``client_id`` and
+    ``request_uri`` instead of the full parameter set. Requests pushed to the
+    pushed authorization request endpoint (:rfc:`9126`) are stored here, and so
+    is a request carried across a login. Only requests that have already been
+    validated in full are stored; see
+    :mod:`oauth2_provider.authorization_server.stored_requests`.
 
     Fields:
 
     * :attr:`request_uri` The single-use ``urn:ietf:params:oauth:request_uri:*``
-                          reference returned to the client.
-    * :attr:`client_id` The client the request URI is bound to (:rfc:`2.2`).
-    * :attr:`parameters` The pushed authorization-request parameters, stored as a
-                         JSON mapping (client-authentication parameters excluded).
+                          reference given to the client.
+    * :attr:`client_id` The client the request URI is bound to (:rfc:`9126#section-2.2`).
+    * :attr:`parameters` The authorization-request parameters, stored as a JSON
+                         mapping (client-authentication parameters excluded).
     * :attr:`expires` When the request URI ceases to be valid.
     """
 
@@ -1524,27 +1528,27 @@ class AbstractPushedAuthorizationRequest(models.Model):
     expires = models.DateTimeField(verbose_name=_("expires"))
     created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
 
-    def is_expired(self):
+    def is_expired(self) -> bool:
         """Whether the request URI has passed its ``expires`` deadline."""
         if not self.expires:
             return True
         return timezone.now() >= self.expires
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Never render the request_uri itself: __str__ appears in the admin
         # change page/breadcrumbs, in repr() within tracebacks, and in log output.
-        return "PushedAuthorizationRequest #{self.pk}".format(self=self)
+        return "StoredAuthorizationRequest #{self.pk}".format(self=self)
 
 
-class PushedAuthorizationRequest(AbstractPushedAuthorizationRequest):
-    class Meta(AbstractPushedAuthorizationRequest.Meta):
-        swappable = "OAUTH2_PROVIDER_PAR_REQUEST_MODEL"
+class StoredAuthorizationRequest(AbstractStoredAuthorizationRequest):
+    class Meta(AbstractStoredAuthorizationRequest.Meta):
+        swappable = "OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL"
 
 
-def create_pushed_authorization_request(
+def create_stored_authorization_request(
     request_uri: str, client_id: str, parameters: dict, expires_in: int
-) -> AbstractPushedAuthorizationRequest:
-    return get_par_request_model().objects.create(
+) -> AbstractStoredAuthorizationRequest:
+    return get_stored_authorization_request_model().objects.create(
         request_uri=request_uri,
         client_id=client_id,
         parameters=parameters,
@@ -1562,9 +1566,9 @@ def get_device_grant_model():
     return apps.get_model(oauth2_settings.DEVICE_GRANT_MODEL)
 
 
-def get_par_request_model():
-    """Return the PushedAuthorizationRequest model that is active in this project."""
-    return apps.get_model(oauth2_settings.PAR_REQUEST_MODEL)
+def get_stored_authorization_request_model() -> type[AbstractStoredAuthorizationRequest]:
+    """Return the StoredAuthorizationRequest model that is active in this project."""
+    return apps.get_model(oauth2_settings.STORED_AUTHORIZATION_REQUEST_MODEL)
 
 
 def get_grant_model():
@@ -1772,15 +1776,15 @@ def clear_expired():
     grants_deleted_no = batch_delete(grants, grants_query)
     logger.info("%s Expired grant tokens deleted", grants_deleted_no)
 
-    # Pushed authorization requests (RFC 9126) are consumed one-time at the
-    # authorization endpoint, but a request_uri that is pushed and never redeemed
-    # would otherwise linger past its expiry, so reap expired rows here too.
-    par_request_model = get_par_request_model()
-    par_query = models.Q(expires__lt=now)
-    par_requests = par_request_model.objects.filter(par_query)
+    # Stored authorization requests (e.g. RFC 9126 pushed requests) are consumed
+    # one-time at the authorization endpoint, but a request_uri that is never
+    # redeemed would otherwise linger past its expiry, so reap expired rows here too.
+    stored_request_model = get_stored_authorization_request_model()
+    stored_request_query = models.Q(expires__lt=now)
+    stored_requests = stored_request_model.objects.filter(stored_request_query)
 
-    par_deleted_no = batch_delete(par_requests, par_query)
-    logger.info("%s Expired pushed authorization requests deleted", par_deleted_no)
+    stored_requests_deleted_no = batch_delete(stored_requests, stored_request_query)
+    logger.info("%s Expired stored authorization requests deleted", stored_requests_deleted_no)
 
 
 # Neither side of the comparison is trusted to be bounded.  The requested URI is

@@ -77,6 +77,7 @@ Package map
         dcr, cimd, forms, admin,
         client_assertions (RFC 7523 assertion *verification*),
         par (RFC 9126 pushed authorization requests),
+        stored_requests (validated authorization requests behind a single-use request_uri),
         urls.py (server-metadata / base / management / DCR patterns)
         views/                  base, introspect, device, par (RFC 9126),
                                 dynamic_client_registration, application, token,
