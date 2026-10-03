@@ -179,14 +179,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `False` to opt out.
 * #1756 A `manage.py check --deploy` warning (`oauth2_provider.W013`) for entries in
   `OAUTH2_RESPONSE_TYPES_SUPPORTED` / `OIDC_RESPONSE_TYPES_SUPPORTED` that the authorization
-  endpoint can never serve. oauthlib routes an authorization request by exact-string lookup of
-  `response_type`, while OIDC Multiple Response Type Encoding Practices §4 defines a multi-valued
-  `response_type` as an order-independent set, so a hand-written permutation such as
-  `"token id_token"` is advertised by discovery but never served as advertised -- with the stock
+  endpoint can never serve, because the configured server registers them in no ordering of their
+  values. Such an entry is advertised by discovery but never served as advertised -- with the stock
   validator it is rejected with `unsupported_response_type`, or with `unauthorized_client` when
-  the entry contains `code`. The warning names the canonical ordering to use instead. Entries that
-  `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` already drops from discovery are not reported. What the
-  endpoints accept is unchanged.
+  the entry contains `code`. A permutation of a registered value, such as `"token id_token"`, is
+  served (#1915) and not reported. Entries that `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` already
+  drops from discovery are not reported either.
 * #1843 Oracle Database 23ai (Free) is now covered by CI on Django 5.2 and 6.0, via the
   `py312-dj52-ora23`, `py314-dj60-ora23` and `migrations-dj{52,60}-ora23` tox environments and
   `docker-compose.oracle.yml`. See "Standalone backend DB checks" in the contributing
@@ -369,6 +367,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fails client authentication with `invalid_client` and arms the fetch failure backoff, instead of
   returning a 500 on every attempt. `safe_fetch.fetch_https_json` reports such a document as invalid
   JSON.
+* #1915 The authorization and pushed authorization request endpoints accept the values of a
+  multi-valued `response_type` in any order, as RFC 6749 §3.1.1 requires: `id_token code` is served
+  exactly like `code id_token`, and `token id_token` like `id_token token`. Any ordering but the one
+  oauthlib registers used to be refused, with `unauthorized_client` when it contained `code` and
+  `unsupported_response_type` otherwise. `OAuthLibCore` now hands oauthlib the registered
+  ordering. A value that names a response type twice is still refused.
 * #1013 `prompt=login` now works with pushed authorization requests (RFC 9126). The pushed
   `request_uri` is used up when the authorization request is read, yet the login page's return URL
   carried the expanded parameters instead, which a client required to use PAR could not complete.

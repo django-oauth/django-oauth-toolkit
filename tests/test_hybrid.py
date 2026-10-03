@@ -501,7 +501,8 @@ class TestHybridView(BaseTest):
 
     def test_id_token_code_post_auth_allow(self):
         """
-        Test authorization code is given for an allowed request with response_type: code
+        Test authorization code and ID token are given for an allowed request with
+        response_type: id_token code, the reverse of the registered ordering
         """
         self.client.login(username="hy_test_user", password="123456")
 
@@ -510,7 +511,7 @@ class TestHybridView(BaseTest):
             "state": "random_state_string",
             "scope": "openid",
             "redirect_uri": "http://example.org",
-            "response_type": "code id_token",
+            "response_type": "id_token code",
             "allow": True,
             "nonce": "nonce",
         }
@@ -1615,3 +1616,159 @@ class TestHybridErrorResponseMode(BaseTest):
                         reverse("oauth2_provider:authorize"), data={**data, "allow": True}
                     )
                     self.assert_rejected_without_redirect(response)
+
+
+@pytest.mark.usefixtures("oidc_key")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestHybridReorderedResponseType(BaseTest):
+    """
+    The order of a multi-valued response_type does not matter (RFC 6749 §3.1.1), so any
+    ordering is served exactly like the one oauthlib registers.
+    """
+
+    #: (requested ordering, registered ordering)
+    ORDERINGS = [
+        ("id_token code", "code id_token"),
+        ("token code", "code token"),
+        ("token id_token code", "code id_token token"),
+    ]
+
+    def setUp(self):
+        super().setUp()
+        self.client.login(username="hy_test_user", password="123456")
+
+    def request_data(self, response_type, **extra):
+        return {
+            "client_id": self.application.client_id,
+            "response_type": response_type,
+            "state": "random_state_string",
+            "nonce": "random_nonce_string",
+            "scope": "openid read",
+            "redirect_uri": "http://example.org",
+            **extra,
+        }
+
+    def fragment(self, response):
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        return parse_qs(location.fragment)
+
+    def test_consent_form_carries_the_registered_ordering(self):
+        for response_type, registered in self.ORDERINGS:
+            with self.subTest(response_type=response_type):
+                response = self.client.get(
+                    reverse("oauth2_provider:authorize"), data=self.request_data(response_type)
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context_data["form"].initial["response_type"], registered)
+
+    def test_authorization_request_sent_by_post(self):
+        for response_type, registered in self.ORDERINGS:
+            with self.subTest(response_type=response_type):
+                response = self.client.post(
+                    reverse("oauth2_provider:authorize"), data=self.request_data(response_type)
+                )
+                self.assertEqual(response.status_code, 303)
+
+                response = self.client.get(response["Location"])
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context_data["form"].initial["response_type"], registered)
+
+    def test_consent_post_matches_the_registered_ordering(self):
+        for response_type, registered in self.ORDERINGS:
+            with self.subTest(response_type=response_type):
+                expected = self.fragment(
+                    self.client.post(
+                        reverse("oauth2_provider:authorize"),
+                        data=self.request_data(registered, allow=True),
+                    )
+                )
+
+                params = self.fragment(
+                    self.client.post(
+                        reverse("oauth2_provider:authorize"),
+                        data=self.request_data(response_type, allow=True),
+                    )
+                )
+
+                self.assertNotIn("error", params)
+                self.assertEqual(sorted(params), sorted(expected))
+                self.assertEqual(params["state"], ["random_state_string"])
+
+    def test_skip_authorization_matches_the_registered_ordering(self):
+        self.application.skip_authorization = True
+        self.application.save()
+        for response_type, registered in self.ORDERINGS:
+            with self.subTest(response_type=response_type):
+                expected = self.fragment(
+                    self.client.get(reverse("oauth2_provider:authorize"), data=self.request_data(registered))
+                )
+
+                params = self.fragment(
+                    self.client.get(
+                        reverse("oauth2_provider:authorize"), data=self.request_data(response_type)
+                    )
+                )
+
+                self.assertNotIn("error", params)
+                self.assertEqual(sorted(params), sorted(expected))
+
+    def test_access_denied_in_fragment(self):
+        for response_type, _registered in self.ORDERINGS:
+            with self.subTest(response_type=response_type):
+                params = self.fragment(
+                    self.client.post(
+                        reverse("oauth2_provider:authorize"),
+                        data=self.request_data(response_type, allow=False),
+                    )
+                )
+
+                self.assertEqual(params["error"], ["access_denied"])
+
+    def test_query_response_mode_rejected(self):
+        for response_type, _registered in self.ORDERINGS:
+            data = self.request_data(response_type, response_mode="query")
+            with self.subTest(response_type=response_type, method="GET"):
+                response = self.client.get(reverse("oauth2_provider:authorize"), data=data)
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn("Location", response)
+            with self.subTest(response_type=response_type, method="POST"):
+                response = self.client.post(
+                    reverse("oauth2_provider:authorize"), data={**data, "allow": True}
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn("Location", response)
+
+    def test_nonce_still_required(self):
+        """
+        oauthlib requires a nonce for the hybrid response types that return an ID Token
+        from the authorization endpoint, matched against its registered orderings.
+        """
+        for response_type in ("id_token code", "token id_token code"):
+            data = self.request_data(response_type)
+            del data["nonce"]
+            with self.subTest(response_type=response_type, method="GET"):
+                params = self.fragment(self.client.get(reverse("oauth2_provider:authorize"), data=data))
+                self.assertEqual(params["error"], ["invalid_request"])
+            with self.subTest(response_type=response_type, method="POST"):
+                params = self.fragment(
+                    self.client.post(reverse("oauth2_provider:authorize"), data={**data, "allow": True})
+                )
+                self.assertEqual(params["error"], ["invalid_request"])
+
+    def test_invalid_response_types_are_still_rejected(self):
+        for response_type in ("id_token code code", "code  id_token", "code foo"):
+            with self.subTest(response_type=response_type):
+                response = self.client.get(
+                    reverse("oauth2_provider:authorize"), data=self.request_data(response_type)
+                )
+
+                self.assertEqual(response.status_code, 302)
+                location = urlparse(response["Location"])
+                # The error goes in the fragment only if a value there asks for it.
+                params = parse_qs(location.fragment or location.query)
+                self.assertEqual(params["error"], ["unauthorized_client"])
+                self.assertNotIn("code", params)

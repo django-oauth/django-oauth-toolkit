@@ -700,17 +700,15 @@ Default: ``["code", "token"]``
 
 The response types advertised by the :doc:`oauth2_server_metadata` endpoint.
 
-A multi-valued ``response_type`` is an order-independent set per `OIDC Multiple Response
-Type Encoding Practices
-<https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#terminology>`_ §4,
-but oauthlib dispatches an authorization request on the exact ``response_type`` string,
-so only the canonical orderings are accepted: an entry such as ``"token id_token"`` is
-never served as advertised -- with the stock validator it is rejected with
-``unsupported_response_type``, or with ``unauthorized_client`` when the entry contains
-``code``; a custom validator with set semantics may instead serve it as a plain
-authorization-code flow, without the advertised token. ``manage.py check --deploy``
-reports any advertised entry the configured server cannot serve as
-``oauth2_provider.W013``.
+A multi-valued ``response_type`` is an order-independent set (:rfc:`6749#section-3.1.1`,
+`OAuth 2.0 Multiple Response Type Encoding Practices
+<https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#terminology>`_ §4),
+so an entry may list its values in any order: the authorization endpoint maps
+``"token id_token"`` to the ``"id_token token"`` that oauthlib registers. An entry the
+configured server does not register in any order is never served as advertised -- with
+the stock validator it is rejected with ``unsupported_response_type``, or with
+``unauthorized_client`` when the entry contains ``code``. ``manage.py check --deploy``
+reports any such entry as ``oauth2_provider.W013``.
 
 OAUTH2_GRANT_TYPES_SUPPORTED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -889,10 +887,9 @@ Default::
 
 
 The response types that are advertised to be supported by this server. Only consulted
-when ``OIDC_ENABLED`` is ``True``. As with ``OAUTH2_RESPONSE_TYPES_SUPPORTED``, the
-ordering of a multi-valued entry must match the canonical one oauthlib registers;
-``manage.py check --deploy`` reports entries that cannot be served as
-``oauth2_provider.W013``.
+when ``OIDC_ENABLED`` is ``True``. As with ``OAUTH2_RESPONSE_TYPES_SUPPORTED``, a
+multi-valued entry may list its values in any order, and ``manage.py check --deploy``
+reports entries that cannot be served as ``oauth2_provider.W013``.
 
 OIDC_SUBJECT_TYPES_SUPPORTED
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~

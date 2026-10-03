@@ -252,15 +252,27 @@ class OIDCResponseTypesSupportedCheckTestCase(TestCase):
         # Every default entry is a canonical ordering registered by oauthlib's OIDC server.
         self.assertEqual(self._messages(), [])
 
-    def test_permuted_oidc_response_type_warns_with_the_canonical_ordering(self):
-        # "token id_token" is the same response type *set* as the registered
-        # "id_token token", but oauthlib only dispatches on the exact string.
-        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "token id_token"]
+    def test_permuted_oidc_response_types_pass(self):
+        # The order of a multi-valued response_type does not matter (RFC 6749 §3.1.1),
+        # and the authorization endpoint maps each permutation to the registered one.
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = [
+            "code",
+            "token id_token",
+            "id_token code",
+            "token code",
+            "token id_token code",
+        ]
+        self.assertEqual(self._messages(), [])
+
+    def test_repeated_value_warns(self):
+        # A response type naming a value twice is not a valid response-type (RFC 6749
+        # Appendix A.3) and is not served, whatever registered value it resembles.
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "id_token token token"]
         (message,) = self._messages()
         self.assertIsInstance(message, checks.Warning)
-        self.assertIn("token id_token", message.msg)
+        self.assertIn("id_token token token", message.msg)
         self.assertIn("OIDC_RESPONSE_TYPES_SUPPORTED", message.msg)
-        self.assertIn("'id_token token'", message.hint)
+        self.assertIn("The configured server accepts:", message.hint)
 
     def test_implicit_entries_dropped_by_the_bcp_gate_are_not_reported(self):
         # With COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT enabled, bcp_filter_response_types()
@@ -272,12 +284,12 @@ class OIDCResponseTypesSupportedCheckTestCase(TestCase):
 
     def test_hybrid_entries_are_still_reported_under_the_bcp_gate(self):
         # A response type containing `code` is not implicit, so the gate does not drop it
-        # and the permutation is still advertised and still unreachable.
+        # and an unregistered one is still advertised and still unreachable.
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT = True
-        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "token code"]
+        self.oauth2_settings.OIDC_RESPONSE_TYPES_SUPPORTED = ["code", "code token token"]
         (message,) = self._messages()
-        self.assertIn("token code", message.msg)
-        self.assertIn("'code token'", message.hint)
+        self.assertIn("code token token", message.msg)
+        self.assertIn("The configured server accepts:", message.hint)
 
 
 class DerivedOIDCServer(Server):

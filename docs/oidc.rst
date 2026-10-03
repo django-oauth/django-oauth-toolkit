@@ -270,6 +270,11 @@ Multiple Response Type Encoding Practices
 <https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#Combinations>`_
 requires for any ``response_type`` containing ``token`` or ``id_token``.
 
+The values of a multi-valued ``response_type`` may be sent in any order
+(:rfc:`6749#section-3.1.1`): ``id_token code`` is served exactly like
+``code id_token``, and ``token id_token`` like ``id_token token``. A value that
+names the same response type twice is refused.
+
 The supported values of ``response_mode`` are ``query`` and ``fragment``, and
 ``query`` is not permitted for response types containing ``token`` or
 ``id_token``. A request with any other value, ``form_post`` included, is refused

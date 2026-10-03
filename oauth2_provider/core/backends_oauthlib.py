@@ -1,5 +1,6 @@
 import json
 import warnings
+from collections.abc import Collection
 from urllib.parse import urlparse, urlunparse
 
 from django.http import HttpRequest
@@ -11,6 +12,10 @@ from oauthlib.oauth2 import OAuth2Error
 from oauth2_provider.authorization_server.response_modes import (
     response_mode_permitted,
     response_type_requires_fragment,
+)
+from oauth2_provider.authorization_server.response_types import (
+    canonical_response_type,
+    canonicalize_response_type_parameter,
 )
 from oauth2_provider.core.bcp import bcp_compliant
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
@@ -122,6 +127,15 @@ class OAuthLibCore:
             for value in (values if key == "resource" else values[-1:])
         ]
 
+    def _registered_response_types(self) -> Collection[str]:
+        """
+        Return the response types the oauthlib server dispatches on.
+
+        A custom server class may not keep oauthlib's endpoint registry; its
+        ``response_type`` values are then passed through unchanged.
+        """
+        return getattr(self.server, "response_types", None) or ()
+
     def validate_authorization_request(self, request):
         """
         A wrapper method that calls validate_authorization_request on `server_class` instance.
@@ -130,6 +144,15 @@ class OAuthLibCore:
         """
         try:
             uri, http_method, body, headers = self._extract_params(request)
+            # The order of a multi-valued response_type does not matter (RFC 6749
+            # §3.1.1), but oauthlib dispatches on the exact string: send the ordering
+            # it registered. A pushed authorization request carries it in the body.
+            registered = self._registered_response_types()
+            parsed = urlparse(uri)
+            query = canonicalize_response_type_parameter(parsed.query, registered)
+            if query != parsed.query:
+                uri = urlunparse(parsed._replace(query=query))
+            body = canonicalize_response_type_parameter(body, registered)
             scopes, credentials = self.server.validate_authorization_request(
                 uri, http_method=http_method, body=body, headers=headers
             )
@@ -152,6 +175,12 @@ class OAuthLibCore:
         :param allow: True if the user authorize the client, otherwise False
         """
         try:
+            # oauthlib dispatches on the exact response_type string, so send the ordering
+            # it registered (RFC 6749 §3.1.1: the order of the values does not matter).
+            if "response_type" in credentials:
+                credentials["response_type"] = canonical_response_type(
+                    credentials["response_type"], self._registered_response_types()
+                )
             # OpenID Connect Core 1.0 §3.1.2.6: a response mode that cannot be honoured
             # gets an HTTP 400 without Error Response parameters. Check it before
             # oauthlib runs, since its grants build some error redirects themselves
