@@ -1296,10 +1296,9 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
         Called at the authorization endpoint for an OpenID Connect request, after
         the End-User authenticated, so ``request.user`` is the user of the
-        current session. The value is
-        stored with an authorization code and reused for the ID Token issued
-        when the code is exchanged. ID Tokens issued on a refresh token carry no
-        ``acr``.
+        current session. The value is stored with an authorization code and
+        reused for the ID Token issued when the code is exchanged. ID Tokens
+        issued on a refresh token carry no ``acr``.
 
         ``request.acr_values`` is the space-separated ``acr_values`` of the
         authentication request, or ``None`` (section 3.1.2.1). It states the
