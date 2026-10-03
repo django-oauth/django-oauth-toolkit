@@ -205,6 +205,81 @@ class TestJSONOAuthLibCoreBackend(TestCase):
             JSONOAuthLibCore()
 
 
+class RecordingServer:
+    """A stand-in oauthlib server recording what OAuthLibCore hands it."""
+
+    def __init__(self, response_types=None):
+        if response_types is not None:
+            self.response_types = response_types
+        self.calls = []
+
+    def validate_authorization_request(self, uri, http_method="GET", body=None, headers=None):
+        self.calls.append({"uri": uri, "body": body})
+        return [], {}
+
+    def create_authorization_response(self, uri, http_method="GET", body=None, headers=None, **kwargs):
+        self.calls.append({"uri": uri, **kwargs})
+        return {"Location": "http://example.org"}, None, 302
+
+
+class TestOAuthLibCoreResponseTypeOrdering(TestCase):
+    """
+    The order of a multi-valued response_type does not matter (RFC 6749 §3.1.1), but
+    oauthlib dispatches on the exact string, so OAuthLibCore hands it the registered one.
+    """
+
+    factory = RequestFactory()
+    registered = {"code": None, "code id_token": None, "id_token token": None}
+
+    def test_validate_authorization_request_sends_the_registered_ordering(self):
+        server = RecordingServer(self.registered)
+        request = self.factory.get("/o/authorize/?client_id=abc&response_type=id_token+code&state=a%2Bb")
+
+        OAuthLibCore(server).validate_authorization_request(request)
+
+        (call,) = server.calls
+        self.assertTrue(call["uri"].endswith("?client_id=abc&response_type=code%20id_token&state=a%2Bb"))
+
+    def test_validate_authorization_request_rewrites_a_pushed_body(self):
+        server = RecordingServer(self.registered)
+        request = post_form(self.factory, "/o/par/", {"client_id": "abc", "response_type": "token id_token"})
+
+        OAuthLibCore(server).validate_authorization_request(request)
+
+        (call,) = server.calls
+        self.assertIn("response_type=id_token%20token", call["body"])
+        self.assertIn("client_id=abc", call["body"])
+
+    def test_create_authorization_response_sends_the_registered_ordering(self):
+        server = RecordingServer(self.registered)
+        request = self.factory.get("/o/authorize/")
+        request.user = None
+        credentials = {
+            "client_id": "abc",
+            "redirect_uri": "http://example.org",
+            "response_type": "id_token code",
+        }
+
+        OAuthLibCore(server).create_authorization_response(request, [], credentials, allow=True)
+
+        (call,) = server.calls
+        self.assertEqual(call["credentials"]["response_type"], "code id_token")
+
+    def test_a_server_without_a_registry_gets_the_value_unchanged(self):
+        server = RecordingServer()
+        request = self.factory.get("/o/authorize/?response_type=id_token+code")
+        core = OAuthLibCore(server)
+
+        core.validate_authorization_request(request)
+        request.user = None
+        credentials = {"redirect_uri": "http://example.org", "response_type": "id_token code"}
+        core.create_authorization_response(request, [], credentials, allow=True)
+
+        validate_call, create_call = server.calls
+        self.assertTrue(validate_call["uri"].endswith("?response_type=id_token+code"))
+        self.assertEqual(create_call["credentials"]["response_type"], "id_token code")
+
+
 class TestOAuthLibCore(TestCase):
     factory = RequestFactory()
 

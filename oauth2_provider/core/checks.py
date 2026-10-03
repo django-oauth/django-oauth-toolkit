@@ -7,6 +7,7 @@ from django.core import checks
 from django.core.exceptions import ImproperlyConfigured
 from django.db import router
 
+from oauth2_provider.authorization_server.response_types import canonical_response_type
 from oauth2_provider.core.backends_oauthlib import JSONOAuthLibCore
 from oauth2_provider.settings import coerce_expires_in, oauth2_settings
 
@@ -405,11 +406,8 @@ def validate_response_types_supported(app_configs, **kwargs):
     Flag advertised response types the authorization endpoint can never serve.
 
     oauthlib routes an authorization request by exact-string lookup of ``response_type``
-    in its endpoint registry, which holds only the canonical orderings (``"code"``,
-    ``"id_token token"``, ...). OIDC Multiple Response Type Encoding Practices §4 defines
-    a multi-valued ``response_type`` as an order-independent set, so an operator may
-    reasonably write ``"token id_token"`` into a discovery list. That exact string is not
-    registered, so the request falls through to the default (authorization code) handler.
+    in its endpoint registry. An advertised entry the registry does not hold, in any
+    ordering of its values, falls through to the default (authorization code) handler.
     With the stock validator it is refused -- with ``unsupported_response_type`` when the
     entry does not contain ``code``, and with ``unauthorized_client`` when it does, since
     the code grant gates on ``code`` being *present* but the validator then matches the
@@ -418,10 +416,11 @@ def validate_response_types_supported(app_configs, **kwargs):
     without the advertised token. Either way the advertised response type is never served
     as advertised.
 
-    This reports the discrepancy at configuration time; it does not change what the
-    authorization endpoint accepts. Only values that are actually advertised are
-    reported: ``OIDC_RESPONSE_TYPES_SUPPORTED`` is skipped unless ``OIDC_ENABLED`` is
-    ``True``, and implicit entries are skipped when
+    A permutation of a registered value, such as ``"token id_token"``, is not reported:
+    the order of a multi-valued ``response_type`` does not matter (RFC 6749 §3.1.1), and
+    the authorization endpoint maps it to the registered ordering. Only values that are
+    actually advertised are reported: ``OIDC_RESPONSE_TYPES_SUPPORTED`` is skipped unless
+    ``OIDC_ENABLED`` is ``True``, and implicit entries are skipped when
     ``COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT`` drops them from both discovery documents.
     """
     # Imported lazily: this module is imported from the app config, before the view
@@ -443,9 +442,6 @@ def validate_response_types_supported(app_configs, **kwargs):
         # compare the advertised values against.
         return []
 
-    # The registered ordering for each response type *set*, so a permutation can be
-    # pointed at the spelling oauthlib actually dispatches on.
-    canonical_orderings = {frozenset(rt.split()): rt for rt in accepted}
     bcp_drops_implicit = oauth2_settings.COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT
 
     advertised = [
@@ -457,33 +453,23 @@ def validate_response_types_supported(app_configs, **kwargs):
     messages = []
     for setting_name, response_types in advertised:
         for response_type in response_types:
+            # A non-string entry cannot be a registered response type, and is not
+            # serialisable into a discovery document either. Report it rather than
+            # letting it raise out of `manage.py check`, which does not catch
+            # exceptions raised by a check.
             if isinstance(response_type, str):
-                if response_type in accepted:
+                if canonical_response_type(response_type, accepted) in accepted:
                     continue
                 if bcp_drops_implicit and _is_implicit_response_type(response_type):
                     # bcp_filter_response_types() removes this entry from both discovery
                     # documents, so it is never advertised and there is nothing to warn about.
                     continue
-                canonical = canonical_orderings.get(frozenset(response_type.split()))
-            else:
-                # A non-string entry cannot be a registered response type, and is not
-                # serialisable into a discovery document either. Report it rather than
-                # letting it raise out of `manage.py check`, which does not catch
-                # exceptions raised by a check.
-                canonical = None
 
-            if canonical is not None:
-                hint = (
-                    f"Advertise the canonical ordering '{canonical}' instead. A multi-valued "
-                    "response_type is an order-independent set per OIDC Multiple Response Type "
-                    "Encoding Practices §4, but oauthlib dispatches on the exact string."
-                )
-            else:
-                hint = (
-                    f"Remove {response_type!r} from OAUTH2_PROVIDER['{setting_name}'], or register "
-                    "a handler for it on a custom OAUTH2_PROVIDER['OAUTH2_SERVER_CLASS']. The "
-                    f"configured server accepts: {', '.join(sorted(accepted))}."
-                )
+            hint = (
+                f"Remove {response_type!r} from OAUTH2_PROVIDER['{setting_name}'], or register "
+                "a handler for it on a custom OAUTH2_PROVIDER['OAUTH2_SERVER_CLASS']. The "
+                f"configured server accepts: {', '.join(sorted(accepted))}."
+            )
             messages.append(
                 checks.Warning(
                     f"OAUTH2_PROVIDER['{setting_name}'] advertises the response type "

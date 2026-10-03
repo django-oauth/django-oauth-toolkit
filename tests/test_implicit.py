@@ -759,3 +759,86 @@ class TestImplicitErrorResponseMode(BaseTest):
         response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
 
         self.assert_error_in_fragment(response, "access_denied")
+
+
+@pytest.mark.usefixtures("oidc_key")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestImplicitReorderedResponseType(BaseTest):
+    """
+    The order of a multi-valued response_type does not matter (RFC 6749 §3.1.1), so
+    "token id_token" is served exactly like the registered "id_token token".
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.application.algorithm = Application.RS256_ALGORITHM
+        cls.application.save()
+
+    def setUp(self):
+        super().setUp()
+        self.client.login(username="test_user", password="123456")
+
+    def request_data(self, response_type, **extra):
+        return {
+            "client_id": self.application.client_id,
+            "response_type": response_type,
+            "state": "random_state_string",
+            "nonce": "random_nonce_string",
+            "scope": "openid read",
+            "redirect_uri": "http://example.org",
+            **extra,
+        }
+
+    def fragment(self, response):
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        return parse_qs(location.fragment)
+
+    def test_consent_form_carries_the_registered_ordering(self):
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"), data=self.request_data("token id_token")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context_data["form"].initial["response_type"], "id_token token")
+
+    def test_authorization_request_sent_by_post(self):
+        response = self.client.post(
+            reverse("oauth2_provider:authorize"), data=self.request_data("token id_token")
+        )
+        self.assertEqual(response.status_code, 303)
+
+        response = self.client.get(response["Location"])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context_data["form"].initial["response_type"], "id_token token")
+
+    def test_consent_post_matches_the_registered_ordering(self):
+        expected = self.fragment(
+            self.client.post(
+                reverse("oauth2_provider:authorize"), data=self.request_data("id_token token", allow=True)
+            )
+        )
+
+        params = self.fragment(
+            self.client.post(
+                reverse("oauth2_provider:authorize"), data=self.request_data("token id_token", allow=True)
+            )
+        )
+
+        self.assertNotIn("error", params)
+        self.assertIn("access_token", params)
+        self.assertIn("id_token", params)
+        self.assertEqual(sorted(params), sorted(expected))
+
+    def test_access_denied_in_fragment(self):
+        params = self.fragment(
+            self.client.post(
+                reverse("oauth2_provider:authorize"), data=self.request_data("token id_token", allow=False)
+            )
+        )
+
+        self.assertEqual(params["error"], ["access_denied"])
+        self.assertEqual(params["state"], ["random_state_string"])

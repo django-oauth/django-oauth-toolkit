@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 
 from oauth2_provider.authorization_server.sessions import AUTH_EVENT_SESSION_KEY, AUTH_TIME_SESSION_KEY
 from oauth2_provider.authorization_server.stored_requests import REQUEST_URI_PREFIX
@@ -310,6 +310,73 @@ class TestPARResponseMode(PARBaseTestCase):
         headers = get_basic_auth_header(implicit_application.client_id, CLEARTEXT_SECRET)
 
         response = post_form(self.client, self.par_url, data=data, **headers)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.content)["error"], "invalid_request")
+
+
+@pytest.mark.usefixtures("oauth2_settings", "oidc_key")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+class TestPARReorderedResponseType(TestCase):
+    """
+    The order of a multi-valued response_type does not matter (RFC 6749 §3.1.1), so a
+    pushed request is served in any ordering, like one sent to the authorization endpoint.
+    """
+
+    par_url = reverse_lazy("oauth2_provider:pushed-authorization-request")
+    authorize_url = reverse_lazy("oauth2_provider:authorize")
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.test_user = UserModel.objects.create_user("test_user", "test@example.com", "123456")
+        cls.dev_user = UserModel.objects.create_user("dev_user", "dev@example.com", "123456")
+        cls.hybrid_application = Application.objects.create(
+            name="Hybrid Application",
+            redirect_uris="http://example.org",
+            user=cls.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_OPENID_HYBRID,
+            algorithm=Application.RS256_ALGORITHM,
+            client_secret=CLEARTEXT_SECRET,
+        )
+
+    def push_hybrid(self, **extra):
+        data = {
+            "client_id": self.hybrid_application.client_id,
+            "response_type": "id_token code",
+            "redirect_uri": "http://example.org",
+            "scope": "openid read",
+            "state": "some_state",
+            "nonce": "some_nonce",
+            **extra,
+        }
+        headers = get_basic_auth_header(self.hybrid_application.client_id, CLEARTEXT_SECRET)
+        return post_form(self.client, self.par_url, data=data, **headers)
+
+    def test_push_then_authorize(self):
+        push = self.push_hybrid()
+        self.assertEqual(push.status_code, 201)
+        request_uri = json.loads(push.content)["request_uri"]
+
+        self.client.login(username="test_user", password="123456")
+        query = {"client_id": self.hybrid_application.client_id, "request_uri": request_uri}
+        consent = self.client.get(self.authorize_url, query)
+        self.assertEqual(consent.status_code, 200)
+        form_data = {k: v for k, v in consent.context_data["form"].initial.items() if v is not None}
+        self.assertEqual(form_data["response_type"], "code id_token")
+        form_data["allow"] = True
+        response = self.client.post(f"{self.authorize_url}?{urlencode(query)}", data=form_data)
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        params = parse_qs(location.fragment)
+        self.assertIn("code", params)
+        self.assertIn("id_token", params)
+        self.assertEqual(params["state"], ["some_state"])
+
+    def test_query_response_mode_still_rejected(self):
+        response = self.push_hybrid(response_mode="query")
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(json.loads(response.content)["error"], "invalid_request")
