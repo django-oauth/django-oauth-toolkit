@@ -73,6 +73,18 @@ class TestAllowedURIValidator(TestCase):
             # Check ValidationError not thrown
             validator(uri)
 
+    def test_malformed_port_rejected(self):
+        validator = AllowedURIValidator(["https"], "test", allow_path=True, allow_query=True)
+        for uri in [
+            "https://rp.example.com:abc/bye",
+            "https://rp.example.com:99999/bye",
+            "https://rp.example.com:65536",
+            "https://rp.example.com:80a?x=1",
+        ]:
+            with self.assertRaises(ValidationError):
+                validator(uri)
+        validator("https://rp.example.com:8443/bye")
+
     def test_bare_fragment_delimiter_rejected(self):
         # A trailing "#" is an empty fragment component, which RFC 6749 §3.1.2
         # forbids just as much as a populated one. urlsplit() reports fragment ==

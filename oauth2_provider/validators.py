@@ -129,6 +129,16 @@ class AllowedURIValidator(URIValidator):
                 )
             return
 
+        # URIValidator's regex is not anchored at the end, so it accepts a prefix like
+        # "https://host" of "https://host:abc"; urlsplit().port is what rejects it.
+        try:
+            urlsplit(value).port
+        except ValueError as e:
+            raise ValidationError(
+                "%(name)s URI validation error. %(cause)s: %(value)s",
+                params={"name": self.name, "value": value, "cause": e},
+            )
+
         if self.allow_hostname_wildcard and "*" in netloc:
             domain_parts = netloc.split(".")
             if netloc.count("*") > 1:

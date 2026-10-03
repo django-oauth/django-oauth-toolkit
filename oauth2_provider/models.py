@@ -1984,6 +1984,12 @@ def check_redirect_to_uri_allowed(
     if "@" in parsed_uri.netloc:
         return False, [(None, "the requested URI carries userinfo credentials in its authority")]
 
+    # .port raises ValueError for a non-numeric or out-of-range port.
+    try:
+        uri_port = parsed_uri.port
+    except ValueError:
+        return False, [(None, "the requested URI has a malformed port")]
+
     for allowed_uri in allowed_uris:
         # A registered URI carrying a fragment or credentials cannot authorize
         # anything: the request forms that would match it are rejected above.
@@ -1997,6 +2003,12 @@ def check_redirect_to_uri_allowed(
             reasons.append(
                 (allowed_uri, "the registered URI carries userinfo credentials and can never match")
             )
+            continue
+
+        try:
+            allowed_uri_port = parsed_allowed_uri.port
+        except ValueError:
+            reasons.append((allowed_uri, "the registered URI has a malformed port and can never match"))
             continue
 
         if parsed_allowed_uri.scheme != parsed_uri.scheme:
@@ -2040,7 +2052,7 @@ def check_redirect_to_uri_allowed(
             or (oauth2_settings.ALLOW_LOCALHOST_LOOPBACK and parsed_allowed_uri.hostname == "localhost")
         )
         """ check port """
-        if not allowed_uri_is_loopback and parsed_allowed_uri.port != parsed_uri.port:
+        if not allowed_uri_is_loopback and allowed_uri_port != uri_port:
             reasons.append((allowed_uri, "port differs"))
             continue
 
