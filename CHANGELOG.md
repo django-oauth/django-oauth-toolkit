@@ -407,6 +407,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1919 Dynamic Client Registration rejects a lone Unicode surrogate in `redirect_uris` or
+  `post_logout_redirect_uris` with HTTP 400 `invalid_client_metadata`. `AllowedURIValidator` reports
+  it before the application is saved. The same value used to pass the URI checks and then raise
+  `UnicodeEncodeError` while the database encoded the row, so registration returned HTTP 500.
 * #1918 `AllowedURIValidator` rejects a non-numeric or out-of-range port such as
   `https://rp.example.com:abc/bye` or `:99999`. This applies to every field it validates, including
   `allowed_origins`, and to custom validators that subclass it. Redirect URI matching treats a

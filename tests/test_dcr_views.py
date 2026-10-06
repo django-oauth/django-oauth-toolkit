@@ -752,6 +752,27 @@ class TestDynamicClientRegistration(TestCase):
         assert Application.objects.count() == 0
         assert response.json()["error_description"].startswith("post_logout_redirect_uris: ")
 
+    def test_register_lone_surrogate_post_logout_redirect_uri_is_400(self):
+        """A lone Unicode surrogate is invalid metadata, not an HTTP 500 from the database (#1919)."""
+        self.client.force_login(self.user)
+        # Literal JSON escape \\ud800. json.dumps would not emit a lone surrogate.
+        body = (
+            '{"redirect_uris":["https://rp.example.com/cb"],'
+            '"grant_types":["authorization_code"],'
+            '"post_logout_redirect_uris":["https://rp.example.com/bye\\ud800"]}'
+        )
+        response = self.client.post(
+            _register_url(),
+            data=body,
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"] == "invalid_client_metadata"
+        assert payload["error_description"].startswith("post_logout_redirect_uris:")
+        assert "lone Unicode surrogate" in payload["error_description"]
+        assert Application.objects.count() == 0
+
     def test_register_post_logout_redirect_uri_must_be_a_single_uri(self):
         """The list is stored space-joined and read back split, so an entry must be exactly one URI.
 
