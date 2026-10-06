@@ -992,6 +992,7 @@ def test_rp_initiated_logout_malformed_stored_port_does_not_hide_valid_uri(
     )
     assert rsp.status_code == 302
     assert rsp["Location"] == "http://example.org"
+    assert not is_logged_in(logged_in_client)
 
 
 @pytest.mark.django_db(databases="__all__")
