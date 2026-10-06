@@ -694,6 +694,88 @@ class TestAuthorizationCodeView(BaseTest):
         self.assertEqual(response.status_code, 400)
 
 
+class TestConsentDenialRedirectUri(BaseTest):
+    """
+    Regression tests for #1892.
+
+    Denying consent, and the invalid_target error built from the consent POST,
+    must not redirect to a redirect_uri that is not absolute or not registered
+    for the client (RFC 6749 §4.1.2.1 and §4.2.2.1).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.login(username="test_user", password="123456")
+
+    def _post_consent(self, **overrides):
+        data = {
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://example.org",
+            "response_type": "code",
+            "scope": "read",
+            "state": "s",
+            "allow": False,
+        }
+        data.update(overrides)
+        return post_form(self.client, reverse("oauth2_provider:authorize"), data=data)
+
+    def _assert_fatal_invalid_request(self, response, description):
+        """The fatal-client error page: HTTP 400, authorize.html, no redirect."""
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        error = response.context_data["error"]
+        self.assertEqual(error.error, "invalid_request")
+        self.assertEqual(error.description, description)
+        self.assertIn("error=invalid_request", response.context_data["url"])
+        self.assertIn(description.replace(" ", "+"), response.context_data["url"])
+        self.assertTemplateUsed(response, "oauth2_provider/authorize.html")
+        self.assertContains(response, "Error: invalid_request", status_code=400)
+        self.assertContains(response, description, status_code=400)
+        self.assertNotIn(b"attacker.example", response.content)
+        self.assertNotIn("attacker.example", response.context_data["url"])
+
+    def test_deny_unregistered_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(redirect_uri="http://attacker.example/cb")
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.MismatchingRedirectURIError.description)
+
+    def test_deny_relative_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(redirect_uri="/cb")
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.InvalidRedirectURIError.description)
+
+    def test_deny_registered_redirect_uri_returns_access_denied(self):
+        response = self._post_consent()
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://example.org")
+        params = parse_qs(location.query)
+        self.assertEqual(params["error"], ["access_denied"])
+        self.assertEqual(params["state"], ["s"])
+
+    def test_invalid_target_unregistered_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(
+            redirect_uri="http://attacker.example/cb",
+            resource="/not/absolute",
+            allow=True,
+        )
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.MismatchingRedirectURIError.description)
+        self.assertEqual(Grant.objects.count(), 0)
+
+    def test_invalid_target_registered_redirect_uri_is_redirected(self):
+        response = self._post_consent(resource="/not/absolute", allow=True)
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://example.org")
+        params = parse_qs(location.query)
+        self.assertEqual(params["error"], ["invalid_target"])
+        self.assertEqual(params["state"], ["s"])
+        self.assertEqual(Grant.objects.count(), 0)
+
+
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 class TestOIDCAuthorizationCodeView(BaseTest):
     def test_login(self):

@@ -598,6 +598,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming the RFC 7591 metadata, explaining that the secret cannot be recovered and a new client must
   be registered. It was refused before too, but with an error naming the model fields
   `client_secret` and `hash_client_secret`.
+* #1892 Denying consent (and the consent-form `invalid_target` error) no longer redirects to a
+  `redirect_uri` that is not absolute or not registered for the client. Such requests get a
+  non-redirecting `invalid_request` error page, as oauthlib does on the approval path
+  ([RFC 6749 §4.1.2.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1)).
 
 ### Security
 * #1451 The token introspection endpoint could be called by a caller that had not really
