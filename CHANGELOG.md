@@ -392,6 +392,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1919 Dynamic Client Registration rejects a lone Unicode surrogate in `redirect_uris` or
+  `post_logout_redirect_uris` with HTTP 400 `invalid_client_metadata`. `AllowedURIValidator` reports
+  it before the application is saved. The same value used to pass the URI checks and then raise
+  `UnicodeEncodeError` while the database encoded the row, so registration returned HTTP 500.
 * #1899 An unexpected error while fetching or reading a `private_key_jwt` client's `jwks_uri`
   (RFC 7523), such as a deeply nested JSON document that exhausts the parser's recursion limit, now
   fails client authentication with `invalid_client` and arms the fetch failure backoff, instead of
