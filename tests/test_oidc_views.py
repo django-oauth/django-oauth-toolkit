@@ -979,6 +979,23 @@ def test_rp_initiated_logout_get_id_token_redirect(logged_in_client, oidc_tokens
 
 
 @pytest.mark.django_db(databases="__all__")
+def test_rp_initiated_logout_malformed_stored_port_does_not_hide_valid_uri(
+    logged_in_client, oidc_tokens, application, rp_settings
+):
+    # update() skips clean(), as a row stored before the port check existed would be (#1918).
+    type(application).objects.filter(pk=application.pk).update(
+        post_logout_redirect_uris="http://example.org:abc http://example.org"
+    )
+    rsp = logged_in_client.get(
+        reverse("oauth2_provider:rp-initiated-logout"),
+        data={"id_token_hint": oidc_tokens.id_token, "post_logout_redirect_uri": "http://example.org"},
+    )
+    assert rsp.status_code == 302
+    assert rsp["Location"] == "http://example.org"
+    assert not is_logged_in(logged_in_client)
+
+
+@pytest.mark.django_db(databases="__all__")
 def test_rp_initiated_logout_get_id_token_redirect_with_state(logged_in_client, oidc_tokens, rp_settings):
     rsp = logged_in_client.get(
         reverse("oauth2_provider:rp-initiated-logout"),

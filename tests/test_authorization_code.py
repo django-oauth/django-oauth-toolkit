@@ -239,6 +239,22 @@ class TestAuthorizationCodeView(BaseTest):
         self.assertEqual(form["scope"].value(), "read write")
         self.assertEqual(form["client_id"].value(), self.application.client_id)
 
+    def test_pre_auth_malformed_stored_port_does_not_hide_valid_uri(self):
+        """A redirect_uri with a malformed port stored before the port check existed is skipped (#1918)."""
+        Application.objects.filter(pk=self.application.pk).update(
+            redirect_uris="http://example.org:abc http://example.org"
+        )
+        self.client.login(username="test_user", password="123456")
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://example.org",
+        }
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+        self.assertEqual(response.status_code, 200)
+
     def test_pre_auth_valid_client_custom_redirect_uri_scheme(self):
         """
         Test response for a valid client_id with response_type: code

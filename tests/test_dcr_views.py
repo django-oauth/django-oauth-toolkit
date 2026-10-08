@@ -778,6 +778,23 @@ class TestDynamicClientRegistration(TestCase):
             assert "post_logout_redirect_uri" in response.json()["error_description"]
         assert Application.objects.count() == 0
 
+    def test_register_malformed_redirect_uri_port_is_400(self):
+        """A non-numeric or out-of-range port is refused, even before a valid URI (#1918)."""
+        self.client.force_login(self.user)
+        for field in ("redirect_uris", "post_logout_redirect_uris"):
+            for bad_uri in ("https://rp.example.com:abc/bye", "https://rp.example.com:99999/bye"):
+                data = {
+                    "redirect_uris": ["https://rp.example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "post_logout_redirect_uris": ["https://rp.example.com/bye"],
+                }
+                data[field] = [bad_uri, "https://rp.example.com/bye"]
+                response = _post_register(self.client, data)
+                assert response.status_code == 400, (field, bad_uri)
+                assert response.json()["error"] == "invalid_client_metadata"
+                assert field in response.json()["error_description"], (field, bad_uri)
+        assert Application.objects.count() == 0
+
     def test_register_public_client_http_post_logout_redirect_uri_strict_is_400(self):
         """Strict RP-Initiated Logout refuses http for a public client, so registration does too."""
         self.oauth2_settings.OIDC_ENABLED = True
@@ -2062,6 +2079,27 @@ class TestDynamicClientRegistrationManagement(TestCase):
         )
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_put_malformed_post_logout_redirect_uri_port_is_400_and_keeps_metadata(self):
+        """A rejected PUT leaves the stored metadata and registration token as they were (#1918)."""
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "post_logout_redirect_uris": ["https://rp.example.com:abc/bye", "https://rp.example.com/bye"],
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.name == "Managed App"
+        assert app.post_logout_redirect_uris == ""
+        get_response = self.client.get(self.management_url, **_bearer(self.registration_token))
+        assert get_response.status_code == 200
 
     # -- DELETE --------------------------------------------------------------
 
