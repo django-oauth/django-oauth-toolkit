@@ -10,7 +10,9 @@ from django import http
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import redirect_to_login
+from django.core import signing
 from django.core.exceptions import ImproperlyConfigured
+from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, QueryDict
 from django.shortcuts import resolve_url
 from django.urls.exceptions import NoReverseMatch
@@ -32,6 +34,13 @@ from oauthlib.openid.connect.core.exceptions import (
 from oauth2_provider.authorization_server import par, stored_requests
 from oauth2_provider.authorization_server.forms import AllowForm
 from oauth2_provider.authorization_server.oidc import request_objects
+from oauth2_provider.authorization_server.oidc.claims import (
+    PROTOCOL_CLAIMS,
+    is_subset_claims_request,
+    normalize_claims_request,
+    requested_claim_names,
+    safe_normalize_claims_request,
+)
 from oauth2_provider.authorization_server.oidc.max_age import INVALID_MAX_AGE_DESCRIPTION, is_valid_max_age
 from oauth2_provider.authorization_server.response_modes import add_params_to_authorization_redirect
 from oauth2_provider.authorization_server.sessions import (
@@ -153,6 +162,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             "code_challenge": self.oauth2_data.get("code_challenge", None),
             "code_challenge_method": self.oauth2_data.get("code_challenge_method", None),
             "claims": self.oauth2_data.get("claims", None),
+            "claims_request": self.oauth2_data.get("claims_request", None),
             "acr_values": self.oauth2_data.get("acr_values", None),
             "resource": self.oauth2_data.get("resource", None),  # RFC 8707
         }
@@ -178,7 +188,19 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             credentials["code_challenge_method"] = form.cleaned_data.get("code_challenge_method")
         if form.cleaned_data.get("nonce", False):
             credentials["nonce"] = form.cleaned_data.get("nonce")
-        if form.cleaned_data.get("claims", False):
+        if oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED and form.cleaned_data.get("allow"):
+            # Only an approval releases claims; a denial needs no claims request.
+            claims = self._consented_claims(form.cleaned_data)
+            if claims is None:
+                if not form.cleaned_data.get("claims_request"):
+                    log.warning(
+                        "The consent form posted no claims_request field. With "
+                        "OIDC_CLAIMS_PARAMETER_ENABLED, a custom authorize.html must post it back."
+                    )
+                return self._fatal_invalid_request("The claims posted with the consent form are not valid.")
+            # Always set, so oauthlib never falls back to a claims query parameter.
+            credentials["claims"], credentials["claims_original"] = claims
+        elif form.cleaned_data.get("claims", False):
             credentials["claims"] = form.cleaned_data.get("claims")
         if form.cleaned_data.get("acr_values", False):
             credentials["acr_values"] = form.cleaned_data.get("acr_values")
@@ -224,6 +246,113 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         self.success_url = uri
         log.debug("Success url for the request: {0}".format(self.success_url))
         return self.redirect(self.success_url, application)
+
+    # The request parameters a signed claims request is bound to, so one signed for
+    # another authorization request cannot be posted with this one. A client that
+    # sends none of state, nonce and code_challenge cannot tell its requests apart,
+    # and neither can this binding. response_type is bound because, without id_token,
+    # oauthlib handles an implicit request with the OAuth 2.0 grant, which never
+    # checks the claims request.
+    _CLAIMS_REQUEST_BINDING = (
+        "client_id",
+        "redirect_uri",
+        "response_type",
+        "state",
+        "nonce",
+        "code_challenge",
+    )
+    _CLAIMS_REQUEST_SALT = "oauth2_provider.claims_request"
+
+    @classmethod
+    def _claims_request_binding(cls, parameters: dict) -> dict:
+        # Compared with form fields, which strip surrounding whitespace.
+        bound = {name: str(parameters.get(name) or "").strip() for name in cls._CLAIMS_REQUEST_BINDING}
+        # The order of the values of response_type does not matter (RFC 6749 §3.1.1).
+        bound["response_type"] = " ".join(sorted(bound["response_type"].split()))
+        return bound
+
+    @classmethod
+    def _sign_claims_request(cls, claims: dict | None, parameters: dict) -> str:
+        """Sign the claims request (OIDC Core 5.5) shown on the consent page."""
+        bound = cls._claims_request_binding(parameters)
+        return signing.dumps({"claims": claims or {}, "bound": bound}, salt=cls._CLAIMS_REQUEST_SALT)
+
+    @classmethod
+    def _consented_claims(cls, cleaned_data: dict) -> tuple[dict, dict] | None:
+        """
+        The claims request to authorize after consent, as ``(consented, original)``
+        normalized claims requests, or ``None`` if the form was tampered with.
+
+        The hidden ``claims`` field may drop individual claim requests the End-User
+        declined (partial consent), but must otherwise match the signed original:
+        it can never add or alter one. The original still decides the ``sub`` and
+        essential ``acr`` checks, which concern the authentication, not the release.
+        """
+        try:
+            signed = signing.loads(cleaned_data.get("claims_request") or "", salt=cls._CLAIMS_REQUEST_SALT)
+        except signing.BadSignature:
+            return None
+        if not isinstance(signed, dict) or signed.get("bound") != cls._claims_request_binding(cleaned_data):
+            return None
+        original = safe_normalize_claims_request(signed.get("claims"))
+        if original and "openid" not in (cleaned_data.get("scope") or "").split():
+            # oauthlib checks the claims request (sub, essential acr) only for an
+            # OpenID request, so the openid scope can't be dropped while one stands.
+            return None
+        try:
+            consented = normalize_claims_request(json.loads(cleaned_data.get("claims") or "null"))
+        except (ValueError, RecursionError, InvalidRequestError):
+            # RecursionError: JSON nested deeper than the parser can follow.
+            return None
+        if not is_subset_claims_request(consented, original):
+            return None
+        return consented, original
+
+    def _releasable_claim_names(
+        self, application: "AbstractApplication", scopes: list[str], credentials: dict
+    ) -> list[str]:
+        """
+        The individual claims requested through the ``claims`` parameter that could be
+        released to the client, for the consent page: those ``get_requested_claims``
+        keeps that are standard claims (``oidc_claim_scope``) or that ``get_claim_dict``
+        supplies, other than the protocol claims.
+
+        The hooks see the authorization request parameters oauthlib validated
+        (``credentials``), as ``create_authorization_response`` sets them, but no other
+        parameter the client sent.
+
+        Claim names are chosen by the client, so listing only names the validator
+        knows keeps a crafted name from reading like part of the page.
+        """
+        from oauth2_provider.oauth2_validators import OAuth2Validator
+
+        claims = credentials.get("claims")
+        validator = self.get_validator_class()()
+        try:
+            # A savepoint on the default database, so a database error in the
+            # validator leaves the request's transaction usable. The request carries
+            # no URI: every attribute the hooks read is set here.
+            with transaction.atomic():
+                oauthlib_request = OauthlibRequest("")
+                for name, value in credentials.items():
+                    if name != "request":
+                        setattr(oauthlib_request, name, value)
+                oauthlib_request.user = self.request.user
+                oauthlib_request.client = application
+                oauthlib_request.client_id = application.client_id
+                oauthlib_request.scopes = scopes
+                oauthlib_request.claims = claims
+                known = set(validator.oidc_claim_scope or OAuth2Validator.oidc_claim_scope)
+                known.update(validator.get_claim_dict(oauthlib_request))
+                requested = set()
+                for target in ("id_token", "userinfo"):
+                    requested.update(validator.get_requested_claims(oauthlib_request, target))
+        except Exception:
+            # Never understate what is requested: list every name if the validator
+            # can't answer outside a token request.
+            log.exception("Could not work out which requested claims the validator supplies.")
+            return sorted(requested_claim_names(claims))
+        return sorted((requested & known) - set(PROTOCOL_CLAIMS))
 
     def _fatal_invalid_request(self, description: str) -> http.HttpResponse:
         """Render a non-redirecting ``invalid_request`` authorization error.
@@ -646,8 +775,17 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             kwargs["nonce"] = credentials["nonce"]
         if "claims" in credentials:
             kwargs["claims"] = json.dumps(credentials["claims"])
+        if oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            kwargs["claims_request"] = self._sign_claims_request(credentials.get("claims"), credentials)
         if request.GET.get("acr_values"):
             kwargs["acr_values"] = request.GET["acr_values"]
+        # OIDC Core 5.5: show the End-User the individual claims requested on top of
+        # the scopes, as they can be released beyond what the scopes cover.
+        requested_claims = (
+            requested_claim_names(credentials.get("claims"))
+            if oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED
+            else set()
+        )
         # RFC 8707: Extract resource parameter(s) from request (oauthlib doesn't handle it)
         # Multiple resource parameters are allowed per RFC 8707
         if "resource" in request.GET:
@@ -711,13 +849,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                     .all()
                 )
 
-                # check past authorizations regarded the same scopes as the current one
-                # and the same RFC 8707 resources. A grant for resource A must
-                # not skip consent for resource B.
+                # check past authorizations regarded the same scopes as the current one,
+                # the same individual claims (OIDC Core 5.5), so newly requested
+                # claims are always presented to the End-User, and the same RFC 8707
+                # resources. A grant for resource A must not skip consent for resource B.
                 requested_resources = credentials.get("resource") or []
                 for token in tokens:
-                    if token.allow_scopes(scopes) and self._grant_covers_resources(
-                        token.resource, requested_resources
+                    if (
+                        token.allow_scopes(scopes)
+                        and requested_claims <= requested_claim_names(token.claims)
+                        and self._grant_covers_resources(token.resource, requested_resources)
                     ):
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request,
@@ -730,6 +871,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         except OAuthToolkitError as error:
             return self.error_response(error, application)
 
+        # Only now that the consent page is rendered, so skipped consent pays nothing.
+        kwargs["requested_claims"] = (
+            self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
+        )
         return self.render_to_response(self.get_context_data(**kwargs))
 
     @staticmethod
@@ -845,6 +990,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         user has to log in, so a repeat must not silently pick one value.
         """
         names = ("prompt", "max_age") if oidc_request else ("prompt",)
+        if oidc_request and oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            # The claims request decides the sub and essential acr checks.
+            names += ("claims",)
         for name in names:
             if len(self.request.GET.getlist(name)) > 1:
                 return name
