@@ -725,6 +725,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         except OAuthToolkitError as error:
             return self.error_response(error, application)
 
+        # prompt=none must not display a consent page (OpenID Connect Core
+        # 1.0 section 3.1.2.1). Reaching here means the user is authenticated
+        # and the client still needs consent, so answer consent_required
+        # (section 3.1.2.6) instead of rendering the form.
+        if "none" in prompt:
+            return self._login_required_response(credentials, error="consent_required")
+
         return self.render_to_response(self.get_context_data(**kwargs))
 
     def handle_prompt_login(self) -> HttpResponse:
@@ -1036,15 +1043,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         redirect_to = parsed_registration._replace(query=urlencode(registration_query)).geturl()
         return HttpResponseRedirect(redirect_to)
 
-    def _login_required_response(self, credentials: dict) -> HttpResponse:
-        """Redirect a ``login_required`` error to the client (OpenID Connect
-        Core 1.0 section 3.1.2.6), for a request that oauthlib has validated.
+    def _login_required_response(self, credentials: dict, error: str = "login_required") -> HttpResponse:
+        """Redirect a ``login_required`` or ``consent_required`` error to the
+        client (OpenID Connect Core 1.0 section 3.1.2.6), for a request that
+        oauthlib has validated.
         """
         # oauthlib has confirmed redirect_uri is registered for the client.
         redirect_uri = credentials["redirect_uri"]
         application = get_application_model().objects.get(client_id=credentials["client_id"])
 
-        response_parameters = {"error": "login_required"}
+        response_parameters = {"error": error}
 
         # REQUIRED if the Authorization Request included the state parameter.
         # Set to the value received from the Client
