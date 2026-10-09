@@ -21,7 +21,7 @@
   "fields": {
     "client_id": "2EIxgjlyy5VgCp2fjhEpKLyRtSMMPK0hZ0gBpNdm",
     "user": null,
-    "redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443\r\nhttps://rp.test:5443/silent-callback.html",
+    "redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443\r\nhttps://rp.test:5443/silent-callback.html\r\nhttp://localhost:5173/claims\r\nhttp://127.0.0.1:5173/claims\r\nhttps://rp.test:5443/claims",
     "post_logout_redirect_uris": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443",
     "client_type": "public",
     "authorization_grant_type": "authorization-code",

@@ -22,6 +22,15 @@
                     {% endfor %}
                 </ul>
 
+                {% if requested_claims %}
+                    <p>{% trans "Application also requests the following information" %}</p>
+                    <ul>
+                        {% for claim in requested_claims %}
+                            <li>{{ claim }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+
                 {{ form.errors }}
                 {{ form.non_field_errors }}
 
