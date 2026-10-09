@@ -769,8 +769,102 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 400
         payload = response.json()
         assert payload["error"] == "invalid_client_metadata"
-        assert payload["error_description"].startswith("post_logout_redirect_uris:")
-        assert "lone Unicode surrogate" in payload["error_description"]
+        assert payload["error_description"] == "Client metadata contains a lone Unicode surrogate"
+        assert "\ud800" not in payload["error_description"]
+        assert Application.objects.count() == 0
+
+    def test_register_lone_surrogate_client_name_is_400(self):
+        """client_name has no URI validator, so a lone surrogate must still be invalid metadata (#1919)."""
+        self.client.force_login(self.user)
+        # Literal JSON escape \\ud800. json.dumps would not emit a lone surrogate.
+        body = (
+            '{"redirect_uris":["https://rp.example.com/cb"],'
+            '"grant_types":["authorization_code"],'
+            '"client_name":"Acme\\ud800"}'
+        )
+        response = self.client.post(
+            _register_url(),
+            data=body,
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"] == "invalid_client_metadata"
+        assert payload["error_description"] == "Client metadata contains a lone Unicode surrogate"
+        assert "\ud800" not in payload["error_description"]
+        assert Application.objects.count() == 0
+
+    def test_register_lone_surrogate_client_uri_is_400(self):
+        """client_uri uses Django's URLValidator, which does not reject a lone surrogate (#1919)."""
+        self.client.force_login(self.user)
+        body = (
+            '{"redirect_uris":["https://rp.example.com/cb"],'
+            '"grant_types":["authorization_code"],'
+            '"client_uri":"https://rp.example.com/\\ud800"}'
+        )
+        response = self.client.post(
+            _register_url(),
+            data=body,
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"] == "invalid_client_metadata"
+        assert payload["error_description"] == "Client metadata contains a lone Unicode surrogate"
+        assert Application.objects.count() == 0
+
+    def test_register_low_surrogate_redirect_uri_is_400(self):
+        """A low surrogate in redirect_uris is invalid metadata, not an HTTP 500 (#1919)."""
+        self.client.force_login(self.user)
+        body = '{"redirect_uris":["https://rp.example.com/cb\\udc00"],"grant_types":["authorization_code"]}'
+        response = self.client.post(
+            _register_url(),
+            data=body,
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"] == "invalid_client_metadata"
+        assert payload["error_description"] == "Client metadata contains a lone Unicode surrogate"
+        assert "\udc00" not in payload["error_description"]
+        assert Application.objects.count() == 0
+
+    def test_register_paired_surrogate_escape_is_allowed(self):
+        """A paired JSON escape is one character by parse time and still registers (#1919)."""
+        self.client.force_login(self.user)
+        body = (
+            '{"redirect_uris":["https://rp.example.com/cb\\ud83d\\ude00"],'
+            '"grant_types":["authorization_code"],'
+            '"client_name":"Acme\\ud83d\\ude00"}'
+        )
+        response = self.client.post(
+            _register_url(),
+            data=body,
+            content_type="application/json",
+        )
+        assert response.status_code == 201
+        payload = response.json()
+        assert payload["redirect_uris"] == ["https://rp.example.com/cb\U0001f600"]
+        assert payload["client_name"] == "Acme\U0001f600"
+        app = Application.objects.get(client_id=payload["client_id"])
+        assert app.redirect_uris == "https://rp.example.com/cb\U0001f600"
+        assert app.name == "Acme\U0001f600"
+
+    def test_register_lone_surrogate_json_key_is_400(self):
+        """A lone surrogate in a JSON name is part of the document and is rejected (#1919)."""
+        self.client.force_login(self.user)
+        body = (
+            '{"\\ud800":"x",'
+            '"redirect_uris":["https://rp.example.com/cb"],'
+            '"grant_types":["authorization_code"]}'
+        )
+        response = self.client.post(
+            _register_url(),
+            data=body,
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
         assert Application.objects.count() == 0
 
     def test_register_post_logout_redirect_uri_must_be_a_single_uri(self):
@@ -2083,6 +2177,75 @@ class TestDynamicClientRegistrationManagement(TestCase):
         )
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
+
+    def test_put_lone_surrogate_keeps_stored_redirect_uris(self):
+        """RFC 7592 PUT with a lone surrogate is 400 and does not replace stored URIs (#1919)."""
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://rp.example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "client_name": "Kept",
+                "post_logout_redirect_uris": ["https://rp.example.com/bye"],
+            },
+        )
+        assert response.status_code == 201
+        registered = response.json()
+        self.client.logout()
+        # The surrogate is in client_name, which the redirect validator never sees.
+        # The body also tries to replace both URI fields; a 400 must keep the stored ones.
+        bad = (
+            '{"redirect_uris":["https://evil.example/cb"],'
+            '"grant_types":["authorization_code"],'
+            '"client_name":"Hijacked\\ud800",'
+            '"post_logout_redirect_uris":["https://evil.example/bye"]}'
+        )
+        response = self.client.put(
+            _management_url(registered["client_id"]),
+            data=bad,
+            content_type="application/json",
+            **_bearer(registered["registration_access_token"]),
+        )
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"] == "invalid_client_metadata"
+        assert payload["error_description"] == "Client metadata contains a lone Unicode surrogate"
+        app = Application.objects.get(client_id=registered["client_id"])
+        assert app.redirect_uris == "https://rp.example.com/cb"
+        assert app.post_logout_redirect_uris == "https://rp.example.com/bye"
+        assert app.name == "Kept"
+
+    def test_put_lone_surrogate_post_logout_redirect_uri_keeps_stored_uri(self):
+        """Replacing a stored logout URI with a lone surrogate is 400 and keeps the old one (#1919)."""
+        self.client.force_login(self.user)
+        response = _post_register(
+            self.client,
+            {
+                "redirect_uris": ["https://rp.example.com/cb"],
+                "grant_types": ["authorization_code"],
+                "post_logout_redirect_uris": ["https://rp.example.com/bye"],
+            },
+        )
+        assert response.status_code == 201
+        registered = response.json()
+        self.client.logout()
+        bad = (
+            '{"redirect_uris":["https://rp.example.com/cb"],'
+            '"grant_types":["authorization_code"],'
+            '"post_logout_redirect_uris":["https://rp.example.com/bye\\ud800"]}'
+        )
+        response = self.client.put(
+            _management_url(registered["client_id"]),
+            data=bad,
+            content_type="application/json",
+            **_bearer(registered["registration_access_token"]),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        app = Application.objects.get(client_id=registered["client_id"])
+        assert app.post_logout_redirect_uris == "https://rp.example.com/bye"
+        assert app.redirect_uris == "https://rp.example.com/cb"
 
     # -- DELETE --------------------------------------------------------------
 

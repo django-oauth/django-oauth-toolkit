@@ -179,6 +179,7 @@ def _parse_metadata(body):
     Parse JSON body and return (data_dict, error_response).
 
     Returns (None, JsonResponse) on parse failure, (dict, None) on success.
+    A lone Unicode surrogate is a parse failure: it is not encodable as UTF-8.
     """
     try:
         data = json.loads(body)
@@ -186,6 +187,20 @@ def _parse_metadata(body):
         return None, _error_response("invalid_client_metadata", "Request body must be valid JSON")
     if not isinstance(data, dict):
         return None, _error_response("invalid_client_metadata", "Request body must be a JSON object")
+    # JSON escapes can produce lone UTF-16 surrogates. They are real Python
+    # strings. client_name is not validated, and display URIs use Django's
+    # URLValidator, so those fields never reach AllowedURIValidator. A custom
+    # redirect validator may not subclass it either. save() would then raise
+    # UnicodeEncodeError (HTTP 500) on POST and PUT alike. Paired escapes are
+    # already one code point and still encode. AllowedURIValidator keeps its
+    # own check for the admin and allowed origins.
+    try:
+        json.dumps(data, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        return None, _error_response(
+            "invalid_client_metadata",
+            "Client metadata contains a lone Unicode surrogate",
+        )
     return data, None
 
 

@@ -74,6 +74,10 @@ class AllowedURIValidator(URIValidator):
         try:
             value.encode("utf-8")
         except UnicodeEncodeError:
+            # %(value)s is omitted on purpose. Sibling messages include it, but
+            # this value cannot be encoded into an HTML admin response, so
+            # interpolating it would raise UnicodeEncodeError again while
+            # rendering the error.
             raise ValidationError(
                 "%(name)s URI validation error. %(cause)s",
                 params={"name": self.name, "cause": "lone Unicode surrogate"},

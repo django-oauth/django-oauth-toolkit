@@ -244,6 +244,27 @@ class TestAllowedURIValidator(TestCase):
             with self.assertRaises(ValidationError):
                 validator(uri)
 
+    def test_lone_surrogate_is_rejected_and_the_message_can_be_encoded(self):
+        """The message names the problem and omits %(value)s, which cannot be encoded."""
+        validator = AllowedURIValidator(["https"], "redirect uri", allow_path=True, allow_query=True)
+        for value in (
+            "\ud800",
+            "\udc00",
+            "https://rp.example.com/\ud800",
+            "https://rp.example.com/\udc00",
+        ):
+            with self.assertRaises(ValidationError) as caught:
+                validator(value)
+            message = " ".join(caught.exception.messages)
+            assert message == "redirect uri URI validation error. lone Unicode surrogate"
+            assert value not in message
+            message.encode("utf-8")
+
+    def test_paired_surrogate_escape_is_allowed_in_a_redirect_uri(self):
+        """A paired escape is one code point and still passes the URI checks."""
+        validator = AllowedURIValidator(["https"], "redirect uri", allow_path=True, allow_query=True)
+        validator("https://rp.example.com/\U0001f600")
+
 
 @pytest.mark.usefixtures("oauth2_settings")
 class TestPrivateUseURISchemeValidator(TestCase):
