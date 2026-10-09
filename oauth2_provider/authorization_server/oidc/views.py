@@ -101,6 +101,8 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
                 [key for key, _ in AbstractGrant.CODE_CHALLENGE_METHODS]
             ),
             "claims_supported": oidc_claims,
+            # OIDC Core 5.5 claims request parameter.
+            "claims_parameter_supported": oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED,
             "prompt_values_supported": ["none", "login"],
             # draft-ietf-oauth-client-id-metadata-document: kept in sync with the
             # RFC 8414 metadata endpoint so the two discovery documents agree.

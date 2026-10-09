@@ -63,6 +63,34 @@ class ResourceJSONField(models.JSONField):
         return super().get_db_prep_value(value, connection, prepared)
 
 
+class ClaimsRequestJSONField(models.JSONField):
+    """
+    The normalized OIDC ``claims`` request (Core 5.5) behind a token: a JSON object.
+
+    An empty request is ``{}``, never ``NULL``, and anything but an object is refused.
+    """
+
+    def pre_save(self, model_instance: models.Model, add: bool) -> dict:
+        """The field is not nullable; treat None as an empty claims request.
+
+        The type is checked here, on save, rather than in ``get_db_prep_value``,
+        which also prepares the scalar operands of key lookups such as
+        ``claims__userinfo__name__essential=True``.
+        """
+        value = super().pre_save(model_instance, add)
+        if value is None:
+            value = {}
+            setattr(model_instance, self.attname, value)
+        if not isinstance(value, dict):
+            raise ValidationError("The claims request must be a JSON object.")
+        return value
+
+    def validate(self, value: object, model_instance: models.Model) -> None:
+        super().validate(value, model_instance)
+        if value is not None and not isinstance(value, dict):
+            raise ValidationError(_("The claims request must be a JSON object."), code="invalid")
+
+
 class ClientSecretField(models.CharField):
     def pre_save(self, model_instance, add):
         secret = getattr(model_instance, self.attname)
@@ -1079,6 +1107,7 @@ class AbstractAccessToken(models.Model):
     * :attr:`expires` Date and time of token expiration, in DateTime format
     * :attr:`scope` Allowed scopes
     * :attr:`resource` RFC 8707 resource indicator(s) - JSON-encoded array of URIs
+    * :attr:`claims` The OIDC ``claims`` request (Core 5.5) the token was issued for
     """
 
     id = models.BigAutoField(primary_key=True)
@@ -1127,6 +1156,9 @@ class AbstractAccessToken(models.Model):
     scope = models.TextField(blank=True, verbose_name=_("scope"))
 
     resource = ResourceJSONField(blank=True, default=list, verbose_name=_("resource"))
+    # The normalized OIDC claims request (Core 5.5) behind this token, so the UserInfo
+    # endpoint and a refresh know which individual claims were requested.
+    claims = ClaimsRequestJSONField(blank=True, default=dict, verbose_name=_("claims"))
 
     created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
     updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
