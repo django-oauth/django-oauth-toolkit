@@ -309,6 +309,38 @@ class TestAuthorizationCodeView(BaseTest):
         response = self.client.get(url, data=query_data)
         self.assertEqual(response.status_code, 200)
 
+    def test_approval_prompt_auto_requires_the_same_resource(self):
+        """A grant for one RFC 8707 resource does not skip consent for another."""
+        resource_a = "https://api.example.com/a"
+        resource_b = "https://api.example.com/b"
+        AccessToken.objects.create(
+            user=self.test_user,
+            token="1234567890",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+            resource=[resource_a],
+        )
+        self.client.login(username="test_user", password="123456")
+        url = reverse("oauth2_provider:authorize")
+        base = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://example.org",
+            "approval_prompt": "auto",
+        }
+
+        same = self.client.get(url, data={**base, "resource": resource_a})
+        self.assertEqual(same.status_code, 302)
+
+        other = self.client.get(url, data={**base, "resource": resource_b})
+        self.assertEqual(other.status_code, 200)
+
+        unbound = self.client.get(url, data=base)
+        self.assertEqual(unbound.status_code, 200)
+
     def test_pre_auth_approval_prompt_default(self):
         self.assertEqual(self.oauth2_settings.REQUEST_APPROVAL_PROMPT, "force")
 
