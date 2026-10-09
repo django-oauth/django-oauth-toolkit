@@ -21,21 +21,14 @@ from django.views.decorators.csrf import csrf_exempt, csrf_protect, requires_csr
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.common import Request as OauthlibRequest
-from oauthlib.oauth2.rfc6749.errors import (
-    CustomOAuth2Error,
-    InvalidClientIdError,
-    InvalidRedirectURIError,
-    InvalidRequestError,
-    MismatchingRedirectURIError,
-    OAuth2Error,
-)
+from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestError, OAuth2Error
+from oauthlib.oauth2.rfc6749.errors import FatalClientError as OAuthlibFatalClientError
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid.connect.core.exceptions import (
     InvalidRequestObject,
     RequestNotSupported,
     RequestURINotSupported,
 )
-from oauthlib.uri_validate import is_absolute_uri
 
 from oauth2_provider.authorization_server import par, stored_requests
 from oauth2_provider.authorization_server.forms import AllowForm
@@ -203,9 +196,12 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 if not is_valid_resource_uri(resource_uri):
                     # Built here, before oauthlib sees the request, so the redirect URI
                     # has to be checked first (RFC 6749 §4.1.2.1).
-                    rejected = self._fatal_redirect_uri_response(application, credentials["redirect_uri"])
-                    if rejected is not None:
-                        return rejected
+                    try:
+                        self.get_oauthlib_core().validate_authorization_redirect_uri(
+                            self.request, credentials
+                        )
+                    except OAuthlibFatalClientError as fatal:
+                        return self.error_response(FatalClientError(error=fatal), application)
                     error = OAuthToolkitError(
                         error=CustomOAuth2Error(
                             error="invalid_target",
@@ -227,13 +223,6 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         scopes = form.cleaned_data.get("scope")
         allow = form.cleaned_data.get("allow")
 
-        # access_denied is raised before oauthlib's create_authorization_response,
-        # which is what checks the redirect URI on the approval path.
-        if not allow:
-            rejected = self._fatal_redirect_uri_response(application, credentials["redirect_uri"])
-            if rejected is not None:
-                return rejected
-
         try:
             uri, headers, body, status = self.create_authorization_response(
                 request=self.request, scopes=scopes, credentials=credentials, allow=allow
@@ -244,27 +233,6 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         self.success_url = uri
         log.debug("Success url for the request: {0}".format(self.success_url))
         return self.redirect(self.success_url, application)
-
-    def _fatal_redirect_uri_response(
-        self, application: "AbstractApplication", redirect_uri: str
-    ) -> http.HttpResponse | None:
-        """Return a fatal error when this URI must not receive an error redirect.
-
-        ``validate_client_id`` loads the client the way oauthlib does. A URI that is
-        not absolute is ``InvalidRedirectURIError``; one the client did not register
-        is ``MismatchingRedirectURIError``. Either is shown, not redirected (RFC 6749 §4.1.2.1).
-        """
-        client_id = application.client_id
-        validator = self.get_oauthlib_core().server.request_validator
-        oauthlib_request = OauthlibRequest(self.request.build_absolute_uri())
-        oauthlib_request.client = None
-        if not validator.validate_client_id(client_id, oauthlib_request):
-            return self.error_response(FatalClientError(error=InvalidClientIdError()), application)
-        if not is_absolute_uri(redirect_uri):
-            return self.error_response(FatalClientError(error=InvalidRedirectURIError()), application)
-        if not validator.validate_redirect_uri(client_id, redirect_uri, oauthlib_request):
-            return self.error_response(FatalClientError(error=MismatchingRedirectURIError()), application)
-        return None
 
     def _fatal_invalid_request(self, description: str) -> http.HttpResponse:
         """Render a non-redirecting ``invalid_request`` authorization error.
