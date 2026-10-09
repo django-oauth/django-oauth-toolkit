@@ -24,6 +24,7 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestError, OAuth2Error
+from oauthlib.oauth2.rfc6749.errors import FatalClientError as OAuthlibFatalClientError
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid.connect.core.exceptions import (
     InvalidRequestObject,
@@ -168,7 +169,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         }
         return initial_data
 
-    def form_valid(self, form):
+    def form_valid(self, form: AllowForm) -> http.HttpResponse:
         client_id = form.cleaned_data["client_id"]
         application = get_application_model().objects.get(client_id=client_id)
         credentials = {
@@ -215,6 +216,14 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # tampered with; re-validate before anything is stored on the grant.
             for resource_uri in resource_list:
                 if not is_valid_resource_uri(resource_uri):
+                    # Built here, before oauthlib sees the request, so the redirect URI
+                    # has to be checked first (RFC 6749 §4.1.2.1).
+                    try:
+                        self.get_oauthlib_core().validate_authorization_redirect_uri(
+                            self.request, credentials
+                        )
+                    except OAuthlibFatalClientError as fatal:
+                        return self.error_response(FatalClientError(error=fatal), application)
                     error = OAuthToolkitError(
                         error=CustomOAuth2Error(
                             error="invalid_target",
