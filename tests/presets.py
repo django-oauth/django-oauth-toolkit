@@ -7,6 +7,13 @@ from django.conf import settings
 
 DEFAULT_SCOPES_RW = {"DEFAULT_SCOPES": ["read", "write"]}
 DEFAULT_SCOPES_RO = {"DEFAULT_SCOPES": ["read"]}
+JWT_BEARER_SETTINGS = {
+    "JWT_BEARER_GRANT_ENABLED": True,
+    "JWT_BEARER_AUDIENCES": ["https://as.example.com/o/token/"],
+    "SCOPES": {"read": "Reading scope", "write": "Writing scope"},
+    "DEFAULT_SCOPES": ["read"],
+    "PKCE_REQUIRED": False,
+}
 OIDC_SETTINGS_RW = {
     "OIDC_ENABLED": True,
     "OIDC_ISS_ENDPOINT": "http://localhost/o",

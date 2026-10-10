@@ -247,7 +247,10 @@ def test_a_plain_oauthlib_server_returns_json_even_to_a_signing_client(signed_us
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 def test_default_oidc_server_class_signs_userinfo(oauth2_settings):
-    assert oauth2_settings.OAUTH2_SERVER_CLASS is Server
+    # The default OIDC_SERVER_CLASS is DOT's OIDCServer, which subclasses the
+    # signed-UserInfo Server (and also registers DOT's custom grant handlers), so
+    # userinfo_signing_available still recognizes it.
+    assert issubclass(oauth2_settings.OAUTH2_SERVER_CLASS, Server)
 
 
 # A signed UserInfo response is a JWT signed with the OP key whose aud is the
