@@ -23,7 +23,12 @@ from django.views.decorators.csrf import csrf_exempt, csrf_protect, requires_csr
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.common import Request as OauthlibRequest
-from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestError, OAuth2Error
+from oauthlib.oauth2.rfc6749.errors import (
+    ConsentRequired,
+    CustomOAuth2Error,
+    InvalidRequestError,
+    OAuth2Error,
+)
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid.connect.core.exceptions import (
     InvalidRequestObject,
@@ -865,6 +870,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         except OAuthToolkitError as error:
             return self.error_response(error, application)
 
+        if "none" in prompt:
+            return self._consent_required_response(credentials, application)
+
         # Only now that the consent page is rendered, so skipped consent pays nothing.
         kwargs["requested_claims"] = (
             self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
@@ -1214,6 +1222,29 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             issuer = oauth2_settings.oauth2_authorization_server_issuer(self.request)
             redirect_to = add_iss_to_redirect(redirect_to, issuer)
         return self.redirect(redirect_to, application)
+
+    def _consent_required_response(
+        self,
+        credentials: dict,
+        application=None,
+        description: str = "End-User consent is required for this request.",
+    ) -> HttpResponse:
+        """Redirect a ``consent_required`` error to the client (OpenID Connect
+        Core 1.0 section 3.1.2.6), for a request that needs consent under prompt=none.
+        """
+        error = OAuthToolkitError(
+            error=ConsentRequired(
+                description=description,
+                state=credentials.get("state"),
+            ),
+            redirect_uri=credentials["redirect_uri"],
+        )
+        # Lets error_response encode it like the successful response.
+        error.oauthlib_error.response_type = credentials.get("response_type")
+        error.oauthlib_error.response_mode = self.request.GET.get("response_mode")
+        if application is None:
+            application = get_application_model().objects.get(client_id=credentials["client_id"])
+        return self.error_response(error, application)
 
     def handle_no_permission(self):
         """

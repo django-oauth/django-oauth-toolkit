@@ -407,6 +407,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1928 `AuthorizationView` answers an authenticated request with `prompt=none` that
+  needs consent with `consent_required` (OpenID Connect Core 1.0 §3.1.2.6), preserving
+  `state` and the response mode, rather than rendering the consent page.
 * #1918 `AllowedURIValidator` rejects a non-numeric or out-of-range port such as
   `https://rp.example.com:abc/bye` or `:99999`. This applies to every field it validates, including
   `allowed_origins`, and to custom validators that subclass it. Redirect URI matching treats a

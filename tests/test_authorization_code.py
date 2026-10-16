@@ -2,6 +2,7 @@ import base64
 import datetime
 import hashlib
 import json
+from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -23,6 +24,7 @@ from oauth2_provider.models import (
     get_grant_model,
     get_refresh_token_model,
 )
+from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.views import ProtectedResourceView
 
 from . import presets
@@ -976,6 +978,136 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertTrue(response["Location"].startswith("http://example.org"))
         parsed_query = parse_qs(urlparse(response["Location"]).query)
         self.assertIn("invalid_request", parsed_query["error"])
+
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_authenticated_requires_consent(self, *_mocks):
+        """
+        When an authenticated user requests prompt=none and consent has not been
+        given, the server redirects with consent_required error instead of
+        rendering the consent page.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.client.login(username="test_user", password="123456")
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
+
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_authenticated_auto_approval_missing_scope(self, *_mocks):
+        """
+        With approval_prompt=auto, if existing tokens do not cover the requested
+        scopes, prompt=none redirects with consent_required error.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.client.login(username="test_user", password="123456")
+
+        AccessToken.objects.create(
+            user=self.test_user,
+            application=self.application,
+            token="test_token",
+            scope="read",
+            expires=timezone.now() + datetime.timedelta(days=1),
+        )
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "read write",
+            "approval_prompt": "auto",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
+
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_authenticated_auto_approval_missing_claim(self, *_mocks):
+        """
+        With approval_prompt=auto and OIDC_CLAIMS_PARAMETER_ENABLED, if existing
+        tokens do not cover newly requested claims, prompt=none redirects with
+        consent_required error.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED = True
+        self.client.login(username="test_user", password="123456")
+
+        AccessToken.objects.create(
+            user=self.test_user,
+            application=self.application,
+            token="test_token",
+            scope="openid",
+            expires=timezone.now() + datetime.timedelta(days=1),
+            claims={},
+        )
+
+        claims_param = json.dumps({"userinfo": {"email": None}})
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid",
+            "claims": claims_param,
+            "approval_prompt": "auto",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
+
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_authenticated_skip_authorization_succeeds(self, *_mocks):
+        """
+        When skip_authorization is true, an authenticated request with prompt=none
+        succeeds with an authorization code.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.client.login(username="test_user", password="123456")
+        self.application.skip_authorization = True
+        self.application.save()
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertIn("code", parsed_query)
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
 
 
 class BaseAuthorizationCodeTokenView(BaseTest):
