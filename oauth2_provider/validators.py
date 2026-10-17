@@ -83,7 +83,8 @@ class AllowedURIValidator(URIValidator):
                 params={"name": self.name, "cause": "lone Unicode surrogate"},
             )
         try:
-            scheme, netloc, path, query, fragment = urlsplit(value)
+            split = urlsplit(value)
+            scheme, netloc, path, query, fragment = split
         except ValueError as e:
             raise ValidationError(
                 "%(name)s URI validation error. %(cause)s: %(value)s",
@@ -142,6 +143,16 @@ class AllowedURIValidator(URIValidator):
                     params={"name": self.name, "value": value, "cause": "invalid URI"},
                 )
             return
+
+        # URIValidator's regex is not anchored at the end, so it accepts a prefix like
+        # "https://host" of "https://host:abc"; urlsplit().port is what rejects it.
+        try:
+            split.port
+        except ValueError as e:
+            raise ValidationError(
+                "%(name)s URI validation error. %(cause)s: %(value)s",
+                params={"name": self.name, "value": value, "cause": e},
+            )
 
         if self.allow_hostname_wildcard and "*" in netloc:
             domain_parts = netloc.split(".")

@@ -88,6 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for `response_type=id_token` (OpenID Connect Core 1.0 §5.4). The default `False` keeps returning
   them in both; it is scheduled to change to `True` in 4.0. The scope values affected are listed in
   `OAuth2Validator.oidc_userinfo_only_scopes`.
+* #1901 New `OIDC_CLAIMS_PARAMETER_ENABLED` setting (default `False`) that honours the OpenID
+  Connect `claims` request parameter (OpenID Connect Core 1.0 §5.5). Individual claims requested
+  for the ID Token or UserInfo are added to the scope-derived ones, limited to what the validator
+  supplies; a claim whose value doesn't match a requested `value`/`values` is left out, a
+  mismatched `sub` value (ID Token or UserInfo) fails the authorization with `login_required`, an
+  essential `acr` requested with `value`/`values` that `get_acr()` does not meet fails it with
+  `unmet_authentication_requirements`, and a malformed `claims` value is refused with
+  `invalid_request`. The requested claims the validator can supply are listed on the consent page
+  (`requested_claims`); the consent form posts back a signed copy of the request
+  (`claims_request`, which custom templates must keep), so the posted claims can only drop entries
+  (partial consent). `approval_prompt=auto` asks again for newly requested claims, and the new
+  `OAuth2Validator.get_requested_claims` hook narrows what a client may request. A new
+  `AccessToken.claims` field (migration `0032`) keeps the request for the UserInfo endpoint and
+  refreshes; swapped access token models need a migration for it. Discovery publishes
+  `claims_parameter_supported`.
 * An `openid-conformance-suite` CI job and `tox -e openid-conformance-suite` environment
   (`tests/openid-conformance-suite/`) that run the OpenID Foundation conformance suite against the
   `tests/app/idp` demo provider in Docker: the Config, Basic, Implicit, Hybrid, Dynamic and
@@ -398,6 +413,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks and then raise `UnicodeEncodeError` while the database encoded the row.
   `AllowedURIValidator` still rejects a lone surrogate in a redirect URI for the admin and
   allowed origins. A paired surrogate escape stays allowed.
+* #1918 `AllowedURIValidator` rejects a non-numeric or out-of-range port such as
+  `https://rp.example.com:abc/bye` or `:99999`. This applies to every field it validates, including
+  `allowed_origins`, and to custom validators that subclass it. Redirect URI matching treats a
+  malformed port in a stored or requested URI as a mismatch instead of raising `ValueError`, so one
+  bad legacy entry no longer breaks the valid URIs registered beside it. RP-Initiated Logout and the
+  authorization endpoint both returned HTTP 500 for an affected client. An application already stored
+  with a malformed port now fails `clean()` on its next save, for example in the admin, so operators
+  must correct those values.
 * #1899 An unexpected error while fetching or reading a `private_key_jwt` client's `jwks_uri`
   (RFC 7523), such as a deeply nested JSON document that exhausts the parser's recursion limit, now
   fails client authentication with `invalid_client` and arms the fetch failure backoff, instead of

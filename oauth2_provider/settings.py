@@ -250,6 +250,9 @@ DEFAULTS = {
     # scope claims are returned from UserInfo rather than the ID Token. ``False`` keeps
     # the legacy behavior (claims in both); scheduled to default to ``True`` in 4.0.
     "OIDC_COMPLIANT_SCOPE_CLAIMS": False,
+    # OIDC Core §5.5: honour the ``claims`` request parameter, which requests individual
+    # claims for the ID Token and UserInfo. ``False`` ignores it, as before.
+    "OIDC_CLAIMS_PARAMETER_ENABLED": False,
     "OIDC_RSA_PRIVATE_KEY": "",
     "OIDC_RSA_PRIVATE_KEYS_INACTIVE": [],
     "OIDC_JWKS_MAX_AGE_SECONDS": 3600,

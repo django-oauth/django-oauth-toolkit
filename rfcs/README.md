@@ -76,6 +76,8 @@ This directory contains plain-text standards documents used by this repository.
   - Source: https://openid.net/specs/openid-connect-backchannel-1_0.txt
 - `openid-connect-rp-metadata-choices-1_0.txt` - OpenID Connect Relying Party Metadata Choices 1.0
   - Source: https://openid.net/specs/openid-connect-rp-metadata-choices-1_0.txt
+- `openid-connect-unmet-authentication-requirements-1_0.txt` - OpenID Connect Core Error Code unmet_authentication_requirements
+  - Source: https://openid.net/specs/openid-connect-unmet-authentication-requirements-1_0.txt
 
 ## Notes
 

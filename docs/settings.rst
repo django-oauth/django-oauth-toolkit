@@ -859,6 +859,28 @@ UserInfo response. This default is scheduled to change to ``True`` in the 4.0 re
 to ``True`` now to adopt the compliant behavior early. Relying parties that read profile or
 email claims from the ID Token must call the UserInfo endpoint instead.
 
+.. _oidc_claims_parameter_enabled:
+
+OIDC_CLAIMS_PARAMETER_ENABLED
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+Honours the ``claims`` authorization request parameter of `OpenID Connect Core 1.0 section 5.5
+<https://openid.net/specs/openid-connect-core-1_0.html#ClaimsParameter>`_, which lets a client
+request individual claims for the ID Token and for the UserInfo response, in addition to the
+claims its scopes request. See :ref:`oidc-claims-parameter` for how claims are selected.
+
+When ``True``, a malformed ``claims`` value is refused with ``invalid_request``, the requested
+claims are listed on the consent page and stored on the access token (``AccessToken.claims``)
+for the UserInfo endpoint and refreshes, and discovery publishes
+``claims_parameter_supported: true``.
+
+When ``False``, the parameter is ignored as before and discovery publishes
+``claims_parameter_supported: false``. The authorization code still records the requested
+claims, as it always has, so a code issued just before the setting is enabled and redeemed
+just after (within ``AUTHORIZATION_CODE_EXPIRE_SECONDS``) is honoured without the consent
+page having listed them.
+
 OIDC_ISS_ENDPOINT
 ~~~~~~~~~~~~~~~~~
 Default: ``""``

@@ -70,6 +70,11 @@
 					>Pushed Authorization Requests (PAR)</a
 				>
 			</li>
+			<li class="tab">
+				<a href="/claims" class:active={$page.url.pathname === '/claims'}
+					>OIDC claims Parameter</a
+				>
+			</li>
 		</ul>
 	</div>
 </nav>

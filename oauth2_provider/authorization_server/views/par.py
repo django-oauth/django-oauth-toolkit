@@ -103,7 +103,11 @@ class PushedAuthorizationRequestView(FormEncodedRequestMixin, AuthorizationServe
         # as it would be there (RFC 9126 §2.1). A repeat, counting the query
         # string and the body together, would otherwise be stored as one value.
         oidc_request = oauth2_settings.OIDC_ENABLED and "openid" in scopes
-        for name in ("prompt", "max_age") if oidc_request else ("prompt",):
+        names = ("prompt", "max_age") if oidc_request else ("prompt",)
+        if oidc_request and oauth2_settings.OIDC_CLAIMS_PARAMETER_ENABLED:
+            # The claims request decides the sub and essential acr checks.
+            names += ("claims",)
+        for name in names:
             if len(request.GET.getlist(name)) + len(request.POST.getlist(name)) > 1:
                 return self._error_response("invalid_request", f"{name} must not be repeated.", status=400)
         max_age = request.POST.get("max_age", request.GET.get("max_age"))

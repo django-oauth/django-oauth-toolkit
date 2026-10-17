@@ -569,8 +569,121 @@ extend the ``oidc_userinfo_only_scopes`` class attribute:
     class CustomOAuth2Validator(OAuth2Validator):
         oidc_userinfo_only_scopes = OAuth2Validator.oidc_userinfo_only_scopes + ("permissions",)
 
-The ``claims`` request parameter (`5.5 Requesting Claims using the "claims" Request Parameter`_),
-which lets a client ask for individual claims in the ID Token, is not yet honoured.
+.. _oidc-claims-parameter:
+
+Requesting individual claims with the ``claims`` parameter
+----------------------------------------------------------
+
+The ``claims`` authorization request parameter
+(`5.5 Requesting Claims using the "claims" Request Parameter`_) lets a client ask
+for individual claims in the ID Token, in the ``UserInfo`` response, or both,
+independently of scopes. It is honoured when ``OIDC_CLAIMS_PARAMETER_ENABLED`` is
+``True``; otherwise the parameter is ignored and discovery publishes
+``claims_parameter_supported: false``.
+
+For example, this request asks for ``name`` from ``UserInfo`` with only the
+``openid`` scope, and for ``email`` in the ID Token::
+
+    claims={"userinfo": {"name": {"essential": true}}, "id_token": {"email": null}}
+
+The claims are selected as follows:
+
+* Requested claims are *added* to the claims the granted scopes request. They can
+  go beyond the scopes: ``oidc_claim_scope`` does not gate them, so claims you
+  gate behind your own scopes can be requested too unless you narrow requests
+  with ``get_requested_claims`` (below). Only claims your validator supplies
+  (through ``get_additional_claims``) are returned; a requested claim you don't
+  supply is silently left out.
+* Claims requested for the ID Token are put in it even when
+  ``OIDC_COMPLIANT_SCOPE_CLAIMS`` would otherwise move them to ``UserInfo``.
+* A claim requested with ``value`` or ``values`` is left out when its value does
+  not match (section 5.5.1). ``sub`` requested with a ``value`` or ``values``, for
+  the ID Token or ``UserInfo``, that doesn't match the signed-in user makes the
+  authorization fail with ``login_required``.
+* ``essential`` is informational: a claim that isn't returned never causes an error,
+  except for ``acr`` (below).
+* ``acr`` comes from ``get_acr()`` (see :ref:`oidc-acr`) and is not filtered by ``value`` or
+  ``values``: when the requested value cannot be provided, the session's current
+  ``acr`` is returned (section 5.5.1.1). ``get_acr()`` can read the requested values
+  with ``self.get_requested_claims(request, "id_token").get("acr")``. An essential
+  ``acr`` requested with a ``value`` or ``values`` that ``get_acr()`` does not
+  report makes the authorization fail with ``unmet_authentication_requirements``
+  (`OpenID Connect Core Error Code unmet_authentication_requirements`_).
+* A ``claims`` value that is not a JSON object, or whose ``userinfo`` / ``id_token``
+  members, individual claim requests, ``essential`` or ``values`` have the wrong
+  type, or whose ``value`` / ``values`` hold a number JSON cannot represent
+  (``NaN``, ``Infinity``), a number beyond 2\ :sup:`53` or nesting more than 16
+  levels deep, or with a claim name or string that holds a NUL character or
+  invalid Unicode, or that is larger than 16 KiB as JSON, is refused with
+  ``invalid_request``. So is a ``claims`` parameter sent more than once, and a
+  ``userinfo`` member with a ``response_type`` that issues no access token
+  (``id_token``), since it could never be honoured (section 5.5). A value that is
+  not JSON at all is refused by oauthlib before the request is validated, so it
+  gets an error page rather than a redirect to the client. An empty ``claims``, or
+  ``null``, is treated as omitted. Other top-level members, and members of an
+  individual claim request other than ``essential``, ``value`` and ``values``, are
+  ignored and not stored.
+* Values are compared as they are sent: a ``sub`` your validator supplies as a
+  ``UUID`` matches its string, a tuple matches an array.
+* Claim names with a language tag (``family_name#ja-Kana-JP``, section 5.5.2) are
+  returned only if your validator supplies a claim of exactly that name.
+
+The requested claims that could be released, those ``get_requested_claims`` keeps
+that are standard claims (``oidc_claim_scope``) or that your validator supplies,
+are shown on the consent page (the ``requested_claims`` template variable), other
+than the protocol claims ``sub``, ``acr`` and ``auth_time``. Claim names are
+chosen by the client, so other names are never listed. Working this out calls
+``get_claim_dict`` and ``get_requested_claims`` while the consent page is rendered,
+with the signed-in user, the client, the requested scopes and claims, and the
+authorization request parameters oauthlib validated (such as ``redirect_uri``) on
+the request; there is no token yet. Claims are later released from other requests
+(the token request, a refresh, ``UserInfo``) that carry other parameters, some of
+them set by the client, so both should decide only from what the server sets in
+every context: the user, the client, the scopes and the claims. If either raises,
+every requested name is listed and the error is logged.
+``approval_prompt=auto`` asks for consent again when a client requests claims that
+an earlier authorization did not include. The claims request is kept on the access
+token (``AccessToken.claims``), so the ``UserInfo`` endpoint and refreshed tokens
+honour it.
+
+The consent form posts the claims request back in its ``claims`` field, together
+with a signed copy of the request as the client sent it (``claims_request``). A
+customised consent page can offer partial consent by posting back a ``claims``
+value with some individual claim requests removed; the declined claim requests are
+then dropped. A declined claim that a granted scope also covers is still released
+through that scope (section 5.4); to withhold it, the End-User declines the scope.
+Anything else, such as adding or changing a claim request, a missing or altered
+signature, dropping the ``openid`` scope while claims are requested, or changing the
+``response_type``, is refused with ``invalid_request``. The ``sub`` and
+essential ``acr`` checks always apply to the request as the client sent it, since
+they concern the authentication rather than what is released; ``get_requested_claims``
+(and so ``get_acr``) sees only what the End-User consented to. A denial needs no
+claims request. The signed copy is bound to the request's ``client_id``,
+``redirect_uri``, ``response_type``, ``state``, ``nonce`` and ``code_challenge``, so it
+can't be moved to another authorization request; a client that sends none of
+``state``, ``nonce`` and ``code_challenge`` can't tell its responses apart in any
+case. Likewise, a client can rely on an essential ``acr`` (or ``sub``) it requests only
+if the End-User can't send the authorization request without it: when the client must
+use PAR (``require_pushed_authorization_requests``). A signed request object alone is
+not enough: a client can't be made to send one, so the End-User can send the same
+request without it.
+
+The request is validated, and the ``sub`` value and an essential ``acr`` checked,
+in ``OAuth2Validator.validate_user_match``; an override of that method must call
+``super()``.
+
+To narrow what a client may request, override ``get_requested_claims``. It
+receives the oauthlib request and ``"id_token"`` or ``"userinfo"``, and returns a
+mapping of claim name to its individual claim request:
+
+.. code-block:: python
+
+    class CustomOAuth2Validator(OAuth2Validator):
+        def get_requested_claims(self, request, target):
+            requested = super().get_requested_claims(request, target)
+            if request.client.client_id not in PHONE_NUMBER_CLIENT_IDS:
+                requested = {k: v for k, v in requested.items() if k != "phone_number"}
+            return requested
 
 .. note::
     This ``request`` object is not a ``django.http.Request`` object, but an
@@ -584,6 +697,7 @@ which lets a client ask for individual claims in the ID Token, is not yet honour
 
 .. _5.4 Requesting Claims using Scope Values: https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
 .. _5.5 Requesting Claims using the "claims" Request Parameter: https://openid.net/specs/openid-connect-core-1_0.html#ClaimsParameter
+.. _OpenID Connect Core Error Code unmet_authentication_requirements: https://openid.net/specs/openid-connect-unmet-authentication-requirements-1_0.html
 .. _Django User: https://docs.djangoproject.com/en/stable/ref/contrib/auth/#user-model
 
 What claims you decide to put in to the token is up to you to determine based
@@ -620,8 +734,12 @@ your login actually met, whether or not it was requested::
 The value is used for every ID Token issued from that authorization: the ones the
 authorization endpoint returns (implicit and hybrid flows), and the one issued
 when the authorization code is exchanged, for which it is stored on the grant.
-ID Tokens issued on a refresh token have no ``acr`` claim. Requesting ``acr`` as an
-essential claim through the ``claims`` parameter is not supported yet.
+ID Tokens issued on a refresh token have no ``acr`` claim. With
+``OIDC_CLAIMS_PARAMETER_ENABLED``, an ``acr`` requested as an essential claim with a
+``value`` or ``values`` that ``get_acr`` does not return makes the authorization fail
+with ``unmet_authentication_requirements`` (see :ref:`oidc-claims-parameter`); for
+such a request ``get_acr`` runs while the authorization request is validated, before
+the code or tokens are issued.
 
 Publish the values ``get_acr`` can return with the ``OIDC_ACR_VALUES_SUPPORTED``
 setting, which the discovery document lists as ``acr_values_supported``.

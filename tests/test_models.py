@@ -2160,6 +2160,34 @@ def test_localhost_loopback_port_mismatch_rejected_by_default():
     assert redirect_to_uri_allowed("http://[::1]:49152/callback", ["http://[::1]/callback"])
 
 
+def test_redirect_to_uri_allowed_malformed_port_is_a_mismatch():
+    # A legacy stored URI with a malformed port must not raise, nor hide a valid entry after it.
+    allowed = [
+        "https://rp.example.com:abc/bye",
+        "https://rp.example.com:99999/bye",
+        "https://rp.example.com/bye",
+    ]
+    assert redirect_to_uri_allowed("https://rp.example.com/bye", allowed)
+    assert not redirect_to_uri_allowed("https://rp.example.com/bye", allowed[:2])
+    allowed_ok, reasons = check_redirect_to_uri_allowed("https://rp.example.com/bye", allowed[:2])
+    assert not allowed_ok
+    assert [r[0] for r in reasons] == allowed[:2]
+    assert all("malformed port" in r[1] for r in reasons)
+    assert not redirect_to_uri_allowed("https://rp.example.com:abc/bye", allowed)
+    assert not redirect_to_uri_allowed("http://127.0.0.1:99999/cb", ["http://127.0.0.1/cb"])
+    assert not redirect_to_uri_allowed("http://127.0.0.1/cb", ["http://127.0.0.1:abc/cb"])
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("field", ["redirect_uris", "post_logout_redirect_uris"])
+@pytest.mark.parametrize("bad_uri", ["https://rp.example.com:abc/bye", "https://rp.example.com:99999/bye"])
+def test_application_clean_rejects_malformed_port_before_valid_uri(application, field, bad_uri):
+    setattr(application, field, f"{bad_uri} https://rp.example.com/bye")
+    with pytest.raises(ValidationError) as exc:
+        application.clean()
+    assert field in exc.value.message_dict
+
+
 valid_localhost_loopback_params = [
     # RFC 8252 §7.3 any-port exemption, extended to "localhost" when enabled.
     ("http://localhost:49152/callback", ["http://localhost/callback"]),
