@@ -572,6 +572,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   precedent of RFC 7591 sections 2 and 3.2.1, and logged at `INFO`. A document is refused only when none of its
   `grant_types` is one this library registers, and `authorization_code` is chosen when more than one is
   supported. See `docs/cimd.rst`.
+* The Django Ninja `HttpOAuth2` authenticator no longer sets `request.user` when a subclass's
+  `authenticate` rejects the access token. Previously, a later authenticator in the same list which
+  relies on `request.user` (such as Ninja's `django_auth`) would then accept the rejected request.
+  Within `authenticate`, use `access_token.user`, as `request.user` is only set upon success.
 * #1828 Two resource-server paths no longer log at the wrong level. A non-200 introspection
   response is an ordinary response, not an exception, so it is logged with `log.warning` instead
   of `log.exception` — the latter appended a meaningless `NoneType: None` line to every such
