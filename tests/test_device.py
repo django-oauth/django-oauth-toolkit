@@ -608,7 +608,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             # TokenView should always respond with application/json as it's meant to be
             # consumed by devices.
             self.assertEqual(response.__getitem__("content-type"), "application/json")
-            
+
     def test_token_view_returns_expired_token_when_device_grant_deadline_passed(self):
         """
         When a DeviceGrant's expires timestamp is in the past, polling /o/token/
@@ -643,7 +643,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             self.assertJSONEqual(raw=response.content, expected_data={"error": "expired_token"})
             device.refresh_from_db()
             assert device.status == DeviceModel.EXPIRED
-            
+
     def test_token_view_returns_404_error_if_device_not_found(self):
         device = DeviceModel(
             client_id="client_id",
