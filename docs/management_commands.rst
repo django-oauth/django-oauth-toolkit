@@ -81,8 +81,11 @@ refresh token and were last registered or modified at least ``--min-unmodified-d
 (default 7). DCR clients such as editors and MCP tools sometimes re-register without deregistering
 their previous client, so
 tokenless "ghost" applications accumulate; because a client simply re-registers on its next request,
-deleting a tokenless ghost only reclaims storage. Run it regularly (eg: via cron, alongside
-``cleartokens``) when :doc:`DCR <views/dynamic_client_registration>` is enabled.
+deleting a tokenless ghost only reclaims storage. Run it regularly (eg: via cron) when
+:doc:`DCR <views/dynamic_client_registration>` is enabled, after ``cleartokens``: an unrevoked
+refresh token counts as live even once it has expired under ``REFRESH_TOKEN_EXPIRE_SECONDS``, so
+running ``cleartokens`` first lets this command prune applications whose only remaining token is
+an expired refresh token.
 
 The RFC 7592 registration access token issued to every DCR application at registration does not
 count as a live token: it is created with a far-future expiry by default

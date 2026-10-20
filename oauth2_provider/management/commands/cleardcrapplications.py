@@ -20,7 +20,7 @@ class Command(BaseCommand):
         "not been registered or modified within --min-unmodified-days. DCR clients that re-register "
         "without deregistering leave behind 'ghost' applications; because a client simply "
         "re-registers on its next request, deleting a "
-        "tokenless ghost only reclaims storage. Run it as a cronjob alongside cleartokens."
+        "tokenless ghost only reclaims storage. Run it as a cronjob after cleartokens."
     )
 
     def add_arguments(self, parser):
