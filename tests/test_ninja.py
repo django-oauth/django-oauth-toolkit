@@ -6,6 +6,7 @@ from django.test.utils import override_settings
 from django.urls import include, path
 from django.utils import timezone
 from ninja import NinjaAPI
+from ninja.security import django_auth
 
 from oauth2_provider.contrib.ninja import HttpOAuth2
 from oauth2_provider.models import get_access_token_model, get_application_model
@@ -16,6 +17,14 @@ from .common_testing import OAuth2ProviderTestCase as TestCase
 Application = get_application_model()
 AccessToken = get_access_token_model()
 UserModel = get_user_model()
+
+
+class StaffOnlyOAuth2(HttpOAuth2):
+    def authenticate(self, request, access_token):
+        if access_token.user is None or not access_token.user.is_staff:
+            return None
+        return access_token
+
 
 api = NinjaAPI()
 
@@ -43,6 +52,16 @@ def request_attributes_endpoint(request):
         "request_user_is_anonymous": request.user.is_anonymous,
         "request_auth_token": request.auth.token,
     }
+
+
+@api.get("/staff-only", auth=StaffOnlyOAuth2())
+def staff_only_endpoint(request):
+    return {"request_user_username": request.user.username}
+
+
+@api.get("/staff-only-or-session", auth=[StaffOnlyOAuth2(), django_auth])
+def staff_only_or_session_endpoint(request):
+    return {"request_user_username": request.user.username}
 
 
 urlpatterns = [
@@ -73,6 +92,17 @@ class TestNinja(TestCase):
             scope="read write",
             expires=timezone.now() + timedelta(seconds=300),
             token="secret-access-token-key",
+            application=cls.application,
+        )
+
+        cls.staff_user = UserModel.objects.create_user(
+            "staff_user", "staff@example.com", "123456", is_staff=True
+        )
+        cls.staff_access_token = AccessToken.objects.create(
+            user=cls.staff_user,
+            scope="read write",
+            expires=timezone.now() + timedelta(seconds=300),
+            token="secret-staff-access-token-key",
             application=cls.application,
         )
 
@@ -149,3 +179,28 @@ class TestNinja(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIs(response.json()["request_user_is_authenticated"], False)
+
+    def test_subclass_authenticate_accepted(self):
+        auth = self._create_authorization_header(self.staff_access_token.token)
+        response = self.client.get("/api/staff-only", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["request_user_username"], self.staff_user.username)
+
+    def test_subclass_authenticate_rejected(self):
+        auth = self._create_authorization_header(self.access_token.token)
+        response = self.client.get("/api/staff-only", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 401)
+
+    def test_subclass_authenticate_rejected_with_fallback(self):
+        # A rejected token must not set `request.user`, or else `django_auth` would accept it
+        auth = self._create_authorization_header(self.access_token.token)
+        response = self.client.get("/api/staff-only-or-session", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 401)
+
+    def test_subclass_authenticate_rejected_with_fallback_session(self):
+        # A rejected token must not overwrite the `request.user` from a valid session
+        self.client.force_login(self.dev_user)
+        auth = self._create_authorization_header(self.userless_access_token.token)
+        response = self.client.get("/api/staff-only-or-session", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["request_user_username"], self.dev_user.username)
