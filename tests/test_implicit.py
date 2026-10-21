@@ -727,6 +727,27 @@ class TestImplicitErrorResponseMode(BaseTest):
     def test_prompt_none_oauthlib_login_required_in_fragment(self, *_mocks):
         self.assert_prompt_none_login_required_in_fragment()
 
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_consent_required_in_fragment(self, *_mocks):
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+        self.client.login(username="test_user", password="123456")
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "id_token token",
+            "state": "random_state_string",
+            "nonce": "random_nonce_string",
+            "scope": "openid",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        params = self.assert_error_in_fragment(response, "consent_required")
+        self.assertEqual(params["state"], ["random_state_string"])
+        self.assertIn("iss", params)
+
     def assert_prompt_none_login_required_in_fragment(self):
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
         query_data = {
