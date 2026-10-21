@@ -905,6 +905,57 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertIn("login_required", parsed_query["error"])
         self.assertIn("random_state_string", parsed_query["state"])
 
+    def test_prompt_none_authenticated_without_consent_is_consent_required(self):
+        """A signed-in user with prompt=none must not see the consent page.
+
+        OpenID Connect Core 1.0 section 3.1.2.1 forbids any consent UI when
+        prompt is none. If the client has no prior consent, the response is
+        consent_required (section 3.1.2.6).
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.client.login(username="test_user", password="123456")
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("http://example.org"))
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertIn("consent_required", parsed_query["error"])
+        self.assertIn("random_state_string", parsed_query["state"])
+
+    def test_prompt_none_skip_authorization_still_returns_a_code(self):
+        """An in-house client that skips consent still gets a code for prompt=none."""
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.client.login(username="test_user", password="123456")
+        self.application.skip_authorization = True
+        self.application.save()
+
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            {
+                "client_id": self.application.client_id,
+                "response_type": "code",
+                "state": "random_state_string",
+                "scope": "read write",
+                "redirect_uri": "http://example.org",
+                "prompt": "none",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
     def test_prompt_none_open_redirect_no_client(self):
         """
         Regression test for the prompt=none open redirect.
