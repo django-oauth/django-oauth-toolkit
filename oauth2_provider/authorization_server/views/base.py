@@ -850,10 +850,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 )
 
                 # check past authorizations regarded the same scopes as the current one,
-                # and the same individual claims (OIDC Core 5.5), so newly requested
-                # claims are always presented to the End-User
+                # the same individual claims (OIDC Core 5.5), so newly requested
+                # claims are always presented to the End-User, and the same RFC 8707
+                # resources. A grant for resource A must not skip consent for resource B.
+                requested_resources = credentials.get("resource") or []
                 for token in tokens:
-                    if token.allow_scopes(scopes) and requested_claims <= requested_claim_names(token.claims):
+                    if (
+                        token.allow_scopes(scopes)
+                        and requested_claims <= requested_claim_names(token.claims)
+                        and self._grant_covers_resources(token.resource, requested_resources)
+                    ):
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request,
                             scopes=" ".join(scopes),
@@ -870,6 +876,24 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
         )
         return self.render_to_response(self.get_context_data(**kwargs))
+
+    @staticmethod
+    def _grant_covers_resources(granted, requested) -> bool:
+        """Whether a prior grant's RFC 8707 resources cover this request.
+
+        An empty list is not a wildcard here. It means the grant was not bound
+        to a resource, so it only covers another request that also names none.
+        A resource-bound grant covers a request whose resources are a subset of
+        that list, and does not cover a request that names no resource, which
+        would widen the grant.
+        """
+        granted = list(granted or [])
+        requested = list(requested or [])
+        if not granted and not requested:
+            return True
+        if not granted or not requested:
+            return False
+        return set(requested).issubset(granted)
 
     def handle_prompt_login(self) -> HttpResponse:
         return self._redirect_to_login()

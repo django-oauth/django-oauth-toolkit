@@ -407,6 +407,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* #1916 `approval_prompt=auto` only skips consent when a prior grant covers the
+  same scopes and the same RFC 8707 resources. A token issued for one resource
+  no longer auto-approves the same scopes on a different resource, and a
+  resource-bound grant no longer auto-approves a request that names no
+  resource. Grants that name no resource still match each other, as before.
 * #1918 `AllowedURIValidator` rejects a non-numeric or out-of-range port such as
   `https://rp.example.com:abc/bye` or `:99999`. This applies to every field it validates, including
   `allowed_origins`, and to custom validators that subclass it. Redirect URI matching treats a
