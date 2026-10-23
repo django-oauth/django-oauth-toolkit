@@ -2,6 +2,7 @@ import base64
 import datetime
 import hashlib
 import json
+from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -17,12 +18,15 @@ from jwcrypto import jwk, jwt
 from jwcrypto.common import base64url_encode
 from oauthlib.oauth2.rfc6749 import errors as oauthlib_errors
 
+from oauth2_provider.core.backends_oauthlib import get_oauthlib_core
+from oauth2_provider.core.exceptions import FatalClientError
 from oauth2_provider.models import (
     get_access_token_model,
     get_application_model,
     get_grant_model,
     get_refresh_token_model,
 )
+from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.views import ProtectedResourceView
 
 from . import presets
@@ -708,6 +712,121 @@ class TestAuthorizationCodeView(BaseTest):
 
         response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
         self.assertEqual(response.status_code, 400)
+
+
+class TestConsentDenialRedirectUri(BaseTest):
+    """
+    Regression tests for #1892.
+
+    Denying consent, and the invalid_target error built from the consent POST,
+    must not redirect to a redirect_uri that is not absolute or not registered
+    for the client (RFC 6749 §4.1.2.1 and §4.2.2.1).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.login(username="test_user", password="123456")
+
+    def _post_consent(self, **overrides):
+        data = {
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://example.org",
+            "response_type": "code",
+            "scope": "read",
+            "state": "s",
+            "allow": False,
+        }
+        data.update(overrides)
+        return post_form(self.client, reverse("oauth2_provider:authorize"), data=data)
+
+    def _assert_fatal_invalid_request(self, response, description):
+        """The fatal-client error page: HTTP 400, authorize.html, no redirect."""
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        error = response.context_data["error"]
+        self.assertEqual(error.error, "invalid_request")
+        self.assertEqual(error.description, description)
+        self.assertIn("error=invalid_request", response.context_data["url"])
+        self.assertIn(description.replace(" ", "+"), response.context_data["url"])
+        self.assertTemplateUsed(response, "oauth2_provider/authorize.html")
+        self.assertContains(response, "Error: invalid_request", status_code=400)
+        self.assertContains(response, description, status_code=400)
+        self.assertNotIn(b"attacker.example", response.content)
+
+    def test_deny_unregistered_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(redirect_uri="http://attacker.example/cb")
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.MismatchingRedirectURIError.description)
+
+    def test_deny_relative_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(redirect_uri="/cb")
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.InvalidRedirectURIError.description)
+
+    def test_deny_registered_redirect_uri_returns_access_denied(self):
+        response = self._post_consent()
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://example.org")
+        params = parse_qs(location.query)
+        self.assertEqual(params["error"], ["access_denied"])
+        self.assertEqual(params["state"], ["s"])
+
+    def test_invalid_target_unregistered_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(
+            redirect_uri="http://attacker.example/cb",
+            resource="/not/absolute",
+            allow=True,
+        )
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.MismatchingRedirectURIError.description)
+        self.assertEqual(Grant.objects.count(), 0)
+
+    def test_invalid_target_registered_redirect_uri_is_redirected(self):
+        response = self._post_consent(resource="/not/absolute", allow=True)
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://example.org")
+        params = parse_qs(location.query)
+        self.assertEqual(params["error"], ["invalid_target"])
+        self.assertEqual(params["state"], ["s"])
+        self.assertEqual(Grant.objects.count(), 0)
+
+    def test_backend_deny_unregistered_redirect_uri_raises_fatal_error(self):
+        # Views that bypass AuthorizationView.form_valid call the backend directly.
+        request = RequestFactory().post(reverse("oauth2_provider:authorize"))
+        request.user = self.test_user
+        credentials = {
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://attacker.example/cb",
+            "response_type": "code",
+            "state": "s",
+        }
+
+        with self.assertRaises(FatalClientError) as raised:
+            get_oauthlib_core().create_authorization_response(request, ["read"], credentials, allow=False)
+
+        oauthlib_error = raised.exception.oauthlib_error
+        self.assertIsInstance(oauthlib_error, oauthlib_errors.MismatchingRedirectURIError)
+
+    def test_deny_validates_the_consent_request(self):
+        with mock.patch.object(
+            OAuth2Validator,
+            "validate_redirect_uri",
+            autospec=True,
+            side_effect=OAuth2Validator.validate_redirect_uri,
+        ) as validate_redirect_uri:
+            response = self._post_consent()
+
+        self.assertEqual(response.status_code, 302)
+        validate_redirect_uri.assert_called_once()
+        oauthlib_request = validate_redirect_uri.call_args.args[3]
+        self.assertEqual(oauthlib_request.http_method, "POST")
+        self.assertIn("allow=False", oauthlib_request.body)
+        self.assertEqual(oauthlib_request.client_id, self.application.client_id)
+        self.assertEqual(oauthlib_request.client, self.application)
 
 
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)

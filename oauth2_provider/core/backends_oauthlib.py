@@ -8,6 +8,7 @@ from oauthlib import oauth2
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.common import quote, urlencode, urlencoded
 from oauthlib.oauth2 import OAuth2Error
+from oauthlib.uri_validate import is_absolute_uri
 
 from oauth2_provider.authorization_server.response_modes import (
     response_mode_permitted,
@@ -191,6 +192,9 @@ class OAuthLibCore:
                     description="The requested response_mode is not supported for this response_type."
                 )
             if not allow:
+                # access_denied is raised before oauthlib's create_authorization_response,
+                # which is what checks the redirect URI on the approval path.
+                self.validate_authorization_redirect_uri(request, credentials)
                 raise oauth2.AccessDeniedError(state=credentials.get("state", None))
 
             # add current user to credentials. this will be used by OAUTH2_VALIDATOR_CLASS
@@ -238,6 +242,40 @@ class OAuthLibCore:
                 error.response_type = credentials.get("response_type")
                 error.response_mode = credentials.get("response_mode")
             raise OAuthToolkitError(error=error, redirect_uri=credentials["redirect_uri"])
+
+    def validate_authorization_redirect_uri(self, request: HttpRequest, credentials: dict) -> None:
+        """
+        Check that an authorization error may be redirected to ``credentials["redirect_uri"]``.
+
+        oauthlib checks the client and the redirect URI in its own
+        create_authorization_response, so errors the toolkit raises before that runs
+        (access_denied, invalid_target) have to be checked here first. A failure raises
+        oauthlib's ``InvalidClientIdError``, ``InvalidRedirectURIError`` or
+        ``MismatchingRedirectURIError``, which are fatal and are shown to the resource
+        owner instead of redirected (RFC 6749 §4.1.2.1).
+
+        :param request: The current django.http.HttpRequest object
+        :param credentials: Authorization credentials dictionary containing
+                           `client_id` and `redirect_uri`
+        """
+        uri, http_method, body, headers = self._extract_params(request)
+        oauthlib_request = OauthlibRequest(uri=uri, http_method=http_method, body=body, headers=headers)
+        client_id = credentials.get("client_id")
+        redirect_uri = credentials.get("redirect_uri")
+        # The posted URL may carry only request_uri (stored request, PAR), so use
+        # the values that oauthlib would see on the approval path.
+        oauthlib_request.client_id = client_id
+        oauthlib_request.redirect_uri = redirect_uri
+        oauthlib_request.client = None
+
+        # The errors are raised without the request, so they never carry its redirect_uri.
+        validator = self.server.request_validator
+        if not client_id or not validator.validate_client_id(client_id, oauthlib_request):
+            raise oauth2.InvalidClientIdError()
+        if not redirect_uri or not is_absolute_uri(redirect_uri):
+            raise oauth2.InvalidRedirectURIError()
+        if not validator.validate_redirect_uri(client_id, redirect_uri, oauthlib_request):
+            raise oauth2.MismatchingRedirectURIError()
 
     def create_device_authorization_response(self, request: HttpRequest):
         uri, http_method, body, headers = self._extract_params(request)
