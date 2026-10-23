@@ -1356,12 +1356,12 @@ class TokenView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
         # Here we are returning the errors according to
         # https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
         # TODO: "slow_down" error (essentially rate-limiting).
-        if device.status == device.AUTHORIZATION_PENDING:
-            error = rfc8628_errors.AuthorizationPendingError()
-        elif device.status == device.DENIED:
+        if device.status == device.DENIED:
             error = rfc8628_errors.AccessDenied()
-        elif device.status == device.EXPIRED:
+        elif device.is_expired():
             error = rfc8628_errors.ExpiredTokenError()
+        elif device.status == device.AUTHORIZATION_PENDING:
+            error = rfc8628_errors.AuthorizationPendingError()
         elif device.status != device.AUTHORIZED:
             # It's technically impossible to get here because we've exhausted
             # all the possible values for status. However, it does act as a

@@ -1547,7 +1547,10 @@ class AbstractDeviceGrant(models.Model):
         if self.status == self.EXPIRED:
             return True
 
-        now = datetime.now(tz=dt_timezone.utc)
+        if not self.expires:
+            return True
+
+        now = timezone.now() if timezone.is_aware(self.expires) else datetime.now()
         if now >= self.expires:
             self.status = self.EXPIRED
             self.save(update_fields=["status"])
