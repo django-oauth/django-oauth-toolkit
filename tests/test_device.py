@@ -640,6 +640,114 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         # consumed by devices.
         self.assertEqual(response.__getitem__("content-type"), "application/json")
 
+    def test_token_view_returns_expired_token_when_device_code_expired(self):
+        """
+        Asserts that polling /o/token/ with an expired device code returns expired_token
+        and updates device status to EXPIRED per RFC 8628 Section 3.5.
+        """
+        device = DeviceModel(
+            client_id="client_id",
+            device_code="expired_device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now(tz=timezone.utc) - timedelta(seconds=60),
+            status=DeviceModel.AUTHORIZATION_PENDING,
+        )
+        device.save()
+
+        token_payload = {
+            "device_code": "expired_device_code",
+            "client_id": "client_id",
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+
+        response = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        self.assertContains(
+            response=response,
+            status_code=400,
+            text='{"error": "expired_token"}',
+            count=1,
+        )
+        self.assertEqual(response.__getitem__("content-type"), "application/json")
+
+        device.refresh_from_db()
+        self.assertEqual(device.status, DeviceModel.EXPIRED)
+
+    def test_token_view_returns_expired_token_when_authorized_device_expired(self):
+        """
+        Asserts that an authorized device grant that has passed its expires deadline
+        also returns expired_token when polling /o/token/.
+        """
+        device = DeviceModel(
+            client_id="client_id",
+            device_code="expired_authorized_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now(tz=timezone.utc) - timedelta(seconds=60),
+            status=DeviceModel.AUTHORIZED,
+        )
+        device.save()
+
+        token_payload = {
+            "device_code": "expired_authorized_code",
+            "client_id": "client_id",
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+
+        response = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        self.assertContains(
+            response=response,
+            status_code=400,
+            text='{"error": "expired_token"}',
+            count=1,
+        )
+        self.assertEqual(response.__getitem__("content-type"), "application/json")
+
+        device.refresh_from_db()
+        self.assertEqual(device.status, DeviceModel.EXPIRED)
+
+    def test_token_view_returns_access_denied_when_device_denied_even_if_expired(self):
+        """
+        Asserts that a denied device grant returns access_denied even if the expiration deadline
+        has passed.
+        """
+        device = DeviceModel(
+            client_id="client_id",
+            device_code="denied_device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now(tz=timezone.utc) - timedelta(seconds=60),
+            status=DeviceModel.DENIED,
+        )
+        device.save()
+
+        token_payload = {
+            "device_code": "denied_device_code",
+            "client_id": "client_id",
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+
+        response = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        self.assertContains(
+            response=response,
+            status_code=400,
+            text='{"error": "access_denied"}',
+            count=1,
+        )
+        self.assertEqual(response.__getitem__("content-type"), "application/json")
+
     def test_token_view_status_equals_what_oauthlib_token_response_method_returns(self):
         """
         Tests the use case where oauthlib create_token_response returns a status different
