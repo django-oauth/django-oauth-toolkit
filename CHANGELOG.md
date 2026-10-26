@@ -258,6 +258,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   demo IdP's login page (`tests/app/idp`) shows them too, for the OpenID certification
   `oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` review modules.
 ### Changed
+* #1122 The application form explains its easy-to-misconfigure fields: `client_type`,
+  `skip_authorization` and `algorithm` now have help text, and the `algorithm` field is labelled
+  "JWT signing algorithm" instead of "Algorithm". The default algorithm is unchanged. Migration
+  `0033` records the new help text; swapped application models need a migration for it too.
 * #1896 `Application.clean()` now validates each entry in `post_logout_redirect_uris` with the
   `REDIRECT_URI_VALIDATOR` (by default against `ALLOWED_REDIRECT_URI_SCHEMES`), reporting problems on
   that field, as it already did for `redirect_uris`. While RP-Initiated Logout is enabled with
