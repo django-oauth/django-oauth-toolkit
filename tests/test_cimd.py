@@ -1748,6 +1748,68 @@ def test_fetcher_rejects_non_object_json():
         SafeMetadataFetcher()._read_document(resp)
 
 
+def test_fetcher_rejects_lone_surrogate():
+    # A JSON escape may decode to a lone UTF-16 surrogate, which no database column can hold.
+    resp = _FakeHTTPResponse(body=rb'{"client_id": "x", "client_name": "Acme\ud800"}')
+    with pytest.raises(CIMDError, match="lone Unicode surrogate"):
+        SafeMetadataFetcher()._read_document(resp)
+
+
+def test_fetcher_accepts_paired_surrogate_escape():
+    resp = _FakeHTTPResponse(body=rb'{"client_id": "x", "client_name": "Acme \ud83d\ude00"}')
+    metadata, _ = SafeMetadataFetcher()._read_document(resp)
+    assert metadata["client_name"] == "Acme \U0001f600"
+
+
+def _serve_document(mocker, body):
+    """Make SafeMetadataFetcher receive *body* for any URL without touching the network."""
+    mocker.patch(
+        "oauth2_provider.core.safe_fetch.socket.getaddrinfo",
+        return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+
+    class _Pool:
+        def __init__(self, **kwargs):
+            pass
+
+        def urlopen(self, method, path, **kwargs):
+            return _FakeHTTPResponse(body=body)
+
+        def close(self):
+            pass
+
+    mocker.patch("oauth2_provider.core.safe_fetch.urllib3.HTTPSConnectionPool", _Pool)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_lone_surrogate_document_is_an_invalid_document(cimd_enabled, mocker, caplog):
+    """A lone surrogate is refused as invalid metadata, not degraded as an unexpected error."""
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(SafeMetadataFetcher)
+    body = json.dumps(_document()).replace("Example CIMD Client", r"Acme\ud800").encode()
+    _serve_document(mocker, body)
+
+    with caplog.at_level(logging.INFO, logger="oauth2_provider.authorization_server.cimd"):
+        assert resolve_cimd_application(CLIENT_URL, _oauthlib_request()) is None
+    assert not Application.objects.filter(client_id=CLIENT_URL).exists()
+    assert cache.get(cimd._backoff_cache_key(CLIENT_URL))
+    assert "CIMD resolution failed" in caplog.text
+    assert "lone Unicode surrogate" in caplog.text
+    assert "Unexpected error" not in caplog.text
+    assert all(record.levelno < logging.ERROR for record in caplog.records)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_resolve_paired_surrogate_escape_registers(cimd_enabled, mocker):
+    cimd_enabled.CIMD_METADATA_FETCHER = _fetcher(SafeMetadataFetcher)
+    body = json.dumps(_document()).replace("Example CIMD Client", r"Acme \ud83d\ude00").encode()
+    _serve_document(mocker, body)
+
+    app = resolve_cimd_application(CLIENT_URL, _oauthlib_request())
+    assert app is not None
+    assert app.name == "Acme \U0001f600"
+    assert cache.get(cimd._backoff_cache_key(CLIENT_URL)) is None
+
+
 def test_fetcher_accepts_structured_json_suffix():
     resp = _FakeHTTPResponse(
         headers={"Content-Type": "application/client-metadata+json"},
