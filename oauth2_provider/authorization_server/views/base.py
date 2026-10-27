@@ -218,8 +218,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 if not is_valid_resource_uri(resource_uri):
                     # Built here, before oauthlib sees the request, so the redirect URI
                     # has to be checked first (RFC 6749 §4.1.2.1).
+                    core = self.get_oauthlib_core()
                     try:
-                        self.get_oauthlib_core().validate_authorization_redirect_uri(
+                        credentials["redirect_uri"] = core.validate_authorization_redirect_uri(
                             self.request, credentials
                         )
                     except OAuthlibFatalClientError as fatal:

@@ -18,7 +18,7 @@ from jwcrypto import jwk, jwt
 from jwcrypto.common import base64url_encode
 from oauthlib.oauth2.rfc6749 import errors as oauthlib_errors
 
-from oauth2_provider.core.backends_oauthlib import get_oauthlib_core
+from oauth2_provider.core.backends_oauthlib import OAuthLibCore, get_oauthlib_core
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
 from oauth2_provider.models import (
     get_access_token_model,
@@ -804,6 +804,26 @@ class TestConsentDenialRedirectUri(BaseTest):
         self.assertEqual(params["error"], ["invalid_target"])
         self.assertEqual(params["state"], ["s"])
         self.assertEqual(Grant.objects.count(), 0)
+
+    def test_errors_redirect_to_the_uri_the_validation_returns(self):
+        # Denial and invalid_target both redirect to the URI returned by
+        # validate_authorization_redirect_uri, which may be the client's default.
+        cases = (
+            ({"allow": False}, "access_denied"),
+            ({"allow": True, "resource": "/not/absolute"}, "invalid_target"),
+        )
+        for overrides, error in cases:
+            with self.subTest(error=error):
+                with mock.patch.object(
+                    OAuthLibCore, "validate_authorization_redirect_uri", return_value="http://localhost"
+                ) as validate:
+                    response = self._post_consent(**overrides)
+
+                validate.assert_called_once()
+                self.assertEqual(response.status_code, 302)
+                location = urlparse(response["Location"])
+                self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://localhost")
+                self.assertEqual(parse_qs(location.query)["error"], [error])
 
     def _deny_through_backend(self, **credentials):
         # Views that bypass AuthorizationView.form_valid call the backend directly.
