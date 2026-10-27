@@ -706,8 +706,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([RFC 6749 §4.1.2.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1)).
   The impact is low: the consent form is a CSRF-protected POST, so another site cannot submit
   a tampered `redirect_uri` for a signed-in resource owner. A custom `OAUTH2_BACKEND_CLASS` that
-  overrides `create_authorization_response` must call the new
-  `OAuthLibCore.validate_authorization_redirect_uri()` to keep this fix.
+  overrides `create_authorization_response` must redirect a denial to the URI returned by the new
+  `OAuthLibCore.validate_authorization_redirect_uri()` (the client's default redirect URI when the
+  request has none), not to `credentials["redirect_uri"]`, to keep this fix.
 
 ## [3.4.1] - 2026-08-21
 
