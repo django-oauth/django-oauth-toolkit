@@ -1742,6 +1742,15 @@ def test_fetcher_rejects_bad_json():
         SafeMetadataFetcher()._read_document(resp)
 
 
+def test_fetcher_rejects_deeply_nested_json(oauth2_settings):
+    """Nesting past the recursion limit raises RecursionError, not ValueError; still a CIMDError."""
+    depth = 100000
+    oauth2_settings.CIMD_MAX_DOCUMENT_SIZE = 2 * depth
+    resp = _FakeHTTPResponse(body=b"[" * depth + b"]" * depth)
+    with pytest.raises(CIMDError):
+        SafeMetadataFetcher()._read_document(resp)
+
+
 def test_fetcher_rejects_non_object_json():
     resp = _FakeHTTPResponse(body=b'["valid json", "but not an object"]')
     with pytest.raises(CIMDError):
