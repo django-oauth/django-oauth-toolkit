@@ -641,10 +641,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming the RFC 7591 metadata, explaining that the secret cannot be recovered and a new client must
   be registered. It was refused before too, but with an error naming the model fields
   `client_secret` and `hash_client_secret`.
-* #1892 Denying consent (and the consent-form `invalid_target` error) no longer redirects to a
-  `redirect_uri` that is not absolute or not registered for the client. Such requests get a
-  non-redirecting `invalid_request` error page, as oauthlib does on the approval path
-  ([RFC 6749 §4.1.2.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1)).
 
 ### Security
 * #1451 The token introspection endpoint could be called by a caller that had not really
@@ -704,6 +700,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A form configured through `APPLICATION_FORM_CLASS` must not expose `can_introspect`, neither
   through `Meta.fields = "__all__"` nor through `Meta.exclude`, or an owner can turn back on a flag
   an operator turned off.
+* #1892 Denying consent (and the consent-form `invalid_target` error) no longer redirects to a
+  `redirect_uri` that is not absolute or not registered for the client. Such requests get a
+  non-redirecting `invalid_request` error page, as oauthlib does on the approval path
+  ([RFC 6749 §4.1.2.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1)).
+  The impact is low: the consent form is a CSRF-protected POST, so another site cannot submit
+  a tampered `redirect_uri` for a signed-in resource owner. A custom `OAUTH2_BACKEND_CLASS` that
+  overrides `create_authorization_response` must call the new
+  `OAuthLibCore.validate_authorization_redirect_uri()` to keep this fix.
 
 ## [3.4.1] - 2026-08-21
 

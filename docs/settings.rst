@@ -64,6 +64,10 @@ The import string for the ``oauthlib_backend_class`` used by the view mixins, to
 (The pre-4.0 alias ``oauth2_provider.oauth2_backends.OAuthLibCore`` still resolves but is
 deprecated.)
 
+A custom backend that overrides ``create_authorization_response()`` must call
+``OAuthLibCore.validate_authorization_redirect_uri()`` before raising ``access_denied``, so that a
+denial is never redirected to a ``redirect_uri`` the client has not registered.
+
 .. note::
     The ``oauth2_provider.core.backends_oauthlib.JSONOAuthLibCore`` backend value is deprecated
     (since 3.4.1) and will be removed in 4.0. It makes the OAuth token, introspection, and
