@@ -407,6 +407,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* The Dynamic Client Registration endpoints (RFC 7591 `POST` and RFC 7592 `PUT`) and the CIMD
+  metadata fetcher now answer a JSON document nested deeply enough to exhaust the interpreter's
+  recursion limit with HTTP 400 `invalid_client_metadata` (respectively a `CIMDError`) instead of
+  letting the `RecursionError` escape as HTTP 500.
 * A CIMD client ID metadata document whose JSON escapes decode to a lone UTF-16 surrogate (for
   example `"client_name": "Acme\ud800"`) is now refused as an invalid document: resolution logs
   it at INFO and arms the failure backoff like any other bad document. Before, the value passed

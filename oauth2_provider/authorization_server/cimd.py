@@ -266,7 +266,7 @@ class SafeMetadataFetcher:
 
         try:
             data = json.loads(body)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ValueError, RecursionError) as exc:
             raise CIMDError("client_id document is not valid JSON") from exc
         if not isinstance(data, dict):
             raise CIMDError("client_id document must be a JSON object")

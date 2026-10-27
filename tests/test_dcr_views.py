@@ -999,6 +999,21 @@ class TestDynamicClientRegistration(TestCase):
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
 
+    def test_register_deeply_nested_json_is_400(self):
+        """A deeply nested JSON body → 400, not a 500.
+
+        json.loads() raises RecursionError, not ValueError, once nesting exceeds
+        the interpreter's recursion limit; _parse_metadata must catch it too.
+        """
+        self.client.force_login(self.user)
+        depth = 100000
+        response = self.client.post(
+            _register_url(), data="[" * depth + "]" * depth, content_type="application/json"
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
+        assert not Application.objects.exists()
+
     def test_register_empty_grant_types_is_400(self):
         """grant_types=[] → 400."""
         self.client.force_login(self.user)

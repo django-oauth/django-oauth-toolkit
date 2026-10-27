@@ -183,7 +183,7 @@ def _parse_metadata(body):
     """
     try:
         data = json.loads(body)
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, RecursionError):
         return None, _error_response("invalid_client_metadata", "Request body must be valid JSON")
     if not isinstance(data, dict):
         return None, _error_response("invalid_client_metadata", "Request body must be a JSON object")
