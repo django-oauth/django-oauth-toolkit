@@ -195,7 +195,9 @@ class OAuthLibCore:
                 # access_denied is raised before oauthlib's create_authorization_response,
                 # which is what checks the redirect URI on the approval path.
                 try:
-                    self.validate_authorization_redirect_uri(request, credentials)
+                    credentials["redirect_uri"] = self.validate_authorization_redirect_uri(
+                        request, credentials
+                    )
                 except oauth2.FatalClientError as error:
                     # Wrapped here: the handler below would attach the rejected redirect_uri.
                     raise FatalClientError(error=error)
@@ -247,20 +249,31 @@ class OAuthLibCore:
                 error.response_mode = credentials.get("response_mode")
             raise OAuthToolkitError(error=error, redirect_uri=credentials["redirect_uri"])
 
-    def validate_authorization_redirect_uri(self, request: HttpRequest, credentials: dict) -> None:
+    def validate_authorization_redirect_uri(self, request: HttpRequest, credentials: dict) -> str:
         """
-        Check that an authorization error may be redirected to ``credentials["redirect_uri"]``.
+        Return the redirect URI an authorization error may be redirected to.
 
         oauthlib checks the client and the redirect URI in its own
         create_authorization_response, so errors the toolkit raises before that runs
-        (access_denied, invalid_target) have to be checked here first. A failure raises
-        oauthlib's ``InvalidClientIdError``, ``InvalidRedirectURIError`` or
-        ``MismatchingRedirectURIError``, which are fatal and are shown to the resource
-        owner instead of redirected (RFC 6749 §4.1.2.1).
+        (access_denied, invalid_target) have to be checked here first. The checks and
+        errors are those of oauthlib's grants:
+
+        * no ``client_id``: ``MissingClientIdError``; a client ``validate_client_id``
+          rejects: ``InvalidClientIdError``;
+        * a ``redirect_uri`` that is not absolute: ``InvalidRedirectURIError``; one
+          ``validate_redirect_uri`` rejects: ``MismatchingRedirectURIError``;
+        * no ``redirect_uri``: the client's default (``get_default_redirect_uri``) is
+          returned instead, with ``MissingRedirectURIError`` if there is none and
+          ``InvalidRedirectURIError`` if it is not absolute.
+
+        These errors are fatal: they are shown to the resource owner instead of
+        redirected (RFC 6749 §4.1.2.1).
 
         :param request: The current django.http.HttpRequest object
         :param credentials: Authorization credentials dictionary containing
                            `client_id` and `redirect_uri`
+        :return: ``credentials["redirect_uri"]``, or the client's default redirect URI
+                 if it is missing
         """
         uri, http_method, body, headers = self._extract_params(request)
         oauthlib_request = OauthlibRequest(uri=uri, http_method=http_method, body=body, headers=headers)
@@ -276,12 +289,22 @@ class OAuthLibCore:
         # callers must not attach the rejected one (create_authorization_response and
         # AuthorizationView.form_valid do not).
         validator = self.server.request_validator
-        if not client_id or not validator.validate_client_id(client_id, oauthlib_request):
+        if not client_id:
+            raise oauth2.MissingClientIdError()
+        if not validator.validate_client_id(client_id, oauthlib_request):
             raise oauth2.InvalidClientIdError()
-        if not redirect_uri or not is_absolute_uri(redirect_uri):
+        if redirect_uri is None:
+            redirect_uri = validator.get_default_redirect_uri(client_id, oauthlib_request)
+            if not redirect_uri:
+                raise oauth2.MissingRedirectURIError()
+            if not is_absolute_uri(redirect_uri):
+                raise oauth2.InvalidRedirectURIError()
+            return redirect_uri
+        if not is_absolute_uri(redirect_uri):
             raise oauth2.InvalidRedirectURIError()
         if not validator.validate_redirect_uri(client_id, redirect_uri, oauthlib_request):
             raise oauth2.MismatchingRedirectURIError()
+        return redirect_uri
 
     def create_device_authorization_response(self, request: HttpRequest):
         uri, http_method, body, headers = self._extract_params(request)
