@@ -194,7 +194,11 @@ class OAuthLibCore:
             if not allow:
                 # access_denied is raised before oauthlib's create_authorization_response,
                 # which is what checks the redirect URI on the approval path.
-                self.validate_authorization_redirect_uri(request, credentials)
+                try:
+                    self.validate_authorization_redirect_uri(request, credentials)
+                except oauth2.FatalClientError as error:
+                    # Wrapped here: the handler below would attach the rejected redirect_uri.
+                    raise FatalClientError(error=error)
                 raise oauth2.AccessDeniedError(state=credentials.get("state", None))
 
             # add current user to credentials. this will be used by OAUTH2_VALIDATOR_CLASS
@@ -268,7 +272,9 @@ class OAuthLibCore:
         oauthlib_request.redirect_uri = redirect_uri
         oauthlib_request.client = None
 
-        # The errors are raised without the request, so they never carry its redirect_uri.
+        # The errors are raised without the request, so they carry no redirect_uri, and
+        # callers must not attach the rejected one (create_authorization_response and
+        # AuthorizationView.form_valid do not).
         validator = self.server.request_validator
         if not client_id or not validator.validate_client_id(client_id, oauthlib_request):
             raise oauth2.InvalidClientIdError()

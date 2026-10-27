@@ -752,6 +752,7 @@ class TestConsentDenialRedirectUri(BaseTest):
         self.assertContains(response, "Error: invalid_request", status_code=400)
         self.assertContains(response, description, status_code=400)
         self.assertNotIn(b"attacker.example", response.content)
+        self.assertNotIn("attacker.example", response.context_data["url"])
 
     def test_deny_unregistered_redirect_uri_is_not_redirected(self):
         response = self._post_consent(redirect_uri="http://attacker.example/cb")
@@ -810,6 +811,7 @@ class TestConsentDenialRedirectUri(BaseTest):
 
         oauthlib_error = raised.exception.oauthlib_error
         self.assertIsInstance(oauthlib_error, oauthlib_errors.MismatchingRedirectURIError)
+        self.assertIsNone(oauthlib_error.redirect_uri)
 
     def test_deny_validates_the_consent_request(self):
         with mock.patch.object(
