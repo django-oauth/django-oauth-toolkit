@@ -407,6 +407,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged in every case, only subclassing and patching are affected.
 
 ### Fixed
+* A CIMD client ID metadata document whose JSON escapes decode to a lone UTF-16 surrogate (for
+  example `"client_name": "Acme\ud800"`) is now refused as an invalid document: resolution logs
+  it at INFO and arms the failure backoff like any other bad document. Before, the value passed
+  the metadata checks and failed inside `Application.save()`, which was logged as an unexpected
+  error with a full stack trace. The check mirrors the one Dynamic Client Registration (#1930) and
+  request objects already make.
 * #1919 Dynamic Client Registration rejects a lone Unicode surrogate while parsing the
   metadata, on POST and on RFC 7592 PUT, with HTTP 400 `invalid_client_metadata`. A rejected
   PUT leaves the stored URIs in place. `client_name` and `client_uri` used to pass their own
