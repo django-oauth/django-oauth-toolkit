@@ -764,6 +764,16 @@ class TestConsentDenialRedirectUri(BaseTest):
 
         self._assert_fatal_invalid_request(response, oauthlib_errors.InvalidRedirectURIError.description)
 
+    def test_deny_unusable_client_is_not_redirected(self):
+        with mock.patch.object(Application, "is_usable", return_value=False):
+            response = self._post_consent()
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.InvalidClientIdError.description)
+        self.assertEqual(
+            response.context_data["url"],
+            "?error=invalid_request&error_description=Invalid+client_id+parameter+value.",
+        )
+
     def test_deny_registered_redirect_uri_returns_access_denied(self):
         response = self._post_consent()
 
