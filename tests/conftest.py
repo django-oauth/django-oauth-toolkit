@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from django import VERSION
 from django.conf import settings as test_settings
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -348,6 +347,4 @@ def django_login_required_middleware(settings, request):
     if "nologinrequiredmiddleware" in request.keywords:
         return
 
-    # Django 5.1 introduced LoginRequiredMiddleware
-    if VERSION >= (5, 1):
-        settings.MIDDLEWARE = [*settings.MIDDLEWARE, "django.contrib.auth.middleware.LoginRequiredMiddleware"]
+    settings.MIDDLEWARE = [*settings.MIDDLEWARE, "django.contrib.auth.middleware.LoginRequiredMiddleware"]
