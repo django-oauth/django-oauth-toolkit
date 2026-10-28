@@ -406,6 +406,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `requests`, `datetime` and `AccessToken`. See `docs/upgrade.rst` for the full list; runtime behavior
   is unchanged in every case, only subclassing and patching are affected.
 
+### Removed
+* #1944 Remove support for Django 4.2, 5.0 and 5.1 and for Python 3.10, which have reached end of
+  life. Django 5.2 and Python 3.11 are now the minimum supported versions.
+
 ### Fixed
 * The Dynamic Client Registration endpoints (RFC 7591 `POST` and RFC 7592 `PUT`) and the CIMD
   metadata fetcher now answer a JSON document nested deeply enough to exhaust the interpreter's
