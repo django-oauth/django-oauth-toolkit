@@ -402,6 +402,21 @@ testsuite via::
 The first thing the core committers will do is run this command. Any pull request that fails this test suite will be
 **immediately rejected**.
 
+A passing tox env only shows that the suite passes on the versions the env actually installed, which are not always the
+ones in its name. tox installs an env's ``deps`` (the Django pin) first and the ``test`` extra afterwards. Without
+constraints, pip replaces the pinned Django when a test dependency needs a newer one, and the env still passes: for a
+while every Django 4.2, 5.0 and 5.1 env ran Django 5.2 or 6.1 this way (#1944). ``constrain_package_deps`` and
+``use_frozen_constraints`` in ``[testenv]`` now prevent that, so keep them. When you add or change an env, its
+``deps``, or a dependency's version bounds, still check what each affected env really runs::
+
+    tox -e py312-dj52-lite3 --notest
+    .tox/py312-dj52-lite3/bin/python -c "import django; print(django.get_version())"
+
+On CI, each job's log shows the env's ``pip freeze`` after the install steps.
+
+In version-gated code and tests, compare Django versions as tuples (``django.VERSION >= (5, 1)``), never the major and
+minor numbers separately: ``VERSION[0] >= 5 and VERSION[1] >= 1`` is false on Django 6.0.
+
 Standalone backend DB checks
 ----------------------------
 
