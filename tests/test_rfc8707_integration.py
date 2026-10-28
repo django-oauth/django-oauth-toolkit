@@ -1,9 +1,11 @@
+import datetime
 import json
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 
 from oauth2_provider.models import AccessToken, Grant, RefreshToken, get_application_model
 
@@ -1046,3 +1048,73 @@ def test_rfc8707_non_rotating_refresh_preserves_resource(client, oauth2_settings
     # Verify the updated access token preserves resource
     access_token = AccessToken.objects.get(token=refresh_data["access_token"])
     assert access_token.resource == ["https://api.example.com/protected"]
+
+
+API_A = "https://api.example.com/a"
+API_B = "https://api.example.com/b"
+
+
+def _approval_prompt_auto_response(client, granted, requested):
+    """Issue a token bound to *granted*, then send an approval_prompt=auto
+    authorization request for *requested* with the same scopes."""
+    user = get_user_model().objects.create_user("auto_user", "test@example.com", "123456")
+    Application = get_application_model()
+    app = Application.objects.create(
+        name="Auto Approval Client",
+        user=user,
+        client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        redirect_uris="https://client.example.com/callback",
+    )
+    AccessToken.objects.create(
+        user=user,
+        application=app,
+        token="auto-approval-token",
+        expires=timezone.now() + datetime.timedelta(days=1),
+        scope="read write",
+        resource=granted,
+    )
+    client.force_login(user)
+    params = {
+        "client_id": app.client_id,
+        "response_type": "code",
+        "redirect_uri": "https://client.example.com/callback",
+        "scope": "read write",
+        "state": "random_state_string",
+        "approval_prompt": "auto",
+        "resource": requested,
+    }
+    return client.get(f"{reverse('oauth2_provider:authorize')}?{urlencode(params, doseq=True)}")
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings({"PKCE_REQUIRED": False, "REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES": True})
+@pytest.mark.parametrize(
+    "granted,requested,status_code",
+    [
+        pytest.param([], [], 302, id="no-resource-covers-no-resource"),
+        pytest.param([API_A], [API_A], 302, id="same-resource"),
+        pytest.param([API_A, API_B], [API_A], 302, id="subset"),
+        pytest.param([API_A], [API_B], 200, id="different-resource"),
+        pytest.param([API_A], [API_A, API_B], 200, id="superset"),
+        # no resource is a distinct value, not a wildcard (#1916)
+        pytest.param([], [API_A], 200, id="unrestricted-token-vs-bound-request"),
+        pytest.param([API_A], [], 200, id="bound-token-vs-no-resource"),
+    ],
+)
+def test_rfc8707_approval_prompt_auto_requires_covered_resources(
+    client, oauth2_settings, granted, requested, status_code
+):
+    response = _approval_prompt_auto_response(client, granted, requested)
+
+    assert response.status_code == status_code
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings({"PKCE_REQUIRED": False})
+def test_rfc8707_approval_prompt_auto_ignores_resources_by_default(client, oauth2_settings):
+    assert oauth2_settings.REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES is False
+
+    response = _approval_prompt_auto_response(client, [API_A], [API_B])
+
+    assert response.status_code == 302

@@ -642,7 +642,9 @@ them set by the client, so both should decide only from what the server sets in
 every context: the user, the client, the scopes and the claims. If either raises,
 every requested name is listed and the error is logged.
 ``approval_prompt=auto`` asks for consent again when a client requests claims that
-an earlier authorization did not include. The claims request is kept on the access
+an earlier authorization did not include, and, with
+``REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES``, RFC 8707 resources it did not cover
+(see :ref:`skip-auth-form`). The claims request is kept on the access
 token (``AccessToken.claims``), so the ``UserInfo`` endpoint and refreshed tokens
 honour it.
 

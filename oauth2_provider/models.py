@@ -1221,6 +1221,22 @@ class AbstractAccessToken(models.Model):
 
         return resource_scopes.issubset(provided_scopes)
 
+    def allow_resources(self, resources: list[str] | None) -> bool:
+        """
+        Check if the token covers the provided RFC 8707 resources, as a prior
+        authorization for ``approval_prompt=auto``.
+
+        Unlike :meth:`allows_audience`, an empty resource list is not a wildcard
+        here: no resource is a distinct value, so a token without one covers only
+        a request without one, and a request for resources is covered only by a
+        token that names all of them (#1916).
+
+        :param resources: An iterable containing the requested resource URIs
+        """
+        if not resources:
+            return not self.resource
+        return set(resources).issubset(self.resource)
+
     def revoke(self):
         """
         Convenience method to uniform tokens" interface, for now

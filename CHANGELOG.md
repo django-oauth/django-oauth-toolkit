@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1916 New `REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES` setting. When `True`,
+  `approval_prompt=auto` skips consent only when a prior access token covers the
+  requested RFC 8707 resources as well as the scopes, so a grant for resource A no
+  longer auto-approves the same scopes on resource B. No resource is a distinct value,
+  not a wildcard: a token without a resource covers only a request without one, and a
+  resource-bound token does not cover a request without a resource. The scan is
+  exposed as `AccessToken.allow_resources(resources)`. It defaults to `False`, keeping
+  the scopes-only check, and is scheduled to default to `True` in 4.0; see
+  `docs/upgrade.rst`. Known limitation: tokens stand in for consent, so this can
+  re-prompt where the user did consent. A token request can bind a token to a resource
+  the authorization request did not name, or narrow the approved list (consent for
+  A and B, token for A). The next request with the original resources then shows the
+  consent page again. It never skips consent that was not given.
 * #1946 Support for Django 6.1. The PostgreSQL, MySQL and Oracle CI checks move from Django 6.0
   to 6.1, so they now cover Django 5.2 and 6.1.
 * #1902 ID Tokens can carry the `acr` claim (OpenID Connect Core 1.0 §2), reported by the new

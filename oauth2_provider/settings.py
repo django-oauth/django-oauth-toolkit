@@ -120,6 +120,9 @@ DEFAULTS = {
     "ROTATE_REFRESH_TOKEN": True,
     "ERROR_RESPONSE_WITH_SCOPES": False,
     "REQUEST_APPROVAL_PROMPT": "force",
+    # approval_prompt=auto also requires a prior grant to cover the requested RFC 8707
+    # resources. Scheduled to default to True in 4.0 (#1916).
+    "REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES": False,
     # Redirect URI / scheme validation
     "ALLOWED_REDIRECT_URI_SCHEMES": ["http", "https"],
     "ALLOWED_SCHEMES": ["https"],

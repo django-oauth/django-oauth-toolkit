@@ -867,14 +867,17 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 # and the same individual claims (OIDC Core 5.5), so newly requested
                 # claims are always presented to the End-User. A prompt=none request
                 # that only reaches this scan because asking is forbidden (force)
-                # must have its RFC 8707 resources covered too; auto keeps its
-                # scopes-only scan, which ADR 0001 changes behind a setting.
-                resources_checked = require_approval != "auto"
+                # must have its RFC 8707 resources covered too; auto checks them only
+                # with REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES (#1916, ADR 0001).
+                resources_checked = (
+                    require_approval != "auto" or oauth2_settings.REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES
+                )
+                requested_resources = credentials.get("resource")
                 for token in tokens:
                     if (
                         token.allow_scopes(scopes)
                         and requested_claims <= requested_claim_names(token.claims)
-                        and (not resources_checked or self._resources_covered(credentials, token.resource))
+                        and (not resources_checked or token.allow_resources(requested_resources))
                     ):
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request,
@@ -899,24 +902,6 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
         )
         return self.render_to_response(self.get_context_data(**kwargs))
-
-    @staticmethod
-    def _resources_covered(credentials: dict, granted: list[str]) -> bool:
-        """Whether a token for the RFC 8707 resources *granted* covers the ones
-        this request asks for.
-
-        No resource is a distinct value (an unrestricted audience), not a
-        wildcard: a request without one is covered only by a token without one,
-        and a request for resources only by a token that names all of them
-        (ADR 0001, coverage rule). A token records the audience it was issued
-        for, which the token request may have narrowed from what the user
-        approved, so a narrowed token does not cover a request without a
-        resource.
-        """
-        requested = set(credentials.get("resource") or [])
-        if not requested:
-            return not granted
-        return requested <= set(granted)
 
     def handle_prompt_login(self) -> HttpResponse:
         return self._redirect_to_login()
