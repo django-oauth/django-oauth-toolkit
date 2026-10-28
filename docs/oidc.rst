@@ -836,7 +836,18 @@ client's pre-configured consent, and ``force`` cannot ask again when OpenID
 Connect Core 1.0 section 3.1.2.1 forbids asking. Any other ``prompt=none``
 request, including one without the ``openid`` scope, gets a
 ``consent_required`` error (section 3.1.2.6) at its redirect URI instead of the
-consent page. See :ref:`skip-auth-form`.
+consent page. See :ref:`skip-auth-form`. For an OpenID Connect request, oauthlib
+also asks the validator's ``validate_silent_login()`` and
+``validate_silent_authorization()``, and a ``False`` from either answers the
+request with ``login_required`` or ``consent_required`` respectively.
+``OAuth2Validator`` returns ``True`` from both, leaving these decisions to the
+authorization endpoint. oauthlib asks them twice. The first time is while the
+request is validated, and oauthlib's request carries no user then:
+``request.user`` is ``None``. For an anonymous user, a request that still
+needs consent, and the PAR endpoint, that is the only time. The second is when
+the response is created, with ``request.user`` set to the logged-in user. An
+override that decides per user should return ``True`` while ``request.user`` is
+``None`` and decide on the second call.
 
 Under ``force``, the token must also be for the same RFC 8707 ``resource``
 values: a token without a resource covers only a request without one, and a

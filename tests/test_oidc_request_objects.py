@@ -805,10 +805,8 @@ class TestRequestObjectsAnonymous(TestRequestObjects):
         self.assertEqual(params["state"], ["inner_state"])
         self.assertFalse(StoredAuthorizationRequest.objects.exists())
 
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-    def test_prompt_none_is_login_required_whatever_the_validator_says(self, *_mocks):
-        # A validator that allows a silent login does not make an anonymous
+    def test_prompt_none_is_login_required_whatever_the_validator_says(self):
+        # OAuth2Validator allows a silent login, which does not make an anonymous
         # end-user logged in: prompt=none is still answered with login_required.
         response = self.authorize(request=unsigned(self.claims(prompt="none")))
         self.assertEqual(response.status_code, 302)

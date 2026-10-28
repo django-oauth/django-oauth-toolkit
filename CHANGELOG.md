@@ -420,6 +420,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
+  on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
+  `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the
+  authorization endpoint, for logged-in and anonymous users alike, and from the pushed
+  authorization request endpoint. Both hooks now return `True` and leave the login and consent
+  decisions to `AuthorizationView`, which handles such a request as it does one without the
+  `openid` scope (`login_required` for an anonymous user, and the #1928 consent handling for a
+  logged-in one). oauthlib asks the hooks twice: while the request is validated, with no user on
+  its request, and when the response is created, with `request.user` set. An override that
+  decides per user should decide on the second call. Validators that override the hooks are
+  unaffected.
 * #1928 An authenticated authorization request with `prompt=none` that still
   needs consent redirects with `error=consent_required` instead of rendering
   the consent page. OpenID Connect Core 1.0 §3.1.2.1 forbids any consent UI
