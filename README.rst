@@ -55,7 +55,7 @@ Requirements
 ------------
 
 * Python 3.11, 3.12, 3.13 or 3.14
-* Django 5.2 or 6.0
+* Django 5.2, 6.0 or 6.1
 * oauthlib 3.2.2+
 
 Installation
