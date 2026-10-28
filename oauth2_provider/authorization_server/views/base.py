@@ -875,6 +875,9 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         except OAuthToolkitError as error:
             return self.error_response(error, application)
 
+        if "none" in prompt:
+            return self._consent_required_response(credentials)
+
         # Only now that the consent page is rendered, so skipped consent pays nothing.
         kwargs["requested_claims"] = (
             self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
@@ -1193,15 +1196,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         redirect_to = parsed_registration._replace(query=urlencode(registration_query)).geturl()
         return HttpResponseRedirect(redirect_to)
 
-    def _login_required_response(self, credentials: dict) -> HttpResponse:
-        """Redirect a ``login_required`` error to the client (OpenID Connect
-        Core 1.0 section 3.1.2.6), for a request that oauthlib has validated.
+    def _oidc_error_redirect(self, credentials: dict, error: str) -> HttpResponse:
+        """Redirect an OIDC error to the client (OpenID Connect Core 1.0
+        section 3.1.2.6), for a request that oauthlib has validated.
         """
         # oauthlib has confirmed redirect_uri is registered for the client.
         redirect_uri = credentials["redirect_uri"]
         application = get_application_model().objects.get(client_id=credentials["client_id"])
 
-        response_parameters = {"error": "login_required"}
+        response_parameters = {"error": error}
 
         # REQUIRED if the Authorization Request included the state parameter.
         # Set to the value received from the Client
@@ -1224,6 +1227,18 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             issuer = oauth2_settings.oauth2_authorization_server_issuer(self.request)
             redirect_to = add_iss_to_redirect(redirect_to, issuer)
         return self.redirect(redirect_to, application)
+
+    def _login_required_response(self, credentials: dict) -> HttpResponse:
+        """Redirect a ``login_required`` error to the client (OpenID Connect
+        Core 1.0 section 3.1.2.6), for a request that oauthlib has validated.
+        """
+        return self._oidc_error_redirect(credentials, "login_required")
+
+    def _consent_required_response(self, credentials: dict) -> HttpResponse:
+        """Redirect a ``consent_required`` error to the client (OpenID Connect
+        Core 1.0 section 3.1.2.6), for a request that oauthlib has validated.
+        """
+        return self._oidc_error_redirect(credentials, "consent_required")
 
     def handle_no_permission(self):
         """

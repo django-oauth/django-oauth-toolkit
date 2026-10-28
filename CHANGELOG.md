@@ -413,6 +413,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1928 An authenticated OpenID Connect request with `prompt=none` that requires consent is answered
+  with a `consent_required` error redirect (OpenID Connect Core 1.0 §3.1.2.6) rather than rendering
+  the consent form.
 * #1938 `TokenView.device_flow_token_response` now checks `device.is_expired()` when polling `/o/token/`,
   so polling after a device grant's deadline returns `expired_token` (RFC 8628 §3.5) instead of
   `authorization_pending`, and an authorized grant can no longer be exchanged for tokens after its

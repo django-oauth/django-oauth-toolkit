@@ -1170,6 +1170,75 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         parsed_query = parse_qs(urlparse(response["Location"]).query)
         self.assertIn("invalid_request", parsed_query["error"])
 
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_authenticated_user_needing_consent_returns_consent_required(self, *_mocks):
+        """
+        OpenID Connect Core 1.0 section 3.1.2.1 and 3.1.2.6:
+        When an authenticated user requests prompt=none but the authorization
+        request cannot be completed without displaying user interface for consent,
+        the server MUST NOT render the consent UI and MUST return consent_required.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.application.skip_authorization = False
+        self.application.save()
+        self.client.login(username="test_user", password="123456")
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid",
+            "prompt": "none",
+            "redirect_uri": "http://example.org",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("http://example.org"))
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
+
+    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
+    def test_prompt_none_authenticated_user_insufficient_prior_token_returns_consent_required(self, *_mocks):
+        """
+        When an authenticated user requests prompt=none with approval_prompt=auto,
+        but existing tokens do not cover the requested scope, consent is required.
+        The server MUST return consent_required instead of rendering the consent UI.
+        """
+        self.oauth2_settings.PKCE_REQUIRED = False
+        self.application.skip_authorization = False
+        self.application.save()
+        AccessToken.objects.create(
+            user=self.test_user,
+            token="1234567890",
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="openid",
+        )
+        self.client.login(username="test_user", password="123456")
+
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid read",
+            "approval_prompt": "auto",
+            "prompt": "none",
+            "redirect_uri": "http://example.org",
+        }
+
+        response = self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("http://example.org"))
+        parsed_query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
+
 
 class BaseAuthorizationCodeTokenView(BaseTest):
     def get_auth(self, scope="read write"):
