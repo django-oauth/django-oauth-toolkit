@@ -260,6 +260,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   demo IdP's login page (`tests/app/idp`) shows them too, for the OpenID certification
   `oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` review modules.
 ### Changed
+* #1928 `REQUEST_APPROVAL_PROMPT = "force"` (the default) and `approval_prompt=force` no longer
+  apply to a request with `prompt=none`, which must not show the consent page (OpenID Connect Core
+  1.0 §3.1.2.1). Such a request is now answered from remembered consent, an unexpired access token
+  for the user and client that covers the requested scopes, claims and RFC 8707 resources, and
+  otherwise with `consent_required`. Before, it showed the consent page. A deployment that relied on
+  `force` to never issue tokens without a page should know that a client holding such a token can
+  now renew silently.
 * #1896 `Application.clean()` now validates each entry in `post_logout_redirect_uris` with the
   `REDIRECT_URI_VALIDATOR` (by default against `ALLOWED_REDIRECT_URI_SCHEMES`), reporting problems on
   that field, as it already did for `redirect_uris`. While RP-Initiated Logout is enabled with
@@ -413,6 +420,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1928 An authenticated authorization request with `prompt=none` that still
+  needs consent redirects with `error=consent_required` instead of rendering
+  the consent page. OpenID Connect Core 1.0 §3.1.2.1 forbids any consent UI
+  when `prompt` is `none`, and §3.1.2.6 defines `consent_required` for that
+  case. Clients with `skip_authorization`, and clients the user has already
+  granted an unexpired access token for the requested scopes and claims (and,
+  under `force`, RFC 8707 resources), get their response without a page: under
+  `prompt=none` that grant is the client's pre-configured consent whatever
+  `approval_prompt` or `REQUEST_APPROVAL_PROMPT` says. An implicit
+  `response_type=id_token` client
+  has no access token, so it gets `consent_required` unless it has
+  `skip_authorization`.
 * #1938 `TokenView.device_flow_token_response` now checks `device.is_expired()` when polling `/o/token/`,
   so polling after a device grant's deadline returns `expired_token` (RFC 8628 §3.5) instead of
   `authorization_pending`, and an authorized grant can no longer be exchanged for tokens after its

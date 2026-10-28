@@ -1098,6 +1098,247 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertIn("login_required", parsed_query["error"])
         self.assertIn("random_state_string", parsed_query["state"])
 
+    def _prompt_none(self, **parameters):
+        """A signed-in user's OpenID Connect authorization request with prompt=none.
+
+        The view decides the login and consent outcome from the Django session
+        and the user's grants; the validator's silent-login hooks, which oauthlib
+        calls for an OpenID Connect prompt=none request, are taken as passing
+        (see #1928).
+        """
+        self.client.login(username="test_user", password="123456")
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid read",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+            **parameters,
+        }
+        silent = {"return_value": True, "create": True}
+        with (
+            mock.patch.object(OAuth2Validator, "validate_silent_login", **silent),
+            mock.patch.object(OAuth2Validator, "validate_silent_authorization", **silent),
+        ):
+            return self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+    def _grant(self, scope="openid read", resource=None):
+        """A token the user granted the application earlier, still valid."""
+        return AccessToken.objects.create(
+            user=self.test_user,
+            application=self.application,
+            token="granted-earlier",
+            scope=scope,
+            resource=resource or [],
+            expires=timezone.now() + datetime.timedelta(days=1),
+        )
+
+    @staticmethod
+    def _response_parameters(response):
+        location = urlparse(response["Location"])
+        return parse_qs(location.fragment or location.query)
+
+    def test_prompt_none_authenticated_without_consent_is_consent_required(self):
+        """A signed-in user with prompt=none must not see the consent page.
+
+        OpenID Connect Core 1.0 section 3.1.2.1 forbids any consent UI when
+        prompt is none. If the client has no prior consent, the response is
+        consent_required (section 3.1.2.6).
+        """
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("http://example.org"))
+        parsed_query = self._response_parameters(response)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_skip_authorization_still_returns_a_code(self):
+        """An in-house client that skips consent still gets a code for prompt=none."""
+        self.application.skip_authorization = True
+        self.application.save()
+
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_prior_grant_returns_a_code(self):
+        """A grant the user already made is the client's pre-configured consent.
+
+        OpenID Connect Core 1.0 section 3.1.2.1 only calls for an error when
+        the client has no pre-configured consent, so a standard Relying Party
+        renewing silently (no approval_prompt, REQUEST_APPROVAL_PROMPT left at
+        its default of force) gets a code rather than consent_required.
+        """
+        self._grant()
+
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_prior_grant_approval_prompt_auto_returns_a_code(self):
+        self._grant()
+
+        response = self._prompt_none(approval_prompt="auto")
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_prior_grant_for_narrower_scopes_is_consent_required(self):
+        """A grant that does not cover the scopes requested is not consent for them."""
+        self._grant(scope="openid")
+
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_hybrid_consent_required_in_fragment(self):
+        """A hybrid flow error goes in the fragment, like its successful response
+        (OpenID Connect Core 1.0 section 3.3.2.6)."""
+        self.application.authorization_grant_type = Application.GRANT_OPENID_HYBRID
+        self.application.save()
+
+        response = self._prompt_none(response_type="code id_token", nonce="random_nonce_string")
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        parsed_fragment = parse_qs(location.fragment)
+        self.assertEqual(parsed_fragment["error"], ["consent_required"])
+        self.assertEqual(parsed_fragment["state"], ["random_state_string"])
+
+    def test_prompt_none_revoked_grant_is_consent_required(self):
+        """A grant the user revoked is not consent any more."""
+        self._grant().revoke()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_expired_grant_is_consent_required(self):
+        token = self._grant()
+        token.expires = timezone.now() - datetime.timedelta(seconds=1)
+        token.save()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_another_users_grant_is_consent_required(self):
+        token = self._grant()
+        token.user = self.dev_user
+        token.save()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_another_clients_grant_is_consent_required(self):
+        token = self._grant()
+        token.application = Application.objects.create(
+            name="Other Application",
+            redirect_uris="http://example.org",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+        token.save()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_prior_grant_approval_prompt_force_returns_a_code(self):
+        """approval_prompt=force cannot ask again when prompt=none forbids asking."""
+        self._grant()
+
+        parsed_query = self._response_parameters(self._prompt_none(approval_prompt="force"))
+
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_consent_required_carries_iss(self):
+        """RFC 9207 section 2: iss is on error responses too."""
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["iss"], ["http://localhost/o"])
+
+    def test_prompt_none_without_openid_is_consent_required(self):
+        """A plain OAuth 2.0 request with prompt=none is answered like an OpenID
+        Connect one, as the anonymous case already is with login_required."""
+        parsed_query = self._response_parameters(self._prompt_none(scope="read"))
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_grant_for_another_resource_is_consent_required(self):
+        """RFC 8707: consent for one resource is not consent for another."""
+        self._grant(resource=["https://a.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none(resource="https://b.example/api"))
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertFalse(Grant.objects.exists())
+
+    def test_prompt_none_resource_bound_grant_does_not_cover_an_unrestricted_request(self):
+        """A request without a resource asks for an unrestricted audience, which a
+        grant for one resource does not cover."""
+        self._grant(resource=["https://a.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertFalse(Grant.objects.exists())
+
+    def test_prompt_none_unrestricted_grant_does_not_cover_a_resource_request(self):
+        """No resource is a distinct value, not a wildcard (ADR 0001)."""
+        self._grant()
+
+        parsed_query = self._response_parameters(self._prompt_none(resource="https://a.example/api"))
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertFalse(Grant.objects.exists())
+
+    def test_prompt_none_grant_covering_the_resource_returns_a_code(self):
+        self._grant(resource=["https://a.example/api", "https://b.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none(resource="https://a.example/api"))
+
+        self.assertNotIn("error", parsed_query)
+        grant = Grant.objects.get(code=parsed_query["code"][0])
+        self.assertEqual(grant.resource, ["https://a.example/api"])
+
+    def test_prompt_none_approval_prompt_auto_keeps_its_scopes_only_scan(self):
+        """approval_prompt=auto answers prompt=none as it answers any request: a
+        token narrowed to a resource at the token endpoint, for an approval that
+        named none, still counts (ADR 0001 changes auto behind a setting)."""
+        self._grant(resource=["https://a.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none(approval_prompt="auto"))
+
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
     def test_prompt_none_open_redirect_no_client(self):
         """
         Regression test for the prompt=none open redirect.

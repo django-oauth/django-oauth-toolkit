@@ -638,6 +638,11 @@ Possible values are:
 * ``auto`` - users are prompted only the first time, subsequent authorizations for the same application
   and scopes will be automatically accepted.
 
+A request with ``prompt=none`` behaves as ``auto`` whatever this parameter or
+``REQUEST_APPROVAL_PROMPT`` says, since it must not be shown a form: without an unexpired access token
+for the same application and scopes (under ``force``, also for the same RFC 8707 resources), it gets
+a ``consent_required`` error instead.
+
 Skip authorization completely for trusted applications
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
