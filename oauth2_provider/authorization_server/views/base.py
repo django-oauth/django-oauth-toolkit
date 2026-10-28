@@ -706,7 +706,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 return request_object_response
         return self._dispatch_with_csrf_token(request, *args, **kwargs)
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request: http.HttpRequest, *args: Any, **kwargs: Any) -> http.HttpResponse:
         stored_request_response = self._resolve_stored_request_or_enforce_par(request)
         if stored_request_response is not None:
             return stored_request_response
@@ -850,7 +850,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 )
                 return self.redirect(uri, application)
 
-            elif require_approval == "auto":
+            # prompt=none forbids a consent page (OpenID Connect Core 1.0
+            # section 3.1.2.1), so a grant the user already made is the
+            # client's pre-configured consent whatever approval_prompt says:
+            # force cannot ask again when asking is forbidden.
+            elif require_approval == "auto" or "none" in prompt:
                 tokens = (
                     get_access_token_model()
                     .objects.filter(
@@ -861,9 +865,17 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
                 # check past authorizations regarded the same scopes as the current one,
                 # and the same individual claims (OIDC Core 5.5), so newly requested
-                # claims are always presented to the End-User
+                # claims are always presented to the End-User. A prompt=none request
+                # that only reaches this scan because asking is forbidden (force)
+                # must have its RFC 8707 resources covered too; auto keeps its
+                # scopes-only scan, which ADR 0001 changes behind a setting.
+                resources_checked = require_approval != "auto"
                 for token in tokens:
-                    if token.allow_scopes(scopes) and requested_claims <= requested_claim_names(token.claims):
+                    if (
+                        token.allow_scopes(scopes)
+                        and requested_claims <= requested_claim_names(token.claims)
+                        and (not resources_checked or self._resources_covered(credentials, token.resource))
+                    ):
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request,
                             scopes=" ".join(scopes),
@@ -877,8 +889,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
         # prompt=none must not display a consent page (OpenID Connect Core
         # 1.0 section 3.1.2.1). Reaching here means the user is authenticated
-        # and the client still needs consent, so answer consent_required
-        # (section 3.1.2.6) instead of rendering the form.
+        # and no prior grant covers the scopes and claims requested, so answer
+        # consent_required (section 3.1.2.6) instead of rendering the form.
         if "none" in prompt:
             return self._login_required_response(credentials, error="consent_required")
 
@@ -887,6 +899,24 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
         )
         return self.render_to_response(self.get_context_data(**kwargs))
+
+    @staticmethod
+    def _resources_covered(credentials: dict, granted: list[str]) -> bool:
+        """Whether a token for the RFC 8707 resources *granted* covers the ones
+        this request asks for.
+
+        No resource is a distinct value (an unrestricted audience), not a
+        wildcard: a request without one is covered only by a token without one,
+        and a request for resources only by a token that names all of them
+        (ADR 0001, coverage rule). A token records the audience it was issued
+        for, which the token request may have narrowed from what the user
+        approved, so a narrowed token does not cover a request without a
+        resource.
+        """
+        requested = set(credentials.get("resource") or [])
+        if not requested:
+            return not granted
+        return requested <= set(granted)
 
     def handle_prompt_login(self) -> HttpResponse:
         return self._redirect_to_login()

@@ -284,6 +284,23 @@ class TestPAREndpoint(PARBaseTestCase):
         )
 
 
+class TestPARPromptNone(PARBaseTestCase):
+    def test_pushed_prompt_none_without_consent_is_consent_required(self):
+        """prompt=none read from the stored request, not the query string, still
+        forbids the consent page (OpenID Connect Core 1.0 section 3.1.2.1)."""
+        request_uri = self.push(extra={"prompt": "none"}).json()["request_uri"]
+        self.client.login(username="test_user", password="123456")
+
+        response = self.client.get(
+            self.authorize_url, {"client_id": self.application.client_id, "request_uri": request_uri}
+        )
+
+        self.assertEqual(response.status_code, 302)
+        params = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(params["error"], ["consent_required"])
+        self.assertEqual(params["state"], ["some_state"])
+
+
 class TestPARResponseMode(PARBaseTestCase):
     def test_query_response_mode_rejected_for_token_response_type(self):
         """
