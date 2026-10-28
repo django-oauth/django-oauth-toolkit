@@ -68,6 +68,20 @@ class AllowedURIValidator(URIValidator):
 
     def __call__(self, value):
         value = force_str(value)
+        # A lone surrogate is a real Python str. The checks below accept it, and
+        # saving then raises UnicodeEncodeError (HTTP 500). Paired JSON escapes
+        # are already one code point here, so they still encode and stay allowed.
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            # %(value)s is omitted on purpose. Sibling messages include it, but
+            # this value cannot be encoded into an HTML admin response, so
+            # interpolating it would raise UnicodeEncodeError again while
+            # rendering the error.
+            raise ValidationError(
+                "%(name)s URI validation error. %(cause)s",
+                params={"name": self.name, "cause": "lone Unicode surrogate"},
+            )
         try:
             split = urlsplit(value)
             scheme, netloc, path, query, fragment = split

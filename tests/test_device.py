@@ -609,6 +609,46 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             # consumed by devices.
             self.assertEqual(response.__getitem__("content-type"), "application/json")
 
+    def test_token_view_returns_expired_token_when_device_grant_deadline_passed(self):
+        """
+        When a DeviceGrant's expires timestamp is in the past, polling /o/token/
+        must call is_expired(), transition the grant to EXPIRED, and return
+        expired_token (RFC 8628 section 3.5) rather than authorization_pending
+        or issuing an access token.
+        """
+        for initial_status, user, expected_error, expected_status in (
+            (DeviceModel.AUTHORIZATION_PENDING, None, "expired_token", DeviceModel.EXPIRED),
+            (DeviceModel.AUTHORIZED, self.test_user, "expired_token", DeviceModel.EXPIRED),
+            (DeviceModel.DENIED, self.test_user, "access_denied", DeviceModel.DENIED),
+        ):
+            with self.subTest(status=initial_status):
+                device = DeviceModel.objects.create(
+                    client_id=self.application.client_id,
+                    device_code=f"expired_{initial_status}",
+                    user_code=f"code_{initial_status}",
+                    scope="read",
+                    expires=datetime.now(tz=timezone.utc) - timedelta(seconds=10),
+                    status=initial_status,
+                    user=user,
+                )
+
+                response = self.client.post(
+                    "/o/token/",
+                    data=urlencode(
+                        {
+                            "device_code": device.device_code,
+                            "client_id": self.application.client_id,
+                            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                        }
+                    ),
+                    content_type="application/x-www-form-urlencoded",
+                )
+
+                assert response.status_code == 400
+                self.assertJSONEqual(raw=response.content, expected_data={"error": expected_error})
+                device.refresh_from_db()
+                assert device.status == expected_status
+
     def test_token_view_returns_404_error_if_device_not_found(self):
         device = DeviceModel(
             client_id="client_id",

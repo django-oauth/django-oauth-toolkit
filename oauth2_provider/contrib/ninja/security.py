@@ -35,6 +35,12 @@ class HttpOAuth2(HttpAuthBase):
         if not valid:
             return None
 
+        # Only modify the request once authentication has fully succeeded, as upon failure, Ninja may
+        # proceed to other authenticators (e.g. `django_auth`), which shouldn't observe side effects.
+        result = self.authenticate(request, r.access_token)
+        if not result:
+            return None
+
         # Ninja only sets `request.auth`, not `request.user`: https://github.com/vitalik/django-ninja/issues/76
         # However, Django's AuthenticationMiddleware (which sets `request.user` from a session cookie)
         # is ubiquitous, so most code (including Ninja's own tutorials) assumes that `request.user` is
@@ -45,7 +51,7 @@ class HttpOAuth2(HttpAuthBase):
         # by Ninja, with the token as `request.auth`.
         request.user = r.user if r.user is not None else AnonymousUser()
 
-        return self.authenticate(request, r.access_token)
+        return result
 
     def authenticate(self, request: HttpRequest, access_token: AbstractAccessToken) -> Any | None:
         """
@@ -55,5 +61,7 @@ class HttpOAuth2(HttpAuthBase):
         Django Ninja will set the return value as `request.auth`.
 
         Subclasses may override this to implement additional authorization logic.
+        When this is called, `request.user` has not yet been set from the access token,
+        so use `access_token.user` (which may be `None`) instead.
         """
         return access_token

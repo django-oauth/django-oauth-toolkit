@@ -827,6 +827,32 @@ A request with ``prompt=none`` whose ``max_age`` has passed gets a
 non-negative integer, or a ``prompt`` or ``max_age`` given more than once,
 gets an ``invalid_request`` error, also from the PAR endpoint.
 
+A request with ``prompt=none`` is never shown the consent page either. A client
+with ``skip_authorization`` gets its response as usual, and so does one the user
+has already granted an unexpired access token for the scopes (and, with
+``OIDC_CLAIMS_PARAMETER_ENABLED``, the individual claims) it requests, whatever
+``approval_prompt`` or ``REQUEST_APPROVAL_PROMPT`` says: that grant is the
+client's pre-configured consent, and ``force`` cannot ask again when OpenID
+Connect Core 1.0 section 3.1.2.1 forbids asking. Any other ``prompt=none``
+request, including one without the ``openid`` scope, gets a
+``consent_required`` error (section 3.1.2.6) at its redirect URI instead of the
+consent page. See :ref:`skip-auth-form`.
+
+Under ``force``, the token must also be for the same RFC 8707 ``resource``
+values: a token without a resource covers only a request without one, and a
+request for resources only a token that names all of them, as no resource
+means an unrestricted audience, not any audience. A token records the audience
+it was issued for, which the token request may narrow, so a client that adds
+``resource`` at the token endpoint to an authorization that named none cannot
+renew that authorization with ``prompt=none``. ``auto`` compares scopes and
+claims only, for ``prompt=none`` as for any other request.
+
+Remembered consent is read from access tokens only, so an implicit client that
+asks for ``response_type=id_token`` (no access token) gets
+``consent_required`` for every ``prompt=none`` request unless it has
+``skip_authorization``. A consent record independent of tokens is planned in
+ADR 0001 (#1723).
+
 Each login is recorded in the Django session it authenticated, when Django's
 :func:`~django.contrib.auth.login` runs: its time, and an identifier that
 tells one login from the next. ``last_login`` is not used, since every session

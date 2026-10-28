@@ -24,6 +24,7 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestError, OAuth2Error
+from oauthlib.oauth2.rfc6749.errors import FatalClientError as OAuthlibFatalClientError
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid.connect.core.exceptions import (
     InvalidRequestObject,
@@ -168,7 +169,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         }
         return initial_data
 
-    def form_valid(self, form):
+    def form_valid(self, form: AllowForm) -> http.HttpResponse:
         client_id = form.cleaned_data["client_id"]
         application = get_application_model().objects.get(client_id=client_id)
         credentials = {
@@ -215,6 +216,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             # tampered with; re-validate before anything is stored on the grant.
             for resource_uri in resource_list:
                 if not is_valid_resource_uri(resource_uri):
+                    # Built here, before oauthlib sees the request, so the redirect URI
+                    # has to be checked first (RFC 6749 §4.1.2.1).
+                    core = self.get_oauthlib_core()
+                    try:
+                        credentials["redirect_uri"] = core.validate_authorization_redirect_uri(
+                            self.request, credentials
+                        )
+                    except OAuthlibFatalClientError as fatal:
+                        return self.error_response(FatalClientError(error=fatal), application)
                     error = OAuthToolkitError(
                         error=CustomOAuth2Error(
                             error="invalid_target",
@@ -696,7 +706,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 return request_object_response
         return self._dispatch_with_csrf_token(request, *args, **kwargs)
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request: http.HttpRequest, *args: Any, **kwargs: Any) -> http.HttpResponse:
         stored_request_response = self._resolve_stored_request_or_enforce_par(request)
         if stored_request_response is not None:
             return stored_request_response
@@ -840,7 +850,11 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 )
                 return self.redirect(uri, application)
 
-            elif require_approval == "auto":
+            # prompt=none forbids a consent page (OpenID Connect Core 1.0
+            # section 3.1.2.1), so a grant the user already made is the
+            # client's pre-configured consent whatever approval_prompt says:
+            # force cannot ask again when asking is forbidden.
+            elif require_approval == "auto" or "none" in prompt:
                 tokens = (
                     get_access_token_model()
                     .objects.filter(
@@ -850,15 +864,17 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 )
 
                 # check past authorizations regarded the same scopes as the current one,
-                # the same individual claims (OIDC Core 5.5), so newly requested
-                # claims are always presented to the End-User, and the same RFC 8707
-                # resources. A grant for resource A must not skip consent for resource B.
-                requested_resources = credentials.get("resource") or []
+                # and the same individual claims (OIDC Core 5.5), so newly requested
+                # claims are always presented to the End-User. A prompt=none request
+                # that only reaches this scan because asking is forbidden (force)
+                # must have its RFC 8707 resources covered too; auto keeps its
+                # scopes-only scan, which ADR 0001 changes behind a setting.
+                resources_checked = require_approval != "auto"
                 for token in tokens:
                     if (
                         token.allow_scopes(scopes)
                         and requested_claims <= requested_claim_names(token.claims)
-                        and self._grant_covers_resources(token.resource, requested_resources)
+                        and (not resources_checked or self._resources_covered(credentials, token.resource))
                     ):
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request,
@@ -871,6 +887,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         except OAuthToolkitError as error:
             return self.error_response(error, application)
 
+        # prompt=none must not display a consent page (OpenID Connect Core
+        # 1.0 section 3.1.2.1). Reaching here means the user is authenticated
+        # and no prior grant covers the scopes and claims requested, so answer
+        # consent_required (section 3.1.2.6) instead of rendering the form.
+        if "none" in prompt:
+            return self._login_required_response(credentials, error="consent_required")
+
         # Only now that the consent page is rendered, so skipped consent pays nothing.
         kwargs["requested_claims"] = (
             self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
@@ -878,22 +901,22 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         return self.render_to_response(self.get_context_data(**kwargs))
 
     @staticmethod
-    def _grant_covers_resources(granted, requested) -> bool:
-        """Whether a prior grant's RFC 8707 resources cover this request.
+    def _resources_covered(credentials: dict, granted: list[str]) -> bool:
+        """Whether a token for the RFC 8707 resources *granted* covers the ones
+        this request asks for.
 
-        An empty list is not a wildcard here. It means the grant was not bound
-        to a resource, so it only covers another request that also names none.
-        A resource-bound grant covers a request whose resources are a subset of
-        that list, and does not cover a request that names no resource, which
-        would widen the grant.
+        No resource is a distinct value (an unrestricted audience), not a
+        wildcard: a request without one is covered only by a token without one,
+        and a request for resources only by a token that names all of them
+        (ADR 0001, coverage rule). A token records the audience it was issued
+        for, which the token request may have narrowed from what the user
+        approved, so a narrowed token does not cover a request without a
+        resource.
         """
-        granted = list(granted or [])
-        requested = list(requested or [])
-        if not granted and not requested:
-            return True
-        if not granted or not requested:
-            return False
-        return set(requested).issubset(granted)
+        requested = set(credentials.get("resource") or [])
+        if not requested:
+            return not granted
+        return requested <= set(granted)
 
     def handle_prompt_login(self) -> HttpResponse:
         return self._redirect_to_login()
@@ -1207,15 +1230,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         redirect_to = parsed_registration._replace(query=urlencode(registration_query)).geturl()
         return HttpResponseRedirect(redirect_to)
 
-    def _login_required_response(self, credentials: dict) -> HttpResponse:
-        """Redirect a ``login_required`` error to the client (OpenID Connect
-        Core 1.0 section 3.1.2.6), for a request that oauthlib has validated.
+    def _login_required_response(self, credentials: dict, error: str = "login_required") -> HttpResponse:
+        """Redirect a ``login_required`` or ``consent_required`` error to the
+        client (OpenID Connect Core 1.0 section 3.1.2.6), for a request that
+        oauthlib has validated.
         """
         # oauthlib has confirmed redirect_uri is registered for the client.
         redirect_uri = credentials["redirect_uri"]
         application = get_application_model().objects.get(client_id=credentials["client_id"])
 
-        response_parameters = {"error": "login_required"}
+        response_parameters = {"error": error}
 
         # REQUIRED if the Authorization Request included the state parameter.
         # Set to the value received from the Client
@@ -1380,12 +1404,12 @@ class TokenView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
         # Here we are returning the errors according to
         # https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
         # TODO: "slow_down" error (essentially rate-limiting).
-        if device.status == device.AUTHORIZATION_PENDING:
-            error = rfc8628_errors.AuthorizationPendingError()
-        elif device.status == device.DENIED:
+        if device.status == device.DENIED:
             error = rfc8628_errors.AccessDenied()
-        elif device.status == device.EXPIRED:
+        elif device.is_expired():
             error = rfc8628_errors.ExpiredTokenError()
+        elif device.status == device.AUTHORIZATION_PENDING:
+            error = rfc8628_errors.AuthorizationPendingError()
         elif device.status != device.AUTHORIZED:
             # It's technically impossible to get here because we've exhausted
             # all the possible values for status. However, it does act as a

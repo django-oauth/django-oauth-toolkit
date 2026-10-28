@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.urls import reverse
 from jwcrypto import jwt
+from oauthlib.oauth2.rfc6749.errors import MismatchingRedirectURIError
 
 from oauth2_provider.models import get_application_model
 from oauth2_provider.oauth2_validators import OAuth2Validator
@@ -200,6 +201,27 @@ class TestImplicitAuthorizationCodeView(BaseTest):
         response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
         self.assertEqual(response.status_code, 302)
         self.assertIn("error=access_denied", response["Location"])
+
+    def test_token_post_auth_deny_unregistered_redirect_uri(self):
+        """
+        Test a denial is not redirected to a redirect_uri the client did not register
+        """
+        self.client.login(username="test_user", password="123456")
+
+        form_data = {
+            "client_id": self.application.client_id,
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://attacker.example/cb",
+            "response_type": "token",
+            "allow": False,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertIsInstance(response.context_data["error"], MismatchingRedirectURIError)
+        self.assertNotIn("attacker.example", response.context_data["url"])
 
     def test_implicit_redirection_uri_with_querystring(self):
         """

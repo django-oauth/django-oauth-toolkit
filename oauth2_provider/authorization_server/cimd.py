@@ -266,10 +266,16 @@ class SafeMetadataFetcher:
 
         try:
             data = json.loads(body)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ValueError, RecursionError) as exc:
             raise CIMDError("client_id document is not valid JSON") from exc
         if not isinstance(data, dict):
             raise CIMDError("client_id document must be a JSON object")
+        # JSON escapes can produce lone UTF-16 surrogates, which no database can
+        # store: left in, they fail at Application.save() as an unexpected error.
+        try:
+            json.dumps(data, ensure_ascii=False).encode("utf-8")
+        except UnicodeEncodeError:
+            raise CIMDError("client_id document contains a lone Unicode surrogate")
 
         return data, _effective_max_age(response.headers.get("Cache-Control"))
 
