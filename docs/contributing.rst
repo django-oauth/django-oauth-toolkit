@@ -407,15 +407,20 @@ ones in its name. tox installs an env's ``deps`` (the Django pin) first and the 
 constraints, pip replaces the pinned Django when a test dependency needs a newer one, and the env still passes: for a
 while every Django 4.2, 5.0 and 5.1 env ran Django 5.2 or 6.1 this way (#1944). ``constrain_package_deps`` and
 ``use_frozen_constraints`` in ``[testenv]`` now prevent that, so keep them. When you add or change an env, its
-``deps``, or a dependency's version bounds, still check what each affected env really runs::
+``deps`` or ``extras``, or a dependency's version bounds, still check what each affected env really runs::
 
-    tox -e py312-dj52-lite3 --notest
+    tox -e py312-dj52-lite3 --notest --list-dependencies
     .tox/py312-dj52-lite3/bin/python -c "import django; print(django.get_version())"
 
-On CI, each job's log shows the env's ``pip freeze`` after the install steps.
+``--list-dependencies`` makes tox print the env's installed packages as one comma-separated line. CI turns it on, so in
+a CI job's log that line comes just before the env's ``commands[0]>`` line.
 
-In version-gated code and tests, compare Django versions as tuples (``django.VERSION >= (5, 1)``), never the major and
-minor numbers separately: ``VERSION[0] >= 5 and VERSION[1] >= 1`` is false on Django 6.0.
+In version-gated code and tests, compare ``django.VERSION`` against a two-component tuple, as in
+``django.VERSION >= (5, 1)``. Never compare the major and minor numbers separately:
+``VERSION[0] >= 5 and VERSION[1] >= 1`` is false on Django 6.0. Never compare three or more components either: on
+Django main, ``django.VERSION >= (6, 1, 3)`` emits ``RemovedInDjango2028Warning``, because ``django.VERSION`` becomes
+``(year, patch, status, iteration)`` from 2028. Remove a version gate once the minimum supported Django makes it always
+true or always false.
 
 Standalone backend DB checks
 ----------------------------
