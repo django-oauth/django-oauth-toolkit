@@ -422,7 +422,7 @@ Standalone backend DB checks
 
 In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL, MySQL
 and Oracle. To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release in each
-supported major line: 5.2 and 6.0.
+supported major line: 5.2 and 6.1.
 
 Backend env names follow ``py{python}-dj{django}-{db}``, and migration env names mirror that
 with ``migrations-dj{django}-{db}``. For example, ``py312-dj52-pg16`` and
@@ -434,8 +434,8 @@ Run PostgreSQL standalone checks locally::
   docker compose -f docker-compose.postgres.yml up -d --wait
   tox -e py312-dj52-pg16
   tox -e migrations-dj52-pg16
-  tox -e py314-dj60-pg16
-  tox -e migrations-dj60-pg16
+  tox -e py314-dj61-pg16
+  tox -e migrations-dj61-pg16
   docker compose -f docker-compose.postgres.yml down -v
 
 Run PostgreSQL primary/replica topology checks locally::
@@ -444,8 +444,8 @@ Run PostgreSQL primary/replica topology checks locally::
   docker compose -f docker-compose.postgres-pr.yml exec -T postgres-replica psql -U dot -d dot -tAc "SELECT pg_is_in_recovery()"
   tox -e py312-dj52-pg16-pr
   tox -e migrations-dj52-pg16-pr
-  tox -e py314-dj60-pg16-pr
-  tox -e migrations-dj60-pg16-pr
+  tox -e py314-dj61-pg16-pr
+  tox -e migrations-dj61-pg16-pr
   docker compose -f docker-compose.postgres-pr.yml down -v
 
 Run MySQL standalone checks locally::
@@ -453,8 +453,8 @@ Run MySQL standalone checks locally::
   docker compose -f docker-compose.mysql.yml up -d --wait
   tox -e py312-dj52-my84
   tox -e migrations-dj52-my84
-  tox -e py314-dj60-my84
-  tox -e migrations-dj60-my84
+  tox -e py314-dj61-my84
+  tox -e migrations-dj61-my84
   docker compose -f docker-compose.mysql.yml down -v
 
 Run MySQL primary/replica topology checks locally::
@@ -464,8 +464,8 @@ Run MySQL primary/replica topology checks locally::
   docker compose -f docker-compose.mysql-pr.yml exec -T mysql-replica mysql -udot -pdot -e "SELECT @@server_id"
   tox -e py312-dj52-my84-pr
   tox -e migrations-dj52-my84-pr
-  tox -e py314-dj60-my84-pr
-  tox -e migrations-dj60-my84-pr
+  tox -e py314-dj61-my84-pr
+  tox -e migrations-dj61-my84-pr
   docker compose -f docker-compose.mysql-pr.yml down -v
 
 Run Oracle standalone checks locally::
@@ -473,8 +473,8 @@ Run Oracle standalone checks locally::
   docker compose -f docker-compose.oracle.yml up -d --wait
   tox -e py312-dj52-ora23
   tox -e migrations-dj52-ora23
-  tox -e py314-dj60-ora23
-  tox -e migrations-dj60-ora23
+  tox -e py314-dj61-ora23
+  tox -e migrations-dj61-ora23
   docker compose -f docker-compose.oracle.yml down -v
 
 A few things differ for Oracle. The container is ``gvenzl/oracle-free`` and takes a few minutes to become healthy on
