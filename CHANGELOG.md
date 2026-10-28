@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
-* #1946 Support for Django 6.1
+* #1946 Support for Django 6.1. The PostgreSQL, MySQL and Oracle CI checks move from Django 6.0
+  to 6.1, so they now cover Django 5.2 and 6.1.
 * #1902 ID Tokens can carry the `acr` claim (OpenID Connect Core 1.0 §2), reported by the new
   `OAuth2Validator.get_acr(request)` hook. It is called at the authorization endpoint, where
   `request.user` is the session user and `request.acr_values` holds the client's `acr_values`, and
@@ -231,8 +232,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the entry contains `code`. A permutation of a registered value, such as `"token id_token"`, is
   served (#1915) and not reported. Entries that `COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT` already
   drops from discovery are not reported either.
-* #1843 Oracle Database 23ai (Free) is now covered by CI on Django 5.2 and 6.1, via the
-  `py312-dj52-ora23`, `py314-dj61-ora23` and `migrations-dj{52,61}-ora23` tox environments and
+* #1843 Oracle Database 23ai (Free) is now covered by CI on Django 5.2 and 6.0, via the
+  `py312-dj52-ora23`, `py314-dj60-ora23` and `migrations-dj{52,60}-ora23` tox environments and
   `docker-compose.oracle.yml`. See "Standalone backend DB checks" in the contributing
   documentation to run them locally.
 * #1451 `Application.can_introspect`, an opt-out capability that lets an application call the token
