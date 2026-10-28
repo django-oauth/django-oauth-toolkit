@@ -411,6 +411,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1938 `TokenView.device_flow_token_response` now checks `device.is_expired()` when polling `/o/token/`,
+  so polling after a device grant's deadline returns `expired_token` (RFC 8628 §3.5) instead of
+  `authorization_pending`, and an authorized grant can no longer be exchanged for tokens after its
+  deadline.
 * The Dynamic Client Registration endpoints (RFC 7591 `POST` and RFC 7592 `PUT`) and the CIMD
   metadata fetcher now answer a JSON document nested deeply enough to exhaust the interpreter's
   recursion limit with HTTP 400 `invalid_client_metadata` (respectively a `CIMDError`) instead of
