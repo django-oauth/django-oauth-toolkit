@@ -35,4 +35,5 @@ git push --force-with-lease
 - Reply on threads only; no PR-level status comments.
 - Never `git add -A` — stage explicit paths, so stray untracked files (local venvs, build output, editor scratch) are never committed.
 - Don't poll with sleep; events + the fallback check-in wake you. Re-arm it silently if nothing changed.
+- A green cell proves only what it installed. When the PR touches tox envs, `deps`, extras or dependency bounds, check that the comma-separated package list just before each affected job's `commands[0]>` line in the CI log shows the Django the cell names (#1944).
 - Don't self-merge. A subscription ends only when the PR is merged/closed.

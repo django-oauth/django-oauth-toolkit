@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1946 Support for Django 6.1. The PostgreSQL, MySQL and Oracle CI checks move from Django 6.0
+  to 6.1, so they now cover Django 5.2 and 6.1.
 * #1902 ID Tokens can carry the `acr` claim (OpenID Connect Core 1.0 §2), reported by the new
   `OAuth2Validator.get_acr(request)` hook. It is called at the authorization endpoint, where
   `request.user` is the session user and `request.acr_values` holds the client's `acr_values`, and

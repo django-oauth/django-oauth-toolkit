@@ -402,12 +402,32 @@ testsuite via::
 The first thing the core committers will do is run this command. Any pull request that fails this test suite will be
 **immediately rejected**.
 
+A passing tox env only shows that the suite passes on the versions the env actually installed, which are not always the
+ones in its name. tox installs an env's ``deps`` (the Django pin) first and the ``test`` extra afterwards. Without
+constraints, pip replaces the pinned Django when a test dependency needs a newer one, and the env still passes: for a
+while every Django 4.2, 5.0 and 5.1 env ran Django 5.2 or 6.1 this way (#1944). ``constrain_package_deps`` and
+``use_frozen_constraints`` in ``[testenv]`` now prevent that, so keep them. When you add or change an env, its
+``deps`` or ``extras``, or a dependency's version bounds, still check what each affected env really runs::
+
+    tox -e py312-dj52-lite3 --notest --list-dependencies
+    .tox/py312-dj52-lite3/bin/python -c "import django; print(django.get_version())"
+
+``--list-dependencies`` makes tox print the env's installed packages as one comma-separated line. CI turns it on, so in
+a CI job's log that line comes just before the env's ``commands[0]>`` line.
+
+In version-gated code and tests, compare ``django.VERSION`` against a two-component tuple, as in
+``django.VERSION >= (5, 1)``. Never compare the major and minor numbers separately:
+``VERSION[0] >= 5 and VERSION[1] >= 1`` is false on Django 6.0. Never compare three or more components either: on
+Django main, ``django.VERSION >= (6, 1, 3)`` emits ``RemovedInDjango2028Warning``, because ``django.VERSION`` becomes
+``(year, patch, status, iteration)`` from 2028. Remove a version gate once the minimum supported Django makes it always
+true or always false.
+
 Standalone backend DB checks
 ----------------------------
 
 In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL, MySQL
 and Oracle. To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release in each
-supported major line: 5.2 and 6.0.
+supported major line: 5.2 and 6.1.
 
 Backend env names follow ``py{python}-dj{django}-{db}``, and migration env names mirror that
 with ``migrations-dj{django}-{db}``. For example, ``py312-dj52-pg16`` and
@@ -419,8 +439,8 @@ Run PostgreSQL standalone checks locally::
   docker compose -f docker-compose.postgres.yml up -d --wait
   tox -e py312-dj52-pg16
   tox -e migrations-dj52-pg16
-  tox -e py314-dj60-pg16
-  tox -e migrations-dj60-pg16
+  tox -e py314-dj61-pg16
+  tox -e migrations-dj61-pg16
   docker compose -f docker-compose.postgres.yml down -v
 
 Run PostgreSQL primary/replica topology checks locally::
@@ -429,8 +449,8 @@ Run PostgreSQL primary/replica topology checks locally::
   docker compose -f docker-compose.postgres-pr.yml exec -T postgres-replica psql -U dot -d dot -tAc "SELECT pg_is_in_recovery()"
   tox -e py312-dj52-pg16-pr
   tox -e migrations-dj52-pg16-pr
-  tox -e py314-dj60-pg16-pr
-  tox -e migrations-dj60-pg16-pr
+  tox -e py314-dj61-pg16-pr
+  tox -e migrations-dj61-pg16-pr
   docker compose -f docker-compose.postgres-pr.yml down -v
 
 Run MySQL standalone checks locally::
@@ -438,8 +458,8 @@ Run MySQL standalone checks locally::
   docker compose -f docker-compose.mysql.yml up -d --wait
   tox -e py312-dj52-my84
   tox -e migrations-dj52-my84
-  tox -e py314-dj60-my84
-  tox -e migrations-dj60-my84
+  tox -e py314-dj61-my84
+  tox -e migrations-dj61-my84
   docker compose -f docker-compose.mysql.yml down -v
 
 Run MySQL primary/replica topology checks locally::
@@ -449,8 +469,8 @@ Run MySQL primary/replica topology checks locally::
   docker compose -f docker-compose.mysql-pr.yml exec -T mysql-replica mysql -udot -pdot -e "SELECT @@server_id"
   tox -e py312-dj52-my84-pr
   tox -e migrations-dj52-my84-pr
-  tox -e py314-dj60-my84-pr
-  tox -e migrations-dj60-my84-pr
+  tox -e py314-dj61-my84-pr
+  tox -e migrations-dj61-my84-pr
   docker compose -f docker-compose.mysql-pr.yml down -v
 
 Run Oracle standalone checks locally::
@@ -458,8 +478,8 @@ Run Oracle standalone checks locally::
   docker compose -f docker-compose.oracle.yml up -d --wait
   tox -e py312-dj52-ora23
   tox -e migrations-dj52-ora23
-  tox -e py314-dj60-ora23
-  tox -e migrations-dj60-ora23
+  tox -e py314-dj61-ora23
+  tox -e migrations-dj61-ora23
   docker compose -f docker-compose.oracle.yml down -v
 
 A few things differ for Oracle. The container is ``gvenzl/oracle-free`` and takes a few minutes to become healthy on
