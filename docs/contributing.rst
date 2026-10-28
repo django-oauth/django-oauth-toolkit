@@ -407,8 +407,7 @@ Standalone backend DB checks
 
 In addition to the default SQLite test flow, we run backend-specific standalone database checks for PostgreSQL, MySQL
 and Oracle. To keep CI runtime and resource usage bounded, backend DB checks cover the latest Django release in each
-supported major line: 4.2, 5.2, and 6.0. Oracle covers 5.2 and 6.0 only: Django 4.2's Oracle backend requires
-``cx_Oracle`` and an Oracle Instant Client, whereas 5.2 onwards speaks ``python-oracledb``'s thin mode natively.
+supported major line: 5.2 and 6.0.
 
 Backend env names follow ``py{python}-dj{django}-{db}``, and migration env names mirror that
 with ``migrations-dj{django}-{db}``. For example, ``py312-dj52-pg16`` and
@@ -418,8 +417,6 @@ ready for topology variants like ``-pr``.
 Run PostgreSQL standalone checks locally::
 
   docker compose -f docker-compose.postgres.yml up -d --wait
-  tox -e py310-dj42-pg16
-  tox -e migrations-dj42-pg16
   tox -e py312-dj52-pg16
   tox -e migrations-dj52-pg16
   tox -e py314-dj60-pg16
@@ -430,8 +427,6 @@ Run PostgreSQL primary/replica topology checks locally::
 
   docker compose -f docker-compose.postgres-pr.yml up -d --wait
   docker compose -f docker-compose.postgres-pr.yml exec -T postgres-replica psql -U dot -d dot -tAc "SELECT pg_is_in_recovery()"
-  tox -e py310-dj42-pg16-pr
-  tox -e migrations-dj42-pg16-pr
   tox -e py312-dj52-pg16-pr
   tox -e migrations-dj52-pg16-pr
   tox -e py314-dj60-pg16-pr
@@ -441,8 +436,6 @@ Run PostgreSQL primary/replica topology checks locally::
 Run MySQL standalone checks locally::
 
   docker compose -f docker-compose.mysql.yml up -d --wait
-  tox -e py310-dj42-my84
-  tox -e migrations-dj42-my84
   tox -e py312-dj52-my84
   tox -e migrations-dj52-my84
   tox -e py314-dj60-my84
@@ -454,8 +447,6 @@ Run MySQL primary/replica topology checks locally::
   docker compose -f docker-compose.mysql-pr.yml up -d --wait
   docker compose -f docker-compose.mysql-pr.yml exec -T mysql-primary mysql -udot -pdot -e "SELECT @@server_id"
   docker compose -f docker-compose.mysql-pr.yml exec -T mysql-replica mysql -udot -pdot -e "SELECT @@server_id"
-  tox -e py310-dj42-my84-pr
-  tox -e migrations-dj42-my84-pr
   tox -e py312-dj52-my84-pr
   tox -e migrations-dj52-my84-pr
   tox -e py314-dj60-my84-pr

@@ -325,7 +325,7 @@ jobs:
         run: tox -e scenario-migrate-swapped-dj52-lite3
 
   multi-db:
-    name: DOT Multi-DB Tests (Python 3.12, Django 4.2)
+    name: DOT Multi-DB Tests (Python 3.12, Django 5.2)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -339,7 +339,7 @@ jobs:
         run: python -m pip install --upgrade tox
 
       - name: Run multi-db tests
-        run: tox -e py312-dj42-multi-db
+        run: tox -e py312-dj52-multi-db
 
   postgres-standalone:
     needs: discover-matrices

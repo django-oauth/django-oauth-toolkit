@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "django-oauth-toolkit"
 dynamic = ["version"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
   {name = "Federico Frenguelli"},
   {name = "Massimiliano Pippi"},
@@ -19,16 +19,12 @@ classifiers = [
 	"Development Status :: 5 - Production/Stable",
 	"Environment :: Web Environment",
 	"Framework :: Django",
-	"Framework :: Django :: 4.2",
-	"Framework :: Django :: 5.0",
-	"Framework :: Django :: 5.1",
 	"Framework :: Django :: 5.2",
 	"Framework :: Django :: 6.0",
 	"Intended Audience :: Developers",
 	"License :: OSI Approved :: BSD License",
 	"Operating System :: OS Independent",
 	"Programming Language :: Python :: 3",
-	"Programming Language :: Python :: 3.10",
 	"Programming Language :: Python :: 3.11",
 	"Programming Language :: Python :: 3.12",
 	"Programming Language :: Python :: 3.13",
@@ -36,7 +32,7 @@ classifiers = [
 	"Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = [
-	"django >= 4.2",
+	"django >= 5.2",
 	"requests >= 2.13.0",
 	"urllib3 >= 1.26",
 	"oauthlib >= 3.3.0",
