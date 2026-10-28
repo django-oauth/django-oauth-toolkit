@@ -349,5 +349,5 @@ def django_login_required_middleware(settings, request):
         return
 
     # Django 5.1 introduced LoginRequiredMiddleware
-    if VERSION[0] >= 5 and VERSION[1] >= 1:
+    if VERSION >= (5, 1):
         settings.MIDDLEWARE = [*settings.MIDDLEWARE, "django.contrib.auth.middleware.LoginRequiredMiddleware"]
