@@ -694,6 +694,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client_secret` and `hash_client_secret`.
 
 ### Security
+* The SSRF check on server-side fetches of client-controlled URLs (CIMD documents, RFC 7523
+  `jwks_uri`, OIDC `request_uri`) let a host through when it resolved to one of several address
+  forms that Python's `ipaddress.is_global` judges globally routable: IPv4 multicast (e.g.
+  `224.0.0.1`), IPv6 multicast, deprecated IPv4-compatible IPv6 addresses (`::/96`, e.g.
+  `::7f00:1` for `127.0.0.1` or `::a9fe:a9fe` for the cloud metadata address) and SIIT
+  `::ffff:0:0:0/96` addresses, and, on CPython before 3.11.10 / 3.12.4, local-use NAT64
+  `64:ff9b:1::/48` addresses. `oauth2_provider.core.safe_fetch.ip_is_public()` now refuses all of
+  these. It also refuses every 6to4 (`2002::/16`) and Teredo (`2001::/32`) address instead of
+  admitting those whose embedded IPv4 addresses are public, as current CPython already does: both
+  mechanisms are deprecated, and a host that also publishes such an AAAA record is now refused as
+  a whole. IPv4-mapped and NAT64 `64:ff9b::/96` addresses are still judged by the IPv4 address
+  they embed.
 * #1451 The token introspection endpoint could be called by a caller that had not really
   authenticated, contrary to
   [RFC 7662 section 4](https://datatracker.ietf.org/doc/html/rfc7662#section-4), which requires the

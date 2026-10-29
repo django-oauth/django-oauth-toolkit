@@ -50,6 +50,64 @@ def _patch_network(mocker, response):
 
 
 @pytest.mark.parametrize(
+    "ip, public",
+    [
+        ("93.184.216.34", True),
+        ("2606:2800:220:1:248:1893:25c8:1946", True),
+        # IPv4 multicast: is_global returns True for these on every supported CPython.
+        ("224.0.0.1", False),
+        ("239.255.255.250", False),
+        ("233.252.0.1", False),
+        ("ff0e::1", False),  # IPv6 global-scope multicast
+        ("::ffff:224.0.0.1", False),  # IPv4-mapped multicast
+        ("64:ff9b::e000:1", False),  # NAT64 wrapping multicast
+        # Deprecated IPv4-compatible ::/96, refused whatever the embedded IPv4.
+        ("::7f00:1", False),  # 127.0.0.1
+        ("::a9fe:a9fe", False),  # 169.254.169.254
+        ("::a00:1", False),  # 10.0.0.1
+        ("::808:808", False),  # 8.8.8.8
+        ("::", False),
+        ("::1", False),
+        # SIIT ::ffff:0:0:0/96, refused whatever the embedded IPv4.
+        ("::ffff:0:7f00:1", False),
+        ("::ffff:0:a00:1", False),
+        ("::ffff:0:808:808", False),
+        # 6to4 2002::/16, refused whatever the embedded IPv4.
+        ("2002:7f00:1::1", False),
+        ("2002:a9fe:a9fe::1", False),
+        ("2002:5db8:d822::1", False),  # 93.184.216.34
+        # Teredo 2001::/32, refused whatever the server and client IPv4.
+        ("2001:0:4136:e378::3f57:fefe", False),
+        ("2001:0:4136:e378::a247:27dd", False),  # both 93.184.216.34
+        # Local-use NAT64 64:ff9b:1::/48 is translated by the site's own NAT64.
+        ("64:ff9b:1::a00:1", False),
+        ("64:ff9b:1::5db8:d822", False),
+        # IPv4-mapped and well-known NAT64 are judged by the embedded IPv4.
+        ("::ffff:127.0.0.1", False),
+        ("::ffff:169.254.169.254", False),
+        ("::ffff:93.184.216.34", True),
+        ("64:ff9b::a9fe:a9fe", False),
+        ("64:ff9b::5db8:d822", True),
+    ],
+)
+def test_ip_is_public(ip, public):
+    assert safe_fetch.ip_is_public(ip) is public
+
+
+@pytest.mark.parametrize("ip", ["::7f00:1", "::ffff:0:a9fe:a9fe", "2002:7f00:1::1", "224.0.0.1"])
+def test_fetch_refuses_host_resolving_to_refused_address(mocker, ip):
+    family = 10 if ":" in ip else 2
+    mocker.patch(
+        "oauth2_provider.core.safe_fetch.socket.getaddrinfo",
+        return_value=[(family, 1, 6, "", (ip, 443))],
+    )
+    pool = mocker.patch("oauth2_provider.core.safe_fetch.urllib3.HTTPSConnectionPool")
+    with pytest.raises(SafeFetchError, match="non-public address"):
+        fetch_https_json("https://example.com/jwks.json", timeout=5, max_size=1024)
+    pool.assert_not_called()
+
+
+@pytest.mark.parametrize(
     "url",
     [
         "http://example.com/jwks.json",  # not https

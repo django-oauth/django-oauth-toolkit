@@ -280,9 +280,14 @@ authenticated. A replacement takes over that responsibility. Unless the fetch al
 through an egress proxy that enforces the same rules, a custom fetcher must:
 
 * accept ``https`` URLs only, with no userinfo component;
-* resolve the host and refuse it if **any** address is not globally routable (private, loopback,
-  link-local including the cloud metadata address ``169.254.169.254``, CGNAT, multicast,
-  reserved), judging IPv6 forms that embed an IPv4 address by that address;
+* resolve the host and refuse it if **any** address is not globally routable unicast (private,
+  loopback, link-local including the cloud metadata address ``169.254.169.254``, CGNAT,
+  multicast, reserved). Python's ``ipaddress.is_global`` is not enough on its own: it returns
+  ``True`` for IPv4 multicast and for several IPv6 forms that carry an IPv4 address. The default
+  judges IPv4-mapped (``::ffff:0:0/96``) and NAT64 well-known prefix (``64:ff9b::/96``)
+  addresses by the IPv4 address they embed, and refuses outright, whatever IPv4 they embed,
+  IPv4-compatible (``::/96``), SIIT (``::ffff:0:0:0/96``), 6to4 (``2002::/16``), Teredo
+  (``2001::/32``) and local-use NAT64 (``64:ff9b:1::/48``) addresses;
 * connect to the address it validated, not to the hostname again, so DNS cannot rebind the
   connection to an internal address after the check;
 * verify the TLS certificate against the hostname;

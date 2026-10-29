@@ -246,8 +246,9 @@ Server-Side Request Forgery (SSRF)
     - resolves the host and rejects it if **any** resolved address is non-public (private, loopback,
       link-local including ``169.254.169.254``, CGNAT, multicast, reserved), refusing the whole host
       rather than cherry-picking so a split public/internal result cannot be exploited. IPv6 forms that
-      embed an internal IPv4 (IPv4-mapped, 6to4, the NAT64 ``64:ff9b::/96`` prefix) are decoded and
-      judged by the embedded address, since those can otherwise read as globally routable;
+      embed an IPv4 can otherwise read as globally routable: IPv4-mapped and NAT64 ``64:ff9b::/96``
+      addresses are judged by the embedded address, and IPv4-compatible ``::/96``, SIIT, 6to4,
+      Teredo and local-use NAT64 addresses are refused outright;
     - connects to the validated IP while using the hostname only for TLS SNI, certificate verification
       and the ``Host`` header, so a second DNS lookup cannot rebind the connection to another address
       after validation;

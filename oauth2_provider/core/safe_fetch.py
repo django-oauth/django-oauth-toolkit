@@ -29,6 +29,22 @@ import urllib3
 # their low 32 bits, so they must be decoded before the public-IP check.
 NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
 
+# IPv6 ranges refused outright. Each embeds an IPv4 address, or tunnels to one,
+# and no public service is reached through them, so they are not decoded. CPython's
+# ``is_global`` returns True for some of them, on all patch levels or on older ones.
+REFUSED_IPV6_NETWORKS = (
+    # Deprecated IPv4-compatible addresses (RFC 4291 section 2.5.5.1), e.g. ::7f00:1.
+    ipaddress.ip_network("::/96"),
+    # SIIT IPv4-translated addresses (RFC 2765, obsoleted by RFC 6145), e.g. ::ffff:0:a00:1.
+    ipaddress.ip_network("::ffff:0:0:0/96"),
+    # 6to4 (RFC 3056, deprecated by RFC 7526) and Teredo (RFC 4380).
+    ipaddress.ip_network("2002::/16"),
+    ipaddress.ip_network("2001::/32"),
+    # Local-use NAT64 prefix (RFC 8215): translated by a site's own NAT64, so the
+    # embedded IPv4 can be an internal one.
+    ipaddress.ip_network("64:ff9b:1::/48"),
+)
+
 JSON_ACCEPT = "application/json, application/*+json"
 
 
@@ -39,34 +55,41 @@ class SafeFetchError(Exception):
     """
 
 
-def ip_is_public(ip_str):
-    """Return True only for a globally routable address.
+def ip_is_public(ip_str: str) -> bool:
+    """Return True only for a globally routable unicast address.
 
     ``ipaddress.is_global`` excludes private, loopback, link-local (including
-    the 169.254.169.254 cloud-metadata address), CGNAT, multicast, reserved and
-    unspecified ranges. But several IPv6 forms embed an IPv4 address that
-    ``is_global`` can misjudge — IPv4-mapped ``::ffff:0:0/96`` (only fixed in
-    newer CPython patch levels), 6to4, Teredo ``2001::/32``, and the NAT64
-    well-known prefix ``64:ff9b::/96`` — so decode the embedded IPv4 and judge
-    that instead. Otherwise a crafted AAAA record could smuggle an internal
-    IPv4 (e.g. the cloud-metadata address) past the allowlist.
+    the 169.254.169.254 cloud-metadata address), CGNAT, reserved and unspecified
+    ranges, but it is not enough on its own:
+
+    * It returns True for multicast (e.g. 224.0.0.1), so multicast is refused
+      explicitly.
+    * IPv4-mapped ``::ffff:0:0/96`` and the NAT64 well-known prefix
+      ``64:ff9b::/96`` carry an IPv4 address the host connects to, so that
+      address is decoded and judged instead. How ``ipaddress`` judges mapped
+      addresses has changed between CPython patch levels (gh-122792), so the
+      decision should not depend on it.
+    * The IPv6 forms in :data:`REFUSED_IPV6_NETWORKS` are refused outright,
+      whatever IPv4 they embed: ``is_global`` returns True for IPv4-compatible
+      ``::/96`` and SIIT ``::ffff:0:0:0/96`` on every supported CPython, and
+      for 6to4 and local-use NAT64 before 3.11.10 / 3.12.4 (gh-113171).
+
+    Otherwise a crafted AAAA record could smuggle an internal IPv4 (e.g. the
+    cloud-metadata address) past the check.
     """
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return False
     if isinstance(ip, ipaddress.IPv6Address):
-        teredo = ip.teredo
-        if teredo is not None:
-            # (server, de-obfuscated client) IPv4 pair; both must be public.
-            return all(part.is_global for part in teredo)
-        embedded = ip.ipv4_mapped or ip.sixtofour
-        if embedded is None and ip in NAT64_PREFIX:
+        if any(ip in network for network in REFUSED_IPV6_NETWORKS):
+            return False
+        if ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        elif ip in NAT64_PREFIX:
             # The low 32 bits of a 64:ff9b::/96 address are the embedded IPv4.
-            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
-        if embedded is not None:
-            ip = embedded
-    return ip.is_global
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return ip.is_global and not ip.is_multicast
 
 
 def resolve_and_validate(hostname, port, *, exc_class=SafeFetchError):
