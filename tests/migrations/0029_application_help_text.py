@@ -20,9 +20,9 @@ class Migration(migrations.Migration):
                     ("HS256", "HMAC with SHA-2 256"),
                 ],
                 default="",
-                help_text="How this application's OpenID Connect ID tokens are signed. With no OIDC support (the default), the application cannot use OpenID Connect. RSA (RS256) signs with the server's OIDC_RSA_PRIVATE_KEY, and clients verify with the matching public key. HMAC (HS256) signs with the client secret, so the secret must be stored unhashed; it cannot be used by public clients or with the implicit or hybrid grant types.",
+                help_text="How this application's OpenID Connect ID Tokens are signed. Choose an algorithm before requesting the openid scope; with no OIDC support (the default), ID Tokens cannot be issued for this application. RSA (RS256) signs with the server's private key, and clients verify with the public key published at the JWKS endpoint. HMAC (HS256) signs with the client secret, so the secret must be stored unhashed; it cannot be used by public clients or with the implicit or hybrid grant types.",
                 max_length=5,
-                verbose_name="JWT signing algorithm",
+                verbose_name="ID Token signing algorithm",
             ),
         ),
         migrations.AlterField(
@@ -30,7 +30,7 @@ class Migration(migrations.Migration):
             name="client_type",
             field=models.CharField(
                 choices=[("confidential", "Confidential"), ("public", "Public")],
-                help_text="Confidential clients can keep a client secret private, such as a server-side web application. Public clients cannot, such as a single-page or native application. See RFC 6749 section 2.1.",
+                help_text="Confidential clients can keep their credentials (such as a client secret or private key) confidential, for example a server-side web application. Public clients cannot, for example a single-page or native application. See RFC 6749 section 2.1.",
                 max_length=32,
                 verbose_name="client type",
             ),
@@ -40,7 +40,7 @@ class Migration(migrations.Migration):
             name="skip_authorization",
             field=models.BooleanField(
                 default=False,
-                help_text="Authorize this application's requests without showing users the consent screen, even on first use. Only enable this for applications you fully trust.",
+                help_text="Authorize this application's requests without showing users the consent screen, even on first use and even when the client sends prompt=consent. Only enable this for applications you fully trust.",
                 verbose_name="skip authorization",
             ),
         ),
@@ -55,9 +55,9 @@ class Migration(migrations.Migration):
                     ("HS256", "HMAC with SHA-2 256"),
                 ],
                 default="",
-                help_text="How this application's OpenID Connect ID tokens are signed. With no OIDC support (the default), the application cannot use OpenID Connect. RSA (RS256) signs with the server's OIDC_RSA_PRIVATE_KEY, and clients verify with the matching public key. HMAC (HS256) signs with the client secret, so the secret must be stored unhashed; it cannot be used by public clients or with the implicit or hybrid grant types.",
+                help_text="How this application's OpenID Connect ID Tokens are signed. Choose an algorithm before requesting the openid scope; with no OIDC support (the default), ID Tokens cannot be issued for this application. RSA (RS256) signs with the server's private key, and clients verify with the public key published at the JWKS endpoint. HMAC (HS256) signs with the client secret, so the secret must be stored unhashed; it cannot be used by public clients or with the implicit or hybrid grant types.",
                 max_length=5,
-                verbose_name="JWT signing algorithm",
+                verbose_name="ID Token signing algorithm",
             ),
         ),
         migrations.AlterField(
@@ -65,7 +65,7 @@ class Migration(migrations.Migration):
             name="client_type",
             field=models.CharField(
                 choices=[("confidential", "Confidential"), ("public", "Public")],
-                help_text="Confidential clients can keep a client secret private, such as a server-side web application. Public clients cannot, such as a single-page or native application. See RFC 6749 section 2.1.",
+                help_text="Confidential clients can keep their credentials (such as a client secret or private key) confidential, for example a server-side web application. Public clients cannot, for example a single-page or native application. See RFC 6749 section 2.1.",
                 max_length=32,
                 verbose_name="client type",
             ),
@@ -75,7 +75,7 @@ class Migration(migrations.Migration):
             name="skip_authorization",
             field=models.BooleanField(
                 default=False,
-                help_text="Authorize this application's requests without showing users the consent screen, even on first use. Only enable this for applications you fully trust.",
+                help_text="Authorize this application's requests without showing users the consent screen, even on first use and even when the client sends prompt=consent. Only enable this for applications you fully trust.",
                 verbose_name="skip authorization",
             ),
         ),

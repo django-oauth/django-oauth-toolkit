@@ -297,9 +297,9 @@ class AbstractApplication(models.Model):
         max_length=32,
         choices=CLIENT_TYPES,
         help_text=_(
-            "Confidential clients can keep a client secret private, such as a server-side web "
-            "application. Public clients cannot, such as a single-page or native application. "
-            "See RFC 6749 section 2.1."
+            "Confidential clients can keep their credentials (such as a client secret or private "
+            "key) confidential, for example a server-side web application. Public clients cannot, "
+            "for example a single-page or native application. See RFC 6749 section 2.1."
         ),
         verbose_name=_("client type"),
     )
@@ -320,7 +320,8 @@ class AbstractApplication(models.Model):
         default=False,
         help_text=_(
             "Authorize this application's requests without showing users the consent screen, "
-            "even on first use. Only enable this for applications you fully trust."
+            "even on first use and even when the client sends prompt=consent. Only enable this "
+            "for applications you fully trust."
         ),
         verbose_name=_("skip authorization"),
     )
@@ -333,13 +334,14 @@ class AbstractApplication(models.Model):
         default=NO_ALGORITHM,
         blank=True,
         help_text=_(
-            "How this application's OpenID Connect ID tokens are signed. With no OIDC support "
-            "(the default), the application cannot use OpenID Connect. RSA (RS256) signs with "
-            "the server's OIDC_RSA_PRIVATE_KEY, and clients verify with the matching public key. "
+            "How this application's OpenID Connect ID Tokens are signed. Choose an algorithm "
+            "before requesting the openid scope; with no OIDC support (the default), ID Tokens "
+            "cannot be issued for this application. RSA (RS256) signs with the server's private "
+            "key, and clients verify with the public key published at the JWKS endpoint. "
             "HMAC (HS256) signs with the client secret, so the secret must be stored unhashed; "
             "it cannot be used by public clients or with the implicit or hybrid grant types."
         ),
-        verbose_name=_("JWT signing algorithm"),
+        verbose_name=_("ID Token signing algorithm"),
     )
     userinfo_signed_response_alg = models.CharField(
         max_length=5,
@@ -582,6 +584,8 @@ class AbstractApplication(models.Model):
             AbstractApplication.GRANT_IMPLICIT,
             AbstractApplication.GRANT_OPENID_HYBRID,
         )
+        # The HS256 rules are also described in the help text of the algorithm field and
+        # in the data-hs256-* warnings of the application form; keep the three in step.
         hs_forbidden_grant_types = (
             AbstractApplication.GRANT_IMPLICIT,
             AbstractApplication.GRANT_OPENID_HYBRID,

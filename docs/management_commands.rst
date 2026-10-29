@@ -159,7 +159,7 @@ The ``createapplication`` management command provides a shortcut to create a new
                             endpoint (RFC 7662) by this application; if neither
                             is given, the model default (allow) applies
       --algorithm ALGORITHM
-                            The OIDC token signing algorithm for this application,
+                            The ID Token signing algorithm for this application,
                             one of: RS256, HS256
       --version             Show program's version number and exit.
       -v {0,1,2,3}, --verbosity {0,1,2,3}
