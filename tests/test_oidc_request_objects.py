@@ -783,11 +783,11 @@ class TestRequestObjectsAnonymous(TestRequestObjects):
             with self.subTest(prompt=prompt):
                 self.client.logout()
                 stored_url = self.authorize(request=unsigned(self.claims(prompt=prompt)))["Location"]
-                login = self.client.get(stored_url)
-                self.assertEqual(urlparse(login["Location"]).path, settings.LOGIN_URL)
+                login = urlparse(self.client.get(stored_url)["Location"])
+                self.assertEqual(login.path, settings.LOGIN_URL)
                 # The login it asked for satisfies prompt=login: one login only.
                 self.client.login(username="test_user", password="123456")
-                page = self.client.get(stored_url)
+                page = self.client.get(parse_qs(login.query)["next"][0])
                 self.assertEqual(page.status_code, 200)
                 self.assertEqual(page.context_data["state"], "inner_state")
 

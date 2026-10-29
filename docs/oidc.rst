@@ -362,12 +362,13 @@ Every valid request object therefore stores a row (see :ref:`stored-authorizatio
 that is never redeemed is removed once it expires by the ``cleartokens`` management command, so
 run it regularly when request objects are enabled.
 
-For a user who is not logged in, the stored request is only a reference until they log in, so its
-``prompt`` is acted on when the request object is resolved: ``none`` is answered with
-``login_required`` at once, and ``create`` sends the user to register (see
-``OIDC_RP_INITIATED_REGISTRATION_ENABLED``), returning to the stored request. Logging in, or
-registering, has to finish within ``OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS`` (60 seconds by
-default); after that the stored request has expired and the client has to start again.
+For a user who is not logged in, the stored request's ``prompt`` is acted on when the request object
+is resolved: ``none`` is answered with ``login_required`` at once, and ``create`` sends the user to
+register (see ``OIDC_RP_INITIATED_REGISTRATION_ENABLED``), returning to the stored request.
+Registering has to finish within ``OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS`` (60 seconds by
+default). A user sent to log in instead returns to the request stored again, as for a pushed
+request, so logging in has to finish within ``PAR_REQUEST_URI_LIFETIME_SECONDS`` (also 60 seconds
+by default). After that the stored request has expired and the client has to start again.
 
 **Signing.** A request object may be unsigned (``alg`` ``none``) or signed with an algorithm in
 ``OIDC_REQUEST_OBJECT_SIGNING_ALGS`` (by default RS, PS and ES with SHA-256, -384 and -512). A signed

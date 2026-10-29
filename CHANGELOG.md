@@ -431,6 +431,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its request, and when the response is created, with `request.user` set. An override that
   decides per user should decide on the second call. Validators that override the hooks are
   unaffected.
+* #1947 A user who is not logged in and follows the `request_uri` of a pushed authorization
+  request with `prompt=none` gets `login_required` at the client's redirect URI (OpenID Connect
+  Core 1.0 §3.1.2.1) instead of the login page, with or without the `openid` scope. The
+  authorization endpoint read `prompt` from the query only, and a pushed request keeps it in the
+  store. For such a user it now consumes the stored request at once, as it already resolves a
+  request object, and stores any other request again under a new `request_uri` that the login
+  page returns to. Logging in therefore has to finish within `PAR_REQUEST_URI_LIFETIME_SECONDS`,
+  for a request object too (`OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` still covers
+  registering), and an unknown, used or expired `request_uri` gets its `invalid_request` page
+  before the login rather than after it.
 * #1928 An authenticated authorization request with `prompt=none` that still
   needs consent redirects with `error=consent_required` instead of rendering
   the consent page. OpenID Connect Core 1.0 §3.1.2.1 forbids any consent UI

@@ -996,9 +996,9 @@ Default: ``60``
 
 How long, in seconds, a resolved request object stays stored on the server for the authorization
 endpoint to continue with it (see :ref:`oidc-request-objects`). A user who is not logged in has to
-log in, or register, within this time. A login the authorization request itself asks for
-(``prompt=login`` or an elapsed ``max_age``) stores the request again for
-``PAR_REQUEST_URI_LIFETIME_SECONDS``, as for a pushed authorization request.
+register within this time. Sending the user to log in, because they are not logged in or because
+the authorization request asks for a login (``prompt=login`` or an elapsed ``max_age``), stores
+the request again for ``PAR_REQUEST_URI_LIFETIME_SECONDS``, as for a pushed authorization request.
 
 OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

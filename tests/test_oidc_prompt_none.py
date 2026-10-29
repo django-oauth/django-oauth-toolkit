@@ -72,16 +72,25 @@ def test_anonymous_implicit_request_is_login_required_in_the_fragment(client, ap
     assert params["state"] == ["random_state_string"]
 
 
-def test_pushed_request_is_accepted(client, application):
+def test_pushed_request_is_login_required_for_an_anonymous_user(client, application):
     response = post_form(
         client,
         reverse("oauth2_provider:pushed-authorization-request"),
         data=request_parameters(application),
         **get_basic_auth_header(application.client_id, CLEARTEXT_SECRET),
     )
-
     assert response.status_code == 201
-    assert "request_uri" in response.json()
+    request_uri = response.json()["request_uri"]
+
+    # prompt=none is in the stored request, not in the query.
+    response = client.get(
+        reverse("oauth2_provider:authorize"),
+        data={"client_id": application.client_id, "request_uri": request_uri},
+    )
+
+    params = redirected_to_client(response)
+    assert params["error"] == ["login_required"]
+    assert params["state"] == ["random_state_string"]
 
 
 @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=False)
