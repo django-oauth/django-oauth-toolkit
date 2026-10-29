@@ -371,6 +371,15 @@ REQUEST_APPROVAL_PROMPT
 Can be ``'force'`` or ``'auto'``.
 The strategy used to display the authorization form. Refer to :ref:`skip-auth-form`.
 
+REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Default: ``False``
+
+When ``True``, ``approval_prompt=auto`` skips the authorization form only when a prior access
+token also covers the RFC 8707 ``resource`` values requested (see
+``AccessToken.allow_resources``). When ``False``, ``auto`` compares scopes only. Scheduled to
+default to ``True`` in 4.0. Refer to :ref:`skip-auth-form`.
+
 ALLOWED_REDIRECT_URI_SCHEMES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Default: ``["http", "https"]``

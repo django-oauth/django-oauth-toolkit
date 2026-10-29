@@ -636,7 +636,17 @@ Possible values are:
 * ``force`` - users are always prompted for authorization.
 
 * ``auto`` - users are prompted only the first time, subsequent authorizations for the same application
-  and scopes will be automatically accepted.
+  and scopes will be automatically accepted. With ``REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES``, the
+  earlier authorization must also cover the requested RFC 8707 resources.
+
+The prior authorization is an unexpired access token, checked with ``AccessToken.allow_scopes`` and,
+for resources, ``AccessToken.allow_resources``. For this check an empty resource list is not a
+wildcard, even though ``allows_audience`` treats a token without a resource as unrestricted: a token
+without a resource covers only a request without one, and a request for resources is covered only by
+a token that names all of them. Consent for resource A is not consent for resource B, and a token
+for no particular resource is not consent for a specific one either. Because the token stands in for
+consent, a token the client narrowed at the token endpoint (consent for A and B, token for A) does
+not cover a later request for A and B, which shows the form again.
 
 A request with ``prompt=none`` behaves as ``auto`` whatever this parameter or
 ``REQUEST_APPROVAL_PROMPT`` says, since it must not be shown a form: without an unexpired access token
