@@ -41,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redirects back to itself with only `client_id` and a single-use `request_uri` reference, so its
   parameters never enter the browser URL and a request object is resolved once; the new
   `OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` (default 60) bounds how long a user who is not
-  logged in has to log in. A `request_uri` is fetched SSRF-safely by the
+  logged in has to register, while logging in has to finish within
+  `PAR_REQUEST_URI_LIFETIME_SECONDS`. A `request_uri` is fetched SSRF-safely by the
   fetcher configured as `OIDC_REQUEST_URI_FETCHER`, bounded by
   `OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS`, `OIDC_REQUEST_URI_MAX_SIZE`,
   `OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES` and `OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS`.
@@ -420,6 +421,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
+  on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
+  `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the
+  authorization endpoint, for logged-in and anonymous users alike, and from the pushed
+  authorization request endpoint. Both hooks now return `True` and leave the login and consent
+  decisions to `AuthorizationView`, which handles such a request as it does one without the
+  `openid` scope (`login_required` for an anonymous user, and the #1928 consent handling for a
+  logged-in one). oauthlib asks the hooks twice: while the request is validated, with no user on
+  its request, and when the response is created, with `request.user` set. An override that
+  decides per user should decide on the second call. Validators that override the hooks are
+  unaffected.
+* #1947 A user who is not logged in and follows the `request_uri` of a pushed authorization
+  request with `prompt=none` gets `login_required` at the client's redirect URI (OpenID Connect
+  Core 1.0 §3.1.2.1) instead of the login page, with or without the `openid` scope. The
+  authorization endpoint read `prompt` from the query only, and a pushed request keeps it in the
+  store. For such a user it now consumes the stored request at once, as it already resolves a
+  request object, and stores any other request again under a new `request_uri` that the login
+  page returns to. Logging in therefore has to finish within `PAR_REQUEST_URI_LIFETIME_SECONDS`,
+  for a request object too (`OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` still covers
+  registering), and an unknown, used or expired `request_uri` gets its `invalid_request` page
+  before the login rather than after it.
 * #1928 An authenticated authorization request with `prompt=none` that still
   needs consent redirects with `error=consent_required` instead of rendering
   the consent page. OpenID Connect Core 1.0 §3.1.2.1 forbids any consent UI

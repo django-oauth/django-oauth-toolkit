@@ -25,9 +25,9 @@ request that has already been validated in full for the bound ``client_id``:
   (:rfc:`8707`), which maps to the list of its values.
 
 The authorization endpoint relies on this. It treats a stored request as
-authoritative: parameters sent alongside the ``request_uri`` are ignored, and while
-the end-user is still anonymous the request is only a reference, so the early
-``prompt`` / ``max_age`` checks are not repeated for it. A producer that stored an
+authoritative: parameters sent alongside the ``request_uri`` are ignored, and the
+early ``prompt`` / ``max_age`` checks it makes before the end-user logs in are not
+repeated for it. A producer that stored an
 unvalidated request would bypass those checks. The rule applies to every producer,
 present and future.
 
@@ -37,8 +37,9 @@ Current producers:
   (:class:`oauth2_provider.authorization_server.views.par.PushedAuthorizationRequestView`,
   :rfc:`9126`);
 * the authorization endpoint, when it sends the user to log in partway through a
-  stored request: the parameters it re-stores were themselves resolved from this
-  store (:meth:`oauth2_provider.authorization_server.views.base.AuthorizationView._redirect_to_login`);
+  stored request, or a user who is not logged in follows one: the parameters it
+  re-stores were themselves resolved from this store
+  (:meth:`oauth2_provider.authorization_server.views.base.AuthorizationView._store_again`);
 * the authorization endpoint, for an OpenID Connect request object once it has
   assembled and validated the request
   (:meth:`oauth2_provider.authorization_server.views.base.AuthorizationView._store_resolved_request`).

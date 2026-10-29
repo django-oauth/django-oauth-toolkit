@@ -604,9 +604,7 @@ class TestImplicitErrorResponseMode(BaseTest):
                 response = getattr(self.client, method)(reverse("oauth2_provider:authorize"), data=data)
                 self.assert_rejected_without_redirect(response)
 
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-    def test_unsupported_response_mode_rejected_on_prompt_none(self, *_mocks):
+    def test_unsupported_response_mode_rejected_on_prompt_none(self):
         query_data = {
             "client_id": self.application.client_id,
             "response_type": "id_token",
@@ -736,17 +734,14 @@ class TestImplicitErrorResponseMode(BaseTest):
 
         self.assert_error_in_fragment(response, "invalid_target")
 
-    # OAuth2Validator leaves the OIDC silent-login hooks unimplemented; deployments
-    # (like tests/app/idp) supply them. Either outcome must yield login_required in
+    # OAuth2Validator's OIDC silent-login hooks allow the request; a deployment's own
+    # (like tests/app/idp's) may deny it. Either outcome must yield login_required in
     # the fragment: from the view's own prompt=none branch, or from oauthlib.
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-    def test_prompt_none_login_required_in_fragment(self, *_mocks):
+    def test_prompt_none_login_required_in_fragment(self):
         self.assert_prompt_none_login_required_in_fragment()
 
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=False, create=True)
-    def test_prompt_none_oauthlib_login_required_in_fragment(self, *_mocks):
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=False)
+    def test_prompt_none_oauthlib_login_required_in_fragment(self, _validate_silent_login):
         self.assert_prompt_none_login_required_in_fragment()
 
     def assert_prompt_none_login_required_in_fragment(self):

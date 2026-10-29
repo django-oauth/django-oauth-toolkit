@@ -1102,9 +1102,8 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         """A signed-in user's OpenID Connect authorization request with prompt=none.
 
         The view decides the login and consent outcome from the Django session
-        and the user's grants; the validator's silent-login hooks, which oauthlib
-        calls for an OpenID Connect prompt=none request, are taken as passing
-        (see #1928).
+        and the user's grants; OAuth2Validator's silent-login hooks, which
+        oauthlib calls for an OpenID Connect prompt=none request, allow it.
         """
         self.client.login(username="test_user", password="123456")
         query_data = {
@@ -1116,12 +1115,7 @@ class TestOIDCAuthorizationCodeView(BaseTest):
             "prompt": "none",
             **parameters,
         }
-        silent = {"return_value": True, "create": True}
-        with (
-            mock.patch.object(OAuth2Validator, "validate_silent_login", **silent),
-            mock.patch.object(OAuth2Validator, "validate_silent_authorization", **silent),
-        ):
-            return self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+        return self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
 
     def _grant(self, scope="openid read", resource=None):
         """A token the user granted the application earlier, still valid."""

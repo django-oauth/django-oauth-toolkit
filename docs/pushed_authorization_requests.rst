@@ -55,6 +55,12 @@ Behavior and limitations
   ``PAR_REQUEST_URI_LIFETIME_SECONDS`` (default 60 seconds). A pushed request that is never redeemed
   is removed once it expires by the ``cleartokens`` management command, alongside the other
   short-lived records it clears.
+* **Users who are not logged in.** The pushed request's ``prompt`` is in the store, not in the
+  query, so when a user who is not logged in follows the ``request_uri``, the authorization
+  endpoint consumes it at once. ``prompt=none`` is answered with ``login_required`` at the client's
+  redirect URI (OpenID Connect Core 1.0 §3.1.2.1). Any other request is stored again under a new
+  ``request_uri``, which the login page returns to, so logging in has to finish within
+  ``PAR_REQUEST_URI_LIFETIME_SECONDS``.
 * **Client binding.** The ``request_uri`` is bound to the client that pushed it (RFC 9126 §2.2); a
   mismatched ``client_id`` at the authorization endpoint is rejected.
 * **Authoritative parameters.** The pushed request is authoritative: any authorization-request
@@ -80,8 +86,9 @@ A pushed request is kept as a *stored authorization request*: a row of the swapp
 ``StoredAuthorizationRequest`` model (``OAUTH2_PROVIDER_STORED_AUTHORIZATION_REQUEST_MODEL``)
 holding the validated parameters, the client the ``request_uri`` is bound to, and its expiry. The
 store is not specific to PAR. The authorization endpoint also uses it to carry a stored request
-across a login it asks for (``prompt=login`` or an elapsed ``max_age``), storing the same
-parameters again under a new ``request_uri`` so they never enter the browser URL, and to keep the
+across a login, for a user who is not logged in or one the request asks for (``prompt=login`` or
+an elapsed ``max_age``), storing the same parameters again under a new ``request_uri`` so they
+never enter the browser URL, and to keep the
 request assembled from an OpenID Connect :ref:`request object <oidc-request-objects>`. A stored
 request that is never redeemed is removed once it expires by the ``cleartokens`` management command.
 

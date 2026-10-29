@@ -300,6 +300,24 @@ class TestPARPromptNone(PARBaseTestCase):
         self.assertEqual(params["error"], ["consent_required"])
         self.assertEqual(params["state"], ["some_state"])
 
+    def test_pushed_prompt_none_anonymous_is_login_required(self):
+        """An anonymous user following a pushed prompt=none request gets
+        login_required at the redirect URI, not the login page (OpenID Connect
+        Core 1.0 section 3.1.2.1), although prompt is not in the query."""
+        request_uri = self.push(extra={"prompt": "none"}).json()["request_uri"]
+
+        response = self.client.get(
+            self.authorize_url, {"client_id": self.application.client_id, "request_uri": request_uri}
+        )
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}", "http://example.org")
+        params = parse_qs(location.query)
+        self.assertEqual(params["error"], ["login_required"])
+        self.assertEqual(params["state"], ["some_state"])
+        self.assertFalse(StoredAuthorizationRequest.objects.exists())
+
 
 class TestPARResponseMode(PARBaseTestCase):
     def test_query_response_mode_rejected_for_token_response_type(self):
@@ -487,6 +505,19 @@ class TestAuthorizeWithRequestURI(PARBaseTestCase):
             {"client_id": self.application.client_id, "request_uri": par.request_uri},
         )
         self.assertEqual(second.status_code, 400)
+
+    def test_request_uri_is_single_use_for_an_anonymous_user(self):
+        # Following it before logging in uses it up too, as the login returns to
+        # a new one, and a used or expired one is rejected before the login.
+        par = self._make_par()
+        query = {"client_id": self.application.client_id, "request_uri": par.request_uri}
+        first = self.client.get(self.authorize_url, query)
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(urlparse(first["Location"]).path, settings.LOGIN_URL)
+        self.assertEqual(self.client.get(self.authorize_url, query).status_code, 400)
+
+        self._make_par(expires_in=-10)
+        self.assertEqual(self.client.get(self.authorize_url, query).status_code, 400)
 
     def test_expired_request_uri_rejected(self):
         par = self._make_par(expires_in=-10)
@@ -699,7 +730,14 @@ class TestPARReauthentication(PARBaseTestCase):
         request_uri = json.loads(push.content)["request_uri"]
 
         next_url = self._next_url(self._authorize(request_uri))
-        self.assertIn(urlencode({"request_uri": request_uri}), next_url)
+        # The pushed request was read to find its prompt, which used its
+        # request_uri up, so the login returns to a new one.
+        next_query = parse_qs(urlparse(next_url).query)
+        self.assertEqual(set(next_query), {"client_id", "request_uri"})
+        self.assertNotEqual(next_query["request_uri"], [request_uri])
+        self.assertFalse(StoredAuthorizationRequest.objects.filter(request_uri=request_uri).exists())
+        pushed = StoredAuthorizationRequest.objects.get(request_uri=next_query["request_uri"][0])
+        self.assertEqual(pushed.parameters["prompt"], "login")
 
         self.client.login(username="test_user", password="123456")
         response = self.client.get(next_url)

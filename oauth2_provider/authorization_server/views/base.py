@@ -498,11 +498,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         invalid request is reported now, before the end-user is asked to log in
         (sections 3.1.2.2 and 3.1.2.3), with the response :meth:`get` would give.
 
-        An anonymous end-user's stored request is only a reference until they log
-        in, so its ``prompt`` is acted on here: ``none`` is answered with
-        ``login_required`` and ``create`` sends them to register, returning to
-        the stored request. ``login`` and ``max_age`` are handled as for any
-        stored request.
+        An anonymous end-user's ``prompt`` is acted on here, before the request
+        is stored: ``none`` is answered with ``login_required`` and ``create``
+        sends them to register, returning to the stored request. ``login`` and
+        ``max_age`` are handled as for any stored request.
         """
         self._replace_query(request, parameters)
         try:
@@ -936,16 +935,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         the return URL carries only the new ``request_uri``: the request stays
         on the server, and a client that must use PAR can still complete it.
         """
-        parameters = dict(self.request.GET.lists())
-        if self.stored_request:
-            client_id = self.request.GET["client_id"]
-            # These parameters were resolved from the store, so they were validated
-            # in full when first stored. Stored in the shape the store documents.
-            stored = {key: values if key == "resource" else values[-1] for key, values in parameters.items()}
-            request_uri = stored_requests.store_authorization_request(
-                client_id, stored, expires_in=oauth2_settings.PAR_REQUEST_URI_LIFETIME_SECONDS
-            )
-            parameters = {"client_id": [client_id], "request_uri": [request_uri]}
+        parameters = self._store_again() if self.stored_request else dict(self.request.GET.lists())
         self._request_reauthentication(parameters, fresh=True)
 
         path = escape_uri_path(self.request.path)
@@ -966,6 +956,24 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             resolved_login_url,
             self.get_redirect_field_name(),
         )
+
+    def _store_again(self) -> dict[str, list[str]]:
+        """Store the stored request being authorized again, for the same client,
+        and return the parameters that refer to it.
+
+        Its ``request_uri`` has already been used (RFC 9126 section 4), so a
+        login partway through the request returns to a new one, and the request
+        stays on the server.
+        """
+        parameters = dict(self.request.GET.lists())
+        client_id = self.request.GET["client_id"]
+        # These parameters were resolved from the store, so they were validated
+        # in full when first stored. Stored in the shape the store documents.
+        stored = {key: values if key == "resource" else values[-1] for key, values in parameters.items()}
+        request_uri = stored_requests.store_authorization_request(
+            client_id, stored, expires_in=oauth2_settings.PAR_REQUEST_URI_LIFETIME_SECONDS
+        )
+        return {"client_id": [client_id], "request_uri": [request_uri]}
 
     def _handle_max_age(
         self, credentials: dict, prompt: set, reauthenticated: bool, returned_without_login: bool
@@ -1280,6 +1288,13 @@ class AuthorizationView(BaseAuthorizationView, FormView):
         to log in a second time when they return to this endpoint
         authenticated.
 
+        A stored request (a pushed one, say) keeps its prompt in the store, not
+        in the query, and its ``request_uri`` can be used only once (RFC 9126
+        section 4). It is consumed here, as :meth:`_store_resolved_request`
+        handles a request object for an anonymous user: ``none`` is answered
+        with ``login_required``, and any other request is stored again, so the
+        login returns to the new ``request_uri``.
+
         Some code copied from OAuthLibMixin.error_response, but that is designed
         to operate on OAuth2Error from oauthlib wrapped in a OAuthToolkitError
         """
@@ -1306,6 +1321,15 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 return self._invalid_request_response(credentials, f"{name} must not be repeated.")
             if malformed and oidc_request:
                 return self._invalid_request_response(credentials, INVALID_MAX_AGE_DESCRIPTION)
+
+        if stored_requests.is_stored_request_uri(request_uri):
+            # Reading the stored prompt uses the request_uri up (see above).
+            stored_request_response = self._resolve_stored_request_uri(self.request, request_uri)
+            if stored_request_response is not None:
+                return stored_request_response
+            if "none" not in self.request.GET.get("prompt", "").split():
+                self._replace_query(self.request, self._store_again())
+                request_uri = self.request.GET["request_uri"]
 
         prompt = set(self.request.GET.get("prompt", "").split())
         if "none" in prompt:

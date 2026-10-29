@@ -18,7 +18,11 @@ from oauthlib.oauth2.rfc6749.errors import InvalidRequestError
 from oauth2_provider.authorization_server.stored_requests import REQUEST_URI_PREFIX
 from oauth2_provider.authorization_server.views.base import AuthorizationView
 from oauth2_provider.core.exceptions import OAuthToolkitError
-from oauth2_provider.models import create_stored_authorization_request, get_application_model
+from oauth2_provider.models import (
+    create_stored_authorization_request,
+    get_application_model,
+    get_stored_authorization_request_model,
+)
 from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets
@@ -26,6 +30,7 @@ from .common_testing import OAuth2ProviderTestCase as TestCase
 
 
 Application = get_application_model()
+StoredAuthorizationRequest = get_stored_authorization_request_model()
 UserModel = get_user_model()
 
 # An unsigned request object ({"alg": "none"}) carrying its own state and nonce.
@@ -208,6 +213,19 @@ class TestUnsupportedRequestObjectsAnonymous(TestUnsupportedRequestObjects):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(urlparse(response["Location"]).path, settings.LOGIN_URL)
 
+    def assertLoginReturnsToPushedRequest(self, response, par):
+        # A PAR request_uri is single use. Reading the pushed request's prompt
+        # before login used it up, so the request is stored again and the login
+        # returns to the new request_uri.
+        self.assertLoginRedirect(response)
+        self.assertFalse(StoredAuthorizationRequest.objects.filter(request_uri=par.request_uri).exists())
+        next_url = urlparse(parse_qs(urlparse(response["Location"]).query)["next"][0])
+        stored = StoredAuthorizationRequest.objects.get(
+            request_uri=parse_qs(next_url.query)["request_uri"][0]
+        )
+        self.assertEqual(stored.client_id, self.application.client_id)
+        self.assertEqual(stored.parameters, par.parameters)
+
     # oauthlib asks the validator about silent login for prompt=none; deny it, as
     # for an end-user who is not logged in, which would give login_required.
     @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=False)
@@ -228,14 +246,12 @@ class TestUnsupportedRequestObjectsAnonymous(TestUnsupportedRequestObjects):
         self.assertLoginRedirect(response)
 
     def test_par_request_uri_is_still_resolved(self):
-        # A PAR request_uri is single use, so it is not consumed before login.
         par = self.make_par()
         response = self.client.get(
             reverse("oauth2_provider:authorize"),
             {"client_id": self.application.client_id, "request_uri": par.request_uri},
         )
-        self.assertLoginRedirect(response)
-        par.refresh_from_db()  # still there: consuming deletes it
+        self.assertLoginReturnsToPushedRequest(response, par)
 
     def test_request_alongside_par_request_uri_is_ignored(self):
         par = self.make_par()
@@ -247,5 +263,4 @@ class TestUnsupportedRequestObjectsAnonymous(TestUnsupportedRequestObjects):
                 "request": REQUEST_OBJECT,
             },
         )
-        self.assertLoginRedirect(response)
-        par.refresh_from_db()
+        self.assertLoginReturnsToPushedRequest(response, par)

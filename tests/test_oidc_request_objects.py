@@ -783,11 +783,11 @@ class TestRequestObjectsAnonymous(TestRequestObjects):
             with self.subTest(prompt=prompt):
                 self.client.logout()
                 stored_url = self.authorize(request=unsigned(self.claims(prompt=prompt)))["Location"]
-                login = self.client.get(stored_url)
-                self.assertEqual(urlparse(login["Location"]).path, settings.LOGIN_URL)
+                login = urlparse(self.client.get(stored_url)["Location"])
+                self.assertEqual(login.path, settings.LOGIN_URL)
                 # The login it asked for satisfies prompt=login: one login only.
                 self.client.login(username="test_user", password="123456")
-                page = self.client.get(stored_url)
+                page = self.client.get(parse_qs(login.query)["next"][0])
                 self.assertEqual(page.status_code, 200)
                 self.assertEqual(page.context_data["state"], "inner_state")
 
@@ -805,10 +805,8 @@ class TestRequestObjectsAnonymous(TestRequestObjects):
         self.assertEqual(params["state"], ["inner_state"])
         self.assertFalse(StoredAuthorizationRequest.objects.exists())
 
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-    def test_prompt_none_is_login_required_whatever_the_validator_says(self, *_mocks):
-        # A validator that allows a silent login does not make an anonymous
+    def test_prompt_none_is_login_required_whatever_the_validator_says(self):
+        # OAuth2Validator allows a silent login, which does not make an anonymous
         # end-user logged in: prompt=none is still answered with login_required.
         response = self.authorize(request=unsigned(self.claims(prompt="none")))
         self.assertEqual(response.status_code, 302)
