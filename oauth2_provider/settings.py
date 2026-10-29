@@ -294,8 +294,8 @@ DEFAULTS = {
     "OIDC_REQUEST_URI_MAX_SIZE": 64 * 1024,
     "OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES": 10,  # 0 or None disables the in-flight cap
     "OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS": 60,  # 0 or None disables the backoff
-    # How long a resolved request object stays stored for the end-user to log in
-    # or register; the same default as PAR_REQUEST_URI_LIFETIME_SECONDS
+    # How long a resolved request object stays stored for the end-user to register;
+    # a login stores it again for PAR_REQUEST_URI_LIFETIME_SECONDS, the same default
     "OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS": 60,
     # RP-Initiated Registration (OP endpoint serving external relying parties)
     "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
