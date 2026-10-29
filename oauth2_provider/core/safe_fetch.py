@@ -183,8 +183,10 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
     attempt that yields one and its return value is returned; it must enforce
     the caller's own status/size/content checks. Raises *exc_class* when the
     URL is invalid, resolution fails, every address attempt errors, or
-    *timeout* seconds pass: the timeout bounds the whole fetch in wall-clock
-    time, across every address and including the reads *read_response* makes.
+    *timeout* seconds pass: the timeout bounds the fetch in wall-clock time,
+    across every address and including the reads *read_response* makes. DNS
+    resolution counts against it but is bounded only by the system resolver,
+    since ``getaddrinfo`` takes no timeout.
     """
     # urlsplit, not urlparse: urlparse splits a legacy ";params" component off
     # the last path segment, which would silently drop it from the fetched
@@ -204,6 +206,13 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
     if parsed.username is not None or parsed.password is not None:
         raise exc_class("URL must not contain a userinfo component")
 
+    # One deadline shared across DNS resolution and every IP attempt. A
+    # hostname can resolve to many public IPs; giving each attempt its own
+    # total=timeout would let N addresses hold a worker for N × timeout. Each
+    # attempt instead gets only the remaining budget, so the whole fetch stays
+    # bounded by *timeout* regardless of address count.
+    deadline = time.monotonic() + timeout
+
     ips = resolve_and_validate(parsed.hostname, port, exc_class=exc_class)
 
     path = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
@@ -214,13 +223,6 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
     # otherwise answer 406.
     headers = {"Host": parsed.netloc, "Accept": accept}
     ssl_context = ssl.create_default_context()
-
-    # One deadline shared across every IP attempt. A hostname can resolve to
-    # many public IPs; giving each attempt its own total=timeout would let N
-    # addresses hold a worker for N × timeout. Each attempt instead gets only
-    # the remaining budget, so the whole fetch stays bounded by *timeout*
-    # regardless of address count.
-    deadline = time.monotonic() + timeout
 
     last_exc = None
     for ip in ips:
@@ -257,7 +259,7 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
                 result = read_response(response)
             finally:
                 response.release_conn()
-        except Exception as exc:
+        except (urllib3.exceptions.HTTPError, exc_class) as exc:
             # A shutdown by the watchdog surfaces as whatever the interrupted
             # read makes of an early EOF (a protocol error, or a truncated
             # body that read_response rejects); report it as the timeout it

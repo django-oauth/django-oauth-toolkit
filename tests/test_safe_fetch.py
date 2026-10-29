@@ -176,6 +176,16 @@ def test_exhausted_timeout_reports_explicit_message(mocker):
         fetch_https_json("https://example.com/jwks.json", timeout=0, max_size=1024)
 
 
+def test_dns_resolution_counts_against_the_deadline(mocker):
+    def slow_resolve(*args, **kwargs):
+        time.sleep(0.3)
+        return ["93.184.216.34"]
+
+    mocker.patch.object(safe_fetch, "resolve_and_validate", side_effect=slow_resolve)
+    with pytest.raises(SafeFetchError, match="timeout budget exhausted"):
+        fetch_https_json("https://example.com/jwks.json", timeout=0.2, max_size=1024)
+
+
 def test_uppercase_scheme_is_accepted(mocker):
     # RFC 3986 schemes are case-insensitive; urlparse() lowercases the scheme,
     # so HTTPS:// URLs pass the https-only check.
@@ -432,6 +442,8 @@ def test_deadline_watchdog_wakes_a_blocked_read():
     with left, right:
         watchdog = safe_fetch._DeadlineWatchdog(0.2)
         watchdog.watch(left)
+        # A regressed watchdog then fails with a timeout instead of hanging.
+        left.settimeout(5)
         started = time.monotonic()
         assert left.recv(1) == b""
         assert time.monotonic() - started < 3
