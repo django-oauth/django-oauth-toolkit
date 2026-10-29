@@ -41,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redirects back to itself with only `client_id` and a single-use `request_uri` reference, so its
   parameters never enter the browser URL and a request object is resolved once; the new
   `OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` (default 60) bounds how long a user who is not
-  logged in has to log in. A `request_uri` is fetched SSRF-safely by the
+  logged in has to register, while logging in has to finish within
+  `PAR_REQUEST_URI_LIFETIME_SECONDS`. A `request_uri` is fetched SSRF-safely by the
   fetcher configured as `OIDC_REQUEST_URI_FETCHER`, bounded by
   `OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS`, `OIDC_REQUEST_URI_MAX_SIZE`,
   `OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES` and `OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS`.
