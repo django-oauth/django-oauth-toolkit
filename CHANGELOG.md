@@ -260,7 +260,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 * #1122 The application form explains its easy-to-misconfigure fields: `client_type`,
   `skip_authorization` and `algorithm` now have help text, and the `algorithm` field is labelled
-  "JWT signing algorithm" instead of "Algorithm". The default algorithm is unchanged. Migration
+  "ID Token signing algorithm" instead of "Algorithm". The default algorithm is unchanged. Migration
   `0033` records the new help text; swapped application models need a migration for it too.
 * #1896 `Application.clean()` now validates each entry in `post_logout_redirect_uris` with the
   `REDIRECT_URI_VALIDATOR` (by default against `ALLOWED_REDIRECT_URI_SCHEMES`), reporting problems on

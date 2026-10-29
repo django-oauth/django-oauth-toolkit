@@ -643,10 +643,10 @@ class TestApplicationViews(BaseTest):
         response = self.client.get(reverse("oauth2_provider:register"))
         fields = response.context["form"].fields
         self.assertIn("RFC 6749 section 2.1", fields["client_type"].help_text)
-        self.assertIn("OpenID Connect ID tokens are signed", fields["algorithm"].help_text)
-        self.assertEqual(fields["algorithm"].label, "JWT signing algorithm")
+        self.assertIn("OpenID Connect ID Tokens are signed", fields["algorithm"].help_text)
+        self.assertEqual(fields["algorithm"].label, "ID Token signing algorithm")
         self.assertContains(response, "RFC 6749 section 2.1")
-        self.assertContains(response, "JWT signing algorithm")
+        self.assertContains(response, "ID Token signing algorithm")
 
     def test_application_form_without_client_secret_field(self):
         # ApplicationForm must not assume client_secret / hash_client_secret are
@@ -768,8 +768,9 @@ class TestApplicationAdminHashClientSecretUX(BaseTest):
         response = self.client.get(reverse("admin:oauth2_provider_application_add"))
         self.assertContains(response, "RFC 6749 section 2.1")
         self.assertContains(response, "without showing users the consent screen")
-        self.assertContains(response, "OpenID Connect ID tokens are signed")
-        self.assertContains(response, "JWT signing algorithm")
+        self.assertContains(response, "even when the client sends prompt=consent")
+        self.assertContains(response, "OpenID Connect ID Tokens are signed")
+        self.assertContains(response, "ID Token signing algorithm")
 
 
 @pytest.mark.usefixtures("oauth2_settings")
