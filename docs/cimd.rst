@@ -208,7 +208,8 @@ Settings
     ``"*"``.
 
 ``CIMD_FETCH_TIMEOUT_SECONDS`` (default ``5``)
-    Connect and read timeout for the metadata fetch.
+    Total time allowed for the metadata fetch (connecting, the TLS handshake and reading the
+    response), across every address the host resolves to.
 
 ``CIMD_MAX_DOCUMENT_SIZE`` (default ``16384``)
     Maximum accepted document size in bytes. The draft recommends metadata documents stay around

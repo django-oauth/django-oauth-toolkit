@@ -288,6 +288,9 @@ through an egress proxy that enforces the same rules, a custom fetcher must:
 * verify the TLS certificate against the hostname;
 * not follow redirects;
 * bound the whole fetch with one deadline across every address tried, and cap the response size.
+  A socket or ``urllib3`` read timeout is not such a deadline: it applies to each read and
+  restarts whenever a byte arrives, so a server that sends its response one byte at a time is
+  never timed out by it.
 
 A CIMD fetcher must also keep two things the default does before and after the request:
 

@@ -692,6 +692,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming the RFC 7591 metadata, explaining that the secret cannot be recovered and a new client must
   be registered. It was refused before too, but with an error naming the model fields
   `client_secret` and `hash_client_secret`.
+* The SSRF-hardened fetch of client-controlled URLs (Client ID Metadata Documents, RFC 7523
+  `jwks_uri`, OIDC `request_uri`) is now bounded in wall-clock time by its timeout
+  (`CIMD_FETCH_TIMEOUT_SECONDS`, `CLIENT_ASSERTION_JWKS_FETCH_TIMEOUT_SECONDS`,
+  `OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS`). urllib3 applies its timeout to each socket read and
+  restarts it whenever a byte arrives, so a server sending its headers or body one byte at a time
+  could hold a worker far past the timeout. `oauth2_provider.core.safe_fetch.fetch_https_document()`
+  now shuts the connection down when the deadline passes and raises the caller's error.
 
 ### Security
 * #1451 The token introspection endpoint could be called by a caller that had not really

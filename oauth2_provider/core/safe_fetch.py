@@ -17,6 +17,7 @@ import ipaddress
 import json
 import socket
 import ssl
+import threading
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -91,6 +92,84 @@ def resolve_and_validate(hostname, port, *, exc_class=SafeFetchError):
     return ips
 
 
+class _DeadlineWatchdog:
+    """Shut a connection's socket down once a wall-clock deadline passes.
+
+    Socket timeouts (and urllib3's ``Timeout``, ``total`` included) apply to
+    each ``recv`` separately and restart whenever a byte arrives, so a server
+    that drips its response one byte at a time is never timed out by them. A
+    timer thread instead calls ``shutdown(SHUT_RDWR)`` at the deadline, which
+    wakes any read blocked on the socket, TLS-wrapped or not, with EOF.
+
+    It shuts down a ``dup()`` of the socket: ``SSLContext.wrap_socket``
+    detaches the socket object it wraps, so shutting that object down fails
+    with ``EBADF``. The dup shares the underlying connection, so shutting it
+    down ends the connection the TLS socket reads from.
+    """
+
+    def __init__(self, timeout: float) -> None:
+        self._lock = threading.Lock()
+        self._socks: list[socket.socket] = []
+        self._fired = False
+        self._done = False
+        self._timer = threading.Timer(timeout, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def watch(self, sock: socket.socket) -> None:
+        """Shut *sock* down at the deadline (at once if it has passed)."""
+        dup = sock.dup()
+        with self._lock:
+            if not self._done:
+                self._socks.append(dup)
+                return
+        self._shutdown(dup)
+
+    def _fire(self) -> None:
+        with self._lock:
+            if self._done:
+                return
+            self._fired = self._done = True
+            socks, self._socks = self._socks, []
+        for sock in socks:
+            self._shutdown(sock)
+
+    @staticmethod
+    def _shutdown(sock: socket.socket) -> None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            # Already disconnected by the peer.
+            pass
+        finally:
+            sock.close()
+
+    def cancel(self) -> bool:
+        """Stop the watchdog and return whether the deadline had passed.
+
+        Idempotent: later calls return the same answer.
+        """
+        self._timer.cancel()
+        with self._lock:
+            self._done = True
+            socks, self._socks = self._socks, []
+        for sock in socks:
+            sock.close()
+        return self._fired
+
+
+def _watched_connection_class(watchdog: _DeadlineWatchdog) -> type[urllib3.connection.HTTPSConnection]:
+    """Return an HTTPS connection class that hands its socket to *watchdog*."""
+
+    class _WatchedHTTPSConnection(urllib3.connection.HTTPSConnection):
+        def _new_conn(self) -> socket.socket:
+            sock = super()._new_conn()
+            watchdog.watch(sock)
+            return sock
+
+    return _WatchedHTTPSConnection
+
+
 def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchError, accept=JSON_ACCEPT):
     """GET *url* with SSRF pinning and hand the urllib3 response to *read_response*.
 
@@ -103,7 +182,9 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
     *read_response* receives the (unread, streaming) response of the first
     attempt that yields one and its return value is returned; it must enforce
     the caller's own status/size/content checks. Raises *exc_class* when the
-    URL is invalid, resolution fails, or every address attempt errors.
+    URL is invalid, resolution fails, every address attempt errors, or
+    *timeout* seconds pass: the timeout bounds the whole fetch in wall-clock
+    time, across every address and including the reads *read_response* makes.
     """
     # urlsplit, not urlparse: urlparse splits a legacy ";params" component off
     # the last path segment, which would silently drop it from the fetched
@@ -146,9 +227,14 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        # Connect to the validated IP (host=ip); total=remaining bounds this
-        # attempt (connect + all reads) to the shared deadline, so a slow-drip
-        # body can't hold the worker past it.
+        # Connect to the validated IP (host=ip). The urllib3 timeouts bound
+        # the connect and each individual socket read, but a read timeout
+        # restarts whenever a byte arrives, so they can't stop a server that
+        # drips its headers or body. The watchdog shuts the socket down when
+        # the shared deadline passes, which bounds the attempt (TLS handshake,
+        # headers and every body read made by read_response) in wall-clock
+        # time.
+        watchdog = _DeadlineWatchdog(remaining)
         pool = urllib3.HTTPSConnectionPool(
             host=ip,
             port=port,
@@ -158,6 +244,7 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
             ssl_context=ssl_context,
             server_hostname=parsed.hostname,
         )
+        pool.ConnectionCls = _watched_connection_class(watchdog)
         try:
             response = pool.urlopen(
                 "GET",
@@ -167,12 +254,28 @@ def fetch_https_document(url, *, timeout, read_response, exc_class=SafeFetchErro
                 preload_content=False,
             )
             try:
-                return read_response(response)
+                result = read_response(response)
             finally:
                 response.release_conn()
-        except urllib3.exceptions.HTTPError as exc:
+        except Exception as exc:
+            # A shutdown by the watchdog surfaces as whatever the interrupted
+            # read makes of an early EOF (a protocol error, or a truncated
+            # body that read_response rejects); report it as the timeout it
+            # is.
+            if watchdog.cancel():
+                raise exc_class(f"could not fetch document: timed out after {timeout} seconds") from exc
+            if not isinstance(exc, urllib3.exceptions.HTTPError):
+                raise
             last_exc = exc
+        else:
+            # An EOF forced by the watchdog can end a body that has no
+            # Content-Length early without any error, so a result read after
+            # the deadline may be truncated.
+            if watchdog.cancel():
+                raise exc_class(f"could not fetch document: timed out after {timeout} seconds")
+            return result
         finally:
+            watchdog.cancel()
             pool.close()
     if last_exc is None:
         raise exc_class("could not fetch document: timeout budget exhausted before any connection attempt")
