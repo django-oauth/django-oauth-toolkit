@@ -362,12 +362,13 @@ Every valid request object therefore stores a row (see :ref:`stored-authorizatio
 that is never redeemed is removed once it expires by the ``cleartokens`` management command, so
 run it regularly when request objects are enabled.
 
-For a user who is not logged in, the stored request is only a reference until they log in, so its
-``prompt`` is acted on when the request object is resolved: ``none`` is answered with
-``login_required`` at once, and ``create`` sends the user to register (see
-``OIDC_RP_INITIATED_REGISTRATION_ENABLED``), returning to the stored request. Logging in, or
-registering, has to finish within ``OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS`` (60 seconds by
-default); after that the stored request has expired and the client has to start again.
+For a user who is not logged in, the stored request's ``prompt`` is acted on when the request object
+is resolved: ``none`` is answered with ``login_required`` at once, and ``create`` sends the user to
+register (see ``OIDC_RP_INITIATED_REGISTRATION_ENABLED``), returning to the stored request.
+Registering has to finish within ``OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS`` (60 seconds by
+default). A user sent to log in instead returns to the request stored again, as for a pushed
+request, so logging in has to finish within ``PAR_REQUEST_URI_LIFETIME_SECONDS`` (also 60 seconds
+by default). After that the stored request has expired and the client has to start again.
 
 **Signing.** A request object may be unsigned (``alg`` ``none``) or signed with an algorithm in
 ``OIDC_REQUEST_OBJECT_SIGNING_ALGS`` (by default RS, PS and ES with SHA-256, -384 and -512). A signed
@@ -826,6 +827,43 @@ A request with ``prompt=none`` whose ``max_age`` has passed gets a
 ``login_required`` error instead of a login page. A value that is not a
 non-negative integer, or a ``prompt`` or ``max_age`` given more than once,
 gets an ``invalid_request`` error, also from the PAR endpoint.
+
+A request with ``prompt=none`` is never shown the consent page either. A client
+with ``skip_authorization`` gets its response as usual, and so does one the user
+has already granted an unexpired access token for the scopes (and, with
+``OIDC_CLAIMS_PARAMETER_ENABLED``, the individual claims) it requests, whatever
+``approval_prompt`` or ``REQUEST_APPROVAL_PROMPT`` says: that grant is the
+client's pre-configured consent, and ``force`` cannot ask again when OpenID
+Connect Core 1.0 section 3.1.2.1 forbids asking. Any other ``prompt=none``
+request, including one without the ``openid`` scope, gets a
+``consent_required`` error (section 3.1.2.6) at its redirect URI instead of the
+consent page. See :ref:`skip-auth-form`. For an OpenID Connect request, oauthlib
+also asks the validator's ``validate_silent_login()`` and
+``validate_silent_authorization()``, and a ``False`` from either answers the
+request with ``login_required`` or ``consent_required`` respectively.
+``OAuth2Validator`` returns ``True`` from both, leaving these decisions to the
+authorization endpoint. oauthlib asks them twice. The first time is while the
+request is validated, and oauthlib's request carries no user then:
+``request.user`` is ``None``. For an anonymous user, a request that still
+needs consent, and the PAR endpoint, that is the only time. The second is when
+the response is created, with ``request.user`` set to the logged-in user. An
+override that decides per user should return ``True`` while ``request.user`` is
+``None`` and decide on the second call.
+
+Under ``force``, the token must also be for the same RFC 8707 ``resource``
+values: a token without a resource covers only a request without one, and a
+request for resources only a token that names all of them, as no resource
+means an unrestricted audience, not any audience. A token records the audience
+it was issued for, which the token request may narrow, so a client that adds
+``resource`` at the token endpoint to an authorization that named none cannot
+renew that authorization with ``prompt=none``. ``auto`` compares scopes and
+claims only, for ``prompt=none`` as for any other request.
+
+Remembered consent is read from access tokens only, so an implicit client that
+asks for ``response_type=id_token`` (no access token) gets
+``consent_required`` for every ``prompt=none`` request unless it has
+``skip_authorization``. A consent record independent of tokens is planned in
+ADR 0001 (#1723).
 
 Each login is recorded in the Django session it authenticated, when Django's
 :func:`~django.contrib.auth.login` runs: its time, and an identifier that

@@ -64,6 +64,12 @@ The import string for the ``oauthlib_backend_class`` used by the view mixins, to
 (The pre-4.0 alias ``oauth2_provider.oauth2_backends.OAuthLibCore`` still resolves but is
 deprecated.)
 
+A custom backend that overrides ``create_authorization_response()`` must, before raising
+``access_denied``, call ``OAuthLibCore.validate_authorization_redirect_uri()`` and redirect to the
+URI it returns, not to ``credentials["redirect_uri"]``: the method raises an error for a
+``redirect_uri`` the client has not registered, and returns the client's default redirect URI when
+the request has none.
+
 .. note::
     The ``oauth2_provider.core.backends_oauthlib.JSONOAuthLibCore`` backend value is deprecated
     (since 3.4.1) and will be removed in 4.0. It makes the OAuth token, introspection, and
@@ -990,9 +996,9 @@ Default: ``60``
 
 How long, in seconds, a resolved request object stays stored on the server for the authorization
 endpoint to continue with it (see :ref:`oidc-request-objects`). A user who is not logged in has to
-log in, or register, within this time. A login the authorization request itself asks for
-(``prompt=login`` or an elapsed ``max_age``) stores the request again for
-``PAR_REQUEST_URI_LIFETIME_SECONDS``, as for a pushed authorization request.
+register within this time. Sending the user to log in, because they are not logged in or because
+the authorization request asks for a login (``prompt=login`` or an elapsed ``max_age``), stores
+the request again for ``PAR_REQUEST_URI_LIFETIME_SECONDS``, as for a pushed authorization request.
 
 OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

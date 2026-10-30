@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+* #1946 Support for Django 6.1. The PostgreSQL, MySQL and Oracle CI checks move from Django 6.0
+  to 6.1, so they now cover Django 5.2 and 6.1.
 * #1902 ID Tokens can carry the `acr` claim (OpenID Connect Core 1.0 §2), reported by the new
   `OAuth2Validator.get_acr(request)` hook. It is called at the authorization endpoint, where
   `request.user` is the session user and `request.acr_values` holds the client's `acr_values`, and
@@ -39,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redirects back to itself with only `client_id` and a single-use `request_uri` reference, so its
   parameters never enter the browser URL and a request object is resolved once; the new
   `OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` (default 60) bounds how long a user who is not
-  logged in has to log in. A `request_uri` is fetched SSRF-safely by the
+  logged in has to register, while logging in has to finish within
+  `PAR_REQUEST_URI_LIFETIME_SECONDS`. A `request_uri` is fetched SSRF-safely by the
   fetcher configured as `OIDC_REQUEST_URI_FETCHER`, bounded by
   `OIDC_REQUEST_URI_FETCH_TIMEOUT_SECONDS`, `OIDC_REQUEST_URI_MAX_SIZE`,
   `OIDC_REQUEST_URI_MAX_CONCURRENT_FETCHES` and `OIDC_REQUEST_URI_FAILURE_BACKOFF_SECONDS`.
@@ -258,6 +261,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   demo IdP's login page (`tests/app/idp`) shows them too, for the OpenID certification
   `oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` review modules.
 ### Changed
+* #1928 `REQUEST_APPROVAL_PROMPT = "force"` (the default) and `approval_prompt=force` no longer
+  apply to a request with `prompt=none`, which must not show the consent page (OpenID Connect Core
+  1.0 §3.1.2.1). Such a request is now answered from remembered consent, an unexpired access token
+  for the user and client that covers the requested scopes, claims and RFC 8707 resources, and
+  otherwise with `consent_required`. Before, it showed the consent page. A deployment that relied on
+  `force` to never issue tokens without a page should know that a client holding such a token can
+  now renew silently.
 * #1122 The application form explains its easy-to-misconfigure fields: `client_type`,
   `skip_authorization` and `algorithm` now have help text, and the `algorithm` field is labelled
   "ID Token signing algorithm" instead of "Algorithm". The default algorithm is unchanged. Migration
@@ -410,7 +420,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `requests`, `datetime` and `AccessToken`. See `docs/upgrade.rst` for the full list; runtime behavior
   is unchanged in every case, only subclassing and patching are affected.
 
+### Removed
+* #1944 Remove support for Django 4.2, 5.0 and 5.1 and for Python 3.10, which have reached end of
+  life. Django 5.2 and Python 3.11 are now the minimum supported versions.
+
 ### Fixed
+* #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
+  on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
+  `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the
+  authorization endpoint, for logged-in and anonymous users alike, and from the pushed
+  authorization request endpoint. Both hooks now return `True` and leave the login and consent
+  decisions to `AuthorizationView`, which handles such a request as it does one without the
+  `openid` scope (`login_required` for an anonymous user, and the #1928 consent handling for a
+  logged-in one). oauthlib asks the hooks twice: while the request is validated, with no user on
+  its request, and when the response is created, with `request.user` set. An override that
+  decides per user should decide on the second call. Validators that override the hooks are
+  unaffected.
+* #1947 A user who is not logged in and follows the `request_uri` of a pushed authorization
+  request with `prompt=none` gets `login_required` at the client's redirect URI (OpenID Connect
+  Core 1.0 §3.1.2.1) instead of the login page, with or without the `openid` scope. The
+  authorization endpoint read `prompt` from the query only, and a pushed request keeps it in the
+  store. For such a user it now consumes the stored request at once, as it already resolves a
+  request object, and stores any other request again under a new `request_uri` that the login
+  page returns to. Logging in therefore has to finish within `PAR_REQUEST_URI_LIFETIME_SECONDS`,
+  for a request object too (`OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` still covers
+  registering), and an unknown, used or expired `request_uri` gets its `invalid_request` page
+  before the login rather than after it.
+* #1928 An authenticated authorization request with `prompt=none` that still
+  needs consent redirects with `error=consent_required` instead of rendering
+  the consent page. OpenID Connect Core 1.0 §3.1.2.1 forbids any consent UI
+  when `prompt` is `none`, and §3.1.2.6 defines `consent_required` for that
+  case. Clients with `skip_authorization`, and clients the user has already
+  granted an unexpired access token for the requested scopes and claims (and,
+  under `force`, RFC 8707 resources), get their response without a page: under
+  `prompt=none` that grant is the client's pre-configured consent whatever
+  `approval_prompt` or `REQUEST_APPROVAL_PROMPT` says. An implicit
+  `response_type=id_token` client
+  has no access token, so it gets `consent_required` unless it has
+  `skip_authorization`.
+* #1938 `TokenView.device_flow_token_response` now checks `device.is_expired()` when polling `/o/token/`,
+  so polling after a device grant's deadline returns `expired_token` (RFC 8628 §3.5) instead of
+  `authorization_pending`, and an authorized grant can no longer be exchanged for tokens after its
+  deadline.
+* The Dynamic Client Registration endpoints (RFC 7591 `POST` and RFC 7592 `PUT`) and the CIMD
+  metadata fetcher now answer a JSON document nested deeply enough to exhaust the interpreter's
+  recursion limit with HTTP 400 `invalid_client_metadata` (respectively a `CIMDError`) instead of
+  letting the `RecursionError` escape as HTTP 500.
+* A CIMD client ID metadata document whose JSON escapes decode to a lone UTF-16 surrogate (for
+  example `"client_name": "Acme\ud800"`) is now refused as an invalid document: resolution logs
+  it at INFO and arms the failure backoff like any other bad document. Before, the value passed
+  the metadata checks and failed inside `Application.save()`, which was logged as an unexpected
+  error with a full stack trace. The check mirrors the one Dynamic Client Registration (#1930) and
+  request objects already make.
+* #1919 Dynamic Client Registration rejects a lone Unicode surrogate while parsing the
+  metadata, on POST and on RFC 7592 PUT, with HTTP 400 `invalid_client_metadata`. A rejected
+  PUT leaves the stored URIs in place. `client_name` and `client_uri` used to pass their own
+  checks and then raise `UnicodeEncodeError` while the database encoded the row.
+  `AllowedURIValidator` still rejects a lone surrogate in a redirect URI for the admin and
+  allowed origins. A paired surrogate escape stays allowed.
 * #1918 `AllowedURIValidator` rejects a non-numeric or out-of-range port such as
   `https://rp.example.com:abc/bye` or `:99999`. This applies to every field it validates, including
   `allowed_origins`, and to custom validators that subclass it. Redirect URI matching treats a
@@ -688,6 +755,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A form configured through `APPLICATION_FORM_CLASS` must not expose `can_introspect`, neither
   through `Meta.fields = "__all__"` nor through `Meta.exclude`, or an owner can turn back on a flag
   an operator turned off.
+* #1892 Denying consent (and the consent-form `invalid_target` error) no longer redirects to a
+  `redirect_uri` that is not absolute or not registered for the client. Such requests get a
+  non-redirecting `invalid_request` error page, as oauthlib does on the approval path
+  ([RFC 6749 §4.1.2.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1)).
+  The impact is low: the consent form is a CSRF-protected POST, so another site cannot submit
+  a tampered `redirect_uri` for a signed-in resource owner. A custom `OAUTH2_BACKEND_CLASS` that
+  overrides `create_authorization_response` must redirect a denial to the URI returned by the new
+  `OAuthLibCore.validate_authorization_redirect_uri()` (the client's default redirect URI when the
+  request has none), not to `credentials["redirect_uri"]`, to keep this fix.
 
 ## [3.4.1] - 2026-08-21
 

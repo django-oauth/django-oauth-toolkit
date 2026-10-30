@@ -1506,6 +1506,48 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             audience = [audience]
         return Application.objects.filter(client_id__in=audience).first()
 
+    def validate_silent_login(self, request: OauthlibRequest) -> bool:
+        """
+        Whether a ``prompt=none`` OpenID Connect request may go on without a login
+        page (OpenID Connect Core 1.0 section 3.1.2.1). Returning ``False`` answers
+        it with ``login_required``.
+
+        oauthlib asks this twice. The first call comes from
+        ``validate_authorization_request()``, and its request carries no End-User
+        then: ``request.user`` is ``None``. For an anonymous End-User, a request
+        that still needs consent, and the pushed authorization request endpoint,
+        it is the only call. The second comes from
+        ``create_authorization_response()``, once ``AuthorizationView`` issues the
+        response, with ``request.user`` set to the logged-in End-User. An override
+        that decides per End-User should return ``True`` while ``request.user`` is
+        ``None`` and decide on the second call.
+
+        ``AuthorizationView`` checks that the End-User is logged in itself, so the
+        default allows the request, where oauthlib's base class raises
+        ``NotImplementedError``.
+        """
+        return True
+
+    def validate_silent_authorization(self, request: OauthlibRequest) -> bool:
+        """
+        Whether a ``prompt=none`` OpenID Connect request may go on without a
+        consent page (OpenID Connect Core 1.0 section 3.1.2.1). Returning ``False``
+        answers it with ``consent_required``.
+
+        oauthlib asks this after ``validate_silent_login()`` allows the request,
+        on the same two calls: from ``validate_authorization_request()`` with
+        ``request.user`` ``None``, and from ``create_authorization_response()``
+        with ``request.user`` set to the logged-in End-User. An override that
+        decides per End-User should return ``True`` on the first and decide on the
+        second.
+
+        ``AuthorizationView`` decides itself whether the End-User has to consent
+        (``skip_authorization``, or an earlier grant that covers the request), so
+        the default allows the request, where oauthlib's base class raises
+        ``NotImplementedError``.
+        """
+        return True
+
     def validate_user_match(
         self, id_token_hint: str | None, scopes: list[str], claims: object, request: OauthlibRequest
     ) -> bool:

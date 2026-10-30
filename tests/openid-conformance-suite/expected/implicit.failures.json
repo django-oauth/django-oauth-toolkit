@@ -1,0 +1,30 @@
+[
+    {
+        "test-name": "oidcc-id-token-hint",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "id_token"
+        },
+        "configuration-filename": "*dot-oidcc-implicit.json",
+        "current-block": "Second authorization: Verify authorization endpoint response",
+        "condition": "CheckIfAuthorizationEndpointError",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    },
+    {
+        "test-name": "oidcc-prompt-none-logged-in",
+        "variant": {
+            "client_auth_type": "client_secret_basic",
+            "response_mode": "default",
+            "response_type": "id_token"
+        },
+        "configuration-filename": "*dot-oidcc-implicit.json",
+        "current-block": "Second authorization: Verify authorization endpoint response",
+        "condition": "CheckIfAuthorizationEndpointError",
+        "expected-result": "failure",
+        "comment": "Baseline: a known toolkit conformance gap, recorded so that a regression fails CI. Delete this entry (or regenerate with baseline.py) in the change that fixes it.",
+        "baseline": true
+    }
+]

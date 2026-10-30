@@ -2,6 +2,7 @@ import base64
 import datetime
 import hashlib
 import json
+from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -17,12 +18,15 @@ from jwcrypto import jwk, jwt
 from jwcrypto.common import base64url_encode
 from oauthlib.oauth2.rfc6749 import errors as oauthlib_errors
 
+from oauth2_provider.core.backends_oauthlib import OAuthLibCore, get_oauthlib_core
+from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
 from oauth2_provider.models import (
     get_access_token_model,
     get_application_model,
     get_grant_model,
     get_refresh_token_model,
 )
+from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.views import ProtectedResourceView
 
 from . import presets
@@ -710,6 +714,195 @@ class TestAuthorizationCodeView(BaseTest):
         self.assertEqual(response.status_code, 400)
 
 
+class TestConsentDenialRedirectUri(BaseTest):
+    """
+    Regression tests for #1892.
+
+    Denying consent, and the invalid_target error built from the consent POST,
+    must not redirect to a redirect_uri that is not absolute or not registered
+    for the client (RFC 6749 §4.1.2.1 and §4.2.2.1).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.login(username="test_user", password="123456")
+
+    def _post_consent(self, **overrides):
+        data = {
+            "client_id": self.application.client_id,
+            "redirect_uri": "http://example.org",
+            "response_type": "code",
+            "scope": "read",
+            "state": "s",
+            "allow": False,
+        }
+        data.update(overrides)
+        return post_form(self.client, reverse("oauth2_provider:authorize"), data=data)
+
+    def _assert_fatal_invalid_request(self, response, description):
+        """The fatal-client error page: HTTP 400, authorize.html, no redirect."""
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        error = response.context_data["error"]
+        self.assertEqual(error.error, "invalid_request")
+        self.assertEqual(error.description, description)
+        self.assertIn("error=invalid_request", response.context_data["url"])
+        self.assertIn(description.replace(" ", "+"), response.context_data["url"])
+        self.assertTemplateUsed(response, "oauth2_provider/authorize.html")
+        self.assertContains(response, "Error: invalid_request", status_code=400)
+        self.assertContains(response, description, status_code=400)
+        self.assertNotIn(b"attacker.example", response.content)
+        self.assertNotIn("attacker.example", response.context_data["url"])
+
+    def test_deny_unregistered_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(redirect_uri="http://attacker.example/cb")
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.MismatchingRedirectURIError.description)
+
+    def test_deny_relative_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(redirect_uri="/cb")
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.InvalidRedirectURIError.description)
+
+    def test_deny_unusable_client_is_not_redirected(self):
+        with mock.patch.object(Application, "is_usable", return_value=False):
+            response = self._post_consent()
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.InvalidClientIdError.description)
+        self.assertEqual(
+            response.context_data["url"],
+            "?error=invalid_request&error_description=Invalid+client_id+parameter+value.",
+        )
+
+    def test_deny_registered_redirect_uri_returns_access_denied(self):
+        response = self._post_consent()
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://example.org")
+        params = parse_qs(location.query)
+        self.assertEqual(params["error"], ["access_denied"])
+        self.assertEqual(params["state"], ["s"])
+
+    def test_invalid_target_unregistered_redirect_uri_is_not_redirected(self):
+        response = self._post_consent(
+            redirect_uri="http://attacker.example/cb",
+            resource="/not/absolute",
+            allow=True,
+        )
+
+        self._assert_fatal_invalid_request(response, oauthlib_errors.MismatchingRedirectURIError.description)
+        self.assertEqual(Grant.objects.count(), 0)
+
+    def test_invalid_target_registered_redirect_uri_is_redirected(self):
+        response = self._post_consent(resource="/not/absolute", allow=True)
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://example.org")
+        params = parse_qs(location.query)
+        self.assertEqual(params["error"], ["invalid_target"])
+        self.assertEqual(params["state"], ["s"])
+        self.assertEqual(Grant.objects.count(), 0)
+
+    def test_errors_redirect_to_the_uri_the_validation_returns(self):
+        # Denial and invalid_target both redirect to the URI returned by
+        # validate_authorization_redirect_uri, which may be the client's default.
+        cases = (
+            ({"allow": False}, "access_denied"),
+            ({"allow": True, "resource": "/not/absolute"}, "invalid_target"),
+        )
+        for overrides, error in cases:
+            with self.subTest(error=error):
+                with mock.patch.object(
+                    OAuthLibCore, "validate_authorization_redirect_uri", return_value="http://localhost"
+                ) as validate:
+                    response = self._post_consent(**overrides)
+
+                validate.assert_called_once()
+                self.assertEqual(response.status_code, 302)
+                location = urlparse(response["Location"])
+                self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", "http://localhost")
+                self.assertEqual(parse_qs(location.query)["error"], [error])
+
+    def _deny_through_backend(self, **credentials):
+        # Views that bypass AuthorizationView.form_valid call the backend directly.
+        request = RequestFactory().post(reverse("oauth2_provider:authorize"))
+        request.user = self.test_user
+        credentials = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "s",
+            **credentials,
+        }
+        return get_oauthlib_core().create_authorization_response(request, ["read"], credentials, allow=False)
+
+    def test_backend_deny_unregistered_redirect_uri_raises_fatal_error(self):
+        with self.assertRaises(FatalClientError) as raised:
+            self._deny_through_backend(redirect_uri="http://attacker.example/cb")
+
+        oauthlib_error = raised.exception.oauthlib_error
+        self.assertIsInstance(oauthlib_error, oauthlib_errors.MismatchingRedirectURIError)
+        self.assertIsNone(oauthlib_error.redirect_uri)
+
+    def test_backend_deny_without_client_id_raises_fatal_error(self):
+        with self.assertRaises(FatalClientError) as raised:
+            self._deny_through_backend(client_id=None, redirect_uri="http://example.org")
+
+        self.assertIsInstance(raised.exception.oauthlib_error, oauthlib_errors.MissingClientIdError)
+
+    def test_backend_deny_without_redirect_uri_uses_the_default(self):
+        # As in oauthlib, the default is the client's only registered redirect URI.
+        self.application.redirect_uris = "http://example.org"
+        self.application.save()
+
+        with self.assertRaises(OAuthToolkitError) as raised:
+            self._deny_through_backend()
+
+        self.assertNotIsInstance(raised.exception, FatalClientError)
+        oauthlib_error = raised.exception.oauthlib_error
+        self.assertIsInstance(oauthlib_error, oauthlib_errors.AccessDeniedError)
+        self.assertEqual(oauthlib_error.redirect_uri, "http://example.org")
+
+    def test_backend_deny_without_redirect_uri_or_default_raises_fatal_error(self):
+        # The application registers several redirect URIs, so it has no default.
+        with self.assertRaises(FatalClientError) as raised:
+            self._deny_through_backend()
+
+        self.assertIsInstance(raised.exception.oauthlib_error, oauthlib_errors.MissingRedirectURIError)
+
+    def test_backend_deny_checks_a_custom_default_redirect_uri(self):
+        # A custom validator may return no default, or one that is not absolute.
+        cases = (
+            (None, oauthlib_errors.MissingRedirectURIError),
+            ("/cb", oauthlib_errors.InvalidRedirectURIError),
+        )
+        for default, expected in cases:
+            with self.subTest(default=default):
+                with mock.patch.object(OAuth2Validator, "get_default_redirect_uri", return_value=default):
+                    with self.assertRaises(FatalClientError) as raised:
+                        self._deny_through_backend()
+
+                self.assertIsInstance(raised.exception.oauthlib_error, expected)
+
+    def test_deny_validates_the_consent_request(self):
+        with mock.patch.object(
+            OAuth2Validator,
+            "validate_redirect_uri",
+            autospec=True,
+            side_effect=OAuth2Validator.validate_redirect_uri,
+        ) as validate_redirect_uri:
+            response = self._post_consent()
+
+        self.assertEqual(response.status_code, 302)
+        validate_redirect_uri.assert_called_once()
+        oauthlib_request = validate_redirect_uri.call_args.args[3]
+        self.assertEqual(oauthlib_request.http_method, "POST")
+        self.assertIn("allow=False", oauthlib_request.body)
+        self.assertEqual(oauthlib_request.client_id, self.application.client_id)
+        self.assertEqual(oauthlib_request.client, self.application)
+
+
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 class TestOIDCAuthorizationCodeView(BaseTest):
     def test_login(self):
@@ -904,6 +1097,241 @@ class TestOIDCAuthorizationCodeView(BaseTest):
 
         self.assertIn("login_required", parsed_query["error"])
         self.assertIn("random_state_string", parsed_query["state"])
+
+    def _prompt_none(self, **parameters):
+        """A signed-in user's OpenID Connect authorization request with prompt=none.
+
+        The view decides the login and consent outcome from the Django session
+        and the user's grants; OAuth2Validator's silent-login hooks, which
+        oauthlib calls for an OpenID Connect prompt=none request, allow it.
+        """
+        self.client.login(username="test_user", password="123456")
+        query_data = {
+            "client_id": self.application.client_id,
+            "response_type": "code",
+            "state": "random_state_string",
+            "scope": "openid read",
+            "redirect_uri": "http://example.org",
+            "prompt": "none",
+            **parameters,
+        }
+        return self.client.get(reverse("oauth2_provider:authorize"), data=query_data)
+
+    def _grant(self, scope="openid read", resource=None):
+        """A token the user granted the application earlier, still valid."""
+        return AccessToken.objects.create(
+            user=self.test_user,
+            application=self.application,
+            token="granted-earlier",
+            scope=scope,
+            resource=resource or [],
+            expires=timezone.now() + datetime.timedelta(days=1),
+        )
+
+    @staticmethod
+    def _response_parameters(response):
+        location = urlparse(response["Location"])
+        return parse_qs(location.fragment or location.query)
+
+    def test_prompt_none_authenticated_without_consent_is_consent_required(self):
+        """A signed-in user with prompt=none must not see the consent page.
+
+        OpenID Connect Core 1.0 section 3.1.2.1 forbids any consent UI when
+        prompt is none. If the client has no prior consent, the response is
+        consent_required (section 3.1.2.6).
+        """
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("http://example.org"))
+        parsed_query = self._response_parameters(response)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["state"], ["random_state_string"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_skip_authorization_still_returns_a_code(self):
+        """An in-house client that skips consent still gets a code for prompt=none."""
+        self.application.skip_authorization = True
+        self.application.save()
+
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_prior_grant_returns_a_code(self):
+        """A grant the user already made is the client's pre-configured consent.
+
+        OpenID Connect Core 1.0 section 3.1.2.1 only calls for an error when
+        the client has no pre-configured consent, so a standard Relying Party
+        renewing silently (no approval_prompt, REQUEST_APPROVAL_PROMPT left at
+        its default of force) gets a code rather than consent_required.
+        """
+        self._grant()
+
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_prior_grant_approval_prompt_auto_returns_a_code(self):
+        self._grant()
+
+        response = self._prompt_none(approval_prompt="auto")
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_prior_grant_for_narrower_scopes_is_consent_required(self):
+        """A grant that does not cover the scopes requested is not consent for them."""
+        self._grant(scope="openid")
+
+        response = self._prompt_none()
+
+        self.assertEqual(response.status_code, 302)
+        parsed_query = self._response_parameters(response)
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_hybrid_consent_required_in_fragment(self):
+        """A hybrid flow error goes in the fragment, like its successful response
+        (OpenID Connect Core 1.0 section 3.3.2.6)."""
+        self.application.authorization_grant_type = Application.GRANT_OPENID_HYBRID
+        self.application.save()
+
+        response = self._prompt_none(response_type="code id_token", nonce="random_nonce_string")
+
+        self.assertEqual(response.status_code, 302)
+        location = urlparse(response["Location"])
+        self.assertEqual(location.query, "")
+        parsed_fragment = parse_qs(location.fragment)
+        self.assertEqual(parsed_fragment["error"], ["consent_required"])
+        self.assertEqual(parsed_fragment["state"], ["random_state_string"])
+
+    def test_prompt_none_revoked_grant_is_consent_required(self):
+        """A grant the user revoked is not consent any more."""
+        self._grant().revoke()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_expired_grant_is_consent_required(self):
+        token = self._grant()
+        token.expires = timezone.now() - datetime.timedelta(seconds=1)
+        token.save()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_another_users_grant_is_consent_required(self):
+        token = self._grant()
+        token.user = self.dev_user
+        token.save()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_another_clients_grant_is_consent_required(self):
+        token = self._grant()
+        token.application = Application.objects.create(
+            name="Other Application",
+            redirect_uris="http://example.org",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+        token.save()
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_prior_grant_approval_prompt_force_returns_a_code(self):
+        """approval_prompt=force cannot ask again when prompt=none forbids asking."""
+        self._grant()
+
+        parsed_query = self._response_parameters(self._prompt_none(approval_prompt="force"))
+
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_consent_required_carries_iss(self):
+        """RFC 9207 section 2: iss is on error responses too."""
+        self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertEqual(parsed_query["iss"], ["http://localhost/o"])
+
+    def test_prompt_none_without_openid_is_consent_required(self):
+        """A plain OAuth 2.0 request with prompt=none is answered like an OpenID
+        Connect one, as the anonymous case already is with login_required."""
+        parsed_query = self._response_parameters(self._prompt_none(scope="read"))
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertNotIn("code", parsed_query)
+
+    def test_prompt_none_grant_for_another_resource_is_consent_required(self):
+        """RFC 8707: consent for one resource is not consent for another."""
+        self._grant(resource=["https://a.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none(resource="https://b.example/api"))
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertFalse(Grant.objects.exists())
+
+    def test_prompt_none_resource_bound_grant_does_not_cover_an_unrestricted_request(self):
+        """A request without a resource asks for an unrestricted audience, which a
+        grant for one resource does not cover."""
+        self._grant(resource=["https://a.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none())
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertFalse(Grant.objects.exists())
+
+    def test_prompt_none_unrestricted_grant_does_not_cover_a_resource_request(self):
+        """No resource is a distinct value, not a wildcard (ADR 0001)."""
+        self._grant()
+
+        parsed_query = self._response_parameters(self._prompt_none(resource="https://a.example/api"))
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertFalse(Grant.objects.exists())
+
+    def test_prompt_none_grant_covering_the_resource_returns_a_code(self):
+        self._grant(resource=["https://a.example/api", "https://b.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none(resource="https://a.example/api"))
+
+        self.assertNotIn("error", parsed_query)
+        grant = Grant.objects.get(code=parsed_query["code"][0])
+        self.assertEqual(grant.resource, ["https://a.example/api"])
+
+    def test_prompt_none_approval_prompt_auto_keeps_its_scopes_only_scan(self):
+        """approval_prompt=auto answers prompt=none as it answers any request: a
+        token narrowed to a resource at the token endpoint, for an approval that
+        named none, still counts (ADR 0001 changes auto behind a setting)."""
+        self._grant(resource=["https://a.example/api"])
+
+        parsed_query = self._response_parameters(self._prompt_none(approval_prompt="auto"))
+
+        self.assertIn("code", parsed_query)
+        self.assertNotIn("error", parsed_query)
 
     def test_prompt_none_open_redirect_no_client(self):
         """

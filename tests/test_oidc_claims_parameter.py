@@ -741,6 +741,37 @@ def test_auto_approval_prompts_for_new_claims(
 
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(SETTINGS)
+@pytest.mark.parametrize(
+    "prior_claims,consented",
+    [
+        ({}, False),
+        ({"userinfo": {"email": None}}, False),
+        ({"id_token": {"name": None}}, True),
+    ],
+)
+def test_prompt_none_consent_required_for_new_claims(
+    oauth2_settings, test_user, application, client, prior_claims, consented
+):
+    """prompt=none cannot ask for newly requested claims (OpenID Connect Core
+    1.0 section 3.1.2.1): a prior grant covering them is pre-configured consent
+    whatever approval_prompt says, and anything else is consent_required."""
+    _prior_token(test_user, application, prior_claims)
+    client.force_login(test_user)
+    params = _params(application, "code", {"userinfo": {"name": None}}, prompt="none")
+    rsp = client.get(reverse("oauth2_provider:authorize"), data=params)
+
+    params = _redirect_params(rsp)
+    if consented:
+        assert "code" in params
+        assert "error" not in params
+    else:
+        assert params["error"] == ["consent_required"]
+        assert "code" not in params
+        assert not Grant.objects.exists()
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(SETTINGS)
 def test_auto_approval_without_claims(oauth2_settings, test_user, application, client):
     _prior_token(test_user, application, {})
     client.force_login(test_user)

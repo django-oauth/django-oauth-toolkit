@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.urls import reverse
 from jwcrypto import jwt
+from oauthlib.oauth2.rfc6749.errors import MismatchingRedirectURIError
 
 from oauth2_provider.models import get_application_model
 from oauth2_provider.oauth2_validators import OAuth2Validator
@@ -200,6 +201,27 @@ class TestImplicitAuthorizationCodeView(BaseTest):
         response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
         self.assertEqual(response.status_code, 302)
         self.assertIn("error=access_denied", response["Location"])
+
+    def test_token_post_auth_deny_unregistered_redirect_uri(self):
+        """
+        Test a denial is not redirected to a redirect_uri the client did not register
+        """
+        self.client.login(username="test_user", password="123456")
+
+        form_data = {
+            "client_id": self.application.client_id,
+            "state": "random_state_string",
+            "scope": "read write",
+            "redirect_uri": "http://attacker.example/cb",
+            "response_type": "token",
+            "allow": False,
+        }
+
+        response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("Location", response)
+        self.assertIsInstance(response.context_data["error"], MismatchingRedirectURIError)
+        self.assertNotIn("attacker.example", response.context_data["url"])
 
     def test_implicit_redirection_uri_with_querystring(self):
         """
@@ -582,9 +604,7 @@ class TestImplicitErrorResponseMode(BaseTest):
                 response = getattr(self.client, method)(reverse("oauth2_provider:authorize"), data=data)
                 self.assert_rejected_without_redirect(response)
 
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-    def test_unsupported_response_mode_rejected_on_prompt_none(self, *_mocks):
+    def test_unsupported_response_mode_rejected_on_prompt_none(self):
         query_data = {
             "client_id": self.application.client_id,
             "response_type": "id_token",
@@ -714,17 +734,14 @@ class TestImplicitErrorResponseMode(BaseTest):
 
         self.assert_error_in_fragment(response, "invalid_target")
 
-    # OAuth2Validator leaves the OIDC silent-login hooks unimplemented; deployments
-    # (like tests/app/idp) supply them. Either outcome must yield login_required in
+    # OAuth2Validator's OIDC silent-login hooks allow the request; a deployment's own
+    # (like tests/app/idp's) may deny it. Either outcome must yield login_required in
     # the fragment: from the view's own prompt=none branch, or from oauthlib.
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-    def test_prompt_none_login_required_in_fragment(self, *_mocks):
+    def test_prompt_none_login_required_in_fragment(self):
         self.assert_prompt_none_login_required_in_fragment()
 
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=False, create=True)
-    def test_prompt_none_oauthlib_login_required_in_fragment(self, *_mocks):
+    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=False)
+    def test_prompt_none_oauthlib_login_required_in_fragment(self, _validate_silent_login):
         self.assert_prompt_none_login_required_in_fragment()
 
     def assert_prompt_none_login_required_in_fragment(self):

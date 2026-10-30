@@ -285,6 +285,11 @@ A security fix also changes who the token introspection endpoint answers.
 
   See :ref:`introspection-authorization`.
 
+3.5 also drops the Django and Python versions that have reached end of life.
+
+* **Django 4.2, 5.0 and 5.1 and Python 3.10 are no longer supported (#1944).** Upgrade to Django
+  5.2 or newer and Python 3.11 or newer first.
+
 .. note::
    For the full, authoritative list of changes in every release — including the releases that
    asked nothing of you and so have no section here — see the :doc:`changelog`.
