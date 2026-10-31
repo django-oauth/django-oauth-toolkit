@@ -421,6 +421,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1950 The device authorization grant (RFC 8628) works with oauthlib 4.0.1, which broke it in two
+  places. The device authorization endpoint answered every request with HTTP 500, because oauthlib
+  now adds the scopes it resolved to its response as a `scope` key, which RFC 8628 section 3.2 does
+  not define and the view passed on to `DeviceCodeResponse`; the key is dropped, so the device
+  gets the same response as before. The token endpoint then failed the poll with HTTP 500, because
+  oauthlib now asks the validator for the device code's status through the new
+  `validate_device_code(client_id, code, request)` hook, which `OAuth2Validator` did not implement.
+  It now looks the grant up by `device_code` and the authenticated `client_id` and reports
+  `authorization_pending`, `access_denied` or `expired_token` (marking the grant expired) as the
+  view already did, `invalid_grant` for an unknown code or one issued to another client, and for an
+  authorized grant sets the approving user and the stored scopes on the request. oauthlib 4.0.0
+  neither sends the key nor calls the hook, and keeps working as before. oauthlib 4.0.1 also
+  validates `scope` at the device authorization endpoint, so a scope the application may not use
+  (or a whitespace-only one) is now answered with `invalid_scope` there, as the authorization
+  endpoint already did, instead of being stored on the grant.
 * #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
   on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
   `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the

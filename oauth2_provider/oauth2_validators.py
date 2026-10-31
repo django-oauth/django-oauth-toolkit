@@ -24,6 +24,7 @@ from jwcrypto.common import JWException
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
+from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid import RequestValidator
 
 from .authorization_server import cimd, client_assertions
@@ -46,6 +47,7 @@ from .models import (
     AbstractRefreshToken,
     get_access_token_model,
     get_application_model,
+    get_device_grant_model,
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
@@ -541,6 +543,48 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         ):
             return False
         return allowed
+
+    # The status oauthlib's ``DeviceCodeGrant.DEVICE_CODE_AUTHORIZED`` (added in 4.0.1)
+    # expects back from ``validate_device_code``; the other statuses are the RFC 8628
+    # section 3.5 error codes. Spelled out so the hook also imports under oauthlib 4.0.0,
+    # which has neither the constants nor the call.
+    DEVICE_CODE_AUTHORIZED = "authorized"
+
+    def validate_device_code(
+        self, client_id: str, code: str, request: OauthlibRequest, *args, **kwargs
+    ) -> str | None:
+        """
+        Report where the device grant behind ``code`` is in the RFC 8628 section 3.5 process.
+
+        oauthlib (4.0.1 and later) calls this from the device code grant's token request,
+        after the client is authenticated and before the scopes are validated, and turns
+        the result into the token response: ``authorization_pending``, ``access_denied``
+        and ``expired_token`` are answered as those errors, ``None`` (an unknown
+        ``device_code``, or one issued to another client) as ``invalid_grant``. For an
+        authorized grant, ``request.user`` and ``request.scopes`` are set from the grant so
+        the token is issued to the user who approved the device, with the scopes stored
+        when the device authorization was requested (section 3.4 sends no ``scope``).
+        """
+        device_grant_model = get_device_grant_model()
+        try:
+            device = device_grant_model.objects.get(device_code=code, client_id=client_id)
+        except device_grant_model.DoesNotExist:
+            log.debug("Failed device code validation: no device grant for client %s", client_id)
+            return None
+
+        if device.status == device.DENIED:
+            return rfc8628_errors.AccessDenied.error
+        if device.is_expired():
+            return rfc8628_errors.ExpiredTokenError.error
+        if device.status == device.AUTHORIZATION_PENDING:
+            return rfc8628_errors.AuthorizationPendingError.error
+        if device.status != device.AUTHORIZED:
+            log.debug("Failed device code validation: unexpected status %r", device.status)
+            return None
+
+        request.user = device.user
+        request.scopes = device.scope.split() if device.scope else []
+        return self.DEVICE_CODE_AUTHORIZED
 
     def validate_response_type(self, client_id, response_type, client, request, *args, **kwargs):
         """

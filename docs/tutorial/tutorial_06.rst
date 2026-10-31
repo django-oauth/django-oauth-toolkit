@@ -68,6 +68,10 @@ The OAuth2 provider will return the following response. In `RFC`_ Figure 1, this
         "interval": 5
     }
 
+An optional ``scope`` parameter asks for specific scopes; without it the application's default
+scopes are stored with the device code and later granted to the token. A scope the application
+may not use is answered with ``invalid_scope``, as at the authorization endpoint.
+
 In the real world, the device will somehow make the value of the `user_code` available to the user (either on-screen display,
 or Bluetooth, NFC, etc.). In `RFC`_ Figure 1, this is step (C).
 
