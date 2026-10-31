@@ -61,8 +61,8 @@ usually care about are:
 * **Name** — the label users see on the consent screen when they authorize the application.
 * **Skip authorization** — when on, users are never shown the consent screen for this application.
   Turn it on only for applications you completely trust (see :ref:`skip-auth-form`).
-* **Algorithm** — the signing algorithm for OpenID Connect ID tokens: **No OIDC support** (the
-  default), **RSA with SHA-2 256**, or **HMAC with SHA-2 256**.
+* **ID Token signing algorithm** — the signing algorithm for OpenID Connect ID tokens:
+  **No OIDC support** (the default), **RSA with SHA-2 256**, or **HMAC with SHA-2 256**.
 * **Hash client secret** — whether the client secret is stored as a one-way hash (see the note).
 
 .. note::
