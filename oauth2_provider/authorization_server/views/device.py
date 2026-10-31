@@ -62,6 +62,10 @@ class DeviceAuthorizationView(FormEncodedRequestMixin, AuthorizationServerViewMi
             oauthlib_request.client = application
             validator = core.server.request_validator
             scope = " ".join(validator.get_default_scopes(client_id, oauthlib_request))
+        # oauthlib 4.0.1 adds the scopes it resolved as a ``scope`` key, which RFC 8628
+        # section 3.2 does not define and ``DeviceCodeResponse`` does not carry. The
+        # grant stores the scope resolved above, and the device gets the RFC response.
+        response.pop("scope", None)
         device_request = DeviceRequest(client_id=client_id, scope=scope)
         device_response = DeviceCodeResponse(**response)
         create_device_grant(device_request, device_response)
