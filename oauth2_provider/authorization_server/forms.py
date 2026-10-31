@@ -17,6 +17,18 @@ def _is_hashed(secret):
     return True
 
 
+class HttpsURLField(forms.URLField):
+    """A URL field that completes a scheme-less entry with ``https``.
+
+    The default Django 6.0 adopts; until then a plain ``URLField`` assumes ``http`` and
+    warns. A URL the server will contact should not be completed to plaintext.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("assume_scheme", "https")
+        super().__init__(**kwargs)
+
+
 class AllowForm(forms.Form):
     allow = forms.BooleanField(required=False)
     redirect_uri = forms.CharField(widget=forms.HiddenInput())

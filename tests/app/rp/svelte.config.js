@@ -15,6 +15,8 @@ const config = {
 		// mid-request. The cross-site end-to-end layer sets RP_OUT_DIR so its
 		// server gets its own; everything else keeps the default.
 		outDir: process.env.RP_OUT_DIR || '.svelte-kit'
+		// The OP's back-channel logout POST carries no Origin header, so no trustedOrigins
+		// entry can admit it; server.js, the production entry point, lets it through.
 	}
 };
 

@@ -32,7 +32,8 @@
     "created": "2023-05-01T20:27:46.167Z",
     "updated": "2023-11-11T17:23:44.643Z",
     "algorithm": "RS256",
-    "allowed_origins": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443"
+    "allowed_origins": "http://localhost:5173\r\nhttp://127.0.0.1:5173\r\nhttps://rp.test:5443",
+    "backchannel_logout_uri": "http://localhost:5173/api/backchannel-logout"
   }
 },
 {

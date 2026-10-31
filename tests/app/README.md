@@ -257,6 +257,58 @@ endpoint (log in as `superuser` / `password` and approve), and the RP server
 exchanges the returned code for tokens. This flow is covered end-to-end by
 `tests/e2e/browser_rp/test_browser_par.py`.
 
+### OIDC Back-Channel Logout demo
+
+The IdP has back-channel logout enabled (`OIDC_BACKCHANNEL_LOGOUT_ENABLED`), and the
+"OIDC - Authorization Code" seed application registers the RP's endpoint as its
+`backchannel_logout_uri`. When a session ends at the IdP, DOT signs a logout token and
+POSTs it to that URL — the RP is notified directly, without the browser being involved.
+
+Since the OP talks to the RP's *server* while the session lives in the *browser*, the RP
+demo bridges the two: `src/routes/api/backchannel-logout/+server.js` verifies the logout
+token against the IdP's JWKS, and pushes an event over Server-Sent Events
+(`src/routes/api/logout-events/+server.js`) to the tab holding that session, where
+`src/components/OidcBackchannelLogoutHandler.svelte` clears the user. DOT does not issue a
+`sid` claim yet, so the demo keys sessions on `sub`.
+
+To try it, start the IdP and the RP, open `http://localhost:5173`, and log in. Then end the
+session from the IdP side rather than the RP's Logout button — follow the **IDP Admin** link
+and log out of `http://localhost:8000/admin`. The RP tab logs itself out on its own.
+
+DOT's stock delivery refuses any address that is not public, to keep a registered
+`backchannel_logout_uri` from reaching internal services, so it cannot reach an RP on
+`localhost`. With `DEBUG` on, as `runserver` runs by default, the IdP therefore delivers
+through `idp.backchannel.send_loopback_backchannel_logout_request`, which drops the
+public-address check entirely: loopback, private and link-local addresses alike. With
+`DEBUG` off, as the Docker image runs, it keeps the stock handler unless
+`OAUTH2_PROVIDER_OIDC_BACKCHANNEL_LOGOUT_HANDLER` says otherwise. Never point a deployment
+that accepts open client registration at the development handler.
+
+That is also why back-channel logout does not work under Docker Compose as shipped: the image
+runs with `DEBUG` off, so the stock handler refuses the seeded `http://localhost:5173` logout
+URI, which in a container is the container's own loopback anyway. The image still carries the
+demo's other local-development settings, such as plaintext `http` logout URIs and
+`ALLOW_LOCALHOST_LOOPBACK`, so it is a demo, not a production configuration.
+
+The logout token arrives as a server-to-server form POST with no `Origin` header. SvelteKit
+does not check origins under `npm run dev`, but a production build refuses every such POST
+before any hook runs, so the production entry point is `server.js` (`npm start`, and the
+RP's Docker image), not `node build`: it gives that one endpoint's requests the RP's own
+origin and leaves SvelteKit's CSRF protection on every other route. The endpoint
+authenticates a request by validating the signed logout token, not by its origin.
+`npm run preview` serves a production build without `server.js`, so back-channel logout is
+refused there. `tests/e2e/oidc_backchannel_logout/test_demo_rp_production.py` builds the RP
+and checks all of this against `server.js`.
+
+The browser side of the demo is deliberately simple: `/api/logout-events` lets any page
+subscribe to logout notifications for any `sub`, which a real relying party would tie to the
+subscriber's own session.
+
+The RP takes the IdP's issuer, and from it the JWKS URL its validation uses, from
+`PUBLIC_RP_ISSUER` (default `http://localhost:8000/o`). The `backchannel_logout_uri` the seeded
+application registers is `http://localhost:5173/api/backchannel-logout`, so with the seed data
+the demo assumes both apps are on their default ports.
+
 ## Running with Docker Compose
 
 The repository root ships a `Dockerfile` and `docker-compose.yml` that build the

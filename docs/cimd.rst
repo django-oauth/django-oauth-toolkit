@@ -175,6 +175,13 @@ ignored, and a re-fetch leaves the stored values as they are. A signed
 only registers for ``private_key_jwt``, so a public client can only use unsigned (``none``) request
 objects.
 
+A document may also register a ``backchannel_logout_uri`` for :ref:`OpenID Connect Back-Channel
+Logout <oidc-backchannel-logout>`, validated as for Dynamic Client Registration. A document that
+sets ``backchannel_logout_session_required`` to ``true`` is refused, since DOT issues no ``sid``
+and a metadata document gets no response in which ``false`` could be reported. While back-channel
+logout is disabled both are ignored and a re-fetch leaves the stored URI as it is; while it is
+enabled, a re-fetched document that drops the URI clears it.
+
 Settings
 --------
 

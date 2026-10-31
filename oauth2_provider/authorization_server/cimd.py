@@ -34,6 +34,8 @@ from oauthlib.common import Request
 
 from oauth2_provider.authorization_server.oidc.client_metadata import (
     UnsupportedClientMetadataError,
+    backchannel_logout_session_required,
+    backchannel_logout_uri,
     id_token_signing_algorithm,
     request_object_signing_alg,
     request_uris,
@@ -469,6 +471,24 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
     except UnsupportedClientMetadataError as exc:
         raise CIMDError(str(exc)) from exc
 
+    # Back-Channel Logout 1.0 section 2.2, read the same way the dcr path reads it. Its
+    # rules -- plaintext http only for a confidential client, which a document is only
+    # when it authenticates with private_key_jwt -- are enforced by the full_clean()
+    # below rather than here.
+    try:
+        logout_uri = backchannel_logout_uri(metadata)
+        session_required = backchannel_logout_session_required(metadata)
+    except UnsupportedClientMetadataError as exc:
+        raise CIMDError(str(exc)) from exc
+    if session_required:
+        # Substituting false would go unseen -- a document gets no registration response
+        # -- and leave a relying party that requires sid unable to use the Logout Tokens
+        # it is sent. Refuse instead, as for a signing algorithm this server cannot honour.
+        raise CIMDError(
+            "backchannel_logout_session_required cannot be true: this server does not "
+            "issue the sid claim (backchannel_logout_session_supported is false)"
+        )
+
     kwargs = {
         "name": client_name,
         "redirect_uris": " ".join(redirect_uris),
@@ -482,6 +502,9 @@ def _build_application_kwargs(metadata: dict[str, Any]) -> dict[str, Any]:
         "client_jwks": "",
         "client_jwks_uri": "",
     }
+    # Only when the parameter was read at all; otherwise a stored value is left alone.
+    if logout_uri is not None:
+        kwargs["backchannel_logout_uri"] = logout_uri
     # RFC 7591 section 2: the two MUST NOT both be present, whatever the method
     # (a blank jwks_uri counts as absent, as for Dynamic Client Registration).
     jwks = metadata.get("jwks")

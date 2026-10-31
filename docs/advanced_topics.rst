@@ -100,6 +100,14 @@ their order and picks up fields added in later releases. Listing the fields your
 instead -- or using ``Meta.exclude`` -- works just as well, and is how you drop a field
 (say ``algorithm``) that your deployment does not let clients choose.
 
+One field is not in ``APPLICATION_FIELDS``: ``backchannel_logout_uri``, which the default field
+set adds only while ``OIDC_ENABLED`` and ``OIDC_BACKCHANNEL_LOGOUT_ENABLED`` are both on. A form
+that declares its own ``Meta.fields`` must list it to offer it, ideally declared as
+``oauth2_provider.authorization_server.forms.HttpsURLField`` so that a bare host is completed
+with ``https`` rather than ``http``. A form using ``Meta.exclude`` or ``"__all__"`` offers it
+whether or not the feature is on, as a plain URL field: exclude it unless you enable back-channel
+logout, and then declare it as ``HttpsURLField``.
+
 Subclassing ``ApplicationForm`` is recommended but not required: it carries the client
 secret help text and the HS256 warnings the shipped templates and the admin render. The
 form is always rebound to the model named by ``OAUTH2_PROVIDER_APPLICATION_MODEL``, so
@@ -314,6 +322,45 @@ back: CIMD checks that the document's ``client_id`` matches the URL and validate
 a JWK Set keeps only public signing keys, with caching, failure backoff and the unknown-``kid``
 refetch limit unchanged. A JWK Set fetcher that raises anything other than ``ClientAssertionError``
 fails the client's authentication and arms the backoff, as the CIMD resolver does for its fetcher.
+
+Back-channel logout delivery
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:doc:`OpenID Connect Back-Channel Logout <oidc>` makes the same kind of request in the other
+direction: it POSTs a logout token to the ``backchannel_logout_uri`` a client registered. The
+setting to replace is ``OIDC_BACKCHANNEL_LOGOUT_HANDLER``, and the default delivers through
+``safe_fetch.post_form()``, which follows the list above -- except that it also accepts ``http``,
+and has no response to cap. Which schemes a ``backchannel_logout_uri`` may use is decided when it
+is registered, by ``OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES``; delivery posts to the stored URI
+as it is. Its deadline covers the HTTP exchange; resolving the host is left to the system resolver's
+timeout.
+
+Like the fetchers, it connects directly. It does not use ``HTTPS_PROXY``, ``NO_PROXY`` or the other
+proxy environment variables, and it verifies certificates against the system trust store, not
+``certifi`` or ``REQUESTS_CA_BUNDLE``. Where outbound traffic has to go through a proxy, every
+delivery fails (each logged as a warning) until a handler sends it there. A handler mints the token
+with ``build_logout_token()`` and posts it however the proxy requires; the proxy is then what has
+to apply the address rules above, since only it sees where the name resolves::
+
+    import requests
+
+    from oauth2_provider.authorization_server.oidc.handlers import build_logout_token
+    from oauth2_provider.core.exceptions import BackchannelLogoutRequestError
+
+
+    def send_through_proxy(id_token, **kwargs):
+        response = requests.post(
+            id_token.application.backchannel_logout_uri,
+            data={"logout_token": build_logout_token(id_token)},
+            proxies={"http": "http://egress.internal:3128", "https": "http://egress.internal:3128"},
+            timeout=5,  # per read, not a deadline: rely on the proxy to bound the request
+            allow_redirects=False,
+        )
+        if not 200 <= response.status_code < 300:
+            raise BackchannelLogoutRequestError(f"HTTP {response.status_code}")
+
+Never deploy the demo provider's ``tests/app/idp/idp/backchannel.py``: it skips the address check
+altogether, for a relying party on the developer's own machine.
 
 .. _extend_token_models:
 

@@ -1,9 +1,11 @@
 import json
+from functools import partial
 from typing import Any
 from urllib.parse import urlparse
 
 from django.contrib.auth import logout
 from django.contrib.auth.models import AnonymousUser
+from django.db import router, transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -17,6 +19,11 @@ from oauthlib.common import add_params_to_uri
 from oauth2_provider.authorization_server import client_assertions
 from oauth2_provider.authorization_server.forms import ConfirmLogoutForm
 from oauth2_provider.authorization_server.oidc import request_objects
+from oauth2_provider.authorization_server.oidc.handlers import (
+    DISPATCHED_ATTR,
+    collect_backchannel_logout_targets,
+    send_backchannel_logout_requests,
+)
 from oauth2_provider.authorization_server.oidc.mixins import OIDCLogoutOnlyMixin, OIDCOnlyMixin
 from oauth2_provider.authorization_server.oidc.server import userinfo_signing_available
 from oauth2_provider.authorization_server.views.metadata import (
@@ -138,6 +145,11 @@ class ConnectDiscoveryInfoView(ServerMetadataViewMixin, OIDCOnlyMixin, View):
             data["acr_values_supported"] = list(oauth2_settings.OIDC_ACR_VALUES_SUPPORTED)
         if oauth2_settings.OIDC_RP_INITIATED_REGISTRATION_ENABLED:
             data["prompt_values_supported"].append("create")
+
+        if oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+            data["backchannel_logout_supported"] = True
+            # We need to issue SID claims on tokens to support this.
+            data["backchannel_logout_session_supported"] = False
 
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ENABLED:
             data["end_session_endpoint"] = self._get_endpoint_url(
@@ -576,6 +588,23 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
 
     def do_logout(self, application=None, post_logout_redirect_uri=None, state=None, token_user=None):
         user = token_user or self.request.user
+        # Work out who to notify before the ID Tokens that identify them are deleted
+        # below, and take ownership of the dispatch so the user_logged_out receiver does
+        # not also fire: it runs before django.contrib.auth.logout() flushes the session,
+        # and no relying party should be able to delay -- or, if the worker dies mid-
+        # request, prevent -- either the flush or the token deletion. RP-Initiated Logout
+        # 1.0 section 2 only requires the notifications to precede the post-logout
+        # redirect, which they still do.
+        #
+        # The notifications go to the RPs of the End-User whose OP session this request
+        # ends -- section 2 has the OP notify "any RPs logged in as that End-User" as part
+        # of logging them out -- which is the logged-in user, not whoever the
+        # id_token_hint names. When nobody is logged in, no session ends and nobody is
+        # notified: otherwise anyone holding a user's ID Token, which is accepted after it
+        # expires, could log that user out of every RP without being asked.
+        session_user = self.request.user if self.request.user.is_authenticated else None
+        logout_targets = collect_backchannel_logout_targets(session_user, initiating_application=application)
+        setattr(self.request, DISPATCHED_ATTR, True)
         # Delete Access Tokens if a user was found
         if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS and not isinstance(user, AnonymousUser):
             AccessToken = get_access_token_model()
@@ -600,6 +629,21 @@ class RPInitiatedLogoutView(OIDCLogoutOnlyMixin, FormView):
                 refresh_token.revoke()
         # Logout in Django
         logout(self.request)
+        # Best-effort, and only now that everything that must happen has: a logout token
+        # is delivered over the network to an endpoint the relying party controls. Under
+        # ATOMIC_REQUESTS the revocation and the flush are not done until they commit, so
+        # wait for that -- still before the redirect leaves the view's transaction. With no
+        # transaction open, on_commit() runs it at once. Where the tokens and the session
+        # live on different databases, this waits on the tokens' one.
+        if logout_targets:
+            using = router.db_for_write(get_id_token_model())
+            connection = transaction.get_connection(using)
+            if connection.in_atomic_block or connection.get_autocommit():
+                transaction.on_commit(partial(send_backchannel_logout_requests, logout_targets), using=using)
+            else:
+                # Manual transaction management, where on_commit() is refused: the project
+                # commits when it chooses, which this cannot wait for.
+                send_backchannel_logout_requests(logout_targets)
         # Redirect
         if post_logout_redirect_uri:
             if state:

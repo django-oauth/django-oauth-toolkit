@@ -70,7 +70,7 @@ Package map
       core/                     shared plumbing
         scopes, exceptions, utils, http, compat, signals, checks,
         bcp (RFC 9700 best-current-practice gates),
-        safe_fetch (SSRF-hardened HTTPS fetching),
+        safe_fetch (SSRF-hardened outbound HTTP: metadata fetches, logout token POSTs),
         rfc7523 (client-assertion protocol constant, shared by AS/RS/client),
         backends_oauthlib, views.py (OAuthLibCoreMixin — shared view base)
       authorization_server/     provider side
@@ -86,7 +86,8 @@ Package map
           views.py, mixins.py (OIDC gating), urls.py,
           server.py (default OIDC_SERVER_CLASS: oauthlib server with signed UserInfo),
           client_metadata.py (OIDC client metadata shared by the dcr/cimd registration paths),
-          request_objects.py (OpenID Connect Core section 6 request objects)
+          request_objects.py (OpenID Connect Core section 6 request objects),
+          handlers.py (Back-Channel Logout: logout tokens, delivery, signal receiver)
       resource_server/          resource server side
         www_authenticate, backends, decorators, middleware,
         validators.py (ResourceServerValidatorMixin + RFC 8707 helpers),

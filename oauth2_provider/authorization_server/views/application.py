@@ -3,6 +3,7 @@ from django.forms.models import modelform_defines_fields, modelform_factory
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
+from oauth2_provider.authorization_server.forms import HttpsURLField
 from oauth2_provider.models import get_application_model
 from oauth2_provider.settings import oauth2_settings
 
@@ -28,6 +29,21 @@ class ApplicationFormMixin:
     # Default field set, used when the configured form declares no Meta.fields / Meta.exclude.
     fields = APPLICATION_FIELDS
 
+    def get_fields(self) -> list[str]:
+        """The field set applied when the configured form declares none of its own.
+
+        A field backing an optional feature is only offered while that feature is
+        enabled, so a deployment that does not use it is not asked to fill in a field
+        that would be ignored. A form declaring its own ``Meta.fields`` opts out of this,
+        the same way it opts out of ``fields``.
+        """
+        fields = list(self.fields)
+
+        if oauth2_settings.OIDC_ENABLED and oauth2_settings.OIDC_BACKCHANNEL_LOGOUT_ENABLED:
+            fields.append("backchannel_logout_uri")
+
+        return fields
+
     def get_form_class(self):
         """Build the ModelForm used by the registration and update views.
 
@@ -45,7 +61,15 @@ class ApplicationFormMixin:
         model = get_application_model()
         if modelform_defines_fields(form_class):
             return modelform_factory(model, form=form_class)
-        return modelform_factory(model, form=form_class, fields=self.fields)
+        # field_classes replaces the form's own Meta.field_classes rather than adding to it,
+        # so carry those over, letting the project's win.
+        own_field_classes = getattr(getattr(form_class, "Meta", None), "field_classes", None) or {}
+        return modelform_factory(
+            model,
+            form=form_class,
+            fields=self.get_fields(),
+            field_classes={"backchannel_logout_uri": HttpsURLField, **own_field_classes},
+        )
 
     def form_valid(self, form):
         # The application is always owned by the request user; a configured form exposing

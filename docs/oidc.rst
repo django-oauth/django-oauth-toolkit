@@ -204,6 +204,200 @@ Clients registered through :doc:`Dynamic Client Registration <views/dynamic_clie
 send them as the ``post_logout_redirect_uris`` metadata.
 
 
+.. _oidc-backchannel-logout:
+
+Backchannel Logout Support
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+`Backchannel Logout`_ is an extension to the core standard which
+allows the OP to send direct requests to terminate sessions at the RP.
+
+.. code-block:: python
+
+   OAUTH2_PROVIDER = {
+       # OIDC has to be enabled to use Backchannel logout
+       "OIDC_ENABLED": True,
+       # Enable and configure Backchannel Logout Support
+       "OIDC_BACKCHANNEL_LOGOUT_ENABLED": True,
+       # ... any other settings you want
+   }
+
+A logout token restates the ``iss`` and ``sub`` of the ID Token it follows up on, which a
+relying party matches it against (`Backchannel Logout`_ section 2.6). Each ID Token records
+both when it is issued, because the issuer may have been derived from that request: without
+``OIDC_ISS_ENDPOINT`` it comes from the host the relying party used for its token request,
+which need not be the one users log out through. So ``OIDC_ISS_ENDPOINT`` is not required.
+An ID Token issued before upgrading records neither; its logout token falls back to
+``OIDC_ISS_ENDPOINT`` and the user's primary key, and is not sent if there is no issuer to
+fall back to.
+
+An ID Token issued without a ``sub`` gets no logout token: one whose ``sub`` was removed by
+overriding ``get_claim_dict``, or was longer than the 255 characters OpenID Connect allows.
+OpenID Connect Core 1.0 section 2 makes ``sub`` REQUIRED, and without it no logout token
+could match what the relying party holds, so each such logout is skipped with a warning.
+
+.. _Backchannel Logout: https://openid.net/specs/openid-connect-backchannel-1_0.html
+
+To make use of this, the application being created needs to provide a
+valid ``backchannel_logout_uri``. It is validated against
+``OIDC_BACKCHANNEL_LOGOUT_URI_ALLOWED_SCHEMES`` (``["https"]`` by default) and may carry a port,
+path and query, but not a fragment. Plaintext ``http`` is accepted only for a confidential
+client, as section 2.2 allows, or -- an extension of DOT's for local development, which section
+2.2 does not provide for -- on a loopback address.
+
+A relying party that registers itself can set the URI with the ``backchannel_logout_uri``
+member, which `Backchannel Logout`_ section 5.1.1 registers in the OAuth Dynamic Client
+Registration Metadata registry. Both self-registration paths read it: Dynamic Client
+Registration (:rfc:`7591`), whose registration response echoes it back, and a Client ID
+Metadata Document. The same validation applies on both, so a URI the rules above reject is
+refused rather than stored — as an ``invalid_client_metadata`` error for a registration
+request, and as a resolution failure for a metadata document. Note a document describes a
+*public* client unless it authenticates with ``private_key_jwt``, so its logout URI must
+use ``https`` unless it is on a loopback address.
+
+The member is only read while back-channel logout is enabled — the same condition under
+which the OP advertises support for it — and is otherwise ignored, as metadata this server
+does not implement, leaving any stored value alone. While it is read, its absence counts: an
+:rfc:`7592` update replaces the registration, so one that omits the member clears the stored
+URI and the relying party is no longer notified, as happens when a re-fetched metadata document
+drops it.
+
+The companion ``backchannel_logout_session_required`` member asks the OP to put a ``sid``
+claim in the Logout Token, which DOT does not do (see below), so ``true`` cannot be
+honoured. The two registration paths handle that differently, because only one of them
+can tell the client. Dynamic Client Registration registers the client anyway and reports
+``backchannel_logout_session_required: false`` in its response, as :rfc:`7591` section
+3.2.1 allows, so a client that cannot work without ``sid`` can see that its request was
+not met. A Client ID Metadata Document has no registration response to report that in,
+so a document asking for ``true`` is refused rather than resolved.
+
+Which Relying Parties can be logged out
+---------------------------------------
+
+`Backchannel Logout`_ section 4 asks an implementation to "make it clear ... whether
+they are capable of logging out native applications or only Web RPs", because the answer
+differs between OPs.
+
+DOT delivers a logout token by making an HTTP POST from the server to the URI the
+relying party registered, so it can log out any relying party that has an endpoint it can
+reach: a web application, and a native or mobile application that has a backend of its
+own. It cannot log out a relying party that exists only on the end user's device, with no
+server component for the OP to contact — there is nothing to POST to. Such a client has
+to notice the logout some other way, for example from a refresh or introspection attempt
+failing after its tokens were revoked.
+
+Which Relying Parties are notified
+----------------------------------
+
+DOT does not yet model the OP authentication session, so it has no ``sid`` to scope a
+logout to and advertises ``backchannel_logout_session_supported: false``. Logout tokens
+carry the ``sub`` claim only, which per `Backchannel Logout`_ section 2.4 is a valid
+Logout Token: it asks the RP to end *all* of that user's sessions, not one of them.
+
+That ``sub`` is the one the ID Token was issued with, which each ID Token records, so a
+``sub`` customised through ``get_additional_claims`` (see `Customizing the OIDC
+responses`_) carries over without customising it a second time. A relying party checks
+the two against each other (section 2.6), and would otherwise find no session to end.
+
+Participation is likewise approximated: on logout, DOT notifies every application that
+registered a ``backchannel_logout_uri`` and holds an unexpired ID Token for the user. The one
+exception is the relying party that initiated an RP-initiated logout, which RP-Initiated
+Logout 1.0 section 2 says "is to be included in these notifications": when a user is logged
+in, it is notified from its latest ID Token for that user even once that has expired. ID
+Token lifetime and RP session lifetime are not the same thing, so an RP whose server-side
+session is still live but whose ID Token row has expired will not be notified.
+
+How wide that gap is, is set by ``ID_TOKEN_EXPIRE_SECONDS``, which defaults to 36000 (ten
+hours) — long enough that a user who signed in during the working day is still covered.
+Shortening it, which is otherwise reasonable since an ID Token is only needed at
+authentication time, narrows back-channel logout coverage by the same amount, and does so
+silently: a logout simply finds fewer relying parties to notify. Keep it at least as long
+as the sessions your relying parties hold, or accept that logout reaches only the ones
+that authenticated within that window.
+
+Both bounds are lifted by the session entity in the `Authorization and Session entities
+ADR <https://github.com/django-oauth/django-oauth-toolkit/issues/1723>`_.
+
+The ``offline_access`` scope does not suppress the notification. `Backchannel Logout`_
+section 2.7 addresses it to the :term:`Client` (Relying Party) receiving the token —
+"Refresh tokens issued with the ``offline_access`` property normally SHOULD NOT be
+revoked" — so the Relying Party clears the session state and decides for itself what to do
+with its refresh token. Withholding the request would deny it that choice.
+
+Delivery
+--------
+
+Logout tokens are sent from the logout request itself, in parallel across
+``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS`` threads, so a logout waits on the slowest relying
+party of each round of that many rather than on all of them in turn.
+``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT`` bounds each HTTP exchange as a whole -- connecting, the
+TLS handshake, sending, and the response -- however slowly the relying party answers.
+Resolving its host comes first and is bounded by the system resolver's own timeout, not
+by this setting; a relying party controls its own DNS, so one whose name never answers
+holds the logout response for that much longer (typically 5–30 seconds, tunable in the
+resolver's configuration), and on the plain logout path below, the session flush too.
+
+Delivery is a request the server makes on behalf of whoever registered the client, at a
+rate set by logins and logouts. Where client registration is open -- Dynamic Client
+Registration or :doc:`Client ID Metadata Documents <cimd>` -- rate-limit registration,
+login and logout at the edge, with a web application firewall or reverse proxy, as for
+any endpoint an anonymous party can make the server act on.
+
+The ``backchannel_logout_uri`` is a URL a client chose, which the server then contacts, so
+delivery is hardened against server-side request forgery the way fetching a Client ID
+Metadata Document is: every address the host resolves to must be public (private,
+loopback, link-local -- which includes cloud metadata services -- and other reserved
+ranges are refused), the connection goes to the address that was checked, so a second DNS
+lookup cannot redirect it, and redirects are not followed. The URI itself is still
+accepted at registration, since an address can change after it, so the refusal happens at
+delivery and is logged like any other failure to notify.
+
+That makes the stock handler unable to reach a relying party on the developer's own
+machine. The demo IdP in ``tests/app/idp`` delivers through ``idp.backchannel`` when
+``DEBUG`` is on: a handler that skips the public-address check altogether, so it reaches
+loopback, private and link-local addresses alike, and is only for local development. A
+deployment that needs something similar writes its own handler the same way, rather than
+turning the check off with a setting.
+
+No relying party can *prevent* the logout, on either path below: a failure to notify is
+logged and never propagates.
+
+How far a relying party can *delay* one depends on how the user is logged out.
+
+``RPInitiatedLogoutView`` — the ``end_session_endpoint`` — works out who to notify,
+revokes the user's tokens, flushes the session, and sends only then — under
+``ATOMIC_REQUESTS``, only once the database holding the tokens has committed, so that no
+logout token goes out while the revocation could still be rolled back. A session stored on
+another database commits on its own schedule, which may be after the logout tokens are sent.
+Nothing a relying party does holds up either the revocation or the flush. The notifications
+still precede the post-logout redirect, as `RP-Initiated Logout 1.0
+<https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ section 2 requires.
+
+The relying parties notified are those of the user whose OP session the request ends:
+the logged-in user, regardless of whom the ``id_token_hint`` names. When nobody is logged in, no
+session ends and no relying party is notified, so presenting someone's ID Token — which
+is accepted even after it expires — cannot log them out of every relying party.
+
+A plain ``django.contrib.auth.logout()`` is picked up through the ``user_logged_out``
+signal, which Django sends *before* it flushes the session. There the flush does wait on
+the dispatch — for at most the system resolver's timeout plus
+``OIDC_BACKCHANNEL_LOGOUT_TIMEOUT`` per round of ``OIDC_BACKCHANNEL_LOGOUT_MAX_WORKERS``
+relying parties, not for every relying party in turn. Keep that within your web server's
+request timeout: a worker killed while it waits is killed before the flush. Under
+``ATOMIC_REQUESTS`` whatever else the request did is uncommitted for that long too, and is
+rolled back with it. A handler that hands the work to a task queue (below) takes it off that
+path altogether.
+
+One request is sent per relying party, with no retry. Deployments that want retries, or
+that would rather not send at all from the request-response cycle, set
+``OIDC_BACKCHANNEL_LOGOUT_HANDLER`` to a callable that hands the work to a task queue. Mint
+the token in the handler, while the ID Token is still in hand, with
+``oauth2_provider.authorization_server.oidc.handlers.build_logout_token``, and queue only its
+delivery, ``post_logout_token(uri, logout_token)``: the ID Token's row may already be deleted by
+the time the task runs. A queued token expires after
+``OIDC_BACKCHANNEL_LOGOUT_TOKEN_EXPIRE_SECONDS``, which bounds how long retries can go on;
+``docs/settings.rst`` documents what else such a handler needs to know.
+
 Setting up OIDC enabled clients
 ===============================
 
@@ -465,8 +659,13 @@ By default the ID token will just have a ``sub`` claim (in addition to the
 required claims, eg ``iss``, ``aud``, ``exp``, ``iat``, ``auth_time`` etc),
 and the ``sub`` claim will use the primary key of the user as the value.
 You'll probably want to customize this and add additional claims or change
-what is sent for the ``sub`` claim. To do so, you will need to add a method to
-our custom validator. It takes one of two forms:
+what is sent for the ``sub`` claim.
+
+(Whatever ``sub`` an ID Token is issued with is recorded with it, and the logout tokens of
+`Backchannel Logout Support`_ restate that value, so they need no customising of their
+own. Removing ``sub`` altogether means no logout token is sent for that ID Token.)
+
+To do so, you will need to add a method to our custom validator. It takes one of two forms:
 
 The first form gets passed a request object, and should return a dictionary
 mapping a claim name to claim data::
