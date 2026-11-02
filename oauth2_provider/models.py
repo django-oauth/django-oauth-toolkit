@@ -1235,7 +1235,7 @@ class AbstractAccessToken(models.Model):
         """
         if not resources:
             return not self.resource
-        return set(resources).issubset(self.resource)
+        return set(resources).issubset(self.resource or [])
 
     def revoke(self):
         """

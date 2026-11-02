@@ -847,7 +847,9 @@ means an unrestricted audience, not any audience. A token records the audience
 it was issued for, which the token request may narrow, so a client that adds
 ``resource`` at the token endpoint to an authorization that named none cannot
 renew that authorization with ``prompt=none``. ``auto`` compares scopes and
-claims only, for ``prompt=none`` as for any other request.
+claims only, for ``prompt=none`` as for any other request, unless
+``REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES`` is on: then it checks resources the
+same way ``force`` does here.
 
 Remembered consent is read from access tokens only, so an implicit client that
 asks for ``response_type=id_token`` (no access token) gets

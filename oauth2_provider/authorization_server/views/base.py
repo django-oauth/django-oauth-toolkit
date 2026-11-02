@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import time
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlencode, urlparse
@@ -66,6 +67,22 @@ if TYPE_CHECKING:
 
 
 log = logging.getLogger("oauth2_provider")
+
+
+def _warn_approval_prompt_resources() -> None:
+    """Warn that approval_prompt=auto skipped consent on the legacy, scopes-only match."""
+    message = (
+        "approval_prompt=auto skipped the consent page on a prior token that does not "
+        "cover the requested RFC 8707 resources, because "
+        'OAUTH2_PROVIDER["REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES"] is False. This '
+        "default is scheduled to change to True in django-oauth-toolkit 4.0, after "
+        "which such a request shows the consent page again. Set "
+        'OAUTH2_PROVIDER["REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES"] to True to adopt '
+        "the new behavior now."
+    )
+    warnings.warn(message, DeprecationWarning, stacklevel=3)
+    log.warning(message)
+
 
 # Where AuthorizationView records that it sent the user to log in, and how long
 # that record lets a login count as the one it asked for.
@@ -868,7 +885,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 # claims are always presented to the End-User. A prompt=none request
                 # that only reaches this scan because asking is forbidden (force)
                 # must have its RFC 8707 resources covered too; auto checks them only
-                # with REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES (#1916, ADR 0001).
+                # with REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES (#1916).
                 resources_checked = (
                     require_approval != "auto" or oauth2_settings.REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES
                 )
@@ -879,6 +896,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                         and requested_claims <= requested_claim_names(token.claims)
                         and (not resources_checked or token.allow_resources(requested_resources))
                     ):
+                        if not resources_checked and not token.allow_resources(requested_resources):
+                            _warn_approval_prompt_resources()
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request,
                             scopes=" ".join(scopes),

@@ -377,8 +377,9 @@ Default: ``False``
 
 When ``True``, ``approval_prompt=auto`` skips the authorization form only when a prior access
 token also covers the RFC 8707 ``resource`` values requested (see
-``AccessToken.allow_resources``). When ``False``, ``auto`` compares scopes only. Scheduled to
-default to ``True`` in 4.0. Refer to :ref:`skip-auth-form`.
+``AccessToken.allow_resources``). When ``False``, ``auto`` compares scopes only, and emits a
+``DeprecationWarning`` (also logged) when it skips the form on a token that would not cover the
+requested resources. Scheduled to default to ``True`` in 4.0. Refer to :ref:`skip-auth-form`.
 
 ALLOWED_REDIRECT_URI_SCHEMES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~

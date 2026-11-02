@@ -1,5 +1,6 @@
 import datetime
 import json
+import warnings
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
@@ -1118,3 +1119,34 @@ def test_rfc8707_approval_prompt_auto_ignores_resources_by_default(client, oauth
     response = _approval_prompt_auto_response(client, [API_A], [API_B])
 
     assert response.status_code == 302
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings({"PKCE_REQUIRED": False})
+def test_rfc8707_approval_prompt_auto_warns_on_the_legacy_match(client, oauth2_settings):
+    with pytest.warns(DeprecationWarning, match="REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES"):
+        response = _approval_prompt_auto_response(client, [API_A], [API_B])
+
+    assert response.status_code == 302
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize(
+    "match_resources,granted,requested,status_code",
+    [
+        pytest.param(True, [API_A], [API_A], 302, id="setting-on-covered"),
+        pytest.param(True, [API_A], [API_B], 200, id="setting-on-not-covered"),
+        pytest.param(False, [API_A], [API_A], 302, id="setting-off-covered"),
+    ],
+)
+def test_rfc8707_approval_prompt_auto_does_not_warn(
+    client, oauth2_settings, match_resources, granted, requested, status_code
+):
+    oauth2_settings.PKCE_REQUIRED = False
+    oauth2_settings.REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES = match_resources
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        response = _approval_prompt_auto_response(client, granted, requested)
+
+    assert response.status_code == status_code
