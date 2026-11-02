@@ -50,9 +50,6 @@ class CustomOAuth2Validator(OAuth2Validator):
         auth_middleware.process_request(request)
         return request.user.is_authenticated
 
-    def validate_silent_authorization(self, request) -> bool:
-        return True
-
     def get_acr(self, request) -> str | None:
         # The acr claim of the ID Token (OpenID Connect Core 1.0 section 2). This demo
         # signs users in with a password only, which does not meet ISO/IEC 29115 level

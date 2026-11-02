@@ -1,7 +1,6 @@
 import base64
 import datetime
 import json
-from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
@@ -1499,9 +1498,7 @@ class TestHybridErrorResponseMode(BaseTest):
 
         self.assert_error_in_fragment(response, "invalid_request")
 
-    @mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-    @mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-    def test_prompt_none_login_required_in_fragment(self, *_mocks):
+    def test_prompt_none_login_required_in_fragment(self):
         self.oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
         query_data = {
             "client_id": self.application.client_id,

@@ -22,7 +22,6 @@ from oauth2_provider.authorization_server.sessions import (
     get_session_authentication_time,
 )
 from oauth2_provider.authorization_server.views import base
-from oauth2_provider.oauth2_validators import OAuth2Validator
 
 from . import presets
 from .utils import get_basic_auth_header, post_form
@@ -329,13 +328,9 @@ def test_prompt_login_with_max_age_zero_logs_in_once(stale_client, application, 
     assert response.status_code == 200
 
 
-# OAuth2Validator leaves the OIDC silent-login hooks unimplemented; deployments
-# (like tests/app/idp) supply them.
-@mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-@mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-def test_prompt_none_with_expired_max_age_is_login_required(
-    _login, _authorization, stale_client, application, oauth2_settings
-):
+# OAuth2Validator's silent-login hooks allow the request, so the expired max_age
+# alone makes it login_required.
+def test_prompt_none_with_expired_max_age_is_login_required(stale_client, application, oauth2_settings):
     oauth2_settings.COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS = True
 
     response = authorize(stale_client, application, prompt="none", max_age="60")
@@ -345,11 +340,7 @@ def test_prompt_none_with_expired_max_age_is_login_required(
     assert "iss" in query
 
 
-@mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True)
-@mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True)
-def test_prompt_none_with_expired_max_age_hybrid_error_in_fragment(
-    _login, _authorization, stale_client, hybrid_application
-):
+def test_prompt_none_with_expired_max_age_hybrid_error_in_fragment(stale_client, hybrid_application):
     response = authorize(
         stale_client,
         hybrid_application,

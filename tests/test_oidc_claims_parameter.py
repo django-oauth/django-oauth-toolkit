@@ -9,7 +9,6 @@ import re
 import uuid
 from copy import deepcopy
 from datetime import timedelta
-from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
@@ -759,11 +758,7 @@ def test_prompt_none_consent_required_for_new_claims(
     _prior_token(test_user, application, prior_claims)
     client.force_login(test_user)
     params = _params(application, "code", {"userinfo": {"name": None}}, prompt="none")
-    with (
-        mock.patch.object(OAuth2Validator, "validate_silent_login", return_value=True, create=True),
-        mock.patch.object(OAuth2Validator, "validate_silent_authorization", return_value=True, create=True),
-    ):
-        rsp = client.get(reverse("oauth2_provider:authorize"), data=params)
+    rsp = client.get(reverse("oauth2_provider:authorize"), data=params)
 
     params = _redirect_params(rsp)
     if consented:
