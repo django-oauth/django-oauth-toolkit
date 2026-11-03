@@ -27,7 +27,7 @@ from oauth2_provider.oauth2_validators import OAuth2Validator
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
 from .common_testing import OAuth2ProviderTransactionTestCase as TransactionTestCase
-from .utils import get_basic_auth_header
+from .utils import MALFORMED_JWTS, get_basic_auth_header
 
 
 try:
@@ -1236,6 +1236,16 @@ def test_validate_id_token_bad_token_no_aud(oauth2_settings, mocker, oidc_key):
     validator = OAuth2Validator()
     status = validator.validate_id_token(token.serialize(), ["openid"], mocker.sentinel.request)
     assert status is False
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+@pytest.mark.parametrize("token", MALFORMED_JWTS.values(), ids=MALFORMED_JWTS.keys())
+def test_validate_jwt_bearer_token_malformed(oauth2_settings, mocker, token):
+    # A malformed bearer token is an invalid token (401), not an unhandled error (500).
+    validator = OAuth2Validator()
+    assert validator._get_key_for_token(token) is None
+    assert validator.validate_jwt_bearer_token(token, ["openid"], mocker.sentinel.request) is False
 
 
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)

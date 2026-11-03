@@ -33,6 +33,7 @@ from oauth2_provider.settings import oauth2_settings
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .utils import MALFORMED_JWTS
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -830,6 +831,12 @@ def test_must_prompt(oidc_tokens, other_user, rp_settings, ALWAYS_PROMPT):
 
 def test__load_id_token():
     assert _load_id_token("Not a Valid ID Token.") == (None, None)
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("token", MALFORMED_JWTS.values(), ids=MALFORMED_JWTS.keys())
+def test__load_id_token_malformed(token):
+    assert _load_id_token(token) == (None, None)
 
 
 def is_logged_in(client):
