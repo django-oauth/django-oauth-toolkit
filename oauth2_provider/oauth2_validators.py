@@ -19,7 +19,7 @@ from django.utils import dateformat, timezone
 from django.utils.crypto import constant_time_compare
 from django.utils.timezone import make_aware
 from django.utils.translation import gettext_lazy as _
-from jwcrypto import jws, jwt
+from jwcrypto import jwk, jws, jwt
 from jwcrypto.common import JWException
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import Request as OauthlibRequest
@@ -1482,17 +1482,30 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         except (JWException, JWTExpired, KeyError, IDToken.DoesNotExist):
             return None
 
-    def _get_key_for_token(self, token):
+    def _get_key_for_token(self, token: str) -> jwk.JWK | None:
         """
         Peek at the unvalidated token to discover who it was issued for
         and then use that to load that application and its key.
+
+        Fails closed: a token that cannot be parsed, or whose claims or `aud` have
+        the wrong shape, yields `None` so callers treat it as an invalid token.
+        Nothing peeked here is trusted until the signature is verified.
         """
         unverified_token = jws.JWS()
-        unverified_token.deserialize(token)
-        claims = json.loads(unverified_token.objects["payload"].decode("utf-8"))
-        if "aud" not in claims:
+        try:
+            unverified_token.deserialize(token)
+            claims = json.loads(unverified_token.objects["payload"].decode("utf-8"))
+        except (JWException, ValueError, KeyError, UnicodeDecodeError):
             return None
-        application = self._get_client_by_audience(claims["aud"])
+        if not isinstance(claims, dict):
+            return None
+        audience = claims.get("aud")
+        if isinstance(audience, list):
+            if not audience or not all(isinstance(aud, str) for aud in audience):
+                return None
+        elif not isinstance(audience, str):
+            return None
+        application = self._get_client_by_audience(audience)
         if application:
             return application.jwk_key
 
