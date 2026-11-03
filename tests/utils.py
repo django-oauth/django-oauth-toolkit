@@ -55,3 +55,23 @@ def spy_on(meth):
 
     wrapper.spy = spy
     return wrapper
+
+
+def _unsigned_jws(payload: bytes) -> str:
+    """Compact JWS with an HS256 header, the given raw payload and a dummy signature."""
+
+    def b64(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    return ".".join([b64(b'{"alg": "HS256"}'), b64(payload), b64(b"signature")])
+
+
+# Bearer tokens that cannot be parsed, or whose claims have the wrong shape (#1949).
+MALFORMED_JWTS = {
+    "not_a_jws": "abc",
+    "payload_not_json": _unsigned_jws(b"not json"),
+    "payload_not_an_object": _unsigned_jws(b"1"),
+    "payload_not_utf8": _unsigned_jws(b"\xff\xfe"),
+    "aud_not_a_string": _unsigned_jws(b'{"aud": 5}'),
+    "aud_list_not_strings": _unsigned_jws(b'{"aud": [5]}'),
+}
