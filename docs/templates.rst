@@ -115,7 +115,13 @@ This template gets passed the following context variables:
     :class:`~oauth2_provider.models.AbstractApplication` object.
 
 - ``client_id`` - Passed in the URI, already validated.
+- ``client_id_host`` - Host (and port, when set) of ``client_id`` when that identifier is an
+  absolute URL, as with `Client ID Metadata Documents <https://datatracker.ietf.org/doc/html/draft-ietf-oauth-client-id-metadata-document>`_.
+  Empty for an ordinary client identifier. The default template says the application name is declared
+  by the client at this host.
 - ``redirect_uri`` - Passed in the URI (optional), already validated.
+- ``redirect_host`` - Host (and port, when set) of ``redirect_uri``. The default template tells the
+  user they will be sent there. The full URI stays in a hidden field.
 
 .. note::
     If it wasn't provided on the request, the default one has been set (see :meth:`~oauth2_provider.models.AbstractApplication.default_redirect_uri`).
@@ -139,6 +145,12 @@ Example (this is the default page you may find on ``templates/oauth2_provider/au
             {% if not error %}
                 <form id="authorizationForm" method="post">
                     <h3 class="block-center-heading">{% trans "Authorize" %} {{ application.name }}?</h3>
+                    {% if redirect_host %}
+                        <p>{% blocktrans %}You will be sent to {{ redirect_host }}.{% endblocktrans %}</p>
+                    {% endif %}
+                    {% if client_id_host %}
+                        <p>{% blocktrans %}This name is declared by the client at {{ client_id_host }}.{% endblocktrans %}</p>
+                    {% endif %}
                     {% include "oauth2_provider/client_branding.html" %}
                     {% csrf_token %}
 

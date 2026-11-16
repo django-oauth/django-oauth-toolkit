@@ -312,9 +312,9 @@ Consent phishing
     unrelated host, and ``refresh_if_stale`` overwrites a stored app's name/redirect URIs on refresh
     with no re-consent. A same-origin restriction is *not* imposed by default because the native
     clients this feature targets legitimately register loopback (``http://localhost``) redirects that
-    are never same-origin with their ``https`` ``client_id``. Deployments enabling CIMD should surface
-    the ``client_id`` **host** on the consent screen (draft §6.4) so users can see who they are
-    authorizing.
+    are never same-origin with their ``https`` ``client_id``. The default consent page shows the
+    ``client_id`` host, and the host of the redirect URI, so users can see who they are authorizing
+    and where they will be sent (draft §6.4).
 
 Confidential clients by registration
     A CIMD client registered with ``private_key_jwt`` is a confidential client wherever the server

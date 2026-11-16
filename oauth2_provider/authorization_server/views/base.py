@@ -117,6 +117,26 @@ class BaseAuthorizationView(LoginRequiredMixin, AuthorizationServerViewMixin, Vi
 RFC3339 = "%Y-%m-%dT%H:%M:%SZ"
 
 
+def consent_destination_host(value: str | None) -> str:
+    """Host, and port when one is set, of an absolute URI shown on the consent page.
+
+    A client identifier that is not a URL has no host. An IPv6 address is
+    wrapped in brackets so a port stays unambiguous.
+    """
+    if not value or "://" not in value:
+        return ""
+    parsed = urlparse(value)
+    hostname = parsed.hostname
+    if not hostname:
+        return ""
+    port = parsed.port
+    if ":" in hostname:
+        hostname = f"[{hostname}]"
+    if port:
+        return f"{hostname}:{port}"
+    return hostname
+
+
 @method_decorator(login_not_required, name="dispatch")
 class AuthorizationView(BaseAuthorizationView, FormView):
     """
@@ -894,6 +914,10 @@ class AuthorizationView(BaseAuthorizationView, FormView):
             return self._login_required_response(credentials, error="consent_required")
 
         # Only now that the consent page is rendered, so skipped consent pays nothing.
+        # The hosts are visible text. The full URIs stay in the hidden fields, which
+        # a user does not read (issue #1953, CIMD draft section 6.4).
+        kwargs["redirect_host"] = consent_destination_host(credentials.get("redirect_uri"))
+        kwargs["client_id_host"] = consent_destination_host(credentials.get("client_id"))
         kwargs["requested_claims"] = (
             self._releasable_claim_names(application, scopes, credentials) if requested_claims else []
         )

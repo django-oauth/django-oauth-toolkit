@@ -421,6 +421,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1953 The consent page names the host the user will be sent to, and, when ``client_id``
+  is a URL, the host that declared the client name. Both were only in hidden form fields.
 * #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
   on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
   `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the
