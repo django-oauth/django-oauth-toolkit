@@ -713,6 +713,43 @@ class TestAuthorizationCodeView(BaseTest):
         response = self.client.post(reverse("oauth2_provider:authorize"), data=form_data)
         self.assertEqual(response.status_code, 400)
 
+    def test_authorize_page_shows_where_the_user_is_sent(self):
+        """The consent page names the redirect host in visible text (#1953)."""
+        self.client.login(username="test_user", password="123456")
+
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "state": "random_state_string",
+                "scope": "read write",
+                "redirect_uri": "http://example.org",
+                "response_type": "code",
+            },
+        )
+        self.assertContains(response, "You will be sent to example.org.", status_code=200)
+        self.assertNotContains(response, "declared by the client")
+
+    def test_authorize_page_shows_client_id_host_when_it_is_a_url(self):
+        """A URL client_id is named on the consent page, next to the redirect host."""
+        self.client.login(username="test_user", password="123456")
+        self.application.client_id = "https://client.example/metadata"
+        self.application.redirect_uris = "http://localhost:8765/callback"
+        self.application.save()
+
+        response = self.client.get(
+            reverse("oauth2_provider:authorize"),
+            data={
+                "client_id": self.application.client_id,
+                "state": "random_state_string",
+                "scope": "read write",
+                "redirect_uri": "http://localhost:8765/callback",
+                "response_type": "code",
+            },
+        )
+        self.assertContains(response, "You will be sent to localhost:8765.", status_code=200)
+        self.assertContains(response, "This name is declared by the client at client.example.")
+
 
 class TestConsentDenialRedirectUri(BaseTest):
     """

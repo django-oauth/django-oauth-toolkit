@@ -6,6 +6,12 @@
         {% if not error %}
             <form id="authorizationForm" method="post">
                 <h3 class="block-center-heading">{% trans "Authorize" %} {{ application.name }}?</h3>
+                {% if redirect_host %}
+                    <p>{% blocktrans %}You will be sent to {{ redirect_host }}.{% endblocktrans %}</p>
+                {% endif %}
+                {% if client_id_host %}
+                    <p>{% blocktrans %}This name is declared by the client at {{ client_id_host }}.{% endblocktrans %}</p>
+                {% endif %}
                 {% include "oauth2_provider/client_branding.html" %}
                 {% csrf_token %}
 
