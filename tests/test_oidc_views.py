@@ -980,6 +980,16 @@ def test_rp_initiated_logout_orphaned_id_token_missmatch_client_id(
 
 
 @pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("token", MALFORMED_JWTS.values(), ids=MALFORMED_JWTS.keys())
+def test_rp_initiated_logout_malformed_id_token_hint(logged_in_client, rp_settings, token):
+    # A malformed `id_token_hint` is an invalid ID Token (400), not an unhandled error (500) (#1949).
+    rsp = logged_in_client.get(reverse("oauth2_provider:rp-initiated-logout"), data={"id_token_hint": token})
+    assert rsp.status_code == 400
+    assert isinstance(rsp.context["error"], InvalidIDTokenError)
+    assert is_logged_in(logged_in_client)
+
+
+@pytest.mark.django_db(databases="__all__")
 def test_rp_initiated_logout_get_id_token_redirect(logged_in_client, oidc_tokens, rp_settings):
     rsp = logged_in_client.get(
         reverse("oauth2_provider:rp-initiated-logout"),
