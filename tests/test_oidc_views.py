@@ -33,6 +33,7 @@ from oauth2_provider.settings import oauth2_settings
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
+from .utils import MALFORMED_JWTS
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -832,6 +833,12 @@ def test__load_id_token():
     assert _load_id_token("Not a Valid ID Token.") == (None, None)
 
 
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("token", MALFORMED_JWTS.values(), ids=MALFORMED_JWTS.keys())
+def test__load_id_token_malformed(token):
+    assert _load_id_token(token) == (None, None)
+
+
 def is_logged_in(client):
     return get_user(client).is_authenticated
 
@@ -969,6 +976,16 @@ def test_rp_initiated_logout_orphaned_id_token_missmatch_client_id(
     # unverifiable one it also produced a 400, but as an InvalidIDTokenError raised before the
     # `client_id` comparison was ever reached, so the status code alone cannot tell them apart.
     assert isinstance(rsp.context["error"], ClientIdMissmatch)
+    assert is_logged_in(logged_in_client)
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("token", MALFORMED_JWTS.values(), ids=MALFORMED_JWTS.keys())
+def test_rp_initiated_logout_malformed_id_token_hint(logged_in_client, rp_settings, token):
+    # A malformed `id_token_hint` is an invalid ID Token (400), not an unhandled error (500) (#1949).
+    rsp = logged_in_client.get(reverse("oauth2_provider:rp-initiated-logout"), data={"id_token_hint": token})
+    assert rsp.status_code == 400
+    assert isinstance(rsp.context["error"], InvalidIDTokenError)
     assert is_logged_in(logged_in_client)
 
 
