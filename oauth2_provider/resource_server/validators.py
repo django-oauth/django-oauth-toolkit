@@ -66,7 +66,12 @@ def _parse_and_validate_uri(uri):
     """
     if not isinstance(uri, str):
         return None
-    parsed = urllib.parse.urlsplit(uri)
+    try:
+        parsed = urllib.parse.urlsplit(uri)
+    except ValueError:
+        # urlsplit() itself refuses some authorities: an unbalanced or invalid
+        # IPv6 literal ("https://[::1/"), or a host that changes under NFKC.
+        return None
     # "is not None" catches empty-but-present components ("https://@example.com",
     # "https://example.com/#") that truthiness checks would let through.
     if parsed.username is not None or parsed.password is not None:

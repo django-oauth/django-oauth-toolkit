@@ -234,6 +234,20 @@ class TestResourceValidatorPrefixMatch(TestCase):
 
         self.assertFalse(result)
 
+    def test_rejects_authority_urlsplit_refuses(self):
+        """URIs whose authority urlsplit() refuses are rejected instead of raising"""
+        audiences = ["https://api.example.com/foo"]
+        for uri in (
+            "https://[::1/foo",  # unbalanced IPv6 bracket
+            "https://::1]/foo",
+            "https://[not-an-address]/foo",
+            "https://api.example℀.com/foo",  # host changes under NFKC normalization
+        ):
+            with self.subTest(uri=uri):
+                self.assertFalse(is_valid_resource_uri(uri))
+                self.assertFalse(validate_resource_as_url_prefix(uri, audiences))
+                self.assertFalse(validate_resource_as_url_prefix("https://api.example.com/foo", [uri]))
+
     def test_query_component_in_audience_is_ignored(self):
         """RFC 8707 allows a query component on resource indicators; matching ignores it"""
         audiences = ["https://api.example.com/foo?version=2"]
