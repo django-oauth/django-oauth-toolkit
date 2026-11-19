@@ -6,7 +6,7 @@ Django OAuth Toolkit
 .. image:: https://badge.fury.io/py/django-oauth-toolkit.svg
     :target: http://badge.fury.io/py/django-oauth-toolkit
 
-.. image:: https://github.com/django-oauth/django-oauth-toolkit/workflows/Test/badge.svg
+.. image:: https://github.com/django-oauth/django-oauth-toolkit/actions/workflows/test.yml/badge.svg?branch=master&event=push
    :target: https://github.com/django-oauth/django-oauth-toolkit/actions
    :alt: GitHub Actions
 
