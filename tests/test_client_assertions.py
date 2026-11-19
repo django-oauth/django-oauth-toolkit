@@ -304,6 +304,38 @@ def test_garbage_assertion_rejected():
     assert ok is False
 
 
+def _unsigned_assertion(header: bytes, payload: bytes) -> str:
+    """A compact JWS with the given raw header and payload and a dummy signature."""
+    return ".".join(base64url_encode(part) for part in (header, payload, b"signature"))
+
+
+@pytest.mark.parametrize(
+    "header, payload",
+    [
+        # Deep nesting overflows the JSON parser's recursion limit.
+        pytest.param(b'{"alg": "RS256"}', b"[" * 5000, id="payload-nested-too-deep"),
+        pytest.param(
+            b'{"alg": "RS256"}',
+            b'{"iss": "pkj-client", "sub": "pkj-client", "x": ' + b"[" * 5000,
+            id="claim-nested-too-deep",
+        ),
+        pytest.param(b'{"alg": "RS256", "crit": 5}', b"{}", id="crit-not-a-list"),
+    ],
+)
+def test_malformed_unsigned_assertion_rejected(header, payload):
+    # Reachable without any credential: none of these may escape as an exception (HTTP 500).
+    ok, _ = authenticate(_unsigned_assertion(header, payload), pkj_app())
+    assert ok is False
+
+
+@pytest.mark.parametrize("claim", ["exp", "iat", "nbf"])
+@pytest.mark.parametrize("value", [[1], {"a": 1}], ids=["list", "object"])
+def test_signed_assertion_with_non_numeric_time_claim_rejected(claim, value):
+    assertion = build_assertion(RSA_KEY, default_claims(**{claim: value}), kid="unit-rsa")
+    ok, _ = authenticate(assertion, pkj_app())
+    assert ok is False
+
+
 def test_alg_none_rejected():
     header = base64url_encode(json.dumps({"alg": "none"}))
     payload = base64url_encode(json.dumps(default_claims()))
@@ -1403,6 +1435,23 @@ def test_token_endpoint_invalid_assertion_does_not_fall_back(client, private_key
             # Even correct secret credentials must not rescue the request.
             "client_id": private_key_jwt_application.client_id,
             "client_secret": CLEARTEXT_SECRET,
+        },
+    )
+    assert response.status_code == 401
+    assert json.loads(response.content)["error"] == "invalid_client"
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_token_endpoint_deeply_nested_assertion_is_invalid_client(client, private_key_jwt_application):
+    from django.urls import reverse
+
+    response = post_form(
+        client,
+        reverse("oauth2_provider:token"),
+        data={
+            "grant_type": "client_credentials",
+            "client_assertion_type": JWT_BEARER_CLIENT_ASSERTION_TYPE,
+            "client_assertion": _unsigned_assertion(b'{"alg": "RS256"}', b"[" * 5000),
         },
     )
     assert response.status_code == 401

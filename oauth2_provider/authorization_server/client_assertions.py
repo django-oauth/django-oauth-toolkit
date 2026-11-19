@@ -155,7 +155,9 @@ def _peek_assertion(assertion):
         header = unverified.jose_header
         payload = unverified.objects["payload"]
         claims = json.loads(payload.decode("utf-8"))
-    except (JWException, ValueError, KeyError, UnicodeDecodeError) as exc:
+    except (JWException, ValueError, KeyError, UnicodeDecodeError, TypeError, RecursionError) as exc:
+        # TypeError: a header parameter of the wrong JSON type, such as a `crit` that is
+        # not a list. RecursionError: JSON nested deeper than the parser can follow.
         raise ClientAssertionError(f"malformed client assertion: {exc.__class__.__name__}")
     if not isinstance(header, dict) or not isinstance(claims, dict):
         raise ClientAssertionError("malformed client assertion structure")
@@ -456,7 +458,9 @@ def _verify_signature(assertion, application, header, allowed_algs):
         token.leeway = leeway
         try:
             token.deserialize(assertion, key)
-        except (JWException, ValueError):
+        except (JWException, ValueError, TypeError):
+            # TypeError: jwcrypto's own `exp`/`nbf` check on a claim that is not a
+            # number, such as a list.
             continue
         return json.loads(token.claims)
     raise ClientAssertionError("client assertion signature could not be verified")
