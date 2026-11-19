@@ -72,6 +72,8 @@ MALFORMED_JWTS = {
     "payload_not_json": _unsigned_jws(b"not json"),
     "payload_not_an_object": _unsigned_jws(b"1"),
     "payload_not_utf8": _unsigned_jws(b"\xff\xfe"),
+    # Deep nesting overflows the JSON parser's recursion limit.
+    "payload_nested_too_deep": _unsigned_jws(b"[" * 5000),
     "aud_not_a_string": _unsigned_jws(b'{"aud": 5}'),
     "aud_list_not_strings": _unsigned_jws(b'{"aud": [5]}'),
 }

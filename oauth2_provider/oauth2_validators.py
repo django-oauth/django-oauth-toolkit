@@ -1592,7 +1592,8 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         try:
             unverified_token.deserialize(token)
             claims = json.loads(unverified_token.objects["payload"].decode("utf-8"))
-        except (JWException, ValueError, KeyError, UnicodeDecodeError):
+        except (JWException, ValueError, KeyError, UnicodeDecodeError, RecursionError):
+            # RecursionError: JSON nested deeper than the parser can follow.
             return None
         if not isinstance(claims, dict):
             return None
