@@ -377,8 +377,17 @@ def _build_application_kwargs(
     # client_name — always set so a request is a full replacement of the
     # metadata (RFC 7592 §2.2): on PUT an omitted client_name resets
     # Application.name to empty, consistent with the other fields below. On
-    # POST this is equivalent to the model's blank default.
-    kwargs["name"] = data.get("client_name", "")
+    # POST this is equivalent to the model's blank default. A JSON null counts
+    # as omitted, as it does for the display URIs below: Application.name is
+    # not nullable, and full_clean() does not refuse None for a blank=True
+    # field, so save() would raise IntegrityError (HTTP 500). Any other type is
+    # refused, because str() of it would be shown to the End-User as the name.
+    client_name = data.get("client_name")
+    if client_name is None:
+        client_name = ""
+    if not isinstance(client_name, str):
+        return None, _error_response("invalid_client_metadata", "client_name must be a string")
+    kwargs["name"] = client_name
 
     # client_uri, logo_uri, policy_uri, tos_uri — likewise always set.
     for name in DISPLAY_URI_FIELDS:
