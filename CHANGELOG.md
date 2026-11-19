@@ -442,6 +442,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a request object too (`OIDC_REQUEST_OBJECT_STORE_LIFETIME_SECONDS` still covers
   registering), and an unknown, used or expired `request_uri` gets its `invalid_request` page
   before the login rather than after it.
+* #1958 Dynamic Client Registration (RFC 7591) and client configuration (RFC 7592) no longer fail
+  with HTTP 500 when `client_name` is a JSON `null`. `Application.name` is not nullable and
+  `full_clean()` does not refuse `None` for it, so `save()` raised `IntegrityError`. A `null` now
+  counts as an omitted name, as it already does for `client_uri`, `logo_uri`, `policy_uri` and
+  `tos_uri`. A `client_name` of any other JSON type is refused with `invalid_client_metadata`; it
+  used to be stored as its Python representation (`["Acme"]` became the name `['Acme']`), which is
+  what the End-User would then see. Client ID Metadata Documents already refused it.
 * #1928 An authenticated authorization request with `prompt=none` that still
   needs consent redirects with `error=consent_required` instead of rendering
   the consent page. OpenID Connect Core 1.0 §3.1.2.1 forbids any consent UI
