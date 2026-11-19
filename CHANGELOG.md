@@ -475,6 +475,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its request, and when the response is created, with `request.user` set. An override that
   decides per user should decide on the second call. Validators that override the hooks are
   unaffected.
+* #1957 A malformed JWT client assertion (RFC 7523) no longer fails with HTTP 500 at the token
+  endpoint. A payload nested too deeply for the JSON parser, or a
+  `crit` header that is not a list, raised from an assertion nobody had signed; an `exp`, `iat` or
+  `nbf` claim that is a list or an object raised from one signed with the client's key. All of
+  them now fail client authentication with `invalid_client`, as
+  `authenticate_client_assertion` documents.
 * #1947 A user who is not logged in and follows the `request_uri` of a pushed authorization
   request with `prompt=none` gets `login_required` at the client's redirect URI (OpenID Connect
   Core 1.0 §3.1.2.1) instead of the login page, with or without the `openid` scope. The
