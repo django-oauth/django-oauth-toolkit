@@ -33,7 +33,7 @@ from oauth2_provider.settings import oauth2_settings
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import MALFORMED_JWTS
+from .utils import MALFORMED_JWTS, unsigned_jws_for_audience
 
 
 @pytest.mark.usefixtures("oauth2_settings")
@@ -983,6 +983,31 @@ def test_rp_initiated_logout_orphaned_id_token_missmatch_client_id(
 @pytest.mark.parametrize("token", MALFORMED_JWTS.values(), ids=MALFORMED_JWTS.keys())
 def test_rp_initiated_logout_malformed_id_token_hint(logged_in_client, rp_settings, token):
     # A malformed `id_token_hint` is an invalid ID Token (400), not an unhandled error (500) (#1949).
+    rsp = logged_in_client.get(reverse("oauth2_provider:rp-initiated-logout"), data={"id_token_hint": token})
+    assert rsp.status_code == 400
+    assert isinstance(rsp.context["error"], InvalidIDTokenError)
+    assert is_logged_in(logged_in_client)
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.parametrize("algorithm", ["", "HS256"], ids=["no_algorithm", "hs256_hashed_secret"])
+def test_rp_initiated_logout_id_token_hint_application_without_signing_key(
+    logged_in_client, rp_settings, application, algorithm
+):
+    # An `id_token_hint` whose `aud` is the client_id of an application that signs no ID Tokens
+    # is an invalid ID Token (400), not an unhandled ImproperlyConfigured (500) (#1949).
+    get_application_model().objects.filter(pk=application.pk).update(algorithm=algorithm)
+    token = unsigned_jws_for_audience(application.client_id)
+    rsp = logged_in_client.get(reverse("oauth2_provider:rp-initiated-logout"), data={"id_token_hint": token})
+    assert rsp.status_code == 400
+    assert isinstance(rsp.context["error"], InvalidIDTokenError)
+    assert is_logged_in(logged_in_client)
+
+
+@pytest.mark.django_db(databases="__all__")
+def test_rp_initiated_logout_id_token_hint_json_serialization(logged_in_client, rp_settings, application):
+    # A JWS in the JSON serialization gets past the peek, then `jwt.JWT` raises ValueError (#1949).
+    token = unsigned_jws_for_audience(application.client_id, compact=False)
     rsp = logged_in_client.get(reverse("oauth2_provider:rp-initiated-logout"), data={"id_token_hint": token})
     assert rsp.status_code == 400
     assert isinstance(rsp.context["error"], InvalidIDTokenError)

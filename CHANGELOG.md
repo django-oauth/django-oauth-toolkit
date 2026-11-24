@@ -470,7 +470,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of strings raised from `validate_jwt_bearer_token` and from RP-Initiated Logout instead of being
   rejected. It now fails closed and returns `None`, like `client_assertions._peek_assertion`, so the
   token is rejected like any other invalid token: a protected resource denies the request and
-  RP-Initiated Logout answers HTTP 400.
+  RP-Initiated Logout answers HTTP 400. The same holds for a token whose `aud` holds a NUL or a lone
+  surrogate, for one whose `aud` is the `client_id` of an application that signs no ID Tokens (no
+  algorithm, or HS256 with an empty or hashed secret: `jwk_key` raised `ImproperlyConfigured`), and
+  for an `id_token_hint` in a JSON serialization of JWS, which `jwcrypto.jwt.JWT` refuses with
+  `ValueError`.
 * #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
   on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
   `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the

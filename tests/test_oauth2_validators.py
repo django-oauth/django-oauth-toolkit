@@ -27,7 +27,7 @@ from oauth2_provider.oauth2_validators import OAuth2Validator
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
 from .common_testing import OAuth2ProviderTransactionTestCase as TransactionTestCase
-from .utils import MALFORMED_JWTS, get_basic_auth_header
+from .utils import MALFORMED_JWTS, get_basic_auth_header, unsigned_jws_for_audience
 
 
 try:
@@ -1242,10 +1242,35 @@ def test_validate_id_token_bad_token_no_aud(oauth2_settings, mocker, oidc_key):
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 @pytest.mark.parametrize("token", MALFORMED_JWTS.values(), ids=MALFORMED_JWTS.keys())
 def test_validate_jwt_bearer_token_malformed(oauth2_settings, mocker, token):
-    # A malformed bearer token is an invalid token (401), not an unhandled error (500).
+    # A malformed bearer token is an invalid token, not an unhandled error (#1949).
     validator = OAuth2Validator()
     assert validator._get_key_for_token(token) is None
     assert validator.validate_jwt_bearer_token(token, ["openid"], mocker.sentinel.request) is False
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+@pytest.mark.parametrize("algorithm", ["", "HS256"], ids=["no_algorithm", "hs256_hashed_secret"])
+def test_validate_jwt_bearer_token_application_without_signing_key(
+    oauth2_settings, mocker, application, algorithm
+):
+    # `aud` only has to be a client_id, which is public. When that application signs no ID
+    # Tokens, `jwk_key` raises ImproperlyConfigured: the token is invalid, not a 500 (#1949).
+    Application.objects.filter(pk=application.pk).update(algorithm=algorithm)
+    token = unsigned_jws_for_audience(application.client_id)
+    validator = OAuth2Validator()
+    assert validator._get_key_for_token(token) is None
+    assert validator.validate_jwt_bearer_token(token, ["openid"], mocker.sentinel.request) is False
+
+
+@pytest.mark.django_db(databases="__all__")
+@pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
+def test_validate_id_token_json_serialization(oauth2_settings, mocker, application):
+    # The peek parses the JSON serializations of a JWS, but `jwt.JWT` raises ValueError on them.
+    token = unsigned_jws_for_audience(application.client_id, compact=False)
+    validator = OAuth2Validator()
+    assert validator._get_key_for_token(token) is not None
+    assert validator.validate_id_token(token, ["openid"], mocker.sentinel.request) is False
 
 
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)

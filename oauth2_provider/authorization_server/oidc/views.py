@@ -265,8 +265,9 @@ def _load_id_token(token: str) -> tuple[AbstractIDToken | None, dict | None]:
             check_claims = None
         jwt_token = jwt.JWT(key=key, jwt=token, check_claims=check_claims)
         claims = json.loads(jwt_token.claims)
-    except (JWException, JWTExpired):
-        # The token could not be verified.
+    except (JWException, JWTExpired, ValueError):
+        # The token could not be verified. ValueError: `jwt.JWT` only reads the compact
+        # serialization, while the peek above also parses the JSON ones.
         return None, None
 
     if "jti" not in claims:

@@ -1,4 +1,5 @@
 import base64
+import json
 from unittest import mock
 from urllib.parse import urlencode
 
@@ -76,4 +77,20 @@ MALFORMED_JWTS = {
     "payload_nested_too_deep": _unsigned_jws(b"[" * 5000),
     "aud_not_a_string": _unsigned_jws(b'{"aud": 5}'),
     "aud_list_not_strings": _unsigned_jws(b'{"aud": [5]}'),
+    # JSON escapes that give a `str` no database lookup can take.
+    "aud_nul": _unsigned_jws(rb'{"aud": "a\u0000b"}'),
+    "aud_lone_surrogate": _unsigned_jws(rb'{"aud": "a\ud800b"}'),
 }
+
+
+def unsigned_jws_for_audience(client_id: str, compact: bool = True) -> str:
+    """
+    JWS with a dummy signature whose `aud` is `client_id`, so that it gets past the audience
+    lookup when an application has that client_id. `compact=False` gives the flattened JSON
+    serialization, which `jwcrypto.jws.JWS` parses and `jwcrypto.jwt.JWT` refuses.
+    """
+    token = _unsigned_jws(json.dumps({"aud": client_id}).encode())
+    if compact:
+        return token
+    protected, payload, signature = token.split(".")
+    return json.dumps({"protected": protected, "payload": payload, "signature": signature})

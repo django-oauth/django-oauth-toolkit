@@ -13,6 +13,7 @@ from urllib.parse import unquote_plus
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.hashers import check_password, identify_hasher
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, router, transaction
 from django.http import HttpRequest
 from django.utils import dateformat, timezone
@@ -1576,7 +1577,8 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             # Every ID Token this OP issues has a jti. A verified JWT without one is
             # another JWT signed with the OP key, such as a signed UserInfo response.
             return IDToken.objects.get(jti=claims["jti"])
-        except (JWException, JWTExpired, KeyError, IDToken.DoesNotExist):
+        except (JWException, JWTExpired, ValueError, KeyError, IDToken.DoesNotExist):
+            # ValueError: `jwt.JWT` only reads the compact serialization.
             return None
 
     def _get_key_for_token(self, token: str) -> jwk.JWK | None:
@@ -1584,9 +1586,10 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         Peek at the unvalidated token to discover who it was issued for
         and then use that to load that application and its key.
 
-        Fails closed: a token that cannot be parsed, or whose claims or `aud` have
-        the wrong shape, yields `None` so callers treat it as an invalid token.
-        Nothing peeked here is trusted until the signature is verified.
+        Fails closed: a token that cannot be parsed, whose claims or `aud` have the
+        wrong shape, or whose application has no usable signing key, yields `None`
+        so callers treat it as an invalid token. Nothing peeked here is trusted
+        until the signature is verified.
         """
         unverified_token = jws.JWS()
         try:
@@ -1598,14 +1601,27 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         if not isinstance(claims, dict):
             return None
         audience = claims.get("aud")
-        if isinstance(audience, list):
-            if not audience or not all(isinstance(aud, str) for aud in audience):
-                return None
-        elif not isinstance(audience, str):
+        audiences = [audience] if isinstance(audience, str) else audience
+        if not isinstance(audiences, list) or not audiences:
+            return None
+        try:
+            for aud in audiences:
+                # A JSON escape can produce a NUL or a lone surrogate. No client_id
+                # holds either, and a database lookup can raise on both.
+                if not isinstance(aud, str) or "\x00" in aud:
+                    return None
+                aud.encode("utf-8")
+        except UnicodeEncodeError:
             return None
         application = self._get_client_by_audience(audience)
-        if application:
+        if not application:
+            return None
+        try:
             return application.jwk_key
+        except ImproperlyConfigured:
+            # The application signs no ID Tokens (no algorithm, or an HS256 secret that
+            # is empty or hashed), so no token naming it as `aud` can be one of ours.
+            return None
 
     def _get_client_by_audience(self, audience):
         """
