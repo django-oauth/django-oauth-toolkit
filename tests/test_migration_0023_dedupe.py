@@ -14,7 +14,7 @@ import hashlib
 from datetime import timedelta
 
 import pytest
-from django.db import IntegrityError, connections
+from django.db import IntegrityError, connection, connections
 from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
@@ -54,17 +54,17 @@ def alias(db, settings, tmp_path):
             del connections[ALIAS]
 
 
-def _migrate_to(target):
-    executor = MigrationExecutor(connections[ALIAS])
+def _migrate_to(target, using=ALIAS):
+    executor = MigrationExecutor(connections[using])
     executor.migrate([target])
     return executor.loader.project_state([target]).apps
 
 
-def _seed(apps):
+def _seed(apps, using=ALIAS):
     User = apps.get_model("auth", "User")
     Application = apps.get_model("oauth2_provider", "Application")
-    user = User.objects.using(ALIAS).create(username="migration-user")
-    application = Application.objects.using(ALIAS).create(
+    user = User.objects.using(using).create(username="migration-user")
+    application = Application.objects.using(using).create(
         name="migration-test-client",
         client_type="confidential",
         authorization_grant_type="client-credentials",
@@ -73,9 +73,9 @@ def _seed(apps):
     return user, application
 
 
-def _make_refresh_token(apps, user, application, token, revoked=None, created=None):
+def _make_refresh_token(apps, user, application, token, revoked=None, created=None, using=ALIAS):
     RefreshToken = apps.get_model("oauth2_provider", "RefreshToken")
-    refresh_token = RefreshToken.objects.using(ALIAS).create(
+    refresh_token = RefreshToken.objects.using(using).create(
         user=user,
         application=application,
         token=token,
@@ -84,7 +84,7 @@ def _make_refresh_token(apps, user, application, token, revoked=None, created=No
     )
     if created is not None:
         # ``created`` is auto_now_add, so it has to be forced after the insert.
-        RefreshToken.objects.using(ALIAS).filter(pk=refresh_token.pk).update(created=created)
+        RefreshToken.objects.using(using).filter(pk=refresh_token.pk).update(created=created)
         refresh_token.created = created
     return refresh_token
 
@@ -170,3 +170,38 @@ def test_distinct_tokens_are_left_alone_and_the_column_becomes_unique(alias):
     )
     with pytest.raises(IntegrityError):
         _make_refresh_token(apps_after, user_after, application_after, "two")
+
+
+@pytest.fixture
+def postgresql_default(transactional_db):
+    # Unlike the sqlite alias above, the default database is shared with the rest of the
+    # suite, so it is migrated back to the latest state before transactional_db flushes it.
+    yield "default"
+    executor = MigrationExecutor(connections["default"])
+    executor.loader.build_graph()
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.skipif(
+    connection.vendor != "postgresql",
+    reason="Deferred foreign key checks are specific to PostgreSQL (#1961).",
+)
+def test_duplicates_are_removed_on_postgresql(postgresql_default):
+    """
+    PostgreSQL creates Django's foreign keys as DEFERRABLE INITIALLY DEFERRED. Deleting the
+    duplicates queues their checks on the refresh token table until commit, and the
+    following ALTER TABLE in the same migration transaction then fails with "cannot ALTER
+    TABLE ... because it has pending trigger events" (#1961).
+    """
+    apps_before = _migrate_to(BEFORE, using=postgresql_default)
+    user, application = _seed(apps_before, using=postgresql_default)
+    keep = _make_refresh_token(apps_before, user, application, "dup", using=postgresql_default)
+    drop = _make_refresh_token(
+        apps_before, user, application, "dup", revoked=timezone.now(), using=postgresql_default
+    )
+
+    apps_after = _migrate_to(AFTER, using=postgresql_default)
+    RefreshToken = apps_after.get_model("oauth2_provider", "RefreshToken")
+
+    assert list(RefreshToken.objects.using(postgresql_default).values_list("pk", flat=True)) == [keep.pk]
+    assert not RefreshToken.objects.using(postgresql_default).filter(pk=drop.pk).exists()
