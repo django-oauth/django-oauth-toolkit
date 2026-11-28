@@ -489,6 +489,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `response_type=id_token` client
   has no access token, so it gets `consent_required` unless it has
   `skip_authorization`.
+* #1959 A `resource` parameter (RFC 8707) whose authority `urllib.parse.urlsplit()` refuses, such
+  as the unbalanced IPv6 literal in `https://[::1/v1`, no longer fails with HTTP 500 at the token
+  and authorization endpoints. `_parse_and_validate_uri` only caught the `ValueError` of a
+  malformed port, not the one `urlsplit()` raises itself. Such a value is now an invalid resource
+  indicator (`invalid_target`), and `validate_resource_as_url_prefix` treats it as a mismatch.
 * #1938 `TokenView.device_flow_token_response` now checks `device.is_expired()` when polling `/o/token/`,
   so polling after a device grant's deadline returns `expired_token` (RFC 8628 §3.5) instead of
   `authorization_pending`, and an authorized grant can no longer be exchanged for tokens after its

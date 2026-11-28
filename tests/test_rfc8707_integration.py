@@ -213,6 +213,21 @@ def test_rfc8707_rejects_invalid_resource_uri(client):
     error_data = json.loads(response.content)
     assert error_data["error"] == "invalid_target"
 
+    # Unbalanced IPv6 bracket: urlsplit() raises on it, which must not be a 500
+    response = post_form(
+        client,
+        token_url,
+        {
+            "grant_type": "client_credentials",
+            "client_id": app.client_id,
+            "client_secret": plaintext_secret,
+            "resource": "https://[::1/v1",
+        },
+    )
+    assert response.status_code == 400
+    error_data = json.loads(response.content)
+    assert error_data["error"] == "invalid_target"
+
 
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings({"PKCE_REQUIRED": False})
@@ -254,6 +269,13 @@ def test_rfc8707_authorization_endpoint_rejects_invalid_resource_uri(client, oau
     assert response.status_code == 302
     assert "error=invalid_target" in response.url
     assert "state=csrf_protection_state" in response.url
+    assert Grant.objects.count() == 0
+
+    # Unbalanced IPv6 bracket: urlsplit() raises on it, which must not be a 500
+    query_string = urlencode({**params, "resource": "https://[::1/v1"})
+    response = client.get(f"{auth_url}?{query_string}")
+    assert response.status_code == 302
+    assert "error=invalid_target" in response.url
     assert Grant.objects.count() == 0
 
 
