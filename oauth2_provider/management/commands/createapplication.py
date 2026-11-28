@@ -77,7 +77,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--algorithm",
             type=str,
-            help="The OIDC token signing algorithm for this application, one of: %s"
+            help="The ID Token signing algorithm for this application, one of: %s"
             % ", ".join([atype[0] for atype in Application.ALGORITHM_TYPES if atype[0]]),
         )
 

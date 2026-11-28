@@ -293,7 +293,16 @@ class AbstractApplication(models.Model):
         default="",
         verbose_name=_("post logout redirect URIs"),
     )
-    client_type = models.CharField(max_length=32, choices=CLIENT_TYPES, verbose_name=_("client type"))
+    client_type = models.CharField(
+        max_length=32,
+        choices=CLIENT_TYPES,
+        help_text=_(
+            "Confidential clients can keep their credentials (such as a client secret or private "
+            "key) confidential, for example a server-side web application. Public clients cannot, "
+            "for example a single-page or native application. See RFC 6749 section 2.1."
+        ),
+        verbose_name=_("client type"),
+    )
     authorization_grant_type = models.CharField(
         max_length=44, choices=GRANT_TYPES, verbose_name=_("authorization grant type")
     )
@@ -307,12 +316,32 @@ class AbstractApplication(models.Model):
     )
     hash_client_secret = models.BooleanField(default=True, verbose_name=_("hash client secret"))
     name = models.CharField(max_length=255, blank=True, verbose_name=_("name"))
-    skip_authorization = models.BooleanField(default=False, verbose_name=_("skip authorization"))
+    skip_authorization = models.BooleanField(
+        default=False,
+        help_text=_(
+            "Authorize this application's requests without showing users the consent screen, "
+            "even on first use and even when the client sends prompt=consent. Only enable this "
+            "for applications you fully trust."
+        ),
+        verbose_name=_("skip authorization"),
+    )
 
     created = models.DateTimeField(auto_now_add=True, verbose_name=_("created"))
     updated = models.DateTimeField(auto_now=True, verbose_name=_("updated"))
     algorithm = models.CharField(
-        max_length=5, choices=ALGORITHM_TYPES, default=NO_ALGORITHM, blank=True, verbose_name=_("algorithm")
+        max_length=5,
+        choices=ALGORITHM_TYPES,
+        default=NO_ALGORITHM,
+        blank=True,
+        help_text=_(
+            "How this application's OpenID Connect ID Tokens are signed. Choose an algorithm "
+            "before requesting the openid scope; with no OIDC support (the default), ID Tokens "
+            "cannot be issued for this application. RSA (RS256) signs with the server's private "
+            "key, and clients verify with the public key published at the JWKS endpoint. "
+            "HMAC (HS256) signs with the client secret, so the secret must be stored unhashed; "
+            "it cannot be used by public clients or with the implicit or hybrid grant types."
+        ),
+        verbose_name=_("ID Token signing algorithm"),
     )
     userinfo_signed_response_alg = models.CharField(
         max_length=5,
@@ -555,6 +584,8 @@ class AbstractApplication(models.Model):
             AbstractApplication.GRANT_IMPLICIT,
             AbstractApplication.GRANT_OPENID_HYBRID,
         )
+        # The HS256 rules are also described in the help text of the algorithm field and
+        # in the data-hs256-* warnings of the application form; keep the three in step.
         hs_forbidden_grant_types = (
             AbstractApplication.GRANT_IMPLICIT,
             AbstractApplication.GRANT_OPENID_HYBRID,

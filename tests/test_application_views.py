@@ -637,6 +637,17 @@ class TestApplicationViews(BaseTest):
         self.assertContains(response, "can no longer be viewed")
         self.assertNotContains(response, "data-client-secret-help-when-hashed")
 
+    def test_register_form_explains_client_type_and_algorithm(self):
+        # See #1122: these fields are easy to misconfigure, so the form explains them.
+        self.client.login(username="foo_user", password="123456")
+        response = self.client.get(reverse("oauth2_provider:register"))
+        fields = response.context["form"].fields
+        self.assertIn("RFC 6749 section 2.1", fields["client_type"].help_text)
+        self.assertIn("OpenID Connect ID Tokens are signed", fields["algorithm"].help_text)
+        self.assertEqual(fields["algorithm"].label, "ID Token signing algorithm")
+        self.assertContains(response, "RFC 6749 section 2.1")
+        self.assertContains(response, "ID Token signing algorithm")
+
     def test_application_form_without_client_secret_field(self):
         # ApplicationForm must not assume client_secret / hash_client_secret are
         # present in the field set when used as a modelform_factory base.
@@ -749,6 +760,17 @@ class TestApplicationAdminHashClientSecretUX(BaseTest):
         self.assertContains(response, 'data-client-secret-stored-hashed="true"')
         self.assertContains(response, "must be stored unhashed")
         self.assertContains(response, "oauth2_provider/js/application_form.js")
+
+    def test_admin_add_form_explains_client_type_skip_authorization_and_algorithm(self):
+        # See #1122. skip_authorization is only on the admin form: the self-service
+        # views leave it out, since it suppresses the consent screen.
+        self.client.login(username="admin_user", password="123456")
+        response = self.client.get(reverse("admin:oauth2_provider_application_add"))
+        self.assertContains(response, "RFC 6749 section 2.1")
+        self.assertContains(response, "without showing users the consent screen")
+        self.assertContains(response, "even when the client sends prompt=consent")
+        self.assertContains(response, "OpenID Connect ID Tokens are signed")
+        self.assertContains(response, "ID Token signing algorithm")
 
 
 @pytest.mark.usefixtures("oauth2_settings")

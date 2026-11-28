@@ -153,6 +153,14 @@ class CreateApplicationTest(TestCase):
 
         self.assertEqual(app.algorithm, "RS256")
 
+    def test_algorithm_help_uses_the_admin_label(self):
+        # The CLI names the option like the application form's "ID Token signing algorithm" label.
+        from oauth2_provider.management.commands.createapplication import Command
+
+        parser = Command().create_parser("manage.py", "createapplication")
+        help_text = " ".join(parser.format_help().split())
+        self.assertIn("The ID Token signing algorithm for this application", help_text)
+
     def test_validation_failed_message(self):
         import django
 
