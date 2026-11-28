@@ -1307,3 +1307,118 @@ def test_invalidate_authorization_token_returns_invalid_grant_error_when_grant_d
     with pytest.raises(rfc6749_errors.InvalidGrantError):
         validator = OAuth2Validator()
         validator.invalidate_authorization_code(client_id=client_id, code=code, request=request)
+
+
+class TestAuthorizationCodeTransactionAtomicity(TransactionTestCase):
+    """
+    OAuth2Validator.save_bearer_token consumes the Grant inside the token transaction
+    (#1968), so failed token writes leave the code unspent, failed consumption rolls back
+    saved tokens, and concurrent exchanges of the same code yield at most one token.
+    """
+
+    def setUp(self):
+        self.user = UserModel.objects.create_user("authcode_user", "auth@example.com", "123456")
+        self.application = Application.objects.create(
+            name="auth code app",
+            client_id="auth_code_client",
+            client_secret=CLEARTEXT_SECRET,
+            user=self.user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            redirect_uris="https://example.org/callback",
+        )
+        self.validator = OAuth2Validator()
+
+    def _create_grant(self, code="auth_code_1"):
+        return Grant.objects.create(
+            user=self.user,
+            code=code,
+            application=self.application,
+            expires=timezone.now() + datetime.timedelta(seconds=60),
+            redirect_uri="https://example.org/callback",
+            scope="read",
+        )
+
+    def _auth_code_request(self, code="auth_code_1"):
+        request = Request("/o/token/", http_method="POST")
+        request.grant_type = "authorization_code"
+        request.code = code
+        request.client = self.application
+        request.client_id = self.application.client_id
+        request.user = self.user
+        request.scopes = ["read"]
+        return request
+
+    def _token_payload(self, suffix="1"):
+        return {
+            "access_token": f"access_{suffix}",
+            "refresh_token": f"refresh_{suffix}",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "scope": "read",
+        }
+
+    def test_failed_token_persistence_leaves_grant_intact(self):
+        from django.db import IntegrityError
+
+        grant = self._create_grant()
+        request = self._auth_code_request(grant.code)
+
+        with (
+            mock.patch.object(OAuth2Validator, "_save_bearer_token", side_effect=IntegrityError("boom")),
+            self.assertRaises(IntegrityError),
+        ):
+            self.validator.save_bearer_token(self._token_payload(), request)
+
+        self.assertTrue(Grant.objects.filter(pk=grant.pk).exists())
+        self.assertFalse(AccessToken.objects.exists())
+        self.assertFalse(RefreshToken.objects.exists())
+
+    def test_failed_grant_consumption_rolls_back_saved_tokens(self):
+        from django.db import DatabaseError
+
+        grant = self._create_grant()
+        request = self._auth_code_request(grant.code)
+
+        with (
+            mock.patch.object(
+                OAuth2Validator, "_consume_authorization_code", side_effect=DatabaseError("db lost")
+            ),
+            self.assertRaises(DatabaseError),
+        ):
+            self.validator.save_bearer_token(self._token_payload(), request)
+
+        self.assertTrue(Grant.objects.filter(pk=grant.pk).exists())
+        self.assertFalse(AccessToken.objects.exists())
+        self.assertFalse(RefreshToken.objects.exists())
+
+    def test_two_exchanges_of_same_code_yield_single_token(self):
+        grant = self._create_grant()
+        first_request = self._auth_code_request(grant.code)
+        second_request = self._auth_code_request(grant.code)
+
+        # First exchange commits tokens and consumes the grant; oauthlib's follow-up
+        # invalidate_authorization_code call succeeds on the already-consumed marker.
+        self.validator.save_bearer_token(self._token_payload("first"), first_request)
+        self.validator.invalidate_authorization_code(self.application.client_id, grant.code, first_request)
+
+        # Second exchange has passed pre-token validation concurrently, then hits
+        # save_bearer_token: grant consumption fails and its token writes roll back.
+        with self.assertRaises(rfc6749_errors.InvalidGrantError):
+            self.validator.save_bearer_token(self._token_payload("second"), second_request)
+
+        self.assertFalse(Grant.objects.filter(pk=grant.pk).exists())
+        self.assertEqual(AccessToken.objects.count(), 1)
+        self.assertEqual(RefreshToken.objects.count(), 1)
+        self.assertEqual(AccessToken.objects.get().token, "access_first")
+
+    def test_direct_invalidate_authorization_code_still_consumes_or_raises(self):
+        grant = self._create_grant()
+        request = Request("/")
+        request.client = self.application
+
+        self.validator.invalidate_authorization_code(self.application.client_id, grant.code, request)
+        self.assertFalse(Grant.objects.filter(pk=grant.pk).exists())
+
+        with self.assertRaises(rfc6749_errors.InvalidGrantError):
+            self.validator.invalidate_authorization_code(self.application.client_id, grant.code, request)

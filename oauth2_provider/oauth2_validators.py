@@ -472,12 +472,24 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         grant = Grant.objects.get(code=code, application=client)
         return grant.redirect_uri_allowed(redirect_uri)
 
-    def invalidate_authorization_code(self, client_id, code, request, *args, **kwargs):
+    def invalidate_authorization_code(
+        self, client_id: str, code: str, request: OauthlibRequest, *args, **kwargs
+    ) -> None:
         """
         Remove the temporary grant used to swap the authorization token.
 
+        If ``save_bearer_token`` already consumed this request's grant inside the token
+        transaction, accept the marker once and skip deleting again; callers that do not
+        go through ``save_bearer_token`` still delete the grant here and raise
+        ``InvalidGrantError`` if it is missing.
+
         :raises: InvalidGrantError if the grant does not exist.
         """
+        consumed = getattr(request, "_consumed_authorization_code", None)
+        client_pk = getattr(request.client, "pk", None)
+        if isinstance(consumed, tuple) and consumed == (client_pk, code):
+            request._consumed_authorization_code = None
+            return
         deleted_grant_count, _ = Grant.objects.filter(code=code, application=request.client).delete()
         if not deleted_grant_count:
             raise errors.InvalidGrantError(request=request)
@@ -713,7 +725,7 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         """
         return oauth2_settings.ROTATE_REFRESH_TOKEN
 
-    def save_bearer_token(self, token, request, *args, **kwargs):
+    def save_bearer_token(self, token: dict, request: OauthlibRequest, *args, **kwargs):
         """
         Save access and refresh token.
 
@@ -723,12 +735,39 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
         A device code grant's token spends its ``device_code``: the device grant is marked
         used in the same transaction, so a later poll with the code gets ``invalid_grant``.
+        An authorization code grant's token consumes its ``Grant`` in the same transaction,
+        rolling back token writes if the grant is missing and letting
+        ``invalidate_authorization_code`` recognize that this request already spent it.
         """
+        consumed_auth_code = None
         # Use the AccessToken's database instead of making the assumption it is in 'default'.
         with transaction.atomic(using=router.db_for_write(AccessToken)):
             if request.grant_type == "urn:ietf:params:oauth:grant-type:device_code":
                 self._consume_device_grant(request)
-            return self._save_bearer_token(token, request, *args, **kwargs)
+            result = self._save_bearer_token(token, request, *args, **kwargs)
+            if request.grant_type == "authorization_code":
+                consumed_auth_code = self._consume_authorization_code(request)
+        if consumed_auth_code is not None:
+            request._consumed_authorization_code = consumed_auth_code
+        return result
+
+    def _consume_authorization_code(self, request: OauthlibRequest) -> tuple[object, str | None]:
+        """
+        Consume the ``Grant`` whose ``code`` the token request redeems inside the token
+        transaction.
+
+        Only a grant that still exists for ``request.client`` is deleted, in one
+        statement, so of two exchanges racing for the same code at most one gets a token.
+
+        :raises: InvalidGrantError if the grant does not exist, rolling back any token
+            writes in ``save_bearer_token``.
+        """
+        code = getattr(request, "code", None)
+        deleted_grant_count, _ = Grant.objects.filter(code=code, application=request.client).delete()
+        if not deleted_grant_count:
+            log.debug("Authorization code grant token refused: the grant no longer exists")
+            raise errors.InvalidGrantError(request=request)
+        return (getattr(request.client, "pk", None), code)
 
     def _consume_device_grant(self, request: OauthlibRequest) -> None:
         """
