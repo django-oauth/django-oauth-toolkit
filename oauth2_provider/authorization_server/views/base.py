@@ -1451,24 +1451,29 @@ class TokenView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
             )
 
         # Here we are returning the errors according to
-        # https://datatracker.ietf.org/doc/html/rfc8628#section-3.5, with the mapping
-        # OAuth2Validator.validate_device_code uses on newer oauthlib.
+        # https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
         # TODO: "slow_down" error (essentially rate-limiting).
         error_class = device_grant_error(device)
         if error_class is not None:
             error = error_class()
+        elif device.status != device.AUTHORIZED:
+            # It's technically impossible to get here because we've exhausted
+            # all the possible values for status. However, it does act as a
+            # reminder for developers when they add, in the future, new values
+            # (such as slow_down) that they must handle here.
+            return http.HttpResponseServerError(
+                content='{"error": "internal_error"}',
+                content_type="application/json",
+            )
+        else:
+            # AUTHORIZED is the only accepted state, anything else is
+            # rejected.
+            error = None
+
+        if error:
             return http.HttpResponse(
                 content=error.json,
                 status=error.status_code,
-                content_type="application/json",
-            )
-        if device.status != device.AUTHORIZED:
-            # AUTHORIZED is the only accepted state. It's technically impossible to
-            # get here because we've exhausted all the possible values for status.
-            # However, it does act as a reminder for developers when they add, in the
-            # future, new values (such as slow_down) that they must handle here.
-            return http.HttpResponseServerError(
-                content='{"error": "internal_error"}',
                 content_type="application/json",
             )
         return None

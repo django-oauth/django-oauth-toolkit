@@ -46,37 +46,31 @@ class DeviceAuthorizationView(FormEncodedRequestMixin, AuthorizationServerViewMi
         # left out when no scopes were resolved, and the grant stores none rather than
         # asking the scopes backend a second time. Older oauthlib leaves the resolution
         # to this view.
+        requested_scope = request.POST.get("scope", "").strip()
         if OAUTHLIB_VALIDATES_DEVICE_CODE:
             scope = response.pop("scope", "")
+        elif requested_scope:
+            scope = requested_scope
         else:
-            requested_scope = request.POST.get("scope", "").strip()
-            if requested_scope:
-                scope = requested_scope
-            else:
-                Application = get_application_model()
-                try:
-                    application = Application.objects.get(client_id=client_id)
-                except Application.DoesNotExist:
-                    return http.JsonResponse(
-                        {
-                            "error": "invalid_client",
-                            "error_description": "No application found for client_id.",
-                        },
-                        status=401,
-                        headers=headers,
-                    )
-                core = self.get_oauthlib_core()
-                uri = request.build_absolute_uri()
-                http_method = request.method
-                body = urlencode(core.extract_body(request))
-                req_headers = core.extract_headers(request)
-                oauthlib_request = OAuthlibRequest(
-                    uri, http_method=http_method, body=body, headers=req_headers
+            Application = get_application_model()
+            try:
+                application = Application.objects.get(client_id=client_id)
+            except Application.DoesNotExist:
+                return http.JsonResponse(
+                    {"error": "invalid_client", "error_description": "No application found for client_id."},
+                    status=401,
+                    headers=headers,
                 )
-                oauthlib_request.client_id = client_id
-                oauthlib_request.client = application
-                validator = core.server.request_validator
-                scope = " ".join(validator.get_default_scopes(client_id, oauthlib_request))
+            core = self.get_oauthlib_core()
+            uri = request.build_absolute_uri()
+            http_method = request.method
+            body = urlencode(core.extract_body(request))
+            req_headers = core.extract_headers(request)
+            oauthlib_request = OAuthlibRequest(uri, http_method=http_method, body=body, headers=req_headers)
+            oauthlib_request.client_id = client_id
+            oauthlib_request.client = application
+            validator = core.server.request_validator
+            scope = " ".join(validator.get_default_scopes(client_id, oauthlib_request))
         device_request = DeviceRequest(client_id=client_id, scope=scope)
         device_response = DeviceCodeResponse(**response)
         create_device_grant(device_request, device_response)
