@@ -1550,7 +1550,9 @@ class AbstractDeviceGrant(models.Model):
         is past the "expires" deadline.
 
         A used grant is left alone: its ``device_code`` was redeemed, so the grant is spent
-        rather than expired whatever the deadline, and keeps reporting ``invalid_grant``.
+        rather than expired whatever the deadline, and keeps reporting ``invalid_grant``. The
+        write is conditional on the stored row not being used either, so a redemption that
+        landed after this instance was loaded is not overwritten.
         """
         if self.status == self.EXPIRED:
             return True
@@ -1558,12 +1560,21 @@ class AbstractDeviceGrant(models.Model):
             return False
 
         now = datetime.now(tz=dt_timezone.utc)
-        if now >= self.expires:
-            self.status = self.EXPIRED
-            self.save(update_fields=["status"])
-            return True
+        if now < self.expires:
+            return False
 
-        return False
+        expired = (
+            type(self)
+            ._default_manager.filter(pk=self.pk)
+            .exclude(status=self.USED)
+            .update(status=self.EXPIRED)
+        )
+        if not expired:
+            # Redeemed since this instance was loaded (or gone): take the stored status.
+            self.refresh_from_db(fields=["status"])
+            return self.status == self.EXPIRED
+        self.status = self.EXPIRED
+        return True
 
 
 class DeviceGrant(AbstractDeviceGrant):
