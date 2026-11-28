@@ -198,7 +198,9 @@ def set_oauthlib_user_to_device_request_user(request: Request) -> None:
         # Older oauthlib never gets here: TokenView refuses the unknown code first.
         return
     request.user = device.user
+    # The grant's scopes replace a ``scope`` parameter sent with the poll, and
+    # OAuth2Validator.get_default_scopes() returns them while the grant is on the request,
+    # so oauthlib's fallback for an empty scope set does not add the current default scopes.
+    request.scope = device.scope or None
     request.scopes = device.scope.split() if device.scope else []
-    # OAuth2Validator.get_default_scopes() returns the grant's scopes while this is set, so
-    # oauthlib's fallback for an empty scope set does not add the current default scopes.
     request.device_grant = device

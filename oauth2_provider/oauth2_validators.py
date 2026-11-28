@@ -580,9 +580,13 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             return None
 
         request.user = device.user
+        # The grant's scopes are what the user approved, so they replace a ``scope``
+        # parameter the device may have sent with the poll (RFC 8628 section 3.4 defines
+        # none). oauthlib takes an empty ``request.scopes`` for an absent one and falls back
+        # to ``request.scope`` and then ``get_default_scopes()``, so both answer with the
+        # grant's own (empty) scopes as well.
+        request.scope = device.scope or None
         request.scopes = device.scope.split() if device.scope else []
-        # get_default_scopes() answers oauthlib's fallback for an empty scope set with the
-        # grant's own (empty) scopes, so the token carries what the user approved.
         request.device_grant = device
         return self.DEVICE_CODE_AUTHORIZED
 
@@ -656,7 +660,9 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         oauthlib asks here when ``request.scopes`` is empty, which an approved empty scope
         set is, and the token must not gain the scopes that are the default by then.
         """
-        device_grant = getattr(request, "device_grant", None)
+        # vars(): oauthlib's Request answers getattr() for any form or query parameter,
+        # so only the attribute this server set (not a ``device_grant=`` parameter) counts.
+        device_grant = vars(request).get("device_grant")
         if device_grant is not None:
             return device_grant.scope.split() if device_grant.scope else []
         default_scopes = get_scopes_backend().get_default_scopes(application=request.client, request=request)

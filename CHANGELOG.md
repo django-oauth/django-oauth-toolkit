@@ -431,8 +431,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It now looks the grant up by `device_code` and the authenticated `client_id`, reports
   `authorization_pending`, `access_denied` or `expired_token` (marking the grant expired) as
   `TokenView` did, and for an authorized grant sets the approving user and the stored scopes on the
-  request. A grant the user approved without scopes now yields a token without scopes: oauthlib
-  takes an empty scope set for an absent one and falls back to the client's default scopes, so
+  request. The grant's scopes are what the user approved, so they also replace a `scope`
+  parameter sent with the poll (RFC 8628 section 3.4 defines none), and a grant approved without
+  scopes yields a token without scopes: oauthlib takes an empty scope set for an absent one and
+  falls back to the poll's `scope` and then the client's default scopes, so
   `OAuth2Validator.get_default_scopes()` answers with the grant's own scopes while a device code
   grant is redeemed (`request.device_grant`), on every oauthlib. What the device sees depends on
   the installed oauthlib:

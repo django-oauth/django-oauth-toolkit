@@ -1308,7 +1308,7 @@ class TestTokenViewDeviceGrantPreCheck(DeviceFlowBaseTestCase):
     flag is patched so the check runs on every oauthlib.
     """
 
-    def poll(self, device_code: str) -> http.HttpResponse:
+    def poll(self, device_code: str, **extra_params: str) -> http.HttpResponse:
         return self.client.post(
             "/o/token/",
             data=urlencode(
@@ -1316,6 +1316,7 @@ class TestTokenViewDeviceGrantPreCheck(DeviceFlowBaseTestCase):
                     "device_code": device_code,
                     "client_id": self.application.client_id,
                     "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    **extra_params,
                 }
             ),
             content_type="application/x-www-form-urlencoded",
@@ -1359,11 +1360,12 @@ class TestTokenViewDeviceGrantPreCheck(DeviceFlowBaseTestCase):
     def test_grant_approved_without_scopes_yields_token_without_scopes(self):
         """
         The default OAUTH_PRE_TOKEN_VALIDATION validator puts the grant's empty scope set on
-        the request; oauthlib's fallback to DEFAULT_SCOPES ("read write") must not apply.
+        the request; oauthlib's fallbacks to the poll's own scope parameter and to
+        DEFAULT_SCOPES ("read write") must not apply.
         """
         self.create_grant(status=DeviceModel.AUTHORIZED, user=self.test_user, scope="")
 
-        response = self.poll("device_code")
+        response = self.poll("device_code", scope="write")
 
         assert response.status_code == 200
         token_data = response.json()
@@ -1553,22 +1555,26 @@ class TestOAuth2ValidatorValidateDeviceCode(DeviceFlowBaseTestCase):
 
         assert status == "authorized"
         assert self.request.user == self.test_user
+        assert self.request.scope == "read write"
         assert self.request.scopes == ["read", "write"]
 
     def test_authorized_grant_without_scope_sets_empty_scopes(self):
         """
-        oauthlib treats an empty ``request.scopes`` as unset and asks ``get_default_scopes``
-        for the client's default scopes, which would give the token scopes the user never
-        approved. With the grant on the request, that fallback answers with the grant's
-        (empty) scopes.
+        oauthlib treats an empty ``request.scopes`` as unset and falls back to the poll's
+        ``scope`` parameter, then to ``get_default_scopes``, either of which would give the
+        token scopes the user never approved. The grant's scopes replace the parameter, and
+        with the grant on the request the default-scope fallback answers with them too.
         """
         self.create_grant(status=DeviceModel.AUTHORIZED, user=self.test_user, scope="")
+        request = OauthlibRequest("/o/token/", http_method="POST", body="scope=write")
+        assert request.scope == "write"
 
-        status = self.validator.validate_device_code(self.application.client_id, "device_code", self.request)
+        status = self.validator.validate_device_code(self.application.client_id, "device_code", request)
 
         assert status == "authorized"
-        assert self.request.scopes == []
-        assert self.validator.get_default_scopes(self.application.client_id, self.request) == []
+        assert request.scope is None
+        assert request.scopes == []
+        assert self.validator.get_default_scopes(self.application.client_id, request) == []
 
     def test_default_scopes_are_the_clients_without_a_device_grant(self):
         self.request.client = self.application
@@ -1577,6 +1583,17 @@ class TestOAuth2ValidatorValidateDeviceCode(DeviceFlowBaseTestCase):
             "read",
             "write",
         ]
+
+    def test_default_scopes_ignore_a_device_grant_parameter_sent_by_the_client(self):
+        """
+        oauthlib's Request answers attribute reads with form and query parameters, so only
+        the grant this server put on the request counts, not a ``device_grant`` parameter.
+        """
+        request = OauthlibRequest("/o/token/", http_method="POST", body="device_grant=evil")
+        request.client = self.application
+        assert request.device_grant == "evil"
+
+        assert self.validator.get_default_scopes(self.application.client_id, request) == ["read", "write"]
 
     def test_pending_and_denied_grants_report_their_rfc8628_error(self):
         for grant_status, expected in (
@@ -1655,7 +1672,7 @@ class TestDeviceFlowTokenEndpointWithOauthlibDeviceCodeValidation(DeviceFlowBase
     to oauthlib and OAuth2Validator.validate_device_code decides (#1950).
     """
 
-    def poll(self, device_code: str) -> http.HttpResponse:
+    def poll(self, device_code: str, **extra_params: str) -> http.HttpResponse:
         return self.client.post(
             "/o/token/",
             data=urlencode(
@@ -1663,6 +1680,7 @@ class TestDeviceFlowTokenEndpointWithOauthlibDeviceCodeValidation(DeviceFlowBase
                     "device_code": device_code,
                     "client_id": self.application.client_id,
                     "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    **extra_params,
                 }
             ),
             content_type="application/x-www-form-urlencoded",
@@ -1702,13 +1720,15 @@ class TestDeviceFlowTokenEndpointWithOauthlibDeviceCodeValidation(DeviceFlowBase
 
     def test_grant_approved_without_scopes_yields_token_without_scopes(self):
         """
-        DEFAULT_SCOPES is "read write" when the device polls, but the user approved a grant
-        with no scopes; oauthlib's fallback to the default scopes must not apply.
+        DEFAULT_SCOPES is "read write" when the device polls, and the poll even asks for
+        "write" (RFC 8628 section 3.4 defines no scope parameter), but the user approved a
+        grant with no scopes; neither oauthlib's fallback to the poll's scope nor the one to
+        the default scopes may apply.
         """
         self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = []
         self.create_grant(scope="")
 
-        response = self.poll("device_code")
+        response = self.poll("device_code", scope="write")
 
         assert response.status_code == 200
         token_data = response.json()
