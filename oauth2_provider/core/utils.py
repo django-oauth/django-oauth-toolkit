@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from django.conf import settings
 from jwcrypto import jwk
 from oauthlib.common import Request
-from oauthlib.oauth2.rfc6749.errors import OAuth2Error
+from oauthlib.oauth2.rfc6749.errors import InvalidGrantError, OAuth2Error
 from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 
 
@@ -152,16 +152,22 @@ def add_iss_to_redirect(uri: str, issuer: str) -> str:
 def device_grant_error(device: "AbstractDeviceGrant") -> type[OAuth2Error] | None:
     """
     The RFC 8628 section 3.5 error a token request for ``device`` is answered with:
-    ``AccessDenied`` for a denied grant, ``ExpiredTokenError`` for one past its deadline
-    (``is_expired()`` marks it expired), ``AuthorizationPendingError`` for one the user has
-    not decided on yet. ``None`` for an authorized grant, and for any other status, which
-    callers treat as invalid.
+    ``AccessDenied`` for a denied grant, ``InvalidGrantError`` (RFC 6749 section 5.2) for one
+    whose ``device_code`` was already redeemed for a token, ``ExpiredTokenError`` for one past
+    its deadline (``is_expired()`` marks it expired), ``AuthorizationPendingError`` for one the
+    user has not decided on yet. ``None`` for an authorized grant, and for any other status,
+    which callers treat as invalid.
+
+    A used grant is answered the same way whether or not its deadline has passed, so a spent
+    code never reads as merely expired.
 
     Shared by ``TokenView.device_flow_token_response`` and
     ``OAuth2Validator.validate_device_code`` so both answer a poll the same way.
     """
     if device.status == device.DENIED:
         return rfc8628_errors.AccessDenied
+    if device.status == device.USED:
+        return InvalidGrantError
     if device.is_expired():
         return rfc8628_errors.ExpiredTokenError
     if device.status == device.AUTHORIZATION_PENDING:
