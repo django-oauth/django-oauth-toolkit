@@ -33,7 +33,22 @@ class DjangoChecksTestCase(TestCase):
         DATABASE_ROUTERS=["tests.db_router.CrossDatabaseRouter", "tests.db_router.AlphaRouter"]
     )
     def test_checks_fail_when_router_crosses_databases(self):
-        message = "The token models are expected to be stored in the same database."
+        message = (
+            "The token models and the device grant model are expected to be stored in the same database."
+        )
+        with self.assertRaisesMessage(SystemCheckError, message):
+            call_command("check")
+
+    # DeviceGrantDatabaseRouter claims DeviceGrant is in beta while the tokens are in alpha.
+    # The grant is consumed in the transaction that saves a device code grant's token, so
+    # it has to live with the tokens (#1965).
+    @override_settings(
+        DATABASE_ROUTERS=["tests.db_router.DeviceGrantDatabaseRouter", "tests.db_router.AlphaRouter"]
+    )
+    def test_checks_fail_when_router_separates_device_grants_from_tokens(self):
+        message = (
+            "The token models and the device grant model are expected to be stored in the same database."
+        )
         with self.assertRaisesMessage(SystemCheckError, message):
             call_command("check")
 

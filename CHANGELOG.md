@@ -430,7 +430,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   poll until the grant expired. The grant is consumed where the token is saved
   (`OAuth2Validator.save_bearer_token`), so a request that fails validation does not spend the code,
   and two polls racing for one code get exactly one token. The device grant status page reports
-  "Device Used" once the token has been issued.
+  "Device Used" once the token has been issued. `AbstractDeviceGrant.is_expired()` leaves a used
+  grant used, so a spent code never reads as merely expired, and `DeviceConfirmView` writes the
+  user's decision with a conditional update on a pending grant, so a stale form post can neither
+  reverse a decision nor reopen a used grant. The system check that keeps the token models in one
+  database now covers the device grant model too, since the grant is consumed in the token's
+  transaction.
 * #1950 The device authorization grant (RFC 8628) works with oauthlib 4.0.1, which broke it in two
   places. The device authorization endpoint answered every request with HTTP 500, because oauthlib
   now adds the scopes it resolved to its response as a `scope` key, which RFC 8628 section 3.2 does

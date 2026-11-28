@@ -51,6 +51,31 @@ class BetaRouter:
             return db == "beta"
 
 
+class DeviceGrantDatabaseRouter:
+    # Puts the device grants in beta while the tokens stay in alpha, which the system check
+    # refuses: a device code grant's token and the grant it spends are written in one
+    # transaction.
+    def db_for_read(self, model, **hints):
+        if model._meta.model_name == "devicegrant":
+            return "beta"
+        return None
+
+    def db_for_write(self, model, **hints):
+        if model._meta.model_name == "devicegrant":
+            return "beta"
+        return None
+
+    def allow_relation(self, obj1, obj2, **hints):
+        if obj1._state.db == "beta" and obj2._state.db == "beta":
+            return True
+        return None
+
+    def allow_migrate(self, db, app_label, model_name=None, **hints):
+        if model_name == "devicegrant":
+            return db == "beta"
+        return None
+
+
 class CrossDatabaseRouter:
     # alpha is where the core Django models are stored including user. To keep things
     # simple this is where the oauth2 provider models are stored as well because they

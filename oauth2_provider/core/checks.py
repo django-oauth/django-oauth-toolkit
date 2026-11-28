@@ -224,8 +224,8 @@ def validate_request_body_configuration(app_configs, **kwargs):
 
 
 # Registered under the ``models`` tag rather than ``database``: this check only asks the
-# configured routers where the token models would be written, which is static analysis and
-# never opens a connection. Django 6.1 stopped running ``database``-tagged checks unless a
+# configured routers where the token and device grant models would be written, which is
+# static analysis and never opens a connection. Django 6.1 stopped running ``database``-tagged checks unless a
 # database alias is passed explicitly (``manage.py check --database default``), because
 # those checks may do more than static analysis -- keeping this one under that tag would
 # silently disable it for everyone running a plain ``manage.py check``.
@@ -237,6 +237,7 @@ def validate_token_configuration(app_configs, **kwargs):
             oauth2_settings.ACCESS_TOKEN_MODEL,
             oauth2_settings.ID_TOKEN_MODEL,
             oauth2_settings.REFRESH_TOKEN_MODEL,
+            oauth2_settings.DEVICE_GRANT_MODEL,
         )
     )
 
@@ -246,8 +247,15 @@ def validate_token_configuration(app_configs, **kwargs):
     # they all live together in one database.
     # The tokens are not required to live in the default database provided the Django
     # routers know the correct database for them.
+    # The device grant is consumed inside the transaction that saves a device code grant's
+    # token (OAuth2Validator.save_bearer_token), which is opened on the access token's
+    # database: on another database the consumption would not roll back with the token.
     if len(databases) > 1:
-        return [checks.Error("The token models are expected to be stored in the same database.")]
+        return [
+            checks.Error(
+                "The token models and the device grant model are expected to be stored in the same database."
+            )
+        ]
 
     return []
 
