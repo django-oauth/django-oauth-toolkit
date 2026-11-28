@@ -22,7 +22,13 @@ from oauth2_provider.views import ProtectedResourceView, ScopedProtectedResource
 
 from . import presets
 from .common_testing import OAuth2ProviderTestCase as TestCase
-from .utils import get_basic_auth_header, post_form, spy_on
+from .utils import (
+    MALFORMED_JWTS,
+    get_basic_auth_header,
+    post_form,
+    spy_on,
+    unsigned_jws_for_audience,
+)
 
 
 Application = get_application_model()
@@ -1312,6 +1318,27 @@ class TestHybridProtectedResource(BaseTest):
 
         view = ResourceView.as_view()
         response = view(request)
+        self.assertEqual(response.status_code, 403)
+
+    def test_resource_access_deny_malformed_jwt(self):
+        # With OIDC enabled, oauthlib routes a bearer token shaped like a JWT ("ey..." with two
+        # dots) to `validate_jwt_bearer_token`. A malformed one is denied, not a 500 (#1949).
+        view = ResourceView.as_view()
+        for name, token in MALFORMED_JWTS.items():
+            with self.subTest(name):
+                request = self.factory.get("/fake-resource", HTTP_AUTHORIZATION="Bearer " + token)
+                request.user = self.hy_test_user
+                response = view(request)
+                self.assertEqual(response.status_code, 403)
+
+    def test_resource_access_deny_jwt_for_application_without_signing_key(self):
+        # A JWT-shaped bearer token whose `aud` is the client_id of an application that signs
+        # no ID Tokens is denied: `jwk_key` raising ImproperlyConfigured is not a 500 (#1949).
+        Application.objects.filter(pk=self.application.pk).update(algorithm=Application.NO_ALGORITHM)
+        token = unsigned_jws_for_audience(self.application.client_id)
+        request = self.factory.get("/fake-resource", HTTP_AUTHORIZATION="Bearer " + token)
+        request.user = self.hy_test_user
+        response = ResourceView.as_view()(request)
         self.assertEqual(response.status_code, 403)
 
 

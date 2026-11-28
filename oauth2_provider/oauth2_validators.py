@@ -13,13 +13,14 @@ from urllib.parse import unquote_plus
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.hashers import check_password, identify_hasher
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, router, transaction
 from django.http import HttpRequest
 from django.utils import dateformat, timezone
 from django.utils.crypto import constant_time_compare
 from django.utils.timezone import make_aware
 from django.utils.translation import gettext_lazy as _
-from jwcrypto import jws, jwt
+from jwcrypto import jwk, jws, jwt
 from jwcrypto.common import JWException
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import Request as OauthlibRequest
@@ -1576,22 +1577,51 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             # Every ID Token this OP issues has a jti. A verified JWT without one is
             # another JWT signed with the OP key, such as a signed UserInfo response.
             return IDToken.objects.get(jti=claims["jti"])
-        except (JWException, JWTExpired, KeyError, IDToken.DoesNotExist):
+        except (JWException, JWTExpired, ValueError, KeyError, IDToken.DoesNotExist):
+            # ValueError: `jwt.JWT` only reads the compact serialization.
             return None
 
-    def _get_key_for_token(self, token):
+    def _get_key_for_token(self, token: str) -> jwk.JWK | None:
         """
         Peek at the unvalidated token to discover who it was issued for
         and then use that to load that application and its key.
+
+        Fails closed: a token that cannot be parsed, whose claims or `aud` have the
+        wrong shape, or whose application has no usable signing key, yields `None`
+        so callers treat it as an invalid token. Nothing peeked here is trusted
+        until the signature is verified.
         """
         unverified_token = jws.JWS()
-        unverified_token.deserialize(token)
-        claims = json.loads(unverified_token.objects["payload"].decode("utf-8"))
-        if "aud" not in claims:
+        try:
+            unverified_token.deserialize(token)
+            claims = json.loads(unverified_token.objects["payload"].decode("utf-8"))
+        except (JWException, ValueError, KeyError, UnicodeDecodeError, RecursionError):
+            # RecursionError: JSON nested deeper than the parser can follow.
             return None
-        application = self._get_client_by_audience(claims["aud"])
-        if application:
+        if not isinstance(claims, dict):
+            return None
+        audience = claims.get("aud")
+        audiences = [audience] if isinstance(audience, str) else audience
+        if not isinstance(audiences, list) or not audiences:
+            return None
+        try:
+            for aud in audiences:
+                # A JSON escape can produce a NUL or a lone surrogate. No client_id
+                # holds either, and a database lookup can raise on both.
+                if not isinstance(aud, str) or "\x00" in aud:
+                    return None
+                aud.encode("utf-8")
+        except UnicodeEncodeError:
+            return None
+        application = self._get_client_by_audience(audience)
+        if not application:
+            return None
+        try:
             return application.jwk_key
+        except ImproperlyConfigured:
+            # The application signs no ID Tokens (no algorithm, or an HS256 secret that
+            # is empty or hashed), so no token naming it as `aud` can be one of ours.
+            return None
 
     def _get_client_by_audience(self, audience):
         """

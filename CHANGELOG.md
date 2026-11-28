@@ -464,6 +464,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `OAUTH_PRE_TOKEN_VALIDATION` validator no longer raises on an unknown `device_code`.
   * oauthlib 4.0.0 and earlier: unchanged. oauthlib neither sends the key nor calls the hook, and
     `TokenView` keeps checking the grant itself.
+* #1949 A malformed bearer JWT no longer fails with HTTP 500. `OAuth2Validator._get_key_for_token`
+  parsed the unverified token outside any `try`, so a token that is not a JWS, whose payload is not
+  UTF-8, not a JSON object or nested too deeply to parse, or whose `aud` is not a string or a list
+  of strings raised from `validate_jwt_bearer_token` and from RP-Initiated Logout instead of being
+  rejected. It now fails closed and returns `None`, like `client_assertions._peek_assertion`, so the
+  token is rejected like any other invalid token: a protected resource denies the request and
+  RP-Initiated Logout answers HTTP 400. The same holds for a token whose `aud` holds a NUL or a lone
+  surrogate, for one whose `aud` is the `client_id` of an application that signs no ID Tokens (no
+  algorithm, or HS256 with an empty or hashed secret: `jwk_key` raised `ImproperlyConfigured`), and
+  for an `id_token_hint` in a JSON serialization of JWS, which `jwcrypto.jwt.JWT` refuses with
+  `ValueError`.
 * #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
   on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
   `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the

@@ -10,7 +10,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import FormView, View
 from jwcrypto import jwt
 from jwcrypto.common import JWException
-from jwcrypto.jws import InvalidJWSObject
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import add_params_to_uri
 
@@ -243,13 +242,9 @@ def _load_id_token(token: str) -> tuple[AbstractIDToken | None, dict | None]:
     IDToken = get_id_token_model()
     validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
 
-    try:
-        key = validator._get_key_for_token(token)
-    except InvalidJWSObject:
-        # Failed to deserialize the key.
-        return None, None
-
-    # Could not identify key from the ID Token.
+    # `_get_key_for_token` fails closed: `None` when the token cannot be parsed or
+    # names no application with a usable key.
+    key = validator._get_key_for_token(token)
     if not key:
         return None, None
 
@@ -265,8 +260,9 @@ def _load_id_token(token: str) -> tuple[AbstractIDToken | None, dict | None]:
             check_claims = None
         jwt_token = jwt.JWT(key=key, jwt=token, check_claims=check_claims)
         claims = json.loads(jwt_token.claims)
-    except (JWException, JWTExpired):
-        # The token could not be verified.
+    except (JWException, JWTExpired, ValueError):
+        # The token could not be verified. ValueError: `jwt.JWT` only reads the compact
+        # serialization, while the peek in `_get_key_for_token` also parses the JSON ones.
         return None, None
 
     if "jti" not in claims:
