@@ -1305,7 +1305,7 @@ class TestOIDCAuthorizationCodeView(BaseTest):
         self.assertFalse(Grant.objects.exists())
 
     def test_prompt_none_unrestricted_grant_does_not_cover_a_resource_request(self):
-        """No resource is a distinct value, not a wildcard (ADR 0001)."""
+        """No resource is a distinct value, not a wildcard (#1916)."""
         self._grant()
 
         parsed_query = self._response_parameters(self._prompt_none(resource="https://a.example/api"))
@@ -1325,13 +1325,26 @@ class TestOIDCAuthorizationCodeView(BaseTest):
     def test_prompt_none_approval_prompt_auto_keeps_its_scopes_only_scan(self):
         """approval_prompt=auto answers prompt=none as it answers any request: a
         token narrowed to a resource at the token endpoint, for an approval that
-        named none, still counts (ADR 0001 changes auto behind a setting)."""
+        named none, still counts while REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES is off."""
         self._grant(resource=["https://a.example/api"])
 
         parsed_query = self._response_parameters(self._prompt_none(approval_prompt="auto"))
 
         self.assertIn("code", parsed_query)
         self.assertNotIn("error", parsed_query)
+
+    def test_prompt_none_approval_prompt_auto_matching_resources_is_consent_required(self):
+        """With REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES on, auto checks resources for
+        prompt=none too, so a token that does not cover them needs consent."""
+        self.oauth2_settings.REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES = True
+        self._grant(resource=["https://a.example/api"])
+
+        parsed_query = self._response_parameters(
+            self._prompt_none(approval_prompt="auto", resource="https://b.example/api")
+        )
+
+        self.assertEqual(parsed_query["error"], ["consent_required"])
+        self.assertFalse(Grant.objects.exists())
 
     def test_prompt_none_open_redirect_no_client(self):
         """

@@ -71,6 +71,12 @@ class TestModels(BaseTestModels):
         self.assertTrue(access_token.allow_scopes([]))
         self.assertFalse(access_token.allow_scopes(["write", "destroy"]))
 
+    def test_allow_resources_on_a_token_without_resource(self):
+        access_token = AccessToken(user=self.user, scope="read", expires=0, token="", resource=None)
+
+        self.assertTrue(access_token.allow_resources([]))
+        self.assertFalse(access_token.allow_resources(["https://a.example/api"]))
+
     def test_can_introspect_defaults_to_true(self):
         # #1451: can_introspect is an opt-out capability; every application has
         # it unless an operator turns it off.

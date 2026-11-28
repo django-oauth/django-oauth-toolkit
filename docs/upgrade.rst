@@ -285,6 +285,15 @@ A security fix also changes who the token introspection endpoint answers.
 
   See :ref:`introspection-authorization`.
 
+3.5 adds an opt-in check that is scheduled to become the default in 4.0.
+
+* **approval_prompt=auto can require matching RFC 8707 resources (#1916).** Set
+  ``REQUEST_APPROVAL_PROMPT_MATCH_RESOURCES = True`` so that an earlier grant for resource A no longer
+  skips consent for the same scopes on resource B. Once it is on, clients that send ``resource`` will
+  see the consent form again wherever their earlier token does not cover the requested resources,
+  including a resource-less token versus a request for a resource, and a token the client narrowed
+  at the token endpoint. Turn it on in staging first to see how often your clients re-prompt.
+
 3.5 also drops the Django and Python versions that have reached end of life.
 
 * **Django 4.2, 5.0 and 5.1 and Python 3.10 are no longer supported (#1944).** Upgrade to Django
