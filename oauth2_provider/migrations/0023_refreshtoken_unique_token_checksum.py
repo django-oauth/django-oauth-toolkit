@@ -51,6 +51,11 @@ def delete_duplicate_checksums(apps, schema_editor):
             doomed.extend(pk for pk, _revoked, _created in rows if pk != survivor)
         if doomed:
             manager.filter(pk__in=doomed).delete()
+    if checksums and schema_editor.connection.vendor == "postgresql":
+        # The deletions queued deferred foreign key checks on the table, and PostgreSQL
+        # refuses the ALTER TABLE that follows while they are pending (#1961).
+        schema_editor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        schema_editor.execute("SET CONSTRAINTS ALL DEFERRED")
 
 
 class Migration(migrations.Migration):
