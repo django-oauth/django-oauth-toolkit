@@ -11,6 +11,7 @@ from django.db import models
 from django.test import RequestFactory
 from django.urls import reverse
 from oauthlib.common import Request as OauthlibRequest
+from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
 from oauthlib.oauth2.rfc8628.grant_types import DeviceCodeGrant
 
 import oauth2_provider.models
@@ -317,6 +318,97 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             token=token_data["refresh_token"]
         )
         assert refresh_token.user == device.user
+
+        # -------------------------
+        # 5: The device code is spent (#1965). Polling again with it is answered with
+        #  invalid_grant (RFC 6749 section 5.2) and mints no second token.
+        # -------------------------
+        device.refresh_from_db()
+        assert device.status == device.USED
+
+        reused_response = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert reused_response.__getitem__("content-type") == "application/json"
+        assert reused_response.status_code == 400
+        assert reused_response.json() == {"error": "invalid_grant"}
+        assert AccessToken.objects.count() == 1
+        assert RefreshToken.objects.count() == 1
+
+        # The user's status page reports that the device has used its code.
+        self.assertContains(
+            response=self.client.get(device_grant_status_url),
+            text="Device Used",
+            count=1,
+        )
+
+    def test_token_view_returns_invalid_grant_for_used_device_code(self):
+        """
+        A device grant that was already redeemed for a token answers every later poll with
+        invalid_grant, whether or not its deadline has passed since, and stays used (#1965).
+        Covers the view's own check on oauthlib before 4.0.1 and the validate_device_code
+        hook on 4.0.1 and later.
+        """
+        for label, expires in (
+            ("before its deadline", datetime.now(tz=timezone.utc) + timedelta(seconds=60)),
+            ("past its deadline", datetime.now(tz=timezone.utc) - timedelta(seconds=10)),
+        ):
+            with self.subTest(label):
+                device = DeviceModel.objects.create(
+                    client_id=self.application.client_id,
+                    device_code=f"device_code {label}",
+                    user_code=f"user_code {label}",
+                    scope="read",
+                    expires=expires,
+                    status=DeviceModel.USED,
+                    user=self.test_user,
+                )
+
+                response = self.client.post(
+                    "/o/token/",
+                    data=urlencode(
+                        {
+                            "device_code": device.device_code,
+                            "client_id": self.application.client_id,
+                            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                        }
+                    ),
+                    content_type="application/x-www-form-urlencoded",
+                )
+
+                assert response.status_code == 400
+                assert response["content-type"] == "application/json"
+                assert response.json() == {"error": "invalid_grant"}
+                assert not AccessToken.objects.exists()
+                device.refresh_from_db()
+                assert device.status == DeviceModel.USED
+
+    def test_device_grant_status_view_reports_a_used_grant(self):
+        """
+        The status page the approving user lands on keeps working once the device has
+        redeemed its code, which usually happens within one polling interval (#1965).
+        """
+        DeviceModel.objects.create(
+            client_id=self.application.client_id,
+            device_code="device_code",
+            user_code="user_code",
+            scope="read",
+            expires=datetime.now(tz=timezone.utc) + timedelta(seconds=60),
+            status=DeviceModel.USED,
+            user=self.test_user,
+        )
+        self.client.force_login(self.test_user)
+
+        response = self.client.get(
+            reverse(
+                "oauth2_provider:device-grant-status",
+                kwargs={"client_id": self.application.client_id, "user_code": "user_code"},
+            )
+        )
+
+        self.assertContains(response, "Device Used", count=1)
 
     def test_device_user_code_view_get_prefills_form_from_query_param(self):
         """
@@ -1395,6 +1487,20 @@ class TestTokenViewDeviceGrantPreCheck(DeviceFlowBaseTestCase):
         self.assertContains(response, status_code=500, text='{"error": "internal_error"}', count=1)
         assert response["content-type"] == "application/json"
 
+    def test_used_grant_is_invalid_grant(self):
+        """
+        A grant whose code was already redeemed is refused before oauthlib sees the poll, with
+        the same invalid_grant the hook answers on newer oauthlib (#1965).
+        """
+        self.create_grant(status=DeviceModel.USED, user=self.test_user)
+
+        response = self.poll("device_code")
+
+        assert response.status_code == 400
+        assert response["content-type"] == "application/json"
+        assert response.json() == {"error": "invalid_grant"}
+        assert not AccessToken.objects.exists()
+
 
 class TestDeviceFlowWithSwappedDeviceGrantModel(DeviceFlowBaseTestCase):
     def setUp(self):
@@ -1488,6 +1594,17 @@ class TestDeviceFlowWithSwappedDeviceGrantModel(DeviceFlowBaseTestCase):
             "scope": "read write",
             "refresh_token": mock.ANY,
         }
+
+        # The swapped grant is consumed too (its `used` status needs the tests app migration).
+        assert device_model.objects.get(device_code="abc").status == device_model.USED
+        reused_response = self.client.post(
+            "/o/token/",
+            data=urlencode(token_payload),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert reused_response.status_code == 400
+        assert reused_response.json() == {"error": "invalid_grant"}
+        assert AccessToken.objects.count() == 1
 
     def test_invalid_user_code_returns_form_error_with_swapped_device_model(self):
         UserModel.objects.create_user(
@@ -1664,6 +1781,124 @@ class TestOAuth2ValidatorValidateDeviceCode(DeviceFlowBaseTestCase):
         assert status is None
         assert self.request.user is None
 
+    def test_used_grant_is_invalid(self):
+        """
+        A grant whose code was already redeemed is reported as invalid with ``None``, oauthlib's
+        documented return for an invalid device_code (a status string it does not know would
+        make it log a warning), and the approving user is not put on the request (#1965).
+        """
+        for label, expires in (
+            ("before its deadline", datetime.now(tz=timezone.utc) + timedelta(seconds=60)),
+            ("past its deadline", datetime.now(tz=timezone.utc) - timedelta(seconds=10)),
+        ):
+            with self.subTest(label):
+                grant = self.create_grant(
+                    device_code=label, status=DeviceModel.USED, user=self.test_user, expires=expires
+                )
+
+                status = self.validator.validate_device_code(self.application.client_id, label, self.request)
+
+                assert status is None
+                assert self.request.user is None
+                assert self.request.scopes is None
+                grant.refresh_from_db()
+                assert grant.status == DeviceModel.USED
+
+
+class TestOAuth2ValidatorSaveBearerTokenConsumesDeviceGrant(DeviceFlowBaseTestCase):
+    """
+    OAuth2Validator.save_bearer_token spends the device code of a device code grant token
+    request (#1965), on every oauthlib version: oauthlib calls it once the request has passed
+    validation, so a request that fails validation leaves the grant authorized.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.validator = OAuth2Validator()
+
+    def create_grant(self, **kwargs) -> oauth2_provider.models.DeviceGrant:
+        fields = {
+            "client_id": self.application.client_id,
+            "device_code": "device_code",
+            "user_code": "user_code",
+            "scope": "read",
+            "expires": datetime.now(tz=timezone.utc) + timedelta(seconds=60),
+            "status": DeviceModel.AUTHORIZED,
+            "user": self.test_user,
+        }
+        fields.update(kwargs)
+        return DeviceModel.objects.create(**fields)
+
+    def token_request(self, grant_type: str, **params) -> OauthlibRequest:
+        request = OauthlibRequest(
+            "/o/token/",
+            http_method="POST",
+            body=urlencode({"grant_type": grant_type, "client_id": self.application.client_id, **params}),
+        )
+        request.client = self.application
+        request.user = self.test_user
+        request.scopes = ["read"]
+        return request
+
+    def save_token(
+        self, request: OauthlibRequest, *, refresh_token: bool = True, value: str = "token"
+    ) -> None:
+        token = {
+            "access_token": f"access_{value}",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "scope": "read",
+        }
+        if refresh_token:
+            token["refresh_token"] = f"refresh_{value}"
+        self.validator.save_bearer_token(token, request)
+
+    def test_device_code_grant_token_marks_the_grant_used(self):
+        grant = self.create_grant()
+
+        self.save_token(
+            self.token_request("urn:ietf:params:oauth:grant-type:device_code", device_code="device_code")
+        )
+
+        grant.refresh_from_db()
+        assert grant.status == DeviceModel.USED
+        assert AccessToken.objects.get(token="access_token").user == self.test_user
+        assert RefreshToken.objects.filter(token="refresh_token").exists()
+
+    def test_device_code_grant_token_is_refused_once_the_grant_is_no_longer_authorized(self):
+        """
+        The grant is consumed with one conditional update, so when two polls race for the same
+        code (both passed validation while it was still authorized) only the first gets a
+        token; the second is refused with invalid_grant and its token is rolled back.
+        """
+        for label, fields in (
+            ("already used", {"status": DeviceModel.USED}),
+            ("issued to another client", {"client_id": "another_client"}),
+        ):
+            with self.subTest(label):
+                grant = self.create_grant(device_code=label, **fields)
+
+                with self.assertRaises(InvalidGrantError):
+                    self.save_token(
+                        self.token_request("urn:ietf:params:oauth:grant-type:device_code", device_code=label),
+                        value=label,
+                    )
+
+                assert not AccessToken.objects.exists()
+                assert not RefreshToken.objects.exists()
+                grant.refresh_from_db()
+                assert grant.status == fields.get("status", DeviceModel.AUTHORIZED)
+
+    def test_other_grant_types_leave_device_grants_alone(self):
+        grant = self.create_grant()
+
+        # Client credentials tokens come without a refresh token (RFC 6749 section 4.4.3).
+        self.save_token(self.token_request("client_credentials"), refresh_token=False)
+
+        grant.refresh_from_db()
+        assert grant.status == DeviceModel.AUTHORIZED
+        assert AccessToken.objects.filter(token="access_token").exists()
+
 
 @skipUnless(OAUTHLIB_VALIDATES_DEVICE_CODE, "oauthlib before 4.0.1 does not call validate_device_code")
 class TestDeviceFlowTokenEndpointWithOauthlibDeviceCodeValidation(DeviceFlowBaseTestCase):
@@ -1763,6 +1998,15 @@ class TestDeviceFlowTokenEndpointWithOauthlibDeviceCodeValidation(DeviceFlowBase
     def test_unknown_device_status_is_invalid_grant(self):
         grant = self.create_grant()
         DeviceModel.objects.filter(pk=grant.pk).update(status="LOL_status")
+
+        response = self.poll("device_code")
+
+        assert response.status_code == 400
+        assert response.json() == {"error": "invalid_grant"}
+        assert not AccessToken.objects.exists()
+
+    def test_used_device_code_is_invalid_grant(self):
+        self.create_grant(status=DeviceModel.USED)
 
         response = self.poll("device_code")
 
