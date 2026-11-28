@@ -46,6 +46,7 @@ then start the server
 
 .. _RFC: https://www.rfc-editor.org/rfc/rfc8628
 .. _RFC section 3.5: https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
+.. _RFC 6749 section 5.2: https://datatracker.ietf.org/doc/html/rfc6749#section-5.2
 
 2. To initiate device authorization, send this request (in the real world, the device
 makes this request). In `RFC`_ Figure 1, this is step (A).
@@ -135,3 +136,10 @@ However, after the user approves, the response will be 200:
         "scope": "openid",
         "refresh_token": "Go6VumurDfFAeCeKrpCKPDtElV77id"
     }
+
+Issuing the token spends the ``device_code``: the device grant moves to the ``used`` status, and
+polling again with the same code is answered with 400 ``{"error": "invalid_grant"}`` (`RFC 6749
+section 5.2`_), as a reused authorization code is. The device keeps its session going with the
+``refresh_token`` instead. The status page the user was redirected to after approving reports
+"Device Used" once the device has redeemed its code, which it normally does within one polling
+interval.
