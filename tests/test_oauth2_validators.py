@@ -1248,6 +1248,24 @@ def test_validate_jwt_bearer_token_malformed(oauth2_settings, mocker, token):
     assert validator.validate_jwt_bearer_token(token, ["openid"], mocker.sentinel.request) is False
 
 
+def test_get_key_for_token_recursion_error(mocker):
+    # How deep the JSON parser can go depends on the interpreter, and on Python 3.14 on the
+    # thread's stack size, so `payload_nested_too_deep` may parse. Raised directly so the
+    # `RecursionError` branch is covered whatever the limit. Only for the payload: jwcrypto
+    # parses the header with `json.loads` too, and wraps any error there in `InvalidJWSObject`.
+    token = unsigned_jws_for_audience("client-id")
+    payload = json.dumps({"aud": "client-id"})
+    loads = json.loads
+
+    def overflow_on_payload(document, *args, **kwargs):
+        if document == payload:
+            raise RecursionError
+        return loads(document, *args, **kwargs)
+
+    mocker.patch("oauth2_provider.oauth2_validators.json.loads", side_effect=overflow_on_payload)
+    assert OAuth2Validator()._get_key_for_token(token) is None
+
+
 @pytest.mark.django_db(databases="__all__")
 @pytest.mark.oauth2_settings(presets.OIDC_SETTINGS_RW)
 @pytest.mark.parametrize("algorithm", ["", "HS256"], ids=["no_algorithm", "hs256_hashed_secret"])

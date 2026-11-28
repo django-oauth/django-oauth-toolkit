@@ -67,19 +67,30 @@ def _unsigned_jws(payload: bytes) -> str:
     return ".".join([b64(b'{"alg": "HS256"}'), b64(payload), b64(b"signature")])
 
 
+NESTED_TOO_DEEP = 100000
+
 # Bearer tokens that cannot be parsed, or whose claims have the wrong shape (#1949).
 MALFORMED_JWTS = {
     "not_a_jws": "abc",
     "payload_not_json": _unsigned_jws(b"not json"),
     "payload_not_an_object": _unsigned_jws(b"1"),
     "payload_not_utf8": _unsigned_jws(b"\xff\xfe"),
-    # Deep nesting overflows the JSON parser's recursion limit.
-    "payload_nested_too_deep": _unsigned_jws(b"[" * 5000),
+    # Deep nesting overflows the JSON parser's recursion limit. Balanced, so a parser that
+    # follows it all gets a list, not invalid JSON; on Python 3.14 the limit grows with the
+    # thread's stack, so `test_get_key_for_token_recursion_error` covers the branch directly.
+    "payload_nested_too_deep": _unsigned_jws(b"[" * NESTED_TOO_DEEP + b"]" * NESTED_TOO_DEEP),
     "aud_not_a_string": _unsigned_jws(b'{"aud": 5}'),
     "aud_list_not_strings": _unsigned_jws(b'{"aud": [5]}'),
     # JSON escapes that give a `str` no database lookup can take.
     "aud_nul": _unsigned_jws(rb'{"aud": "a\u0000b"}'),
     "aud_lone_surrogate": _unsigned_jws(rb'{"aud": "a\ud800b"}'),
+    # A JSON serialization with no `payload` member: `jws.JWS` parses it, but has no payload.
+    "json_serialization_without_payload": json.dumps(
+        {
+            "protected": _unsigned_jws(b"").split(".")[0],
+            "signature": _unsigned_jws(b"").split(".")[2],
+        }
+    ),
 }
 
 
