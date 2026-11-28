@@ -163,6 +163,37 @@ class TestDynamicClientRegistration(TestCase):
         app = Application.objects.get(client_id=body["client_id"])
         assert app.name == "My Test App"
 
+    def test_register_null_client_name_counts_as_omitted(self):
+        """A JSON null client_name is stored as the blank default, not a 500 (IntegrityError)."""
+        self.client.force_login(self.user)
+        data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "client_name": None,
+        }
+        response = _post_register(self.client, data)
+        assert response.status_code == 201
+        app = Application.objects.get(client_id=response.json()["client_id"])
+        assert app.name == ""
+
+    def test_register_non_string_client_name_is_400(self):
+        """A client_name of another JSON type is refused, not stored as its Python repr."""
+        self.client.force_login(self.user)
+        for client_name in (5, 1.5, True, ["My Test App"], {"en": "My Test App"}):
+            with self.subTest(client_name=client_name):
+                data = {
+                    "redirect_uris": ["https://example.com/cb"],
+                    "grant_types": ["authorization_code"],
+                    "client_name": client_name,
+                }
+                response = _post_register(self.client, data)
+                assert response.status_code == 400
+                assert response.json() == {
+                    "error": "invalid_client_metadata",
+                    "error_description": "client_name must be a string",
+                }
+        assert not Application.objects.exists()
+
     def test_register_public_client(self):
         """token_endpoint_auth_method=none → client_type=public."""
         self.client.force_login(self.user)
@@ -1530,6 +1561,23 @@ class TestDynamicClientRegistrationManagement(TestCase):
         assert body["client_id_issued_at"] == self.client_id_issued_at
         app = Application.objects.get(client_id=self.client_id)
         assert app.name == "Updated App"
+
+    def test_put_null_client_name_resets_the_name(self):
+        """A JSON null client_name resets the name like an omitted one, not a 500 (IntegrityError)."""
+        update_data = {
+            "redirect_uris": ["https://example.com/cb"],
+            "grant_types": ["authorization_code"],
+            "client_name": None,
+        }
+        response = self.client.put(
+            self.management_url,
+            data=json.dumps(update_data),
+            content_type="application/json",
+            **_bearer(self.registration_token),
+        )
+        assert response.status_code == 200
+        app = Application.objects.get(client_id=self.client_id)
+        assert app.name == ""
 
     def test_put_is_full_replacement_and_resets_omitted_fields(self):
         """PUT is a full replacement (RFC 7592 §2.2): omitted metadata resets.
