@@ -1548,9 +1548,14 @@ class AbstractDeviceGrant(models.Model):
         """
         Check device flow session expiration and set the status to "expired" if current time
         is past the "expires" deadline.
+
+        A used grant is left alone: its ``device_code`` was redeemed, so the grant is spent
+        rather than expired whatever the deadline, and keeps reporting ``invalid_grant``.
         """
         if self.status == self.EXPIRED:
             return True
+        if self.status == self.USED:
+            return False
 
         now = datetime.now(tz=dt_timezone.utc)
         if now >= self.expires:

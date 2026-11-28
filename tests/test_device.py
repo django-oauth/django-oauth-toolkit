@@ -7,7 +7,7 @@ import pytest
 from django import http
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import models
+from django.db import IntegrityError, models
 from django.test import RequestFactory
 from django.urls import reverse
 from oauthlib.common import Request as OauthlibRequest
@@ -15,6 +15,7 @@ from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
 from oauthlib.oauth2.rfc8628.grant_types import DeviceCodeGrant
 
 import oauth2_provider.models
+from oauth2_provider.authorization_server.views.device import DeviceConfirmView
 from oauth2_provider.core.compat import OAUTHLIB_VALIDATES_DEVICE_CODE
 from oauth2_provider.core.utils import set_oauthlib_user_to_device_request_user
 from oauth2_provider.models import (
@@ -597,6 +598,82 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         device.refresh_from_db()
         assert device.status == DeviceModel.AUTHORIZATION_PENDING
 
+    def test_device_confirm_view_does_not_decide_a_grant_that_is_no_longer_pending(self):
+        """
+        The decision is a conditional update on a pending grant, so a stale form post (one
+        that loaded the grant while it was pending, then lost a race with another decision
+        or with the device redeeming the code) is answered with 404 and changes nothing: in
+        particular it cannot turn a used grant back into an authorized one (#1965).
+        """
+        self.client.force_login(self.test_user)
+        for action, current_status in (
+            ("accept", DeviceModel.USED),
+            ("deny", DeviceModel.USED),
+            ("accept", DeviceModel.DENIED),
+            ("deny", DeviceModel.AUTHORIZED),
+        ):
+            with self.subTest(action=action, status=current_status):
+                device = DeviceModel.objects.create(
+                    client_id=self.application.client_id,
+                    device_code=f"device_code-{action}-{current_status}",
+                    user_code=f"user_code-{action}-{current_status}",
+                    scope="read",
+                    expires=datetime.now(tz=timezone.utc) + timedelta(seconds=60),
+                    status=DeviceModel.AUTHORIZATION_PENDING,
+                    user=self.test_user,
+                )
+                # The instance the view loaded while the grant was still pending ...
+                stale_device = DeviceModel.objects.get(pk=device.pk)
+                # ... and the decision (or redemption) that landed in the meantime.
+                DeviceModel.objects.filter(pk=device.pk).update(status=current_status)
+
+                with mock.patch.object(DeviceConfirmView, "get_object", return_value=stale_device):
+                    response = self.client.post(
+                        reverse(
+                            "oauth2_provider:device-confirm",
+                            kwargs={"user_code": device.user_code, "client_id": device.client_id},
+                        ),
+                        data={"action": action},
+                    )
+
+                assert response.status_code == 404
+                device.refresh_from_db()
+                assert device.status == current_status
+
+    def test_device_user_code_view_reports_a_used_grant_as_already_used_past_its_deadline(self):
+        """
+        Submitting the user code of a grant whose device code was already redeemed is refused
+        as already used, and the grant stays used, also once its deadline has passed: the form
+        checks expiry first, and ``is_expired()`` must not turn a spent grant into an expired
+        one (#1965).
+        """
+        self.client.force_login(self.test_user)
+        for label, expires in (
+            ("before its deadline", datetime.now(tz=timezone.utc) + timedelta(seconds=60)),
+            ("past its deadline", datetime.now(tz=timezone.utc) - timedelta(seconds=10)),
+        ):
+            with self.subTest(label):
+                device = DeviceModel.objects.create(
+                    client_id=self.application.client_id,
+                    device_code=f"device_code {label}",
+                    user_code=f"user_code {label}",
+                    scope="read",
+                    expires=expires,
+                    status=DeviceModel.USED,
+                    user=self.test_user,
+                )
+
+                self.assertContains(
+                    response=self.client.post(
+                        reverse("oauth2_provider:device"), data={"user_code": device.user_code}
+                    ),
+                    status_code=200,
+                    text="User code has already been used",
+                    count=1,
+                )
+                device.refresh_from_db()
+                assert device.status == DeviceModel.USED
+
     def test_device_flow_authorization_device_invalid_state_returns_form_error(self):
         """
         This test asserts that only devices in the expected state (authorization-pending)
@@ -1011,6 +1088,26 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
 
         assert is_expired
         assert device.status == device.EXPIRED
+
+    def test_device_is_expired_method_leaves_a_used_grant_used(self):
+        """
+        A grant whose device code was redeemed is spent, not expired: ``is_expired()`` neither
+        reports it expired nor overwrites the used status once the deadline has passed, so a
+        later poll keeps getting invalid_grant and the status page keeps saying used (#1965).
+        """
+        device = DeviceModel.objects.create(
+            client_id="client_id",
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now(tz=timezone.utc) - timedelta(seconds=1),
+            status=DeviceModel.USED,
+        )
+
+        assert not device.is_expired()
+
+        device.refresh_from_db()
+        assert device.status == DeviceModel.USED
 
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
@@ -1888,6 +1985,25 @@ class TestOAuth2ValidatorSaveBearerTokenConsumesDeviceGrant(DeviceFlowBaseTestCa
                 assert not RefreshToken.objects.exists()
                 grant.refresh_from_db()
                 assert grant.status == fields.get("status", DeviceModel.AUTHORIZED)
+
+    def test_grant_stays_authorized_when_the_token_cannot_be_saved(self):
+        """
+        The grant is consumed in the transaction that saves the token, so a failure to save
+        the token rolls the consumption back and the device can poll again.
+        """
+        grant = self.create_grant()
+
+        with (
+            mock.patch.object(OAuth2Validator, "_save_bearer_token", side_effect=IntegrityError("boom")),
+            self.assertRaises(IntegrityError),
+        ):
+            self.save_token(
+                self.token_request("urn:ietf:params:oauth:grant-type:device_code", device_code="device_code")
+            )
+
+        grant.refresh_from_db()
+        assert grant.status == DeviceModel.AUTHORIZED
+        assert not AccessToken.objects.exists()
 
     def test_other_grant_types_leave_device_grants_alone(self):
         grant = self.create_grant()

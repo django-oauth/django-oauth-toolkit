@@ -219,20 +219,31 @@ class DeviceConfirmView(LoginRequiredMixin, FormView):
         """
         Uses get_object() to retrieves the DeviceGrant object and updates its state
         to authorized or denied, based on the user input.
+
+        The decision is written with one conditional update that requires the grant to
+        still be pending, so a stale submission (a second form post racing the first, or
+        one sent after the device already redeemed the code) can neither reverse the
+        decision nor reopen a used grant; it is answered with 404 like any grant that is
+        no longer pending.
         """
         device = self.get_object()
         action = form.cleaned_data["action"]
 
         if action == "accept":
-            device.status = device.AUTHORIZED
-            device.save(update_fields=["status"])
-            return super().form_valid(form)
+            status = device.AUTHORIZED
         elif action == "deny":
-            device.status = device.DENIED
-            device.save(update_fields=["status"])
-            return super().form_valid(form)
+            status = device.DENIED
         else:
             return http.HttpResponseBadRequest()
+
+        decided = (
+            get_device_grant_model()
+            .objects.filter(pk=device.pk, status=device.AUTHORIZATION_PENDING)
+            .update(status=status)
+        )
+        if not decided:
+            raise http.Http404("The device grant is no longer awaiting a decision.")
+        return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
