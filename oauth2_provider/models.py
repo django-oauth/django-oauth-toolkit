@@ -1505,12 +1505,17 @@ class AbstractDeviceGrant(models.Model):
     AUTHORIZATION_PENDING = "authorization-pending"
     EXPIRED = "expired"
     DENIED = "denied"
+    #: The device redeemed the ``device_code`` for a token (RFC 8628 section 3.5 concludes the
+    #: device authorization session there), so the code is spent: a further poll is answered with
+    #: ``invalid_grant``, as a reused authorization code is (RFC 6749 section 4.1.2).
+    USED = "used"
 
     DEVICE_FLOW_STATUS = (
         (AUTHORIZED, _("Authorized")),
         (AUTHORIZATION_PENDING, _("Authorization pending")),
         (EXPIRED, _("Expired")),
         (DENIED, _("Denied")),
+        (USED, _("Used")),
     )
 
     id = models.BigAutoField(primary_key=True)
@@ -1543,17 +1548,33 @@ class AbstractDeviceGrant(models.Model):
         """
         Check device flow session expiration and set the status to "expired" if current time
         is past the "expires" deadline.
+
+        A used grant is left alone: its ``device_code`` was redeemed, so the grant is spent
+        rather than expired whatever the deadline, and keeps reporting ``invalid_grant``. The
+        write is conditional on the stored row not being used either, so a redemption that
+        landed after this instance was loaded is not overwritten.
         """
         if self.status == self.EXPIRED:
             return True
+        if self.status == self.USED:
+            return False
 
         now = datetime.now(tz=dt_timezone.utc)
-        if now >= self.expires:
-            self.status = self.EXPIRED
-            self.save(update_fields=["status"])
-            return True
+        if now < self.expires:
+            return False
 
-        return False
+        expired = (
+            type(self)
+            ._default_manager.filter(pk=self.pk)
+            .exclude(status=self.USED)
+            .update(status=self.EXPIRED)
+        )
+        if not expired:
+            # Redeemed since this instance was loaded (or gone): take the stored status.
+            self.refresh_from_db(fields=["status"])
+            return self.status == self.EXPIRED
+        self.status = self.EXPIRED
+        return True
 
 
 class DeviceGrant(AbstractDeviceGrant):

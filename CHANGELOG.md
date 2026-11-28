@@ -421,6 +421,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1965 A device grant (RFC 8628) is consumed when the device redeems its `device_code`. Issuing the
+  token moves the grant to the new `used` status (migration `0033`; a swapped `DeviceGrant` model
+  needs a migration of its own app for the new choice), and a further poll with the same code is
+  answered with `invalid_grant` (RFC 6749 section 5.2), as a reused authorization code is, on every
+  oauthlib version. Before, an authorized grant was never consumed, so a device could poll the token
+  endpoint with the same `device_code` and receive a new access token and refresh token on every
+  poll until the grant expired. The grant is consumed where the token is saved
+  (`OAuth2Validator.save_bearer_token`), so a request that fails validation does not spend the code,
+  and two polls racing for one code get exactly one token. The device grant status page reports
+  "Device Used" once the token has been issued. `AbstractDeviceGrant.is_expired()` leaves a used
+  grant used, so a spent code never reads as merely expired, and `DeviceConfirmView` writes the
+  user's decision with a conditional update on a pending grant, so a stale form post can neither
+  reverse a decision nor reopen a used grant. The system check that keeps the token models in one
+  database now covers the device grant model too, since the grant is consumed in the token's
+  transaction.
 * #1950 The device authorization grant (RFC 8628) works with oauthlib 4.0.1, which broke it in two
   places. The device authorization endpoint answered every request with HTTP 500, because oauthlib
   now adds the scopes it resolved to its response as a `scope` key, which RFC 8628 section 3.2 does
