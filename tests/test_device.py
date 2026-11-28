@@ -17,7 +17,7 @@ from oauthlib.oauth2.rfc8628.grant_types import DeviceCodeGrant
 import oauth2_provider.models
 from oauth2_provider.authorization_server.views.device import DeviceConfirmView
 from oauth2_provider.core.compat import OAUTHLIB_VALIDATES_DEVICE_CODE
-from oauth2_provider.core.utils import set_oauthlib_user_to_device_request_user
+from oauth2_provider.core.utils import device_grant_error, set_oauthlib_user_to_device_request_user
 from oauth2_provider.models import (
     DeviceCodeResponse,
     DeviceRequest,
@@ -1132,6 +1132,28 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         device.refresh_from_db()
         assert device.status == DeviceModel.USED
 
+    def test_device_grant_error_is_invalid_grant_for_a_redemption_that_landed_meanwhile(self):
+        """
+        The poll that loses the race to a redemption (its instance was loaded as authorized,
+        the device redeemed the code, and the deadline passed before the expiry check) is
+        answered with invalid_grant like every later poll, not treated as an unknown status
+        (#1965).
+        """
+        device = DeviceModel.objects.create(
+            client_id="client_id",
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now(tz=timezone.utc) - timedelta(seconds=1),
+            status=DeviceModel.AUTHORIZED,
+        )
+        stale_device = DeviceModel.objects.get(pk=device.pk)
+        DeviceModel.objects.filter(pk=device.pk).update(status=DeviceModel.USED)
+
+        assert device_grant_error(stale_device) is InvalidGrantError
+        device.refresh_from_db()
+        assert device.status == DeviceModel.USED
+
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
         lambda: "def",
@@ -1618,6 +1640,30 @@ class TestTokenViewDeviceGrantPreCheck(DeviceFlowBaseTestCase):
         assert response["content-type"] == "application/json"
         assert response.json() == {"error": "invalid_grant"}
         assert not AccessToken.objects.exists()
+
+    def test_poll_losing_the_race_to_a_redemption_is_invalid_grant(self):
+        """
+        The view loaded the grant as authorized, the device redeemed the code, and the deadline
+        passed before the view's expiry check: that poll is answered with invalid_grant (not an
+        HTTP 500 for an unknown status) and no second token is issued (#1965).
+        """
+        grant = self.create_grant(
+            status=DeviceModel.AUTHORIZED,
+            user=self.test_user,
+            expires=datetime.now(tz=timezone.utc) - timedelta(seconds=1),
+        )
+        stale_grant = DeviceModel.objects.get(pk=grant.pk)
+        DeviceModel.objects.filter(pk=grant.pk).update(status=DeviceModel.USED)
+
+        with mock.patch.object(DeviceModel.objects, "get", return_value=stale_grant):
+            response = self.poll("device_code")
+
+        assert response.status_code == 400
+        assert response["content-type"] == "application/json"
+        assert response.json() == {"error": "invalid_grant"}
+        assert not AccessToken.objects.exists()
+        grant.refresh_from_db()
+        assert grant.status == DeviceModel.USED
 
 
 class TestDeviceFlowWithSwappedDeviceGrantModel(DeviceFlowBaseTestCase):

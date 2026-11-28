@@ -159,17 +159,20 @@ def device_grant_error(device: "AbstractDeviceGrant") -> type[OAuth2Error] | Non
     which callers treat as invalid.
 
     A used grant is answered the same way whether or not its deadline has passed, so a spent
-    code never reads as merely expired.
+    code never reads as merely expired: ``is_expired()`` never expires a used grant, and the
+    used check comes after it because ``is_expired()`` re-reads the status when a redemption
+    landed between the grant's load and the expiry check, so that poll gets ``invalid_grant``
+    too rather than falling through as an unknown status.
 
     Shared by ``TokenView.device_flow_token_response`` and
     ``OAuth2Validator.validate_device_code`` so both answer a poll the same way.
     """
     if device.status == device.DENIED:
         return rfc8628_errors.AccessDenied
-    if device.status == device.USED:
-        return InvalidGrantError
     if device.is_expired():
         return rfc8628_errors.ExpiredTokenError
+    if device.status == device.USED:
+        return InvalidGrantError
     if device.status == device.AUTHORIZATION_PENDING:
         return rfc8628_errors.AuthorizationPendingError
     return None
