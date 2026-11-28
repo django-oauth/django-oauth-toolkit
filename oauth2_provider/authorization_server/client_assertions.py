@@ -146,7 +146,7 @@ def _authenticate(request, load_application):
     return application
 
 
-def _peek_assertion(assertion):
+def _peek_assertion(assertion: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """Parse the JOSE header and claims without verifying — fail closed on any
     malformation. Nothing peeked here is trusted until _verify_signature ran."""
     unverified = jws.JWS()
@@ -156,8 +156,9 @@ def _peek_assertion(assertion):
         payload = unverified.objects["payload"]
         claims = json.loads(payload.decode("utf-8"))
     except (JWException, ValueError, KeyError, UnicodeDecodeError, TypeError, RecursionError) as exc:
-        # TypeError: a header parameter of the wrong JSON type, such as a `crit` that is
-        # not a list. RecursionError: JSON nested deeper than the parser can follow.
+        # TypeError (jwcrypto < 1.6.2): a header parameter of the wrong JSON type, such
+        # as a `crit` that is not a list. RecursionError: JSON nested deeper than the
+        # parser can follow.
         raise ClientAssertionError(f"malformed client assertion: {exc.__class__.__name__}")
     if not isinstance(header, dict) or not isinstance(claims, dict):
         raise ClientAssertionError("malformed client assertion structure")
@@ -447,7 +448,9 @@ def _signing_keys(key_set, kid):
 _key_allows_verification = jwk_allows_verification
 
 
-def _verify_signature(assertion, application, header, allowed_algs):
+def _verify_signature(
+    assertion: str, application: "AbstractApplication", header: dict[str, Any], allowed_algs: list[str]
+) -> dict[str, Any]:
     """Verify the assertion against each candidate key; return the claims of
     the first key that validates the signature (and jwcrypto's exp/nbf checks).
     """
@@ -458,9 +461,13 @@ def _verify_signature(assertion, application, header, allowed_algs):
         token.leeway = leeway
         try:
             token.deserialize(assertion, key)
-        except (JWException, ValueError, TypeError):
-            # TypeError: jwcrypto's own `exp`/`nbf` check on a claim that is not a
-            # number, such as a list.
+        except (JWException, ValueError, TypeError, OverflowError, RecursionError):
+            # Raised from jwcrypto's own claim checks on a signed assertion:
+            # - TypeError (jwcrypto < 1.6.2): an `exp`, `iat` or `nbf` that is not a
+            #   number, such as a list.
+            # - OverflowError (jwcrypto < 1.6.2): one that is `Infinity` or `1e999`.
+            # - RecursionError: a claim nested just shallow enough to pass the peek,
+            #   re-parsed deeper in the stack.
             continue
         return json.loads(token.claims)
     raise ClientAssertionError("client assertion signature could not be verified")

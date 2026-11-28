@@ -309,16 +309,41 @@ def _unsigned_assertion(header: bytes, payload: bytes) -> str:
     return ".".join(base64url_encode(part) for part in (header, payload, b"signature"))
 
 
+# Balanced and far past the ~10,000 levels Python 3.12 and 3.13 allow, so json.loads raises
+# RecursionError rather than refusing the document as invalid JSON. On Python 3.14 the limit
+# grows with the thread's stack, so `test_peek_assertion_recursion_error_rejected` covers the
+# branch directly.
+NESTED_TOO_DEEP = 100000
+NESTED_ARRAY = b"[" * NESTED_TOO_DEEP + b"]" * NESTED_TOO_DEEP
+
+
+def test_peek_assertion_recursion_error_rejected(mocker):
+    # Raised directly so the test does not depend on how deep the running interpreter's JSON
+    # parser can go. Only for the payload: jwcrypto parses the header with `json.loads` too,
+    # and wraps any error there in `InvalidJWSObject`.
+    payload = '{"iss": "pkj-client", "sub": "pkj-client"}'
+    loads = json.loads
+
+    def overflow_on_payload(document, *args, **kwargs):
+        if document == payload:
+            raise RecursionError
+        return loads(document, *args, **kwargs)
+
+    mocker.patch.object(client_assertions.json, "loads", side_effect=overflow_on_payload)
+    ok, _ = authenticate(_unsigned_assertion(b'{"alg": "RS256"}', payload.encode()), pkj_app())
+    assert ok is False
+
+
 @pytest.mark.parametrize(
     "header, payload",
     [
-        # Deep nesting overflows the JSON parser's recursion limit.
-        pytest.param(b'{"alg": "RS256"}', b"[" * 5000, id="payload-nested-too-deep"),
+        pytest.param(b'{"alg": "RS256"}', NESTED_ARRAY, id="payload-nested-too-deep"),
         pytest.param(
             b'{"alg": "RS256"}',
-            b'{"iss": "pkj-client", "sub": "pkj-client", "x": ' + b"[" * 5000,
+            b'{"iss": "pkj-client", "sub": "pkj-client", "x": ' + NESTED_ARRAY + b"}",
             id="claim-nested-too-deep",
         ),
+        # Raises TypeError in jwcrypto < 1.6.2; later versions reject it themselves.
         pytest.param(b'{"alg": "RS256", "crit": 5}', b"{}", id="crit-not-a-list"),
     ],
 )
@@ -328,10 +353,46 @@ def test_malformed_unsigned_assertion_rejected(header, payload):
     assert ok is False
 
 
+def test_peek_assertion_type_error_rejected(mocker):
+    # jwcrypto < 1.6.2 raises TypeError on a header parameter of the wrong JSON type, such as
+    # a `crit` that is not a list. Raised directly so the test does not depend on the version.
+    mocker.patch.object(client_assertions.jws.JWS, "deserialize", side_effect=TypeError)
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
+    ok, _ = authenticate(assertion, pkj_app())
+    assert ok is False
+
+
 @pytest.mark.parametrize("claim", ["exp", "iat", "nbf"])
-@pytest.mark.parametrize("value", [[1], {"a": 1}], ids=["list", "object"])
+@pytest.mark.parametrize(
+    "value",
+    [[1], {"a": 1}, float("inf"), float("-inf")],
+    ids=["list", "object", "infinity", "minus-infinity"],
+)
 def test_signed_assertion_with_non_numeric_time_claim_rejected(claim, value):
+    # jwcrypto < 1.6.2 raises TypeError or OverflowError on these; later versions reject them
+    # themselves. `test_verify_signature_jwcrypto_error_rejected` covers both versions.
     assertion = build_assertion(RSA_KEY, default_claims(**{claim: value}), kid="unit-rsa")
+    ok, _ = authenticate(assertion, pkj_app())
+    assert ok is False
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        # jwcrypto < 1.6.2: an `exp`, `iat` or `nbf` that is a list or an object.
+        TypeError,
+        # jwcrypto < 1.6.2: one that is `Infinity`, `-Infinity` or `1e999`.
+        OverflowError,
+        # Python 3.11: a claim nested 986-989 levels deep passes the peek and overflows
+        # when jwcrypto re-parses the claims deeper in the stack.
+        RecursionError,
+    ],
+)
+def test_verify_signature_jwcrypto_error_rejected(mocker, error):
+    # A correctly signed assertion whose claims jwcrypto fails on while verifying it.
+    # Raised directly so the test does not depend on the jwcrypto or Python version.
+    mocker.patch.object(client_assertions.jwt.JWT, "deserialize", side_effect=error)
+    assertion = build_assertion(RSA_KEY, default_claims(), kid="unit-rsa")
     ok, _ = authenticate(assertion, pkj_app())
     assert ok is False
 
@@ -1451,7 +1512,7 @@ def test_token_endpoint_deeply_nested_assertion_is_invalid_client(client, privat
         data={
             "grant_type": "client_credentials",
             "client_assertion_type": JWT_BEARER_CLIENT_ASSERTION_TYPE,
-            "client_assertion": _unsigned_assertion(b'{"alg": "RS256"}', b"[" * 5000),
+            "client_assertion": _unsigned_assertion(b'{"alg": "RS256"}', NESTED_ARRAY),
         },
     )
     assert response.status_code == 401

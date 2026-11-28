@@ -476,11 +476,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decides per user should decide on the second call. Validators that override the hooks are
   unaffected.
 * #1957 A malformed JWT client assertion (RFC 7523) no longer fails with HTTP 500 at the token
-  endpoint. A payload nested too deeply for the JSON parser, or a
-  `crit` header that is not a list, raised from an assertion nobody had signed; an `exp`, `iat` or
-  `nbf` claim that is a list or an object raised from one signed with the client's key. All of
-  them now fail client authentication with `invalid_client`, as
-  `authenticate_client_assertion` documents.
+  endpoint. From an assertion nobody had signed, a payload nested too deeply for the JSON parser
+  raised `RecursionError`, and, on jwcrypto before 1.6.2, a `crit` header that is not a list
+  raised `TypeError`. From one signed with the client's key, a claim nested just shallow enough to
+  pass the first parse raised `RecursionError` when jwcrypto parsed the claims again (seen on
+  Python 3.11), and, on jwcrypto before 1.6.2, an `exp`, `iat` or `nbf` claim raised `TypeError`
+  when it was a list or an object and `OverflowError` when it was `Infinity`, `-Infinity` or
+  `1e999`. All of them now fail client authentication with `invalid_client`, as
+  `authenticate_client_assertion` documents. jwcrypto 1.6.2 and later reject the `crit` and time
+  claim cases themselves.
 * #1947 A user who is not logged in and follows the `request_uri` of a pushed authorization
   request with `prompt=none` gets `login_required` at the client's redirect URI (OpenID Connect
   Core 1.0 §3.1.2.1) instead of the login page, with or without the `openid` scope. The
