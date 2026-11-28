@@ -199,3 +199,6 @@ def set_oauthlib_user_to_device_request_user(request: Request) -> None:
         return
     request.user = device.user
     request.scopes = device.scope.split() if device.scope else []
+    # OAuth2Validator.get_default_scopes() returns the grant's scopes while this is set, so
+    # oauthlib's fallback for an empty scope set does not add the current default scopes.
+    request.device_grant = device

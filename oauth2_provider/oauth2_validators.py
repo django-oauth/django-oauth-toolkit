@@ -581,6 +581,9 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
         request.user = device.user
         request.scopes = device.scope.split() if device.scope else []
+        # get_default_scopes() answers oauthlib's fallback for an empty scope set with the
+        # grant's own (empty) scopes, so the token carries what the user approved.
+        request.device_grant = device
         return self.DEVICE_CODE_AUTHORIZED
 
     def validate_response_type(self, client_id, response_type, client, request, *args, **kwargs):
@@ -645,6 +648,17 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         return set(scopes).issubset(set(available_scopes))
 
     def get_default_scopes(self, client_id, request, *args, **kwargs):
+        """
+        The scopes a request without ``scope`` gets. For a device code grant's token request
+        they were fixed when the device authorization was requested and the user approved
+        them, so the grant's scopes are returned (``request.device_grant`` is set by
+        ``validate_device_code`` and the default ``OAUTH_PRE_TOKEN_VALIDATION`` validator):
+        oauthlib asks here when ``request.scopes`` is empty, which an approved empty scope
+        set is, and the token must not gain the scopes that are the default by then.
+        """
+        device_grant = getattr(request, "device_grant", None)
+        if device_grant is not None:
+            return device_grant.scope.split() if device_grant.scope else []
         default_scopes = get_scopes_backend().get_default_scopes(application=request.client, request=request)
         return default_scopes
 

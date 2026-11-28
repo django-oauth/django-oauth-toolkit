@@ -13,7 +13,7 @@ from oauthlib.common import urlencode
 from oauthlib.oauth2 import DeviceApplicationServer
 
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
-from oauth2_provider.core.compat import login_not_required
+from oauth2_provider.core.compat import OAUTHLIB_VALIDATES_DEVICE_CODE, login_not_required
 from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.models import (
@@ -42,10 +42,13 @@ class DeviceAuthorizationView(FormEncodedRequestMixin, AuthorizationServerViewMi
         # oauthlib 4.0.1 and later resolve the scopes while validating the request (the
         # ones asked for, or the client's defaults) and return them as a ``scope`` key,
         # which RFC 8628 section 3.2 does not define and ``DeviceCodeResponse`` does not
-        # carry: the grant stores them and the device gets the RFC response. Older oauthlib
-        # leaves the resolution to this view.
-        scope = response.pop("scope", None)
-        if scope is None:
+        # carry: the grant stores them and the device gets the RFC response. The key is
+        # left out when no scopes were resolved, and the grant stores none rather than
+        # asking the scopes backend a second time. Older oauthlib leaves the resolution
+        # to this view.
+        if OAUTHLIB_VALIDATES_DEVICE_CODE:
+            scope = response.pop("scope", "")
+        else:
             requested_scope = request.POST.get("scope", "").strip()
             if requested_scope:
                 scope = requested_scope
