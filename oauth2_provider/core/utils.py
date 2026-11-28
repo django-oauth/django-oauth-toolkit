@@ -1,10 +1,17 @@
 import functools
 import secrets
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from django.conf import settings
 from jwcrypto import jwk
 from oauthlib.common import Request
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error
+from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
+
+
+if TYPE_CHECKING:
+    from oauth2_provider.models import AbstractDeviceGrant
 
 
 def parse_bearer_token(auth_header):
@@ -142,6 +149,26 @@ def add_iss_to_redirect(uri: str, issuer: str) -> str:
     return urlunparse(parts)
 
 
+def device_grant_error(device: "AbstractDeviceGrant") -> type[OAuth2Error] | None:
+    """
+    The RFC 8628 section 3.5 error a token request for ``device`` is answered with:
+    ``AccessDenied`` for a denied grant, ``ExpiredTokenError`` for one past its deadline
+    (``is_expired()`` marks it expired), ``AuthorizationPendingError`` for one the user has
+    not decided on yet. ``None`` for an authorized grant, and for any other status, which
+    callers treat as invalid.
+
+    Shared by ``TokenView.device_flow_token_response`` and
+    ``OAuth2Validator.validate_device_code`` so both answer a poll the same way.
+    """
+    if device.status == device.DENIED:
+        return rfc8628_errors.AccessDenied
+    if device.is_expired():
+        return rfc8628_errors.ExpiredTokenError
+    if device.status == device.AUTHORIZATION_PENDING:
+        return rfc8628_errors.AuthorizationPendingError
+    return None
+
+
 def set_oauthlib_user_to_device_request_user(request: Request) -> None:
     """
     The user isn't known when the device flow is initiated by a device.
@@ -160,8 +187,20 @@ def set_oauthlib_user_to_device_request_user(request: Request) -> None:
     # since django isn't fully initialised yet when settings run
     from oauth2_provider.models import AbstractDeviceGrant, get_device_grant_model
 
-    device: AbstractDeviceGrant = get_device_grant_model().objects.get(
-        device_code=request._params["device_code"]
-    )
+    device_grant_model = get_device_grant_model()
+    try:
+        device: AbstractDeviceGrant = device_grant_model.objects.get(
+            device_code=request._params["device_code"]
+        )
+    except device_grant_model.DoesNotExist:
+        # oauthlib 4.0.1 and later answer an unknown device_code with invalid_grant from
+        # OAuth2Validator.validate_device_code, which runs after the pre-token validators.
+        # Older oauthlib never gets here: TokenView refuses the unknown code first.
+        return
     request.user = device.user
+    # The grant's scopes replace a ``scope`` parameter sent with the poll, and
+    # OAuth2Validator.get_default_scopes() returns them while the grant is on the request,
+    # so oauthlib's fallback for an empty scope set does not add the current default scopes.
+    request.scope = device.scope or None
     request.scopes = device.scope.split() if device.scope else []
+    request.device_grant = device

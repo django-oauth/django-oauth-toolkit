@@ -24,6 +24,7 @@ from jwcrypto.common import JWException
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
+from oauthlib.oauth2.rfc8628.grant_types import DeviceCodeGrant
 from oauthlib.openid import RequestValidator
 
 from .authorization_server import cimd, client_assertions
@@ -38,7 +39,7 @@ from .authorization_server.response_modes import response_mode_permitted
 from .core.bcp import bcp_compliant
 from .core.exceptions import FatalClientError
 from .core.scopes import get_scopes_backend
-from .core.utils import jwk_from_pem
+from .core.utils import device_grant_error, jwk_from_pem
 from .models import (
     AbstractAccessToken,
     AbstractApplication,
@@ -46,6 +47,7 @@ from .models import (
     AbstractRefreshToken,
     get_access_token_model,
     get_application_model,
+    get_device_grant_model,
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
@@ -542,6 +544,52 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             return False
         return allowed
 
+    # oauthlib's ``DeviceCodeGrant.DEVICE_CODE_AUTHORIZED`` (4.0.1 and later), the status
+    # the grant expects back from ``validate_device_code`` for an approved device code; the
+    # fallback keeps the attribute on oauthlib 4.0.0, which never calls the hook. The other
+    # statuses are the RFC 8628 section 3.5 error codes ``device_grant_error()`` maps to.
+    DEVICE_CODE_AUTHORIZED = getattr(DeviceCodeGrant, "DEVICE_CODE_AUTHORIZED", "authorized")
+
+    def validate_device_code(
+        self, client_id: str, code: str, request: OauthlibRequest, *args, **kwargs
+    ) -> str | None:
+        """
+        Report where the device grant behind ``code`` is in the RFC 8628 section 3.5 process.
+
+        oauthlib (4.0.1 and later) calls this from the device code grant's token request,
+        after the client is authenticated and before the scopes are validated, and turns
+        the result into the token response: ``authorization_pending``, ``access_denied``
+        and ``expired_token`` are answered as those errors, ``None`` (an unknown
+        ``device_code``, or one issued to another client) as ``invalid_grant``. For an
+        authorized grant, ``request.user`` and ``request.scopes`` are set from the grant so
+        the token is issued to the user who approved the device, with the scopes stored
+        when the device authorization was requested (section 3.4 sends no ``scope``).
+        """
+        device_grant_model = get_device_grant_model()
+        try:
+            device = device_grant_model.objects.get(device_code=code, client_id=client_id)
+        except device_grant_model.DoesNotExist:
+            log.debug("Failed device code validation: no device grant for client %s", client_id)
+            return None
+
+        error_class = device_grant_error(device)
+        if error_class is not None:
+            return error_class.error
+        if device.status != device.AUTHORIZED:
+            log.debug("Failed device code validation: unexpected status %r", device.status)
+            return None
+
+        request.user = device.user
+        # The grant's scopes are what the user approved, so they replace a ``scope``
+        # parameter the device may have sent with the poll (RFC 8628 section 3.4 defines
+        # none). oauthlib takes an empty ``request.scopes`` for an absent one and falls back
+        # to ``request.scope`` and then ``get_default_scopes()``, so both answer with the
+        # grant's own (empty) scopes as well.
+        request.scope = device.scope or None
+        request.scopes = device.scope.split() if device.scope else []
+        request.device_grant = device
+        return self.DEVICE_CODE_AUTHORIZED
+
     def validate_response_type(self, client_id, response_type, client, request, *args, **kwargs):
         """
         We currently do not support the Authorization Endpoint Response Types registry as in
@@ -604,6 +652,19 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         return set(scopes).issubset(set(available_scopes))
 
     def get_default_scopes(self, client_id, request, *args, **kwargs):
+        """
+        The scopes a request without ``scope`` gets. For a device code grant's token request
+        they were fixed when the device authorization was requested and the user approved
+        them, so the grant's scopes are returned (``request.device_grant`` is set by
+        ``validate_device_code`` and the default ``OAUTH_PRE_TOKEN_VALIDATION`` validator):
+        oauthlib asks here when ``request.scopes`` is empty, which an approved empty scope
+        set is, and the token must not gain the scopes that are the default by then.
+        """
+        # vars(): oauthlib's Request answers getattr() for any form or query parameter,
+        # so only the attribute this server set (not a ``device_grant=`` parameter) counts.
+        device_grant = vars(request).get("device_grant")
+        if device_grant is not None:
+            return device_grant.scope.split() if device_grant.scope else []
         default_scopes = get_scopes_backend().get_default_scopes(application=request.client, request=request)
         return default_scopes
 

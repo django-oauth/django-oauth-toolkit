@@ -421,6 +421,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   life. Django 5.2 and Python 3.11 are now the minimum supported versions.
 
 ### Fixed
+* #1950 The device authorization grant (RFC 8628) works with oauthlib 4.0.1, which broke it in two
+  places. The device authorization endpoint answered every request with HTTP 500, because oauthlib
+  now adds the scopes it resolved to its response as a `scope` key, which RFC 8628 section 3.2 does
+  not define and the view passed on to `DeviceCodeResponse`; the grant now stores that scope and the
+  device gets the same response as before. The token endpoint then failed the poll with HTTP 500,
+  because oauthlib now asks the validator for the device code's status through the new
+  `validate_device_code(client_id, code, request)` hook, which `OAuth2Validator` did not implement.
+  It now looks the grant up by `device_code` and the authenticated `client_id`, reports
+  `authorization_pending`, `access_denied` or `expired_token` (marking the grant expired) as
+  `TokenView` did, and for an authorized grant sets the approving user and the stored scopes on the
+  request. The grant's scopes are what the user approved, so they also replace a `scope`
+  parameter sent with the poll (RFC 8628 section 3.4 defines none), and a grant approved without
+  scopes yields a token without scopes: oauthlib takes an empty scope set for an absent one and
+  falls back to the poll's `scope` and then the client's default scopes, so
+  `OAuth2Validator.get_default_scopes()` answers with the grant's own scopes while a device code
+  grant is redeemed (`request.device_grant`), on every oauthlib. What the device sees depends on
+  the installed oauthlib:
+  * oauthlib 4.0.1 and later: the grant stores the scope oauthlib resolved (none when oauthlib
+    resolved none) instead of asking the scopes backend again. `TokenView` leaves the poll to
+    oauthlib and the hook, so an unknown
+    `device_code`, or one issued to another client, is answered with `invalid_grant` (HTTP 400,
+    RFC 6749 section 5.2) instead of HTTP 404 `device_not_found`, and a device cannot learn the
+    state of another client's grant. The device authorization endpoint validates `scope`, so a
+    scope the application may not use (or a whitespace-only one) is answered with `invalid_scope`,
+    as the authorization endpoint already did, instead of being stored on the grant. The default
+    `OAUTH_PRE_TOKEN_VALIDATION` validator no longer raises on an unknown `device_code`.
+  * oauthlib 4.0.0 and earlier: unchanged. oauthlib neither sends the key nor calls the hook, and
+    `TokenView` keeps checking the grant itself.
 * #1891 An OpenID Connect authorization request with `prompt=none` no longer fails with HTTP 500
   on the stock `OAuth2Validator`. It did not implement oauthlib's `validate_silent_login` and
   `validate_silent_authorization` hooks, so oauthlib's `NotImplementedError` escaped from the
