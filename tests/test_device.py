@@ -1109,6 +1109,29 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         device.refresh_from_db()
         assert device.status == DeviceModel.USED
 
+    def test_device_is_expired_method_does_not_overwrite_a_redemption_that_landed_meanwhile(self):
+        """
+        The expiry write is conditional on the stored row: an instance loaded while the grant
+        was still authorized must not turn a redemption that landed since into expired, so
+        later polls keep getting invalid_grant and the status page keeps saying used (#1965).
+        """
+        device = DeviceModel.objects.create(
+            client_id="client_id",
+            device_code="device_code",
+            user_code="user_code",
+            scope="scope",
+            expires=datetime.now(tz=timezone.utc) - timedelta(seconds=1),
+            status=DeviceModel.AUTHORIZED,
+        )
+        stale_device = DeviceModel.objects.get(pk=device.pk)
+        DeviceModel.objects.filter(pk=device.pk).update(status=DeviceModel.USED)
+
+        assert not stale_device.is_expired()
+
+        assert stale_device.status == DeviceModel.USED
+        device.refresh_from_db()
+        assert device.status == DeviceModel.USED
+
     @mock.patch(
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
         lambda: "def",
