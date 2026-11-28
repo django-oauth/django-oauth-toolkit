@@ -1505,12 +1505,17 @@ class AbstractDeviceGrant(models.Model):
     AUTHORIZATION_PENDING = "authorization-pending"
     EXPIRED = "expired"
     DENIED = "denied"
+    #: The device redeemed the ``device_code`` for a token (RFC 8628 section 3.5 concludes the
+    #: device authorization session there), so the code is spent: a further poll is answered with
+    #: ``invalid_grant``, as a reused authorization code is (RFC 6749 section 4.1.2).
+    USED = "used"
 
     DEVICE_FLOW_STATUS = (
         (AUTHORIZED, _("Authorized")),
         (AUTHORIZATION_PENDING, _("Authorization pending")),
         (EXPIRED, _("Expired")),
         (DENIED, _("Denied")),
+        (USED, _("Used")),
     )
 
     id = models.BigAutoField(primary_key=True)

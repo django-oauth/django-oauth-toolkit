@@ -560,10 +560,13 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         after the client is authenticated and before the scopes are validated, and turns
         the result into the token response: ``authorization_pending``, ``access_denied``
         and ``expired_token`` are answered as those errors, ``None`` (an unknown
-        ``device_code``, or one issued to another client) as ``invalid_grant``. For an
-        authorized grant, ``request.user`` and ``request.scopes`` are set from the grant so
-        the token is issued to the user who approved the device, with the scopes stored
-        when the device authorization was requested (section 3.4 sends no ``scope``).
+        ``device_code``, one issued to another client, or one already redeemed for a token)
+        as ``invalid_grant``. For an authorized grant, ``request.user`` and
+        ``request.scopes`` are set from the grant so the token is issued to the user who
+        approved the device, with the scopes stored when the device authorization was
+        requested (section 3.4 sends no ``scope``). The grant is consumed when the token is
+        saved (``save_bearer_token``), not here, so a request that fails a later check does
+        not spend the code.
         """
         device_grant_model = get_device_grant_model()
         try:
@@ -574,6 +577,11 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
 
         error_class = device_grant_error(device)
         if error_class is not None:
+            if issubclass(error_class, errors.InvalidGrantError):
+                # oauthlib maps only the RFC 8628 polling errors by name and warns about any
+                # other status string; ``None`` is its documented "invalid device_code" return.
+                log.debug("Failed device code validation: device code already used")
+                return None
             return error_class.error
         if device.status != device.AUTHORIZED:
             log.debug("Failed device code validation: unexpected status %r", device.status)
@@ -706,10 +714,38 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
         Override _save_bearer_token and not this function when adding custom logic
         for the storing of these token. This allows the transaction logic to be
         separate from the token handling.
+
+        A device code grant's token spends its ``device_code``: the device grant is marked
+        used in the same transaction, so a later poll with the code gets ``invalid_grant``.
         """
         # Use the AccessToken's database instead of making the assumption it is in 'default'.
         with transaction.atomic(using=router.db_for_write(AccessToken)):
+            if request.grant_type == "urn:ietf:params:oauth:grant-type:device_code":
+                self._consume_device_grant(request)
             return self._save_bearer_token(token, request, *args, **kwargs)
+
+    def _consume_device_grant(self, request: OauthlibRequest) -> None:
+        """
+        Mark the device grant whose ``device_code`` the token request redeems as used.
+
+        RFC 8628 section 3.5 concludes the device authorization session once the token is
+        issued, and RFC 6749 section 4.1.2 makes an authorization code single-use; a device
+        grant is consumed the same way, as ``invalidate_authorization_code`` does for a
+        ``Grant``. Only a grant that is still authorized is consumed, in one conditional
+        update, so of two polls racing for the same code exactly one gets a token.
+
+        :raises: InvalidGrantError if the grant is no longer authorized, which also rolls
+            back the token being saved.
+        """
+        device_grant_model = get_device_grant_model()
+        consumed = device_grant_model.objects.filter(
+            device_code=getattr(request, "device_code", None),
+            client_id=request.client.client_id,
+            status=device_grant_model.AUTHORIZED,
+        ).update(status=device_grant_model.USED)
+        if not consumed:
+            log.debug("Device code grant token refused: the device grant is no longer authorized")
+            raise errors.InvalidGrantError(request=request)
 
     def _validate_resource_uris(self, request, resources):
         """
