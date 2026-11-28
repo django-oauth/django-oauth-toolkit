@@ -39,33 +39,41 @@ class DeviceAuthorizationView(FormEncodedRequestMixin, AuthorizationServerViewMi
             return http.JsonResponse(data=json.loads(response), status=status, headers=headers)
 
         client_id = request.POST["client_id"]
-        requested_scope = request.POST.get("scope", "").strip()
-        if requested_scope:
-            scope = requested_scope
-        else:
-            Application = get_application_model()
-            try:
-                application = Application.objects.get(client_id=client_id)
-            except Application.DoesNotExist:
-                return http.JsonResponse(
-                    {"error": "invalid_client", "error_description": "No application found for client_id."},
-                    status=401,
-                    headers=headers,
+        # oauthlib 4.0.1 and later resolve the scopes while validating the request (the
+        # ones asked for, or the client's defaults) and return them as a ``scope`` key,
+        # which RFC 8628 section 3.2 does not define and ``DeviceCodeResponse`` does not
+        # carry: the grant stores them and the device gets the RFC response. Older oauthlib
+        # leaves the resolution to this view.
+        scope = response.pop("scope", None)
+        if scope is None:
+            requested_scope = request.POST.get("scope", "").strip()
+            if requested_scope:
+                scope = requested_scope
+            else:
+                Application = get_application_model()
+                try:
+                    application = Application.objects.get(client_id=client_id)
+                except Application.DoesNotExist:
+                    return http.JsonResponse(
+                        {
+                            "error": "invalid_client",
+                            "error_description": "No application found for client_id.",
+                        },
+                        status=401,
+                        headers=headers,
+                    )
+                core = self.get_oauthlib_core()
+                uri = request.build_absolute_uri()
+                http_method = request.method
+                body = urlencode(core.extract_body(request))
+                req_headers = core.extract_headers(request)
+                oauthlib_request = OAuthlibRequest(
+                    uri, http_method=http_method, body=body, headers=req_headers
                 )
-            core = self.get_oauthlib_core()
-            uri = request.build_absolute_uri()
-            http_method = request.method
-            body = urlencode(core.extract_body(request))
-            req_headers = core.extract_headers(request)
-            oauthlib_request = OAuthlibRequest(uri, http_method=http_method, body=body, headers=req_headers)
-            oauthlib_request.client_id = client_id
-            oauthlib_request.client = application
-            validator = core.server.request_validator
-            scope = " ".join(validator.get_default_scopes(client_id, oauthlib_request))
-        # oauthlib 4.0.1 adds the scopes it resolved as a ``scope`` key, which RFC 8628
-        # section 3.2 does not define and ``DeviceCodeResponse`` does not carry. The
-        # grant stores the scope resolved above, and the device gets the RFC response.
-        response.pop("scope", None)
+                oauthlib_request.client_id = client_id
+                oauthlib_request.client = application
+                validator = core.server.request_validator
+                scope = " ".join(validator.get_default_scopes(client_id, oauthlib_request))
         device_request = DeviceRequest(client_id=client_id, scope=scope)
         device_response = DeviceCodeResponse(**response)
         create_device_grant(device_request, device_response)

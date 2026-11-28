@@ -69,8 +69,9 @@ The OAuth2 provider will return the following response. In `RFC`_ Figure 1, this
     }
 
 An optional ``scope`` parameter asks for specific scopes; without it the application's default
-scopes are stored with the device code and later granted to the token. A scope the application
-may not use is answered with ``invalid_scope``, as at the authorization endpoint.
+scopes are stored with the device code and later granted to the token. With oauthlib 4.0.1 and
+later, a scope the application may not use is answered with ``invalid_scope``, as at the
+authorization endpoint; older oauthlib stores the requested scope as it is.
 
 In the real world, the device will somehow make the value of the `user_code` available to the user (either on-screen display,
 or Bluetooth, NFC, etc.). In `RFC`_ Figure 1, this is step (C).
@@ -117,6 +118,10 @@ Or if the token has expired, the response is 400:
 .. code-block:: json
 
     {"error": "expired_token"}
+
+A ``device_code`` the server does not know, or one issued to another client, is answered with
+``invalid_grant`` (400) with oauthlib 4.0.1 and later; older oauthlib answers an unknown code
+with 404 ``{"error": "device_not_found"}`` and does not check which client it was issued to.
 
 
 However, after the user approves, the response will be 200:

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from unittest import mock
+from unittest import mock, skipIf, skipUnless
 from urllib.parse import urlencode
 
 import django.http.response
@@ -14,6 +14,7 @@ from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc8628.grant_types import DeviceCodeGrant
 
 import oauth2_provider.models
+from oauth2_provider.core.compat import OAUTHLIB_VALIDATES_DEVICE_CODE
 from oauth2_provider.core.utils import set_oauthlib_user_to_device_request_user
 from oauth2_provider.models import (
     DeviceCodeResponse,
@@ -573,17 +574,17 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         """
 
         device = DeviceModel(
-            client_id="client_id",
+            client_id=self.application.client_id,
             device_code="device_code",
             user_code="user_code",
-            scope="scope",
+            scope="read",
             expires=datetime.now() + timedelta(seconds=60),
         )
         device.save()
 
         token_payload = {
             "device_code": "device_code",
-            "client_id": "client_id",
+            "client_id": self.application.client_id,
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
         }
 
@@ -591,7 +592,6 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             ("authorization-pending", '{"error": "authorization_pending"}', 400),
             ("expired", '{"error": "expired_token"}', 400),
             ("denied", '{"error": "access_denied"}', 400),
-            ("LOL_status", '{"error": "internal_error"}', 500),
         ]
         for invalid_state, expected_error_message, expected_error_code in testcases:
             device.status = invalid_state
@@ -652,6 +652,37 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
                 device.refresh_from_db()
                 assert device.status == expected_status
 
+    @skipIf(OAUTHLIB_VALIDATES_DEVICE_CODE, "oauthlib 4.0.1 and later answer invalid_grant through the hook")
+    def test_token_view_returns_internal_error_for_unknown_device_status(self):
+        """
+        Before oauthlib 4.0.1, TokenView checks the grant itself and answers a status it
+        does not know with HTTP 500, as a reminder to handle new statuses.
+        """
+        DeviceModel.objects.create(
+            client_id=self.application.client_id,
+            device_code="device_code",
+            user_code="user_code",
+            scope="read",
+            expires=datetime.now(tz=timezone.utc) + timedelta(seconds=60),
+            status="LOL_status",
+        )
+
+        response = self.client.post(
+            "/o/token/",
+            data=urlencode(
+                {
+                    "device_code": "device_code",
+                    "client_id": self.application.client_id,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                }
+            ),
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        self.assertContains(response, status_code=500, text='{"error": "internal_error"}', count=1)
+        self.assertEqual(response["content-type"], "application/json")
+
+    @skipIf(OAUTHLIB_VALIDATES_DEVICE_CODE, "oauthlib 4.0.1 and later answer invalid_grant through the hook")
     def test_token_view_returns_404_error_if_device_not_found(self):
         device = DeviceModel(
             client_id="client_id",
@@ -1017,15 +1048,39 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
         lambda: "def",
     )
+    @skipIf(OAUTHLIB_VALIDATES_DEVICE_CODE, "oauthlib 4.0.1 and later validate the scope themselves")
+    def test_device_flow_whitespace_only_scope_falls_back_to_default_scopes(self):
+        """
+        Before oauthlib 4.0.1, the device authorization endpoint does not validate the
+        scope, and this view resolves it: a scope consisting only of whitespace
+        (e.g. scope="   ") is treated as if scope was omitted, so DEFAULT_SCOPES are
+        stored on the DeviceGrant, not the raw whitespace string.
+        """
+        self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
+        self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
+
+        device_authorization_response = self.client.post(
+            reverse("oauth2_provider:device-authorization"),
+            data=urlencode({"client_id": self.application.client_id, "scope": "   "}),
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert device_authorization_response.status_code == 200
+
+        grant = get_device_grant_model().objects.get(device_code="def")
+        assert grant.scope == "read write"
+
+    @mock.patch(
+        "oauthlib.oauth2.rfc8628.endpoints.device_authorization.generate_token",
+        lambda: "def",
+    )
+    @skipUnless(OAUTHLIB_VALIDATES_DEVICE_CODE, "oauthlib before 4.0.1 leaves the scope to the view")
     def test_device_flow_whitespace_only_scope_is_rejected_as_invalid_scope(self):
         """
-        A scope consisting only of whitespace (e.g. scope="   ") is not a scope the
-        application may use, so the device authorization endpoint rejects it with
-        invalid_scope (RFC 6749 section 3.3), as the authorization endpoint does, and
-        stores no grant. oauthlib validates the scope at this endpoint from 4.0.1 on.
+        From oauthlib 4.0.1 on, the device authorization endpoint validates the scope: one
+        consisting only of whitespace (e.g. scope="   ") is not a scope the application may
+        use, so it is rejected with invalid_scope (RFC 6749 section 3.3), as the
+        authorization endpoint does, and no grant is stored.
         """
-        if not hasattr(DeviceCodeGrant, "validate_device_authorization_request"):
-            self.skipTest("oauthlib < 4.0.1 does not validate scopes at the device authorization endpoint")
         self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
         self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
 
@@ -1156,11 +1211,12 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         # Token must reflect the scopes from consent time, not the expanded DEFAULT_SCOPES
         assert token_response.json()["scope"] == "read write"
 
-    def test_device_authorization_ignores_scope_key_in_oauthlib_response(self):
+    def test_device_authorization_stores_scope_resolved_by_oauthlib_and_omits_it_from_response(self):
         """
         oauthlib 4.0.1 adds the scopes it resolved to the device authorization response as a
         ``scope`` key. RFC 8628 section 3.2 does not define it: the device gets the RFC
-        response, and the grant stores the scope the view resolved (regression test for #1950).
+        response, and the grant stores oauthlib's scope rather than resolving it again
+        (regression test for #1950). The response is mocked so this holds on every oauthlib.
         """
         self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
         oauthlib_response = {
@@ -1169,7 +1225,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "user_code": "XYZ",
             "device_code": "abc",
             "interval": 5,
-            "scope": "read write",
+            "scope": "read",
         }
 
         with mock.patch(
@@ -1177,9 +1233,11 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "AuthorizationServerViewMixin.create_device_authorization_response",
             return_value=({}, oauthlib_response, 200),
         ):
+            # No scope in the request: the view would fall back to the default scopes
+            # ("read write"), so a grant with "read" shows oauthlib's resolution was kept.
             response = self.client.post(
                 reverse("oauth2_provider:device-authorization"),
-                data=urlencode({"client_id": self.application.client_id, "scope": "read write"}),
+                data=urlencode({"client_id": self.application.client_id}),
                 content_type="application/x-www-form-urlencoded",
             )
 
@@ -1192,7 +1250,7 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
             "interval": 5,
         }
         grant = DeviceModel.objects.get(device_code="abc")
-        assert grant.scope == "read write"
+        assert grant.scope == "read"
         assert grant.status == DeviceModel.AUTHORIZATION_PENDING
 
     def test_device_authorization_returns_invalid_client_when_application_deleted_before_scope_resolution(
@@ -1204,7 +1262,9 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         than silently proceeding with application=None.
 
         This covers the DoesNotExist branch in DeviceAuthorizationView.post() that is
-        only reached when scope is omitted (so default-scope resolution is attempted).
+        only reached when scope is omitted (so default-scope resolution is attempted) and
+        oauthlib did not resolve the scopes itself (it does from 4.0.1 on), so the oauthlib
+        response is mocked without a ``scope`` key.
         """
         self.oauth2_settings.OAUTH_DEVICE_VERIFICATION_URI = "example.com/device"
         self.oauth2_settings.OAUTH_DEVICE_USER_CODE_GENERATOR = lambda: "XYZ"
@@ -1217,9 +1277,24 @@ class TestDeviceFlow(DeviceFlowBaseTestCase):
         mock_model = mock.MagicMock(spec=Application)
         mock_model.DoesNotExist = Application.DoesNotExist
         mock_model.objects.get.side_effect = Application.DoesNotExist
+        oauthlib_response = {
+            "verification_uri": "example.com/device",
+            "expires_in": 1800,
+            "user_code": "XYZ",
+            "device_code": "abc",
+            "interval": 5,
+        }
 
-        with mock.patch(
-            "oauth2_provider.authorization_server.views.device.get_application_model", return_value=mock_model
+        with (
+            mock.patch(
+                "oauth2_provider.authorization_server.views.device.get_application_model",
+                return_value=mock_model,
+            ),
+            mock.patch(
+                "oauth2_provider.authorization_server.views.mixins."
+                "AuthorizationServerViewMixin.create_device_authorization_response",
+                return_value=({}, oauthlib_response, 200),
+            ),
         ):
             response = self.client.post(
                 reverse("oauth2_provider:device-authorization"),
@@ -1363,9 +1438,8 @@ class TestOAuth2ValidatorValidateDeviceCode(DeviceFlowBaseTestCase):
         fields.update(kwargs)
         return DeviceModel.objects.create(**fields)
 
+    @skipUnless(OAUTHLIB_VALIDATES_DEVICE_CODE, "oauthlib before 4.0.1 has no validate_device_code hook")
     def test_statuses_match_oauthlib_constants(self):
-        if not hasattr(DeviceCodeGrant, "DEVICE_CODE_AUTHORIZED"):
-            self.skipTest("oauthlib < 4.0.1 has no validate_device_code hook")
         self.create_grant(status=DeviceModel.AUTHORIZED, user=self.test_user)
         authorized = self.validator.validate_device_code(
             self.application.client_id, "device_code", self.request
@@ -1469,3 +1543,91 @@ class TestOAuth2ValidatorValidateDeviceCode(DeviceFlowBaseTestCase):
 
         assert status is None
         assert self.request.user is None
+
+
+@skipUnless(OAUTHLIB_VALIDATES_DEVICE_CODE, "oauthlib before 4.0.1 does not call validate_device_code")
+class TestDeviceFlowTokenEndpointWithOauthlibDeviceCodeValidation(DeviceFlowBaseTestCase):
+    """
+    The token endpoint on oauthlib 4.0.1 and later, where TokenView hands the poll straight
+    to oauthlib and OAuth2Validator.validate_device_code decides (#1950).
+    """
+
+    def poll(self, device_code: str) -> http.HttpResponse:
+        return self.client.post(
+            "/o/token/",
+            data=urlencode(
+                {
+                    "device_code": device_code,
+                    "client_id": self.application.client_id,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                }
+            ),
+            content_type="application/x-www-form-urlencoded",
+        )
+
+    def create_grant(self, **kwargs) -> oauth2_provider.models.DeviceGrant:
+        fields = {
+            "client_id": self.application.client_id,
+            "device_code": "device_code",
+            "user_code": "user_code",
+            "scope": "read",
+            "expires": datetime.now(tz=timezone.utc) + timedelta(seconds=60),
+            "status": DeviceModel.AUTHORIZED,
+            "user": self.test_user,
+        }
+        fields.update(kwargs)
+        return DeviceModel.objects.create(**fields)
+
+    def test_issued_token_carries_the_grants_user_and_scope(self):
+        """
+        With no pre-token validator, the hook alone has to put the approving user and the
+        stored scope on the request; the token proves it did.
+        """
+        self.oauth2_settings.OAUTH_PRE_TOKEN_VALIDATION = []
+        self.create_grant(scope="read")
+
+        response = self.poll("device_code")
+
+        assert response.status_code == 200
+        assert response["content-type"] == "application/json"
+        token_data = response.json()
+        assert token_data["scope"] == "read"
+        access_token = AccessToken.objects.get(token=token_data["access_token"])
+        assert access_token.user == self.test_user
+        assert access_token.scope == "read"
+        assert RefreshToken.objects.get(token=token_data["refresh_token"]).user == self.test_user
+
+    def test_unknown_device_code_is_invalid_grant(self):
+        self.create_grant()
+
+        response = self.poll("another_device_code")
+
+        assert response.status_code == 400
+        assert response["content-type"] == "application/json"
+        assert response.json() == {"error": "invalid_grant"}
+        assert not AccessToken.objects.exists()
+
+    def test_device_code_issued_to_another_client_is_invalid_grant(self):
+        other_application = Application.objects.create(
+            name="other device app",
+            user=self.dev_user,
+            client_type=Application.CLIENT_PUBLIC,
+            authorization_grant_type=Application.GRANT_DEVICE_CODE,
+        )
+        self.create_grant(client_id=other_application.client_id)
+
+        response = self.poll("device_code")
+
+        assert response.status_code == 400
+        assert response.json() == {"error": "invalid_grant"}
+        assert not AccessToken.objects.exists()
+
+    def test_unknown_device_status_is_invalid_grant(self):
+        grant = self.create_grant()
+        DeviceModel.objects.filter(pk=grant.pk).update(status="LOL_status")
+
+        response = self.poll("device_code")
+
+        assert response.status_code == 400
+        assert response.json() == {"error": "invalid_grant"}
+        assert not AccessToken.objects.exists()

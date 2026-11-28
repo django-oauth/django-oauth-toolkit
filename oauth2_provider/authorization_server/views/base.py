@@ -25,7 +25,6 @@ from django.views.generic import FormView, View
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error, InvalidRequestError, OAuth2Error
 from oauthlib.oauth2.rfc6749.errors import FatalClientError as OAuthlibFatalClientError
-from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
 from oauthlib.openid.connect.core.exceptions import (
     InvalidRequestObject,
     RequestNotSupported,
@@ -49,12 +48,12 @@ from oauth2_provider.authorization_server.sessions import (
     get_session_authentication_time,
 )
 from oauth2_provider.authorization_server.views.mixins import AuthorizationServerViewMixin
-from oauth2_provider.core.compat import login_not_required
+from oauth2_provider.core.compat import OAUTHLIB_VALIDATES_DEVICE_CODE, login_not_required
 from oauth2_provider.core.exceptions import FatalClientError, OAuthToolkitError
 from oauth2_provider.core.http import OAuth2ResponseRedirect
 from oauth2_provider.core.scopes import get_scopes_backend
 from oauth2_provider.core.signals import app_authorized
-from oauth2_provider.core.utils import add_iss_to_redirect
+from oauth2_provider.core.utils import add_iss_to_redirect, device_grant_error
 from oauth2_provider.core.views import FormEncodedRequestMixin
 from oauth2_provider.models import get_access_token_model, get_application_model, get_device_grant_model
 from oauth2_provider.resource_server.validators import is_valid_resource_uri
@@ -1412,6 +1411,32 @@ class TokenView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
     def device_flow_token_response(
         self, request: http.HttpRequest, device_code: str, *args, **kwargs
     ) -> http.HttpResponse:
+        if not OAUTHLIB_VALIDATES_DEVICE_CODE:
+            # oauthlib before 4.0.1 issues a token for whatever device_code it is handed,
+            # so the grant's status has to be checked here first. From 4.0.1 on, oauthlib
+            # asks OAuth2Validator.validate_device_code from the token request built below,
+            # which also binds the code to the authenticated client, so this check would
+            # only duplicate it (and answer an unknown code differently).
+            error_response = self._device_grant_error_response(device_code)
+            if error_response is not None:
+                return error_response
+
+        url, headers, body, status = self.create_token_response(request)
+        response = http.JsonResponse(data=json.loads(body), status=status)
+
+        if status != 200:
+            return response
+
+        for k, v in headers.items():
+            response[k] = v
+
+        return response
+
+    def _device_grant_error_response(self, device_code: str) -> http.HttpResponse | None:
+        """
+        The error response a poll for ``device_code`` is answered with on oauthlib before
+        4.0.1, or ``None`` when the grant is authorized and the token request can go to oauthlib.
+        """
         device_grant_model = get_device_grant_model()
         try:
             device = device_grant_model.objects.get(device_code=device_code)
@@ -1426,45 +1451,27 @@ class TokenView(FormEncodedRequestMixin, AuthorizationServerViewMixin, View):
             )
 
         # Here we are returning the errors according to
-        # https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
+        # https://datatracker.ietf.org/doc/html/rfc8628#section-3.5, with the mapping
+        # OAuth2Validator.validate_device_code uses on newer oauthlib.
         # TODO: "slow_down" error (essentially rate-limiting).
-        if device.status == device.DENIED:
-            error = rfc8628_errors.AccessDenied()
-        elif device.is_expired():
-            error = rfc8628_errors.ExpiredTokenError()
-        elif device.status == device.AUTHORIZATION_PENDING:
-            error = rfc8628_errors.AuthorizationPendingError()
-        elif device.status != device.AUTHORIZED:
-            # It's technically impossible to get here because we've exhausted
-            # all the possible values for status. However, it does act as a
-            # reminder for developers when they add, in the future, new values
-            # (such as slow_down) that they must handle here.
-            return http.HttpResponseServerError(
-                content='{"error": "internal_error"}',
-                content_type="application/json",
-            )
-        else:
-            # AUTHORIZED is the only accepted state, anything else is
-            # rejected.
-            error = None
-
-        if error:
+        error_class = device_grant_error(device)
+        if error_class is not None:
+            error = error_class()
             return http.HttpResponse(
                 content=error.json,
                 status=error.status_code,
                 content_type="application/json",
             )
-
-        url, headers, body, status = self.create_token_response(request)
-        response = http.JsonResponse(data=json.loads(body), status=status)
-
-        if status != 200:
-            return response
-
-        for k, v in headers.items():
-            response[k] = v
-
-        return response
+        if device.status != device.AUTHORIZED:
+            # AUTHORIZED is the only accepted state. It's technically impossible to
+            # get here because we've exhausted all the possible values for status.
+            # However, it does act as a reminder for developers when they add, in the
+            # future, new values (such as slow_down) that they must handle here.
+            return http.HttpResponseServerError(
+                content='{"error": "internal_error"}',
+                content_type="application/json",
+            )
+        return None
 
     def post(self, request: http.HttpRequest, *args, **kwargs) -> http.HttpResponse:
         params = request.POST

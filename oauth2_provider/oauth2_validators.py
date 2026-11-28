@@ -24,7 +24,7 @@ from jwcrypto.common import JWException
 from jwcrypto.jwt import JWTExpired
 from oauthlib.common import Request as OauthlibRequest
 from oauthlib.oauth2.rfc6749 import errors, utils
-from oauthlib.oauth2.rfc8628 import errors as rfc8628_errors
+from oauthlib.oauth2.rfc8628.grant_types import DeviceCodeGrant
 from oauthlib.openid import RequestValidator
 
 from .authorization_server import cimd, client_assertions
@@ -39,7 +39,7 @@ from .authorization_server.response_modes import response_mode_permitted
 from .core.bcp import bcp_compliant
 from .core.exceptions import FatalClientError
 from .core.scopes import get_scopes_backend
-from .core.utils import jwk_from_pem
+from .core.utils import device_grant_error, jwk_from_pem
 from .models import (
     AbstractAccessToken,
     AbstractApplication,
@@ -544,11 +544,11 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             return False
         return allowed
 
-    # The status oauthlib's ``DeviceCodeGrant.DEVICE_CODE_AUTHORIZED`` (added in 4.0.1)
-    # expects back from ``validate_device_code``; the other statuses are the RFC 8628
-    # section 3.5 error codes. Spelled out so the hook also imports under oauthlib 4.0.0,
-    # which has neither the constants nor the call.
-    DEVICE_CODE_AUTHORIZED = "authorized"
+    # oauthlib's ``DeviceCodeGrant.DEVICE_CODE_AUTHORIZED`` (4.0.1 and later), the status
+    # the grant expects back from ``validate_device_code`` for an approved device code; the
+    # fallback keeps the attribute on oauthlib 4.0.0, which never calls the hook. The other
+    # statuses are the RFC 8628 section 3.5 error codes ``device_grant_error()`` maps to.
+    DEVICE_CODE_AUTHORIZED = getattr(DeviceCodeGrant, "DEVICE_CODE_AUTHORIZED", "authorized")
 
     def validate_device_code(
         self, client_id: str, code: str, request: OauthlibRequest, *args, **kwargs
@@ -572,12 +572,9 @@ class OAuth2Validator(ResourceServerValidatorMixin, RequestValidator):
             log.debug("Failed device code validation: no device grant for client %s", client_id)
             return None
 
-        if device.status == device.DENIED:
-            return rfc8628_errors.AccessDenied.error
-        if device.is_expired():
-            return rfc8628_errors.ExpiredTokenError.error
-        if device.status == device.AUTHORIZATION_PENDING:
-            return rfc8628_errors.AuthorizationPendingError.error
+        error_class = device_grant_error(device)
+        if error_class is not None:
+            return error_class.error
         if device.status != device.AUTHORIZED:
             log.debug("Failed device code validation: unexpected status %r", device.status)
             return None
